@@ -1,0 +1,34 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "enables the default permissions",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    {
+      "identifier": "http:default",
+      "allow": [
+        {
+          "url": "https://*.eastmoney.com/*"
+        },
+        {
+          "url": "https://eastmoney.com/*"
+        },
+        {
+          "url": "https://*.gtimg.cn/*"
+        },
+        {
+          "url": "https://gtimg.cn/*"
+        },
+        {
+          "url": "https://*.sina.com.cn/*"
+        },
+        {
+          "url": "https://*.linkdiary.cn/*"
+        }
+      ]
+    }
+  ]
+}
