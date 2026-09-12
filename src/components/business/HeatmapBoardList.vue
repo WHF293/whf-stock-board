@@ -133,7 +133,11 @@ const onStockRowClick = (stock: IndustryBoardConstituent): void => {
       <BaseSkeleton />
     </div>
     <!-- 成分股层：行点击跳个股详情 -->
-    <div v-else-if="drillView" :style="{ maxHeight: `${HEATMAP_VIEW_HEIGHT_PX}px` }">
+    <div
+      v-else-if="drillView"
+      class="overflow-y-auto"
+      :style="{ maxHeight: `${HEATMAP_VIEW_HEIGHT_PX}px` }"
+    >
       <BaseTable
         :columns="stockColumns"
         :rows="drillView.constituents"
@@ -158,7 +162,11 @@ const onStockRowClick = (stock: IndustryBoardConstituent): void => {
       </BaseTable>
     </div>
     <!-- 板块层：行点击下钻成分股 -->
-    <div v-else :style="{ maxHeight: `${HEATMAP_VIEW_HEIGHT_PX}px` }">
+    <div
+      v-else
+      class="overflow-y-auto"
+      :style="{ maxHeight: `${HEATMAP_VIEW_HEIGHT_PX}px` }"
+    >
       <BaseTable
         :columns="boardColumns"
         :rows="boards"
