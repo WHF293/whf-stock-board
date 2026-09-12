@@ -1,25 +1,23 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
-import BaseButton from '../components/ui/BaseButton.vue';
-import BaseCard from '../components/ui/BaseCard.vue';
-import BaseConfirmModal from '../components/ui/BaseConfirmModal.vue';
-import BaseEmpty from '../components/ui/BaseEmpty.vue';
-import BaseInput from '../components/ui/BaseInput.vue';
-import BaseTabs from '../components/ui/BaseTabs.vue';
-import MenuIcon from '../components/ui/MenuIcon.vue';
-import StockSearchInput from '../components/business/StockSearchInput.vue';
-import WatchlistTable from '../components/business/WatchlistTable.vue';
-import { fetchFullQuotes } from '../api/quotes.api';
-import { usePolling } from '../composables/use-polling';
-import { POLLING_INTERVAL } from '../constants/polling.constants';
-import {
-  DEFAULT_GROUP_ID,
-} from '../constants/watchlist.constants';
-import { useWatchlistStore } from '../stores/watchlist';
-import { useDataCacheStore } from '../stores/data-cache';
-import { DATA_CACHE_KEY } from '../constants/data-cache.constants';
-import type { SearchResult } from '../types/stock-quote.types';
-import type { FullQuote } from '../types/stock-quote.types';
+import { computed, ref, watch } from "vue";
+import BaseButton from "../components/ui/BaseButton.vue";
+import BaseCard from "../components/ui/BaseCard.vue";
+import BaseConfirmModal from "../components/ui/BaseConfirmModal.vue";
+import BaseEmpty from "../components/ui/BaseEmpty.vue";
+import BaseInput from "../components/ui/BaseInput.vue";
+import BaseTabs from "../components/ui/BaseTabs.vue";
+import MenuIcon from "../components/ui/MenuIcon.vue";
+import StockSearchInput from "../components/business/StockSearchInput.vue";
+import WatchlistTable from "../components/business/WatchlistTable.vue";
+import { fetchFullQuotes } from "../api/quotes.api";
+import { usePolling } from "../composables/use-polling";
+import { POLLING_INTERVAL } from "../constants/polling.constants";
+import { DEFAULT_GROUP_ID } from "../constants/watchlist.constants";
+import { useWatchlistStore } from "../stores/watchlist";
+import { useDataCacheStore } from "../stores/data-cache";
+import { DATA_CACHE_KEY } from "../constants/data-cache.constants";
+import type { SearchResult } from "../types/stock-quote.types";
+import type { FullQuote } from "../types/stock-quote.types";
 
 /**
  * 自选股：分组 tab + 搜索添加 + 分组表格，轮询仅拉当前分组标的；
@@ -48,7 +46,9 @@ const groupTabOptions = computed(() =>
 
 /** 当前分组报价映射（key 为 FullQuote.code 原始形态；快照播种） */
 const quotesMap = ref<Record<string, FullQuote>>(
-  dataCache.get<Record<string, FullQuote>>(DATA_CACHE_KEY.WATCHLIST_QUOTES_MAP) ?? {},
+  dataCache.get<Record<string, FullQuote>>(
+    DATA_CACHE_KEY.WATCHLIST_QUOTES_MAP,
+  ) ?? {},
 );
 
 /** 行情首载中：表格以骨架屏代替 `--` 闪现（有快照则直接展示快照，不进骨架） */
@@ -65,7 +65,9 @@ const fetchActiveGroupQuotes = async (): Promise<void> => {
   isQuotesLoading.value = true;
   try {
     const quotes = await fetchFullQuotes(symbols);
-    quotesMap.value = Object.fromEntries(quotes.map((quote) => [quote.code, quote]));
+    quotesMap.value = Object.fromEntries(
+      quotes.map((quote) => [quote.code, quote]),
+    );
     dataCache.set(DATA_CACHE_KEY.WATCHLIST_QUOTES_MAP, quotesMap.value);
   } finally {
     isQuotesLoading.value = false;
@@ -84,7 +86,7 @@ watch(activeGroupId, () => {
 });
 
 /** 新分组名称输入 */
-const newGroupName = ref('');
+const newGroupName = ref("");
 
 /** 新建分组并切换过去 */
 const onAddGroup = (): void => {
@@ -94,7 +96,7 @@ const onAddGroup = (): void => {
   }
   const group = watchlistStore.addGroup(name);
   activeGroupId.value = group.id;
-  newGroupName.value = '';
+  newGroupName.value = "";
 };
 
 /** 删除分组确认弹窗开关 */
@@ -166,17 +168,25 @@ const onReorderStock = (fromIndex: number, toIndex: number): void => {
     <!-- 分组 tab -->
     <div class="flex items-center gap-2">
       <div class="min-w-0 flex-1 overflow-x-auto overflow-y-hidden">
-        <BaseTabs v-model="activeGroupId" :options="groupTabOptions" variant="underline" />
+        <BaseTabs
+          v-model="activeGroupId"
+          :options="groupTabOptions"
+          variant="underline"
+        />
       </div>
     </div>
 
     <!-- 搜索添加（左侧）+ 新建分组（右侧） -->
-    <div class="flex flex-wrap items-center gap-2">
+    <div class="flex flex-wrap items-center justify-between gap-2">
       <div class="min-w-0 flex-1 max-w-md">
         <StockSearchInput @select="onAddStock" />
       </div>
       <form class="flex items-center gap-2" @submit.prevent="onAddGroup">
-        <BaseInput v-model="newGroupName" placeholder="新分组名称" class="w-28" />
+        <BaseInput
+          v-model="newGroupName"
+          placeholder="新分组名称"
+          class="w-28"
+        />
         <BaseButton type="submit" variant="ghost">
           <MenuIcon name="plus" :size="14" />
           新建
@@ -185,7 +195,9 @@ const onReorderStock = (fromIndex: number, toIndex: number): void => {
     </div>
 
     <!-- 分组表格 -->
-    <BaseCard :title="`当前分组-${activeGroup?.name ?? ''}（${activeGroup?.stocks.length ?? 0}只股票）`">
+    <BaseCard
+      :title="`当前分组-${activeGroup?.name ?? ''}（${activeGroup?.stocks.length ?? 0}只股票）`"
+    >
       <template #extra>
         <button
           v-if="activeGroup?.id !== DEFAULT_GROUP_ID"
@@ -207,7 +219,11 @@ const onReorderStock = (fromIndex: number, toIndex: number): void => {
           />
         </div>
         <div v-else class="space-y-3" aria-hidden="true">
-          <div v-for="i in Math.min(activeGroup!.stocks.length, 5)" :key="i" class="animate-pulse">
+          <div
+            v-for="i in Math.min(activeGroup!.stocks.length, 5)"
+            :key="i"
+            class="animate-pulse"
+          >
             <div class="h-9 rounded-lg bg-flat-weak" />
           </div>
         </div>
