@@ -22,17 +22,17 @@ export const POLLING_INTERVAL = {
  * 用户可设置的行情刷新间隔选项（毫秒；展示标签为秒/分钟文案）
  */
 export const REFRESH_INTERVAL_OPTIONS = [
-  { label: '5s', value: 5_000 },
-  { label: '10s', value: 10_000 },
-  { label: '20s', value: 20_000 },
-  { label: '30s', value: 30_000 },
-  { label: '1min', value: 60_000 },
-  { label: '5min', value: 300_000 },
-  { label: '10min', value: 600_000 },
+  { label: "5s", value: 5_000 },
+  { label: "10s", value: 10_000 },
+  { label: "20s", value: 20_000 },
+  { label: "30s", value: 30_000 },
+  { label: "1min", value: 60_000 },
+  { label: "5min", value: 300_000 },
+  { label: "10min", value: 600_000 },
 ] as const;
 
 /** 默认行情刷新间隔（毫秒）：5s */
-export const REFRESH_INTERVAL_DEFAULT = 5_000;
+export const REFRESH_INTERVAL_DEFAULT = 10_000;
 
 /** 交易时段刷新间隔（毫秒）：MainLayout 每 10 分钟同步一次市场状态供全部轮询消费 */
 export const MARKET_STATUS_REFRESH_INTERVAL_MS = 10 * 60_000;

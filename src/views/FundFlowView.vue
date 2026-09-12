@@ -4,6 +4,7 @@ import BaseCard from '../components/ui/BaseCard.vue';
 import BaseEmpty from '../components/ui/BaseEmpty.vue';
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue';
 import BaseTable from '../components/ui/BaseTable.vue';
+import BaseTabs from '../components/ui/BaseTabs.vue';
 import MarketFundFlowTrendChart from '../components/charts/MarketFundFlowTrendChart.vue';
 import type { TableColumn } from '../types/table.types';
 import {
@@ -45,6 +46,26 @@ const RANK_DISPLAY_COUNT = 15;
 
 /** 大盘资金流保留的交易日数（近 10 日） */
 const MARKET_FLOW_DAYS = 10;
+
+/** 大盘资金流展示形式：曲线（默认） / 列表 */
+const MARKET_VIEW_MODE = {
+  CHART: 'chart',
+  TABLE: 'table',
+} as const;
+
+/** 大盘资金流展示形式按钮组选项 */
+const MARKET_VIEW_MODE_OPTIONS = [
+  { label: '曲线', value: MARKET_VIEW_MODE.CHART },
+  { label: '列表', value: MARKET_VIEW_MODE.TABLE },
+] as const;
+
+/** 当前展示形式（局部状态，不持久化） */
+const marketViewMode = ref<typeof MARKET_VIEW_MODE[keyof typeof MARKET_VIEW_MODE]>(
+  MARKET_VIEW_MODE.CHART,
+);
+
+/** 大盘资金流视图高度（像素）：曲线与列表共用，避免切换时布局跳动 */
+const MARKET_FLOW_VIEW_HEIGHT_PX = 400;
 
 // 快照播种：切换回本页先展示上次数据
 const cachedFlow = dataCache.get<MarketFundFlow[]>(DATA_CACHE_KEY.FUNDS_MARKET_FLOW);
@@ -161,19 +182,25 @@ const openDetail = (code: string): void => {
   <div class="space-y-4">
     <!-- 大盘资金流 -->
     <BaseCard title="大盘资金流（近10日）">
+      <template #extra>
+        <BaseTabs v-model="marketViewMode" :options="MARKET_VIEW_MODE_OPTIONS" />
+      </template>
       <div v-if="isError" class="py-10">
         <BaseEmpty text="资金数据加载失败，请稍后重试（上游可能限频或封禁）" />
       </div>
       <BaseSkeleton v-else-if="isLoading && marketFlow.length === 0" />
       <template v-else-if="marketFlowRows.length > 0">
-        <!-- 主力净流入趋势折线 -->
-        <div class="mb-4">
-          <MarketFundFlowTrendChart :days="marketFlowAsc" />
+        <!-- 曲线视图 -->
+        <div v-if="marketViewMode === MARKET_VIEW_MODE.CHART">
+          <MarketFundFlowTrendChart :days="marketFlowAsc" :height="MARKET_FLOW_VIEW_HEIGHT_PX" />
         </div>
+        <!-- 列表视图 -->
         <BaseTable
+          v-else
           :columns="marketColumns"
           :rows="marketFlowRows"
           :row-key="(day) => day.date"
+          scroll-class="table-scroll-sm"
         >
           <template #date="{ row }">
             <span class="text-text-secondary">{{ row.date.slice(5) }}</span>

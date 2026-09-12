@@ -68,3 +68,25 @@ export const PANORAMA_US_SECIDS = [
   '107.SPY',
   '107.DIA',
 ] as const;
+
+/**
+ * 行情全景 · A股板块排行展示形式
+ */
+export const PANORAMA_CN_VIEW_MODE = {
+  /** 列表表格（默认：统计 + 筛选 + 列配置表格） */
+  LIST: 'list',
+  /** 平铺网格（与美股全景一致：板块名 + 涨跌幅） */
+  TILE: 'tile',
+} as const satisfies Record<string, string>;
+
+/** A股板块排行展示形式 */
+export type PanoramaCnViewMode = (typeof PANORAMA_CN_VIEW_MODE)[keyof typeof PANORAMA_CN_VIEW_MODE];
+
+/** 默认展示形式：列表 */
+export const PANORAMA_CN_VIEW_MODE_DEFAULT: PanoramaCnViewMode = PANORAMA_CN_VIEW_MODE.LIST;
+
+/** 展示形式切换选项 */
+export const PANORAMA_CN_VIEW_MODE_OPTIONS: readonly { label: string; value: PanoramaCnViewMode }[] = [
+  { label: '列表', value: PANORAMA_CN_VIEW_MODE.LIST },
+  { label: '平铺', value: PANORAMA_CN_VIEW_MODE.TILE },
+];

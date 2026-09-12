@@ -4,6 +4,8 @@ import BaseCard from '../components/ui/BaseCard.vue';
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue';
 import DistributionChart from '../components/charts/DistributionChart.vue';
 import HeatmapChart from '../components/charts/HeatmapChart.vue';
+import HeatmapBoardList from '../components/business/HeatmapBoardList.vue';
+import BaseTabs from '../components/ui/BaseTabs.vue';
 import StockQuoteCard from '../components/business/StockQuoteCard.vue';
 import {
   fetchAllMarketQuotes,
@@ -13,10 +15,15 @@ import { fetchIndustryBoards } from '../api/board.api';
 import { fetchMarketFundFlow } from '../api/flow.api';
 import { usePolling } from '../composables/use-polling';
 import {
-  HEATMAP_TOP_OPTIONS,
   INDEX_SYMBOLS,
 } from '../constants/index-symbols.constants';
+import {
+  HEATMAP_TOP_TAB_OPTIONS,
+  HEATMAP_VIEW_MODE,
+  HEATMAP_VIEW_MODE_OPTIONS,
+} from '../constants/heatmap.constants';
 import { POLLING_INTERVAL } from '../constants/polling.constants';
+import { useHeatmapDrill } from '../composables/use-heatmap-drill';
 import { useDockPanelStore } from '../stores/dock-panel';
 import type { DistributionCount } from '../types/distribution.types';
 import type {
@@ -38,7 +45,8 @@ const BREADTH_REQUEST_GAP_MS = 500;
 
 /**
  * 市场总览：指数卡片（轮询，点击跳 K 线详情）+ 涨跌分布 / 资金速览 +
- * 板块热力（轮询，点击下钻成分股 → 点击个股跳详情）
+ * 板块热力（轮询，支持热力图 / 列表两种展示形式，下钻状态两视图共享；
+ * 点击下钻成分股 → 点击个股跳详情）
  *
  * 数据先取内存快照秒出 UI，接口成功后写回快照并刷新显示
  *
@@ -47,6 +55,15 @@ const BREADTH_REQUEST_GAP_MS = 500;
 const dockPanel = useDockPanelStore();
 const settingsStore = useSettingsStore();
 const dataCache = useDataCacheStore();
+
+// 板块下钻状态机：热力图 / 列表两视图共享，切换展示形式不丢下钻位置
+const { drillView, isDrillLoading, drillError, drillInto, backToBoards } = useHeatmapDrill();
+
+/** Top 数量按钮组 v-model 适配：BaseTabs 要求字符串 value，设置项存 number */
+const heatmapTopNModel = computed<string>({
+  get: () => String(settingsStore.heatmapTopN),
+  set: (value) => settingsStore.setHeatmapTopN(Number(value)),
+});
 
 /** 指数报价（快照播种） */
 const indexQuotes = ref<FullQuote[]>([]);
@@ -121,18 +138,22 @@ usePolling({
   tradingAware: true,
 });
 
-/** 热力图数据：按总市值排序取用户设置的 Top N */
-const heatmapBoards = computed<HeatmapBoard[]>(() =>
+/** 板块热力数据：按总市值排序取用户设置的 Top N（保留完整字段供列表视图消费） */
+const topBoards = computed<IndustryBoard[]>(() =>
   [...industryBoards.value]
     .filter((board) => board.changePercent !== null && board.totalMarketCap !== null)
     .sort((a, b) => (b.totalMarketCap ?? 0) - (a.totalMarketCap ?? 0))
-    .slice(0, settingsStore.heatmapTopN)
-    .map((board) => ({
-      code: board.code,
-      name: board.name,
-      changePercent: board.changePercent ?? 0,
-      weight: board.totalMarketCap ?? 0,
-    })),
+    .slice(0, settingsStore.heatmapTopN),
+);
+
+/** 热力图 cell 视图模型（由 topBoards 映射） */
+const heatmapBoards = computed<HeatmapBoard[]>(() =>
+  topBoards.value.map((board) => ({
+    code: board.code,
+    name: board.name,
+    changePercent: board.changePercent ?? 0,
+    weight: board.totalMarketCap ?? 0,
+  })),
 );
 
 /**
@@ -208,30 +229,37 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
     <!-- 板块热力 -->
     <BaseCard title="板块热力（按总市值加权）">
       <template #extra>
-        <div class="flex items-center gap-1" role="radiogroup" aria-label="热力图 Top 数量">
-          <button
-            v-for="topN in HEATMAP_TOP_OPTIONS"
-            :key="topN"
-            type="button"
-            role="radio"
-            :aria-checked="settingsStore.heatmapTopN === topN"
-            class="pressable rounded-md px-2 py-0.5 text-xs font-medium active:scale-90"
-            :class="
-              settingsStore.heatmapTopN === topN
-                ? 'bg-primary text-white'
-                : 'bg-flat-weak text-text-secondary hover:text-text'
-            "
-            @click="settingsStore.setHeatmapTopN(topN)"
-          >
-            Top{{ topN }}
-          </button>
+        <div class="flex flex-wrap items-center gap-2">
+          <!-- 展示形式：热力图 / 列表 -->
+          <BaseTabs v-model="settingsStore.heatmapViewMode" :options="HEATMAP_VIEW_MODE_OPTIONS" />
+          <!-- Top 数量：两种展示形式下均生效 -->
+          <BaseTabs v-model="heatmapTopNModel" :options="HEATMAP_TOP_TAB_OPTIONS" />
         </div>
       </template>
-      <HeatmapChart
-        v-if="heatmapBoards.length > 0"
-        :boards="heatmapBoards"
-        @stock-click="onOpenHeatmapStock"
-      />
+      <template v-if="topBoards.length > 0">
+        <!-- 热力图形式 -->
+        <HeatmapChart
+          v-if="settingsStore.heatmapViewMode === HEATMAP_VIEW_MODE.HEATMAP"
+          :boards="heatmapBoards"
+          :drill-view="drillView"
+          :is-drill-loading="isDrillLoading"
+          :drill-error="drillError"
+          @stock-click="onOpenHeatmapStock"
+          @board-click="drillInto"
+          @back="backToBoards"
+        />
+        <!-- 列表形式 -->
+        <HeatmapBoardList
+          v-else
+          :boards="topBoards"
+          :drill-view="drillView"
+          :is-drill-loading="isDrillLoading"
+          :drill-error="drillError"
+          @stock-click="onOpenHeatmapStock"
+          @board-click="drillInto"
+          @back="backToBoards"
+        />
+      </template>
       <BaseSkeleton v-else />
     </BaseCard>
   </div>

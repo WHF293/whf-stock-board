@@ -164,8 +164,9 @@ body {
 
 /*
  * 表格滚动容器：限制最大高度、超出滚动（纵向 + 横向），表头吸顶、第一列吸左
- * - table-scroll：整页宽表格（排行/明细）
- * - table-scroll-sm：卡片内小表格（多列布局中的排行）
+ * - table-scroll：整页宽表格（排行/明细，约 14 行）
+ * - table-scroll-sm：卡片内小表格（多列布局中的排行，约 10 行）
+ * - table-scroll-xs：紧凑表格（卡片内单列排行，约 8 行）
  */
 .table-scroll {
   max-height: 560px;
@@ -177,9 +178,15 @@ body {
   overflow: auto;
 }
 
+.table-scroll-xs {
+  max-height: 360px;
+  overflow: auto;
+}
+
 /* 表头吸顶 */
 .table-scroll thead th,
-.table-scroll-sm thead th {
+.table-scroll-sm thead th,
+.table-scroll-xs thead th {
   position: sticky;
   top: 0;
   z-index: 1;
@@ -188,7 +195,8 @@ body {
 
 /* 第一列吸左（表体单元格） */
 .table-scroll td:first-child,
-.table-scroll-sm td:first-child {
+.table-scroll-sm td:first-child,
+.table-scroll-xs td:first-child {
   position: sticky;
   left: 0;
   z-index: 0;
@@ -197,7 +205,8 @@ body {
 
 /* 行 hover 时首列底色跟随（需不透明遮住滚动内容） */
 .table-scroll tbody tr:hover td:first-child,
-.table-scroll-sm tbody tr:hover td:first-child {
+.table-scroll-sm tbody tr:hover td:first-child,
+.table-scroll-xs tbody tr:hover td:first-child {
   background-color: var(--color-flat-weak);
 }
 

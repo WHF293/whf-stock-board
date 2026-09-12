@@ -171,7 +171,12 @@ const isEmpty = computed(
 <template>
   <div class="space-y-4">
     <div class="flex items-center justify-between gap-2">
-      <BaseTabs v-model="activeModule" :options="MODULE_TABS" @update:model-value="onSelectModule" />
+      <BaseTabs
+        v-model="activeModule"
+        :options="MODULE_TABS"
+        variant="underline"
+        @update:model-value="onSelectModule"
+      />
       <span class="text-xs text-text-tertiary">未开盘时展示最近交易日收盘数据</span>
     </div>
 
