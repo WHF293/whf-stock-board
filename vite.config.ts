@@ -5,9 +5,10 @@ import { defineConfig } from 'vite'
 import { stockProxyPlugin } from './server/stock-proxy-middleware.ts'
 
 // https://vite.dev/config/
-export default defineConfig(({ command }) => ({
-  // GitHub Pages 项目页托管在 /whf-stock-board/ 子路径下，仅构建时启用
-  base: command === 'build' ? '/whf-stock-board/' : '/',
+export default defineConfig({
+  // 根路径：Tauri 客户端与常规托管均部署在域名根下
+  // （GitHub Pages 子路径托管已关闭；如重启用请改回 '/whf-stock-board/'）
+  base: '/',
   plugins: [tailwindcss(), vue(), stockProxyPlugin()],
   resolve: {
     alias: {
@@ -30,4 +31,4 @@ export default defineConfig(({ command }) => ({
       },
     },
   },
-}))
+})
