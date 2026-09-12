@@ -1,2 +1,31 @@
 /* 全局样式入口：Tailwind 与主题 token（theme.css 内引入 tailwindcss） */
 @import './theme.css';
+
+/* 全局滚动条：细滑块 + 透明轨道（轨道与背景融为一体，仅滑块浅灰可辨） */
+* {
+  /* Firefox */
+  scrollbar-width: thin;
+  scrollbar-color: rgb(148 155 165 / 0.4) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+  background: rgb(148 155 165 / 0.4);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgb(148 155 165 / 0.6);
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
