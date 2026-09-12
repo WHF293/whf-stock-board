@@ -5,9 +5,8 @@ import {
   CHART_AXIS_LINE_COLOR,
   CHART_SPLIT_LINE_COLOR,
   CHART_TEXT_COLOR,
+  MINUTE_LINE_COLOR,
 } from '../../constants/chart.constants';
-import { readTrendColors } from '../../utils/trend-colors';
-import { useSettingsStore } from '../../stores/settings';
 import { formatPercent } from '../../utils/format-percent';
 import { formatPrice } from '../../utils/format-price';
 import { buildMinuteAxis } from '../../utils/build-minute-axis';
@@ -23,8 +22,6 @@ const props = defineProps<{
   /** 当日分时响应（含昨收与逐分钟价格 / 均价） */
   timeline: TodayTimelineResponse;
 }>();
-
-const settingsStore = useSettingsStore();
 
 /** 图表容器高度（像素） */
 const CHART_HEIGHT_PX = 280;
@@ -78,22 +75,8 @@ const axisMaxPercent = computed(() => {
   );
 });
 
-/** 均价线颜色 */
+/** 均价线颜色（固定金黄） */
 const AVG_LINE_COLOR = '#f59e0b';
-
-/** 当前涨跌色阶（依赖 trendTheme，切换时自动重算） */
-const trendSet = computed(() => {
-  void settingsStore.trendTheme;
-  return readTrendColors();
-});
-
-/** 依据现价相对昨收的方向给价格线着色（随涨跌配色主题变化） */
-const lineColor = computed(() => {
-  const last = props.timeline.data.at(-1)?.price ?? preClose.value;
-  if (last > preClose.value) return trendSet.value.up;
-  if (last < preClose.value) return trendSet.value.down;
-  return trendSet.value.flat;
-});
 
 const option = computed<EChartsCoreOption>(() => {
   const maxPercent = axisMaxPercent.value;
@@ -168,7 +151,7 @@ const option = computed<EChartsCoreOption>(() => {
           silent: true,
           symbol: 'none',
           label: { show: false },
-          lineStyle: { type: 'dotted', color: trendSet.value.flat },
+          lineStyle: { type: 'dotted', color: CHART_TEXT_COLOR },
           data: [{ yAxis: 0 }],
         },
       },
@@ -178,7 +161,8 @@ const option = computed<EChartsCoreOption>(() => {
 
 const optionWithColor = computed<EChartsCoreOption>(() => ({
   ...option.value,
-  color: [lineColor.value, AVG_LINE_COLOR],
+  // 价格线固定淡雅蓝，不随涨跌配色主题切换
+  color: [MINUTE_LINE_COLOR, AVG_LINE_COLOR],
 }));
 
 </script>
