@@ -283,11 +283,8 @@ const openDetail = (code: string): void => {
         </div>
       </template>
 
-      <!-- 涨跌统计 + 筛选（平铺模式隐藏） -->
-      <div
-        v-if="!isTileMode"
-        class="mb-3 flex flex-wrap items-center justify-between gap-3"
-      >
+      <!-- 涨跌统计 + 筛选（列表 / 平铺共用） -->
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div class="grid grid-cols-2 gap-2 @3xl:grid-cols-4">
           <div class="rounded-lg bg-up-weak px-3 py-1.5">
             <p class="text-[10px] text-text-tertiary">涨幅&gt;3%</p>
@@ -323,25 +320,30 @@ const openDetail = (code: string): void => {
       <div v-else-if="isBoardsLoading && boards.length === 0">
         <BaseSkeleton />
       </div>
-      <!-- 平铺网格（与美股全景一致：板块名 + 涨跌幅） -->
+      <!-- 平铺网格（与美股全景一致：板块名 + 涨跌幅；高度同列表，点击查看成分股） -->
       <div
         v-else-if="isTileMode && sortedBoardsFull.length > 0"
-        class="grid grid-cols-2 gap-2 @2xl:grid-cols-3 @4xl:grid-cols-4"
+        class="table-scroll"
       >
-        <div
-          v-for="board in sortedBoardsFull"
-          :key="board.code"
-          class="flex items-center justify-between gap-2 rounded-lg bg-flat-weak px-3 py-2.5"
-        >
-          <span class="truncate text-sm text-text">{{ board.name }}</span>
-          <span
-            class="shrink-0 text-sm font-semibold tabular-nums"
-            :class="
-              TREND_TEXT_CLASS[getTrendByChangePercent(board.changePercent ?? 0)]
-            "
+        <div class="grid grid-cols-2 gap-2 @2xl:grid-cols-3 @4xl:grid-cols-4">
+          <button
+            v-for="board in sortedBoardsFull"
+            :key="board.code"
+            type="button"
+            class="pressable flex items-center justify-between gap-2 rounded-lg bg-flat-weak px-3 py-2.5 text-left hover:bg-flat-weak/70 active:scale-[0.98]"
+            :title="`查看 ${board.name} 成分股`"
+            @click="onSelectBoard(board)"
           >
-            {{ formatPercent(board.changePercent) }}
-          </span>
+            <span class="truncate text-sm text-text">{{ board.name }}</span>
+            <span
+              class="shrink-0 text-sm font-semibold tabular-nums"
+              :class="
+                TREND_TEXT_CLASS[getTrendByChangePercent(board.changePercent ?? 0)]
+              "
+            >
+              {{ formatPercent(board.changePercent) }}
+            </span>
+          </button>
         </div>
       </div>
       <div v-else-if="sortedBoardsFull.length > 0">
