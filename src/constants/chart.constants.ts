@@ -22,3 +22,6 @@ export const PRICE_AXIS_SPLIT = 3;
 
 /** K 线主图价格轴上下扩展比例（避免极值贴边） */
 export const PRICE_AXIS_PAD_RATIO = 0.05;
+
+/** 分时图价格线固定颜色（淡雅蓝，不随涨跌配色主题变化） */
+export const MINUTE_LINE_COLOR = '#4f83cc';
