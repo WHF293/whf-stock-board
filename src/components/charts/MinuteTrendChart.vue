@@ -15,7 +15,9 @@ import type { TodayTimelineResponse } from '../../types/kline.types';
 import BaseChart from './BaseChart.vue';
 
 /**
- * 分时图：价格线 + 均价线 + 昨收基准虚线，x 轴固定 09:30~15:00 全量刻度避免盘中拉伸
+ * 分时图：涨幅百分比口径（y 轴 = (价格 - 昨收) / 昨收 的百分比）
+ * 价格线 + 均价线 + 零值（昨收）基准虚线，x 轴固定 09:30~15:00 全量刻度避免盘中拉伸；
+ * y 轴范围取「开盘 / 现价相对昨收的最大偏离」的对称区间并三等分
  */
 const props = defineProps<{
   /** 当日分时响应（含昨收与逐分钟价格 / 均价） */
@@ -46,6 +48,35 @@ const aligned = computed(() => {
 /** 昨收（上游缺失时退化为首笔价格） */
 const preClose = computed(() => props.timeline.preClose || props.timeline.data[0]?.price || 0);
 
+/**
+ * 价格 -> 涨幅百分比（相对昨收；昨收缺失时为 null）
+ * @param value
+ */
+const toPercent = (value: number | null): number | null =>
+  value === null || !preClose.value ? null : ((value - preClose.value) / preClose.value) * 100;
+
+/** 涨幅百分比序列（价格线 / 均价线） */
+const percentSeries = computed(() => ({
+  price: aligned.value.price.map(toPercent),
+  avg: aligned.value.avg.map(toPercent),
+}));
+
+/**
+ * y 轴对称上限（百分比）：开盘价 / 最新价相对昨收的最大偏离
+ */
+const axisMaxPercent = computed(() => {
+  const open = props.timeline.data[0]?.price ?? 0;
+  const close = props.timeline.data.at(-1)?.price ?? 0;
+  if (!preClose.value) {
+    return 1;
+  }
+  return Math.max(
+    0.01,
+    Math.abs((open - preClose.value) / preClose.value) * 100,
+    Math.abs((close - preClose.value) / preClose.value) * 100,
+  );
+});
+
 /** 均价线颜色 */
 const AVG_LINE_COLOR = '#f59e0b';
 
@@ -64,19 +95,10 @@ const lineColor = computed(() => {
 });
 
 const option = computed<EChartsCoreOption>(() => {
-  const maxDev = Math.max(
-    0.01,
-    ...aligned.value.price
-      .filter((value): value is number => value !== null)
-      .map((value) => Math.abs(value - preClose.value)),
-    ...aligned.value.avg
-      .filter((value): value is number => value !== null)
-      .map((value) => Math.abs(value - preClose.value)),
-  );
-  // 轴上下限取两位小数，避免浮点尾差出现在刻度上
-  const round2 = (value: number): number => Math.round(value * 100) / 100;
-  const axisCeiling = round2(preClose.value + maxDev * 1.1);
-  const axisFloor = round2(preClose.value - maxDev * 1.1);
+  const maxPercent = axisMaxPercent.value;
+  // 涨幅反推价格（tooltip 展示用）
+  const percentToPrice = (percent: number): number =>
+    preClose.value * (1 + percent / 100);
 
   return {
     tooltip: {
@@ -85,14 +107,11 @@ const option = computed<EChartsCoreOption>(() => {
         const list = params as { axisValue: string; value: number | null; seriesName: string }[];
         const priceItem = list.find((item) => item.seriesName === '价格');
         if (!priceItem || priceItem.value === null) return priceItem?.axisValue ?? '';
-        const percent = preClose.value
-          ? ((priceItem.value - preClose.value) / preClose.value) * 100
-          : 0;
         const avgItem = list.find((item) => item.seriesName === '均价');
         return [
           `<b>${priceItem.axisValue}</b>`,
-          `价格：${formatPrice(priceItem.value)}（${formatPercent(percent)}）`,
-          `均价：${formatPrice(avgItem?.value ?? null)}`,
+          `价格：${formatPrice(percentToPrice(priceItem.value))}（${formatPercent(priceItem.value)}）`,
+          `均价：${formatPrice(percentToPrice(avgItem?.value ?? priceItem.value))}`,
         ].join('<br/>');
       },
     },
@@ -111,18 +130,21 @@ const option = computed<EChartsCoreOption>(() => {
     },
     yAxis: {
       type: 'value',
-      min: axisFloor,
-      max: axisCeiling,
-      // y 轴精确三等分（3 条横线 + 4 个刻度）
-      interval: (axisCeiling - axisFloor) / 3,
-      axisLabel: { color: CHART_TEXT_COLOR, formatter: (value: number) => round2(value) },
+      // 涨幅口径：[-max, +max] 对称区间，精确三等分（3 条横线，0% 居中）
+      min: -maxPercent,
+      max: maxPercent,
+      interval: (maxPercent * 2) / 3,
+      axisLabel: {
+        color: CHART_TEXT_COLOR,
+        formatter: (value: number) => `${value > 0 ? '+' : ''}${value.toFixed(2)}%`,
+      },
       splitLine: { lineStyle: { color: CHART_SPLIT_LINE_COLOR } },
     },
     series: [
       {
         name: '价格',
         type: 'line',
-        data: aligned.value.price,
+        data: percentSeries.value.price,
         showSymbol: false,
         connectNulls: true,
         lineStyle: { width: 1.5 },
@@ -131,7 +153,7 @@ const option = computed<EChartsCoreOption>(() => {
       {
         name: '均价',
         type: 'line',
-        data: aligned.value.avg,
+        data: percentSeries.value.avg,
         showSymbol: false,
         connectNulls: true,
         lineStyle: { width: 1, type: 'dashed' },
@@ -146,7 +168,7 @@ const option = computed<EChartsCoreOption>(() => {
           symbol: 'none',
           label: { show: false },
           lineStyle: { type: 'dotted', color: trendSet.value.flat },
-          data: [{ yAxis: preClose.value }],
+          data: [{ yAxis: 0 }],
         },
       },
     ],
