@@ -50,7 +50,8 @@ const preClose = computed(() => props.timeline.preClose || props.timeline.data[0
 
 /**
  * 价格 -> 涨幅百分比（相对昨收；昨收缺失时为 null）
- * @param value
+ * @param value 价格（元）
+ * @returns 涨幅百分比（%）
  */
 const toPercent = (value: number | null): number | null =>
   value === null || !preClose.value ? null : ((value - preClose.value) / preClose.value) * 100;
