@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 import { HEATMAP_TOP_DEFAULT } from '../constants/index-symbols.constants';
+import { HEATMAP_VIEW_MODE_DEFAULT } from '../constants/heatmap.constants';
 import { STORAGE_NS_SETTINGS } from '../constants/storage-key.constants';
 import { appStorage } from '../utils/app-local-storage';
 import { REFRESH_INTERVAL_DEFAULT } from '../constants/polling.constants';
@@ -8,6 +9,10 @@ import type { ThemeColor } from '../constants/theme-color.constants';
 import { TREND_THEME_DEFAULT } from '../constants/trend-theme.constants';
 import type { TrendTheme } from '../constants/trend-theme.constants';
 import { WATERMARK_ENABLED_DEFAULT } from '../constants/watermark.constants';
+import { SIDEBAR_COLLAPSED_DEFAULT } from '../constants/sidebar.constants';
+import { PANORAMA_CN_VIEW_MODE_DEFAULT } from '../constants/panorama.constants';
+import type { HeatmapViewMode } from '../types/heatmap.types';
+import type { PanoramaCnViewMode } from '../constants/panorama.constants';
 
 /** 设置 store 状态 */
 interface SettingsState {
@@ -17,6 +22,12 @@ interface SettingsState {
   refreshIntervalMs: number;
   /** 板块热力图 Top N：总览页展示的板块数量 */
   heatmapTopN: number;
+  /** 板块热力展示形式：热力图 treemap 或列表表格 */
+  heatmapViewMode: HeatmapViewMode;
+  /** 行情全景 · A股板块排行展示形式：平铺网格 或 列表表格 */
+  panoramaCnViewMode: PanoramaCnViewMode;
+  /** 左侧导航栏是否收起（仅桌面端生效，窄屏抽屉不受影响） */
+  sidebarCollapsed: boolean;
   /** 主题色（清新绿 / 淡雅蓝 / 淡雅粉 / 极光紫） */
   themeColor: ThemeColor;
   /** 涨跌配色主题（红涨绿跌 / 红跌绿涨 / 红涨蓝跌） */
@@ -33,6 +44,9 @@ export const useSettingsStore = defineStore('settings', {
     pollingEnabled: true,
     refreshIntervalMs: REFRESH_INTERVAL_DEFAULT,
     heatmapTopN: HEATMAP_TOP_DEFAULT,
+    heatmapViewMode: HEATMAP_VIEW_MODE_DEFAULT,
+    panoramaCnViewMode: PANORAMA_CN_VIEW_MODE_DEFAULT,
+    sidebarCollapsed: SIDEBAR_COLLAPSED_DEFAULT,
     themeColor: THEME_COLOR_DEFAULT,
     trendTheme: TREND_THEME_DEFAULT,
     watermarkEnabled: WATERMARK_ENABLED_DEFAULT,
@@ -64,6 +78,22 @@ export const useSettingsStore = defineStore('settings', {
     },
 
     /**
+     * 设置板块热力展示形式
+     * @param mode 展示形式（取值须为 HEATMAP_VIEW_MODE 中的值）
+     */
+    setHeatmapViewMode(mode: HeatmapViewMode): void {
+      this.heatmapViewMode = mode;
+    },
+
+    /**
+     * 设置行情全景 · A股板块排行展示形式
+     * @param mode 展示形式（取值须为 PANORAMA_CN_VIEW_MODE 中的值）
+     */
+    setPanoramaCnViewMode(mode: PanoramaCnViewMode): void {
+      this.panoramaCnViewMode = mode;
+    },
+
+    /**
      * 设置主题色（消费方 watch 后写 <html data-theme>）
      * @param color 主题色
      */
@@ -85,6 +115,19 @@ export const useSettingsStore = defineStore('settings', {
      */
     setWatermarkEnabled(enabled: boolean): void {
       this.watermarkEnabled = enabled;
+    },
+
+    /**
+     * 设置侧栏收起状态
+     * @param collapsed true 仅显示图标，false 显示完整菜单（仅桌面端生效）
+     */
+    setSidebarCollapsed(collapsed: boolean): void {
+      this.sidebarCollapsed = collapsed;
+    },
+
+    /** 切换侧栏收起状态 */
+    toggleSidebarCollapsed(): void {
+      this.sidebarCollapsed = !this.sidebarCollapsed;
     },
   },
 

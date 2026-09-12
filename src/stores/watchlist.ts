@@ -50,6 +50,7 @@ export const useWatchlistStore = defineStore('watchlist', {
         return false;
       }
       target.stocks.push(stock);
+      this.$persist();
       return true;
     },
 
@@ -64,6 +65,7 @@ export const useWatchlistStore = defineStore('watchlist', {
         return;
       }
       target.stocks = target.stocks.filter((stock) => stock.symbol !== symbol);
+      this.$persist();
     },
 
     /**
@@ -84,6 +86,7 @@ export const useWatchlistStore = defineStore('watchlist', {
       }
       const [moved] = target.stocks.splice(boundedFrom, 1);
       target.stocks.splice(boundedTo, 0, moved);
+      this.$persist();
     },
 
     /**
@@ -98,6 +101,7 @@ export const useWatchlistStore = defineStore('watchlist', {
         stocks: [],
       };
       this.groups.push(group);
+      this.$persist();
       return group;
     },
 
@@ -110,11 +114,14 @@ export const useWatchlistStore = defineStore('watchlist', {
         return;
       }
       this.groups = this.groups.filter((group) => group.id !== groupId);
+      this.$persist();
     },
   },
 
   persist: {
     key: STORAGE_NS_WATCHLIST,
     storage: appStorage,
+    // 调试期开启，验证插件确实在读写；生产可移除
+    debug: import.meta.env.DEV,
   },
 });

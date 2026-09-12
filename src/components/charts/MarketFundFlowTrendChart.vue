@@ -18,15 +18,17 @@ import BaseChart from './BaseChart.vue';
  * 大盘资金流趋势折线图：主力净流入（亿）近 N 日走势，零线基准；
  * 折线用主题色（运行时读 CSS 变量，切主题即时跟随）
  */
-const props = defineProps<{
+const { days, height = 260 } = defineProps<{
   /** 大盘资金流序列（日期升序，近 N 日） */
   days: MarketFundFlow[];
+  /** 图表高度（像素）；调用方传值可与同卡片表格高度对齐避免布局跳动 */
+  height?: number;
 }>();
 
 const settingsStore = useSettingsStore();
 
 /** 图表容器高度（像素） */
-const CHART_HEIGHT_PX = 260;
+const CHART_HEIGHT_PX = height;
 
 /** 零线基准（主力净流入正负分界） */
 const ZERO_BASELINE = 0;
@@ -51,7 +53,7 @@ const option = computed<EChartsCoreOption>(() => {
     grid: { left: 8, right: 16, top: 20, bottom: 0, containLabel: true },
     xAxis: {
       type: 'category',
-      data: props.days.map((day) => day.date.slice(5)),
+      data: days.map((day) => day.date.slice(5)),
       axisLabel: { color: CHART_TEXT_COLOR },
       axisLine: { lineStyle: { color: CHART_AXIS_LINE_COLOR } },
       axisTick: { show: false },
@@ -70,7 +72,7 @@ const option = computed<EChartsCoreOption>(() => {
       {
         name: '主力净流入',
         type: 'line',
-        data: props.days.map((day) => day.mainNetInflow),
+        data: days.map((day) => day.mainNetInflow),
         smooth: true,
         showSymbol: true,
         symbolSize: 6,

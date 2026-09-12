@@ -13,6 +13,9 @@ export const AMOUNT_UNITS = {
   WANYI: '万亿',
 } as const;
 
+/** 进率：元 -> 万 */
+export const YUAN_PER_WAN = 10_000;
+
 /** 进率：万 -> 亿 */
 export const WAN_PER_YI = 10_000;
 

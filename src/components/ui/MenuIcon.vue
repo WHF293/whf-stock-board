@@ -43,6 +43,12 @@ const ICON_PATHS: Record<string, string> = {
     '<path d="M19 12H5M11 18l-6-6 6-6"/>',
   info:
     '<circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v5h1"/>',
+  chevronLeft:
+    '<path d="M15 6l-6 6 6 6"/>',
+  chevronRight:
+    '<path d="M9 6l6 6-6 6"/>',
+  panelLeft:
+    '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>',
 };
 
 const props = withDefaults(

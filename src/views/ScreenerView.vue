@@ -28,7 +28,7 @@ const activeTool = ref<string>('basic');
 
 <template>
   <div class="space-y-4">
-    <BaseTabs v-model="activeTool" :options="TOOL_TABS" />
+    <BaseTabs v-model="activeTool" :options="TOOL_TABS" variant="underline" />
 
     <BasicScreener v-if="activeTool === 'basic'" />
     <SignalScanner v-else-if="activeTool === 'scanner'" />

@@ -10,8 +10,15 @@ const props = withDefaults(
     variant?: 'primary' | 'ghost' | 'danger';
     /** 是否禁用 */
     disabled?: boolean;
+    /**
+     * 原生 button type：
+     * - button：普通按钮（默认，不触发表单 submit）
+     * - submit：表单内提交按钮（form @submit 的触发源）
+     * - reset：表单内重置按钮
+     */
+    type?: 'button' | 'submit' | 'reset';
   }>(),
-  { variant: 'primary', disabled: false },
+  { variant: 'primary', disabled: false, type: 'button' },
 );
 
 /** 变体 -> 样式类名 */
@@ -26,7 +33,7 @@ const variantClass = computed(() => VARIANT_CLASS[props.variant]);
 
 <template>
   <button
-    type="button"
+    :type="type"
     :disabled="disabled"
     class="pressable inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
     :class="variantClass"

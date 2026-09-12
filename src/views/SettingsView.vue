@@ -23,7 +23,7 @@ import {
 
 /** 轮询规则公告文案（与 use-polling 交易窗口治理逻辑一致） */
 const POLLING_RULE_NOTICE =
-  "行情自动刷新仅在交易时段内按所选间隔轮询：A 股为交易日 09:15–15:00，美股为 21:30–24:00 与 00:00–04:00；非交易日与其他时段仅在进入页面时请求一次，不重复轮询。"
+  "行情自动刷新仅在交易时段内按所选间隔轮询：A 股为交易日 09:15–15:00，美股为 21:30–24:00 与 00:00–04:00；非交易日与其他时段仅在进入页面时请求一次，不重复轮询。";
 const settingsStore = useSettingsStore();
 
 /** 当前刷新间隔的展示标签（如 '5s' / '1min'） */
@@ -100,7 +100,7 @@ const onProbeProxy = async (): Promise<void> => {
 </script>
 
 <template>
-  <div class="max-w-xl space-y-4">
+  <div class="space-y-4">
     <NoticeBar :text="POLLING_RULE_NOTICE" />
     <BaseCard title="数据获取">
       <a
@@ -117,7 +117,11 @@ const onProbeProxy = async (): Promise<void> => {
         <p class="text-xs text-text-tertiary">
           检测同源代理到上游数据源的连通性（手动触发一次轻量请求）
         </p>
-        <BaseButton variant="ghost" :disabled="probeStatus === 'running'" @click="onProbeProxy">
+        <BaseButton
+          variant="ghost"
+          :disabled="probeStatus === 'running'"
+          @click="onProbeProxy"
+        >
           {{ probeButtonText }}
         </BaseButton>
       </div>
@@ -234,11 +238,12 @@ const onProbeProxy = async (): Promise<void> => {
           <!-- 预览色块：固定展示该选项自身的标识色（左涨右跌），不随当前主题变化 -->
           <span class="flex items-center gap-0.5 pl-1">
             <span
-              class="inline-block h-3 w-3 rounded-sm"
+              class="inline-block h-5 w-5 rounded-full"
               :style="{ backgroundColor: option.upSwatch }"
             />
+            -
             <span
-              class="inline-block h-3 w-3 rounded-sm"
+              class="inline-block h-5 w-5 rounded-full"
               :style="{ backgroundColor: option.downSwatch }"
             />
           </span>
