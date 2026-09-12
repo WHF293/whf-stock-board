@@ -2,14 +2,12 @@
 
 A 股看板 SPA（个人学习用）：行情总览 / 自选股 / 行情全景 / 资金动向 / 涨停异动 / 龙虎榜·大宗 / 选股器（基础筛选 · 信号扫描 · 尾盘选股）。
 
-支持两种使用方式：
-
-- **PC 客户端（推荐）**：Tauri 2 打包的 Windows 桌面应用，全部数据源可用
-- **网页版**：GitHub Pages 托管，仅腾讯源数据可用（静态托管无法代理东财接口）
+- **PC 客户端（推荐）**：Tauri 2 打包的 Windows 桌面应用，全部数据源可用（Rust 直连，无 CORS 限制）
+- 网页版 GitHub Pages 已关闭（静态托管无法代理东财接口，仅腾讯源可用）；如需浏览器访问请在本地 `pnpm dev`
 
 ## 技术栈
 
-Vue 3.5 + TypeScript + Vite + vue-router + Pinia + ECharts + Tailwind CSS 4，数据源 [stock-sdk](https://stock-sdk.linkdiary.cn/)（腾讯 / 东方财富）；PC 客户端壳为 Tauri 2。
+Vue 3.5 + TypeScript + Vite + vue-router + Pinia + ECharts + Tailwind CSS 4，数据源 [stock-sdk](https://stock-sdk.linkdiary.cn/)（腾讯 / 东方财富）；PC 客户端壳为 Tauri 2。AI 编码代理请先阅读根目录 [AGENTS.md](./AGENTS.md)。
 
 ## 开发方式
 
@@ -68,10 +66,6 @@ CI 会在 Windows runner 上自动构建，并创建同名 GitHub Release（`v0.
   更新签名密钥 + Release 里的 `latest.json`），客户端可启动时检查新版本并一键覆盖升级；
   需要时按官方文档开启即可
 
-## 网页版部署
-
-main 分支推送后由 GitHub Actions（`deploy.yml`）自动构建并发布到 GitHub Pages：https://whf293.github.io/whf-stock-board/
-
 ## 开发说明
 
 本项目（包括全部前端页面、组件、API 层、工程化配置与本文档）由 AI 编码代理 **ZCode** 驱动模型 **GLM-5.3-Flash**（智谱）全程实现，人类仅负责提出需求与验收。
@@ -80,4 +74,4 @@ main 分支推送后由 GitHub Actions（`deploy.yml`）自动构建并发布到
 
 - 数据仅供个人学习参考，不构成投资建议
 - 行情自动刷新仅在交易时段轮询（A 股 09:15–15:00；美股 21:30–24:00 与 00:00–04:00），非交易时段仅进入页面时请求一次
-- 网页版为纯静态托管，本地代理中间件不生效，仅腾讯源数据（个股行情 / 分时 / 搜索等）可用；PC 客户端全量数据可用
+- 网页版（GitHub Pages）已关闭：静态托管无法代理东财接口导致数据残缺，PC 客户端全量数据可用
