@@ -20,6 +20,10 @@ pnpm lint      # ESLint
 
 main 分支推送后由 GitHub Actions 自动构建并发布到 GitHub Pages：https://whf293.github.io/whf-stock-board/
 
+## 开发说明
+
+本项目（包括全部前端页面、组件、API 层、工程化配置与本文档）由 AI 编码代理 **ZCode** 驱动模型 **GLM-5.3-Flash**（智谱）全程实现，人类仅负责提出需求与验收。
+
 ## 说明
 
 - 数据仅供个人学习参考，不构成投资建议
