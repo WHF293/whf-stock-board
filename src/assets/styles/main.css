@@ -1,0 +1,2 @@
+/* 全局样式入口：Tailwind 与主题 token（theme.css 内引入 tailwindcss） */
+@import './theme.css';

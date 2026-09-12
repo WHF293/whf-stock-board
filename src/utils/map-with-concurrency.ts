@@ -1,0 +1,65 @@
+/**
+ * 有并发上限的逐项映射：worker 池模式，支持 AbortSignal 中断与进度回调
+ */
+
+/** 并发映射选项 */
+interface MapWithConcurrencyOptions {
+  /** 最大并发数（默认 3） */
+  concurrency?: number;
+  /** 中断信号（abort 后进行中的 worker 在下一项前抛出） */
+  signal?: AbortSignal;
+  /** 每完成一项回调（completed / total） */
+  onProgress?: (completed: number, total: number) => void;
+}
+
+/**
+ * 按并发上限逐项异步映射（保持入参顺序返回）
+ * @param items 输入列表
+ * @param mapper 异步映射函数
+ * @param options 并发 / 中断 / 进度选项
+ * @returns 映射结果（与 items 同序）
+ * @throws Error 映射过程中被 abort 时抛出「分析已取消」
+ */
+export const mapWithConcurrency = async <T, R>(
+  items: readonly T[],
+  mapper: (item: T, index: number) => Promise<R>,
+  options?: MapWithConcurrencyOptions,
+): Promise<R[]> => {
+  const concurrency = Math.max(1, options?.concurrency ?? 3);
+  const results: R[] = [];
+  let cursor = 0;
+  let completed = 0;
+
+  const throwIfAborted = (): void => {
+    if (options?.signal?.aborted) {
+      throw new Error('分析已取消');
+    }
+  };
+
+  const worker = async (): Promise<void> => {
+    while (true) {
+      throwIfAborted();
+      const currentIndex = cursor;
+      cursor += 1;
+      if (currentIndex >= items.length) {
+        return;
+      }
+      results.push(await mapper(items[currentIndex], currentIndex));
+      throwIfAborted();
+      completed += 1;
+      options?.onProgress?.(completed, items.length);
+    }
+  };
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
+
+  return results;
+};
+
+/**
+ * 判断错误是否为并发映射被取消
+ * @param error 捕获的错误
+ * @returns 是否为取消
+ */
+export const isAnalysisAborted = (error: unknown): boolean =>
+  error instanceof Error && error.message === '分析已取消';
