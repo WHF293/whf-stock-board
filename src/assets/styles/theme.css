@@ -261,35 +261,45 @@ textarea {
 
 
 /*
- * 页面切换过渡：前页滑走 + 后页滑入（方向由 MainLayout 按菜单顺序决定）
- * - page-forward：前进，旧页左滑出 / 新页右侧滑入
- * - page-back：后退，旧页右滑出 / 新页左侧滑入
+ * 页面进入动画：新页按侧栏顺序方向滑入（方向由 MainLayout 判定并挂类名）
+ * - page-anim-forward：前进，新页从右侧滑入
+ * - page-anim-back：后退，新页从左侧滑入
+ *
+ * 用纯 CSS keyframes 而非 <Transition mode="out-in">：
+ * out-in 需等旧页离场动画回调整完才插入新页，回调一旦缺失（快速连点、
+ * WebView 窗口被遮挡时节流动画）新页就永不插入，内容区会永久空白。
+ * keyframes 在元素插入时立即播放，无状态机，不存在卡死路径。
+ * fill-mode 用 backwards（而非 both）：动画结束后回归元素自身样式，不残留 transform，
+ * 避免 transform 成为子元素 fixed 定位的包含块。
  */
-.page-forward-enter-active,
-.page-forward-leave-active,
-.page-back-enter-active,
-.page-back-leave-active {
-  transition:
-    transform 0.25s ease,
-    opacity 0.25s ease;
+.page-anim-forward {
+  animation: page-in-forward 0.25s ease backwards;
 }
 
-.page-forward-enter-from {
-  transform: translateX(32px);
-  opacity: 0;
+.page-anim-back {
+  animation: page-in-back 0.25s ease backwards;
 }
 
-.page-forward-leave-to {
-  transform: translateX(-32px);
-  opacity: 0;
+@keyframes page-in-forward {
+  from {
+    transform: translateX(32px);
+    opacity: 0;
+  }
+
+  to {
+    transform: none;
+    opacity: 1;
+  }
 }
 
-.page-back-enter-from {
-  transform: translateX(-32px);
-  opacity: 0;
-}
+@keyframes page-in-back {
+  from {
+    transform: translateX(-32px);
+    opacity: 0;
+  }
 
-.page-back-leave-to {
-  transform: translateX(32px);
-  opacity: 0;
+  to {
+    transform: none;
+    opacity: 1;
+  }
 }

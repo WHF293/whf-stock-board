@@ -4,12 +4,12 @@ import type { TurnoverDayItem } from '../types/turnover.types';
  * 成交量变化模块常量（市场总览页）
  */
 
-/** 参与合计的指数 secid（东方财富 push2 kline 形态，上证 1.000001 / 深证 0.399001） */
-export const TURNOVER_INDEX_SECIDS = {
+/** 参与合计的指数符号（腾讯行情形态，newfqkline 接口直接消费） */
+export const TURNOVER_INDEX_SYMBOLS = {
   /** 上证指数 */
-  SH: '1.000001',
+  SH: 'sh000001',
   /** 深证成指 */
-  SZ: '0.399001',
+  SZ: 'sz399001',
 } as const;
 
 /** 可选交易日窗口 */
