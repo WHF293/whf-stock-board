@@ -120,6 +120,14 @@ server/           # vite 中间件：/stock-proxy（仅浏览器 dev 使用）
 - `productName` 固定为 ASCII（`stock-board`）：WiX/MSI 不支持非 ASCII 产品名；中文「股票看板」只用于窗口标题 / Release 描述等展示文案，勿把 productName 设为中文
 - `pnpm tauri build` 打 WiX/NSIS 工具链需下载，国内网络先设 `HTTPS_PROXY`
 
+### 分支与合并约束
+
+- `main` 为保护分支：**禁止直接 push 功能提交**，必须经 merge 进入
+  （本地 pre-push 钩子 `.githooks/pre-push` 拦截 + 服务端 `guard-main.yml` 检查失败警示）
+- 日常流程：`git switch -c feat/xxx` → 提交 → push 分支 → GitHub 发起 PR 合并；
+  或本地 `git merge --no-ff` 产生 merge commit 后推送
+- 免费私有仓库无官方分支保护（需 GitHub Pro）；`git push --no-verify` 可紧急绕过本地钩子
+
 ## 其他
 
 - 提交作者统一 `ZCode <zcode@users.noreply.github.com>`（`-c user.name="ZCode" -c user.email=...`）
