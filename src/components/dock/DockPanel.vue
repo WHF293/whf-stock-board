@@ -3,17 +3,17 @@ import { computed, onBeforeUnmount, onMounted } from 'vue';
 import MenuIcon from '../ui/MenuIcon.vue';
 import StockDetailPanel from './StockDetailPanel.vue';
 import {
-  DOCK_PANEL_WIDTH_MIN,
   DOCK_PANEL_WIDTH_MAX_RATIO,
   DOCK_PANEL_CONTENT,
 } from '../../constants/dock-panel.constants';
 import { useDockPanelStore } from '../../stores/dock-panel';
 
 /**
- * 右侧停靠面板容器：头部（标题 + 关闭）+ 左缘拖拽条（400px ~ 60% 视口）+ 内容分发
+ * 右侧停靠面板容器：头部（标题 + 关闭）+ 内容分发
  *
- * 内容类型经 DOCK_PANEL_CONTENT 注册，扩展新内容时在 CONTENT_COMPONENTS 补映射即可；
- * 窄屏（< lg）退化为全屏覆盖；Esc 快捷关闭
+ * 面板宽度 375px ~ 60vw（store 内 clamp），宽度经 pinia persist 持久化；
+ * 拖拽手柄与贯穿竖线由 StockDetailPanel 在主区左缘渲染（更贴近主区、避免遮挡内容）
+ * 窄屏（< lg）退化为全屏覆盖
  */
 const dockPanel = useDockPanelStore();
 
@@ -42,40 +42,6 @@ const contentSymbol = computed(() =>
   dockPanel.content === DOCK_PANEL_CONTENT.STOCK ? dockPanel.symbol : '',
 );
 
-/** 拖拽条拖动中标记（拖拽期间禁用文本选择） */
-let dragging = false;
-
-/**
- * 拖拽条按下：开始调整宽度（监听挂在 document 上以支持拖出条范围）
- * @param event 鼠标按下事件
- */
-const onResizeStart = (event: MouseEvent): void => {
-  event.preventDefault();
-  dragging = true;
-  document.body.style.userSelect = 'none';
-  document.addEventListener('mousemove', onResizeMove);
-  document.addEventListener('mouseup', onResizeEnd);
-};
-
-/**
- * 拖拽中：按鼠标位置换算面板宽度（左主区被挤压，面板宽 = 视口右缘 - 鼠标 X）
- * @param event 鼠标移动事件
- */
-const onResizeMove = (event: MouseEvent): void => {
-  if (!dragging) {
-    return;
-  }
-  dockPanel.setWidth(window.innerWidth - event.clientX);
-};
-
-/** 拖拽结束：移除 document 监听 */
-const onResizeEnd = (): void => {
-  dragging = false;
-  document.body.style.userSelect = '';
-  document.removeEventListener('mousemove', onResizeMove);
-  document.removeEventListener('mouseup', onResizeEnd);
-};
-
 /**
  * Esc 关闭面板
  * @param event 键盘事件
@@ -92,9 +58,6 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', onKeydown);
-  if (dragging) {
-    onResizeEnd();
-  }
 });
 </script>
 
@@ -102,7 +65,7 @@ onBeforeUnmount(() => {
   <!-- 窄屏全屏遮罩（与面板二选一渲染，此处仅窄屏） -->
   <aside
     v-if="dockPanel.open"
-    class="dock-panel fixed inset-0 z-50 flex flex-col border-l border-flat-weak bg-surface lg:static lg:z-auto"
+    class="dock-panel relative fixed inset-0 z-50 flex flex-col border-l border-flat-weak bg-surface lg:static lg:z-auto"
     :style="{ width: `min(${dockPanel.width}px, ${Math.round(DOCK_PANEL_WIDTH_MAX_RATIO * 100)}vw)` }"
   >
     <!-- 头部：标题 + 关闭 -->
@@ -122,12 +85,6 @@ onBeforeUnmount(() => {
     <div class="min-h-0 flex-1 overflow-y-auto p-3">
       <component :is="contentComponent" v-if="contentComponent" :symbol="contentSymbol" />
     </div>
-
-    <!-- 左缘拖拽条（窄屏全屏态无拖拽） -->
-    <div
-      class="absolute inset-y-0 left-0 hidden w-1 cursor-col-resize transition-colors hover:bg-primary/40 lg:block"
-      :aria-label="`拖拽调整面板宽度，最小 ${DOCK_PANEL_WIDTH_MIN} 像素`"
-      @mousedown="onResizeStart"
-    />
   </aside>
 </template>
+

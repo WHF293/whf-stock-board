@@ -1,17 +1,26 @@
 <script setup lang="ts">
-import BaseSkeleton from '../ui/BaseSkeleton.vue';
-import BaseTable from '../ui/BaseTable.vue';
-import MenuIcon from '../ui/MenuIcon.vue';
-import { getTrendByChangePercent } from '../../constants/trend.constants';
-import { TREND_TEXT_CLASS } from '../../constants/stock-colors.constants';
-import { HEATMAP_VIEW_HEIGHT_PX } from '../../constants/heatmap.constants';
-import { NUMBER_PLACEHOLDER, YUAN_PER_WAN } from '../../constants/format.constants';
-import { formatAmount } from '../../utils/format-amount';
-import { formatPercent, formatPercentUnsigned } from '../../utils/format-percent';
-import { formatPrice } from '../../utils/format-price';
-import type { IndustryBoard, IndustryBoardConstituent } from '../../types/board.types';
-import type { HeatmapDrillView } from '../../types/heatmap.types';
-import type { TableColumn } from '../../types/table.types';
+import BaseSkeleton from "../ui/BaseSkeleton.vue";
+import BaseTable from "../ui/BaseTable.vue";
+import MenuIcon from "../ui/MenuIcon.vue";
+import { getTrendByChangePercent } from "../../constants/trend.constants";
+import { TREND_TEXT_CLASS } from "../../constants/stock-colors.constants";
+import { HEATMAP_VIEW_HEIGHT_PX } from "../../constants/heatmap.constants";
+import {
+  NUMBER_PLACEHOLDER,
+  YUAN_PER_WAN,
+} from "../../constants/format.constants";
+import { formatAmount } from "../../utils/format-amount";
+import {
+  formatPercent,
+  formatPercentUnsigned,
+} from "../../utils/format-percent";
+import { formatPrice } from "../../utils/format-price";
+import type {
+  IndustryBoard,
+  IndustryBoardConstituent,
+} from "../../types/board.types";
+import type { HeatmapDrillView } from "../../types/heatmap.types";
+import type { TableColumn } from "../../types/table.types";
 
 /**
  * 板块热力列表视图：与 HeatmapChart 交互对称的表格形态
@@ -42,46 +51,46 @@ const emit = defineEmits<{
 
 /** 板块层列配置（涨跌幅 / 总市值默认可排序） */
 const boardColumns: TableColumn<IndustryBoard>[] = [
-  { key: 'name', label: '板块' },
-  { key: 'price', label: '最新价', align: 'right' },
+  { key: "name", label: "板块" },
+  { key: "price", label: "最新价", align: "right" },
   {
-    key: 'changePercent',
-    label: '涨跌幅',
-    align: 'right',
+    key: "changePercent",
+    label: "涨跌幅",
+    align: "right",
     sortable: true,
     sortValue: (board) => board.changePercent,
   },
   {
-    key: 'totalMarketCap',
-    label: '总市值',
-    align: 'right',
+    key: "totalMarketCap",
+    label: "总市值",
+    align: "right",
     sortable: true,
     sortValue: (board) => board.totalMarketCap,
   },
-  { key: 'turnoverRate', label: '换手率', align: 'right' },
-  { key: 'riseFall', label: '涨/跌家数', align: 'right' },
-  { key: 'leadingStock', label: '领涨股' },
+  { key: "turnoverRate", label: "换手率", align: "right" },
+  { key: "riseFall", label: "涨/跌家数", align: "right" },
+  { key: "leadingStock", label: "领涨股" },
 ];
 
 /** 成分股层列配置（涨跌幅 / 成交额默认可排序） */
 const stockColumns: TableColumn<IndustryBoardConstituent>[] = [
-  { key: 'name', label: '名称' },
-  { key: 'price', label: '最新价', align: 'right' },
+  { key: "name", label: "名称" },
+  { key: "price", label: "最新价", align: "right" },
   {
-    key: 'changePercent',
-    label: '涨跌幅',
-    align: 'right',
+    key: "changePercent",
+    label: "涨跌幅",
+    align: "right",
     sortable: true,
     sortValue: (stock) => stock.changePercent,
   },
   {
-    key: 'amount',
-    label: '成交额',
-    align: 'right',
+    key: "amount",
+    label: "成交额",
+    align: "right",
     sortable: true,
     sortValue: (stock) => stock.amount,
   },
-  { key: 'turnoverRate', label: '换手率', align: 'right' },
+  { key: "turnoverRate", label: "换手率", align: "right" },
 ];
 
 /**
@@ -97,7 +106,7 @@ const trendTextClass = (changePercent: number | null): string =>
  * @param board 板块行数据
  */
 const onBoardRowClick = (board: IndustryBoard): void => {
-  emit('boardClick', board);
+  emit("boardClick", board);
 };
 
 /**
@@ -105,17 +114,14 @@ const onBoardRowClick = (board: IndustryBoard): void => {
  * @param stock 成分股行数据
  */
 const onStockRowClick = (stock: IndustryBoardConstituent): void => {
-  emit('stockClick', stock.code);
+  emit("stockClick", stock.code);
 };
 </script>
 
 <template>
   <div>
     <!-- 下钻状态条：返回 + 当前板块名 -->
-    <div
-      v-if="drillView"
-      class="mb-2 flex items-center gap-2 text-sm"
-    >
+    <div v-if="drillView" class="mb-2 flex items-center gap-2 text-sm">
       <button
         type="button"
         class="pressable flex items-center gap-1 rounded-lg px-2 py-1 text-text-secondary hover:bg-flat-weak hover:text-text active:scale-90"
@@ -136,7 +142,7 @@ const onStockRowClick = (stock: IndustryBoardConstituent): void => {
     <div
       v-else-if="drillView"
       class="overflow-y-auto"
-      :style="{ maxHeight: `${HEATMAP_VIEW_HEIGHT_PX}px` }"
+      :style="{ maxHeight: `${HEATMAP_VIEW_HEIGHT_PX + 10}px` }"
     >
       <BaseTable
         :columns="stockColumns"
@@ -189,12 +195,16 @@ const onStockRowClick = (stock: IndustryBoardConstituent): void => {
           {{ formatPercentUnsigned(row.turnoverRate) }}
         </template>
         <template #riseFall="{ row }">
-          {{ row.riseCount ?? NUMBER_PLACEHOLDER }} / {{ row.fallCount ?? NUMBER_PLACEHOLDER }}
+          {{ row.riseCount ?? NUMBER_PLACEHOLDER }} /
+          {{ row.fallCount ?? NUMBER_PLACEHOLDER }}
         </template>
         <template #leadingStock="{ row }">
           <template v-if="row.leadingStock">
             {{ row.leadingStock }}
-            <span class="ml-1 text-xs" :class="trendTextClass(row.leadingStockChangePercent)">
+            <span
+              class="ml-1 text-xs"
+              :class="trendTextClass(row.leadingStockChangePercent)"
+            >
               {{ formatPercent(row.leadingStockChangePercent) }}
             </span>
           </template>

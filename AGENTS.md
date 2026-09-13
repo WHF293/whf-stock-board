@@ -106,3 +106,9 @@ server/           # vite 中间件：/stock-proxy（仅浏览器 dev 使用）
 - 提交作者统一 `ZCode <zcode@users.noreply.github.com>`（`-c user.name="ZCode" -c user.email=...`）
 - `.ai/` 目录为本地开发沉淀，不入库
 - `pnpm tauri build` 打 WiX/NSIS 工具链需下载，国内网络先设 `HTTPS_PROXY`
+
+## UI 风格规范
+
+本项目 UI 严格遵循根目录 `DESIGN.md`（基于项目现有 theme.css 提炼的自定义风格）。
+所有界面代码必须使用其中的 token（颜色、字体、圆角、间距），禁止引入规范之外的颜色、字号、圆角值。
+新增组件样式前先查阅 DESIGN.md 的 components 一节；token 单源为 `src/assets/styles/theme.css`（Tailwind 4 @theme），改色值需与 `src/constants/stock-colors.constants.ts` 同步。

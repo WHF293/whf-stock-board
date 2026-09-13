@@ -1,7 +1,7 @@
 {
   "name": "whf-stock-board",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.5",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -16,6 +16,7 @@
     "@vueuse/core": "^14.4.0",
     "dayjs": "^1.11.23",
     "echarts": "^6.1.0",
+    "klinecharts": "^10.0.3",
     "nprogress": "^0.2.0",
     "pinia": "^4.0.3",
     "pinia-plugin-persistedstate": "^4.7.1",

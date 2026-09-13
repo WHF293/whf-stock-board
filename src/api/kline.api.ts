@@ -1,4 +1,5 @@
 import dayjs from 'dayjs';
+import { calcChipDistribution, normalizeSymbol } from 'stock-sdk';
 import {
   KLINE_RANGE_DAYS,
   MA_FAST_PERIOD,
@@ -13,6 +14,7 @@ import type {
   KlineAdjust,
   TodayTimelineResponse,
 } from '../types/kline.types';
+import { fetchSinaKline } from './sina-kline.api';
 import { sdk } from './sdk';
 
 /**
@@ -72,13 +74,30 @@ export const fetchKlineSignals = async (
   });
 
 /**
- * 拉取筹码分布（东财口径，range 120 日，本地按换手率推演）
- * @param symbol 完整符号
- * @param adjust 复权方式（分布数值随复权口径变化，需与 K 线一致）
- * @returns 逐日筹码统计序列；最后一行附带当前筹码峰直方图
+ * 计算筹码分布（本地推演）：
+ * - 数据源：新浪日 K（与主图口径一致，不复权）
+ * - 计算：stock-sdk `calcChipDistribution`，以近 120 日窗口、东财默认 6 位小数舍入；
+ *   换手率（turnoverRate）上游未提供，暂以 0 传入（沿用东财 `hsl/100 || 0` 语义），
+ *   即按等权推演各日成本，最终分布仅用于形态展示，与真实换手率加权存在偏差
+ * @param symbol 完整符号（sh600519 形态）
+ * @returns 逐日筹码统计序列；仅最后一行附带当前筹码峰直方图
  */
 export const fetchChipDistribution = async (
   symbol: string,
-  adjust: KlineAdjust,
-): Promise<ChipDistributionItem[]> =>
-  sdk.chips.cn(symbol, { adjust, includeHistogram: 'last' });
+): Promise<ChipDistributionItem[]> => {
+  const bars = await fetchSinaKline(String(normalizeSymbol(symbol)), 'daily');
+  const klines = bars.map((bar) => ({
+    date: dayjs(bar.timestamp).format('YYYY-MM-DD'),
+    open: bar.open,
+    high: bar.high,
+    low: bar.low,
+    close: bar.close,
+    turnoverRate: 0,
+  }));
+  // 倒序输入可让最近日的累积窗口先满；函数本身对顺序无要求
+  return calcChipDistribution(klines, {
+    range: 120,
+    includeHistogram: 'last',
+    tail: 1,
+  });
+};

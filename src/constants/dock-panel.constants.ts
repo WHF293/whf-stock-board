@@ -16,8 +16,8 @@ export const DOCK_PANEL_CONTENT = {
 export type DockPanelContentType =
   (typeof DOCK_PANEL_CONTENT)[keyof typeof DOCK_PANEL_CONTENT];
 
-/** 面板宽度下限（像素，同花顺投资账本口径） */
-export const DOCK_PANEL_WIDTH_MIN = 400;
+/** 面板宽度下限（像素，最小可接受宽度 375） */
+export const DOCK_PANEL_WIDTH_MIN = 375;
 
 /** 面板宽度上限（占视口宽度比例上限） */
 export const DOCK_PANEL_WIDTH_MAX_RATIO = 0.6;

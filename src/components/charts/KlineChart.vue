@@ -1,39 +1,64 @@
 <script setup lang="ts">
-import { computed } from 'vue';import type { EChartsCoreOption } from 'echarts/core';
+import { useResizeObserver } from '@vueuse/core';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import {
+  dispose,
+  init,
+  registerYAxis,
+  type AxisCreateTicksParams,
+  type Chart,
+  type DeepPartial,
+  type KLineData,
+  type Styles,
+  type YAxisTemplate,
+} from 'klinecharts';
 import {
   CHART_AXIS_LINE_COLOR,
   CHART_SPLIT_LINE_COLOR,
   CHART_TEXT_COLOR,
-  PRICE_AXIS_PAD_RATIO,
-  PRICE_AXIS_SPLIT,
 } from '../../constants/chart.constants';
 import { readTrendColors } from '../../utils/trend-colors';
 import { useSettingsStore } from '../../stores/settings';
-import {
-  KLINE_VISIBLE_BARS,
-  MA_FAST_PERIOD,
-  MA_SLOW_PERIOD,
-} from '../../constants/kline.constants';
-import { SIGNAL_META } from '../../constants/signal.constants';
-import type { HistoryKline, KlineSignal, KlineWithIndicators } from '../../types/kline.types';
-import BaseChart from './BaseChart.vue';
+import '../charts/indicators/custom-indicators';
 
 /**
- * K 线图：蜡烛 + MA[5,20] + 成交量 + MACD 三区联动，金叉/死叉信号以三角标记叠加，
- * dataZoom 支持缩放平移（默认展示最近 KLINE_VISIBLE_BARS 根）；
- * 涨跌色读 CSS 变量，随涨跌配色主题即时跟随
+ * K 线图（klinecharts 实现）：
+ *
+ * - timeline 模式（分时 / 五日）：主图分时面积线（淡雅蓝，固定色）+ 均价线；副图成交量 + MACD
+ * - candle 模式（5分 / 日K / 周K / 月K）：主图蜡烛 + MA[5,10,30]，副图成交量 + MACD&KDJ（含买/卖标注）
+ *
+ * 轴规格：Y 轴显示在左侧（3 等分刻度），X 轴 5 等分；副图不显示 Y 轴刻度线；
+ * 十字光标 / X 轴日期：分时/五日为 MM/DD HH:mm，其余为 YYYY/MM/DD
  */
 const props = defineProps<{
-  /** 附加 MA / MACD 指标的 K 线序列（时间升序） */
-  klines: KlineWithIndicators<HistoryKline>[];
-  /** 技术信号列表（与 K 线同周期 / 复权口径） */
-  signals: KlineSignal[];
+  /** klinecharts K 线序列（时间升序；分钟级附 avgPrice 字段） */
+  bars: KLineData[];
+  /** 图表模式 */
+  mode: 'timeline' | 'candle';
 }>();
 
 const settingsStore = useSettingsStore();
 
-/** 图表容器高度（像素） */
-const CHART_HEIGHT_PX = 480;
+/** 图表容器 */
+const containerRef = ref<HTMLDivElement>();
+/** klinecharts 实例 */
+const chartRef = ref<Chart | null>(null);
+/** 触发 loader 重新加载的自增序号（setSymbol 仅在变化时触发 init 加载） */
+let loadSeq = 0;
+
+/** 主图蜡烛面板 id（klinecharts 内置约定） */
+const CANDLE_PANE_ID = 'candle_pane';
+
+/** 主图 MA 周期（蜡烛模式） */
+const MA_PERIODS = [5, 10, 30];
+
+/** 涨跌幅百分比 y 轴模板（仅 timeline 模式挂载）：y 值 = 百分比，刻度自动按 3 等分 */
+const PERCENTAGE_YAXIS: YAxisTemplate = {
+  name: 'percentage',
+  displayValueToText: (value) => `${value.toFixed(2)}%`,
+};
+
+registerYAxis(PERCENTAGE_YAXIS);
 
 /** 当前涨跌色阶（依赖 trendTheme，切换时本 computed 消费方自动重算） */
 const trendSet = computed(() => {
@@ -41,220 +66,239 @@ const trendSet = computed(() => {
   return readTrendColors();
 });
 
-/** 信号日期 -> K 线下标映射 */
-const signalIndexByDate = computed(() => {
-  const map = new Map(props.klines.map((bar, index) => [bar.date, index]));
-  return (date: string): number | null => map.get(date) ?? null;
+/**
+ * 构建图表样式（蜡烛涨跌色 / 轴线 / 网格线均取当前主题色）
+ * @returns klinecharts 样式覆盖对象
+ */
+const buildStyles = (): DeepPartial<Styles> => {
+  const trend = trendSet.value;
+  const isTimeline = props.mode === 'timeline';
+  return {
+    grid: { horizontal: { color: CHART_SPLIT_LINE_COLOR }, vertical: { show: false } },
+    candle: {
+      type: isTimeline ? 'area' : 'candle_solid',
+      bar: {
+        upColor: trend.up,
+        downColor: trend.down,
+        noChangeColor: trend.flat,
+        upBorderColor: trend.up,
+        downBorderColor: trend.down,
+        noChangeBorderColor: trend.flat,
+        upWickColor: trend.up,
+        downWickColor: trend.down,
+        noChangeWickColor: trend.flat,
+      },
+      area: {
+        // 分时 / 五日固定淡雅蓝，不随涨跌配色主题变化
+        lineSize: 1,
+        lineColor: '#4f83cc',
+        value: 'close',
+        backgroundColor: [
+          { offset: 0, color: 'rgba(79, 131, 204, 0.22)' },
+          { offset: 1, color: 'rgba(79, 131, 204, 0.02)' },
+        ],
+      },
+    },
+    xAxis: {
+      axisLine: { color: CHART_AXIS_LINE_COLOR },
+      tickText: { color: CHART_TEXT_COLOR },
+      tickLine: { color: CHART_AXIS_LINE_COLOR },
+    },
+    yAxis: {
+      axisLine: { color: CHART_AXIS_LINE_COLOR },
+      tickText: { color: CHART_TEXT_COLOR },
+      tickLine: { color: CHART_AXIS_LINE_COLOR },
+    },
+    separator: { color: CHART_SPLIT_LINE_COLOR },
+  };
+};
+
+/**
+ * 3 等分 Y 轴：根据可见范围线性插值出 3 个等距刻度。
+ * 库内 defaultTicks 已按正常 niceInterval 算好 text，本回调保留其渲染行为，
+ * 仅覆盖 value 字段（决定屏幕坐标的源数据点）
+ * @param params 轴创建参数
+ * @returns 等距刻度序列
+ */
+const buildYAxisTicks = (params: AxisCreateTicksParams) => {
+  const from = params.range.displayFrom;
+  const to = params.range.displayTo;
+  if (Number.isNaN(from) || Number.isNaN(to) || to === from) return params.defaultTicks;
+  return [from, (from + to) / 2, to].map((value, index) => ({
+    ...params.defaultTicks[index],
+    value,
+  }));
+};
+
+/**
+ * 5 等分 X 轴：依据可见数据下标均匀分布 5 个刻度
+ * @param params 轴创建参数
+ * @returns 等距刻度序列
+ */
+const buildXAxisTicks = (params: AxisCreateTicksParams) => {
+  const from = Math.floor(params.range.realFrom);
+  const to = Math.ceil(params.range.realTo);
+  if (Number.isNaN(from) || Number.isNaN(to) || to <= from) return params.defaultTicks;
+  const step = (to - from) / 4;
+  const out = [];
+  for (let i = 0; i < 5; i += 1) {
+    const index = Math.round(from + step * i);
+    out.push({ ...params.defaultTicks[i], value: index });
+  }
+  return out;
+};
+
+/**
+ * 按 mode 挂载主图 / 副图指标
+ * @param chart 图表实例
+ */
+const setupIndicators = (chart: Chart): void => {
+  if (props.mode === 'timeline') {
+    // 分时均价线叠加主图；副图成交量 + MACD
+    chart.createIndicator({ name: 'AVG_PRICE', paneId: CANDLE_PANE_ID }, true);
+    chart.createIndicator('VOL');
+    chart.createIndicator('MACD');
+    return;
+  }
+  // 蜡烛模式：主图 MA[5,10,30]；副图成交量 + MACD&KDJ 复合指标
+  chart.createIndicator({
+    name: 'MA',
+    paneId: CANDLE_PANE_ID,
+    calcParams: MA_PERIODS,
+  });
+  chart.createIndicator('VOL');
+  chart.createIndicator('MACD_KDJ');
+};
+
+/**
+ * 应用轴规格：主图 Y 轴左 + 3 等分；副图隐藏 Y 轴刻度线；
+ * X 轴 5 等分；分时/五日主图使用 percentage 涨跌幅轴；分时/五日锁定缩放
+ */
+const applyAxisOptions = (chart: Chart): void => {
+  const isTimeline = props.mode === 'timeline';
+  // 主图 Y 轴：左 + 3 等分；分时/五日切换到 percentage 涨跌幅轴
+  chart.overrideYAxis({
+    paneId: CANDLE_PANE_ID,
+    position: 'left',
+    name: isTimeline ? 'percentage' : 'normal',
+    createTicks: buildYAxisTicks,
+  });
+  // 副图（成交量 / MACD / MACD&KDJ）：保留轴标但隐藏刻度线
+  chart.getIndicators().forEach((indicator) => {
+    if (indicator.paneId === CANDLE_PANE_ID) return;
+    chart.overrideYAxis({
+      paneId: indicator.paneId,
+      position: 'left',
+      needWidget: true,
+      createTicks: buildYAxisTicks,
+    });
+  });
+  // X 轴 5 等分
+  chart.overrideXAxis({ createTicks: buildXAxisTicks });
+  // 分时 / 五日：禁用 X 轴缩放（klinecharts v10 主图默认 isStack=true 会整图缩放，副图通过 scrollZoomEnabled 关闭）
+  chart.setZoomEnabled(!isTimeline);
+  chart.overrideXAxis({ scrollZoomEnabled: !isTimeline });
+};
+
+/**
+ * 注入数据：重设 loader 并以新 ticker 触发 init 加载（v10 数据只能经 loader 通道进入）
+ */
+const applyData = (): void => {
+  const chart = chartRef.value;
+  if (!chart) return;
+  chart.setDataLoader({
+    getBars: ({ callback }) => {
+      callback(props.bars, { forward: false, backward: false });
+    },
+  });
+  chart.setSymbol({
+    ticker: `${props.mode}-${loadSeq++}`,
+    pricePrecision: 2,
+    volumePrecision: 0,
+  });
+  chart.setPeriod({ type: 'day', span: 1 });
+};
+
+/** 两位补零 */
+const pad2 = (n: number): string => n.toString().padStart(2, '0');
+
+/** 跨模式通用十字光标 / X 轴日期格式化 */
+const formatCrosshairDate = (
+  timestamp: number,
+  mode: 'timeline' | 'candle',
+): string => {
+  const d = new Date(timestamp);
+  if (mode === 'timeline') {
+    return `${pad2(d.getMonth() + 1)}/${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  }
+  return `${d.getFullYear()}/${pad2(d.getMonth() + 1)}/${pad2(d.getDate())}`;
+};
+
+/** 当前模式的日期格式化器（由 setupChart 注入 chart.setFormatter） */
+const formatDateByMode = (params: { timestamp: number }): string =>
+  formatCrosshairDate(params.timestamp, props.mode);
+
+onMounted(() => {
+  if (!containerRef.value) return;
+  const chart = init(containerRef.value, { locale: 'zh-CN' });
+  if (!chart) return;
+  chartRef.value = chart;
+
+  chart.setStyles(buildStyles());
+  setupIndicators(chart);
+  applyAxisOptions(chart);
+  chart.setFormatter({ formatDate: (timestamp) => formatDateByMode(timestamp) });
+  applyData();
 });
 
-/** 金叉类信号散点（主图低价位下方，向上三角） */
-const goldenPoints = computed(() =>
-  props.signals
-    .map((signal) => {
-      const index = signalIndexByDate.value(signal.date);
-      if (index === null || SIGNAL_META[signal.type].direction !== 'up') return null;
-      const bar = props.klines[index];
-      return [index, (bar.low ?? bar.close ?? 0) * 0.995] as [number, number];
-    })
-    .filter((point): point is [number, number] => point !== null),
+onBeforeUnmount(() => {
+  if (chartRef.value) {
+    dispose(chartRef.value);
+    chartRef.value = null;
+  }
+});
+
+/**
+ * 监听容器尺寸变化 → 调 chart.resize() 同步画布。
+ * 拖动右侧 dock-panel 调整宽度 / 窗口缩放 / 父级布局变化都会触发。
+ * 用 nextTick 避开父级布局尚未稳定时 calcBounding 拿到的中间值
+ */
+useResizeObserver(containerRef, () => {
+  const chart = chartRef.value;
+  if (!chart) return;
+  nextTick(() => chart.resize());
+});
+
+// 数据或模式变化时整体重新加载（周期 / 标的切换由父组件重新拉取）；
+// 模式变化时指标集不同，先清空重建
+let prevMode = props.mode;
+watch(
+  () => [props.bars, props.mode] as const,
+  ([, mode]) => {
+    const chart = chartRef.value;
+    if (!chart) return;
+    if (mode !== prevMode) {
+      prevMode = mode;
+      chart.removeIndicator({});
+      setupIndicators(chart);
+      applyAxisOptions(chart);
+      chart.setStyles(buildStyles());
+      chart.setFormatter({ formatDate: (timestamp) => formatDateByMode(timestamp) });
+    }
+    applyData();
+  },
 );
 
-/** 死叉类信号散点（主图高价位上方，向下三角） */
-const deathPoints = computed(() =>
-  props.signals
-    .map((signal) => {
-      const index = signalIndexByDate.value(signal.date);
-      if (index === null || SIGNAL_META[signal.type].direction !== 'down') return null;
-      const bar = props.klines[index];
-      return [index, (bar.high ?? bar.close ?? 0) * 1.005] as [number, number];
-    })
-    .filter((point): point is [number, number] => point !== null),
-);
-
-/** 成交量柱颜色与 K 线阴阳一致（收 >= 开 红涨色，否则绿跌色） */
-const volumeData = computed(() =>
-  props.klines.map((bar) => ({
-    value: bar.volume ?? 0,
-    itemStyle: {
-      color: (bar.close ?? 0) >= (bar.open ?? 0) ? trendSet.value.upPale : trendSet.value.downPale,
-    },
-  })),
-);
-
-/** MACD 柱（DIF-DEA，正涨色负跌色） */
-const macdBarData = computed(() =>
-  props.klines.map((bar) => ({
-    value: bar.macd?.macd ?? null,
-    itemStyle: { color: (bar.macd?.macd ?? 0) >= 0 ? trendSet.value.up : trendSet.value.down },
-  })),
-);
-
-/** 初始缩放窗口起点（百分比），保证默认展示最近 KLINE_VISIBLE_BARS 根 */
-const zoomStart = computed(() =>
-  props.klines.length > KLINE_VISIBLE_BARS
-    ? Math.round(((props.klines.length - KLINE_VISIBLE_BARS) / props.klines.length) * 100)
-    : 0,
-);
-
-const option = computed<EChartsCoreOption>(() => {
-  const categories = props.klines.map((bar) => bar.date);
-  const maFastKey = `ma${MA_FAST_PERIOD}` as const;
-  const maSlowKey = `ma${MA_SLOW_PERIOD}` as const;
-
-  // 主图价格轴精确三等分：以 K 线高低 + MA 取值范围向外扩 5% 后均分三段
-  const priceValues = props.klines.flatMap((bar) =>
-    [bar.low, bar.high, bar.ma?.[maFastKey], bar.ma?.[maSlowKey]].filter(
-      (value): value is number => value !== null && value !== undefined,
-    ),
-  );
-  const priceMin = priceValues.length > 0 ? Math.min(...priceValues) : 0;
-  const priceMax = priceValues.length > 0 ? Math.max(...priceValues) : 1;
-  const pricePad = (priceMax - priceMin) * PRICE_AXIS_PAD_RATIO;
-  const priceAxisMin = priceMin - pricePad;
-  const priceAxisMax = priceMax + pricePad;
-  const priceAxisInterval = (priceAxisMax - priceAxisMin) / PRICE_AXIS_SPLIT;
-  return {
-    animation: false,
-    tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
-    axisPointer: { link: [{ xAxisIndex: 'all' }] },
-    grid: [
-      { left: 8, right: 56, top: 12, height: '48%', containLabel: true },
-      { left: 8, right: 56, top: '64%', height: '12%', containLabel: true },
-      { left: 8, right: 56, top: '80%', height: '12%', containLabel: true },
-    ],
-    xAxis: [0, 1, 2].map((i) => ({
-      type: 'category',
-      gridIndex: i,
-      data: categories,
-      axisLabel: { color: CHART_TEXT_COLOR, show: i === 2 },
-      axisLine: { lineStyle: { color: CHART_AXIS_LINE_COLOR } },
-      axisTick: { show: false },
-    })),
-    yAxis: [0, 1, 2].map((i) => ({
-      type: 'value',
-      gridIndex: i,
-      scale: true,
-      // 主图价格轴精确三等分；成交 / MACD 区不显示刻度与横线
-      ...(i === 0
-        ? { min: priceAxisMin, max: priceAxisMax, interval: priceAxisInterval }
-        : { axisLabel: { show: false }, splitLine: { show: false } }),
-      ...(i === 0
-        ? {
-            axisLabel: {
-              color: CHART_TEXT_COLOR,
-              // 三等分区间除法可能产生小数尾巴，统一两位小数
-              formatter: (value: number) => value.toFixed(2),
-            },
-            splitLine: { lineStyle: { color: CHART_SPLIT_LINE_COLOR } },
-          }
-        : {}),
-    })),
-    dataZoom: [
-      { type: 'inside', xAxisIndex: [0, 1, 2], start: zoomStart.value, end: 100 },
-      { type: 'slider', xAxisIndex: [0, 1, 2], start: zoomStart.value, end: 100, bottom: 0 },
-    ],
-    series: [
-      {
-        name: 'K线',
-        type: 'candlestick',
-        xAxisIndex: 0,
-        yAxisIndex: 0,
-        data: props.klines.map((bar) => [bar.open, bar.close, bar.low, bar.high]),
-        itemStyle: {
-          color: trendSet.value.up,
-          color0: trendSet.value.down,
-          borderColor: trendSet.value.up,
-          borderColor0: trendSet.value.down,
-        },
-      },
-      {
-        name: `MA${MA_FAST_PERIOD}`,
-        type: 'line',
-        xAxisIndex: 0,
-        yAxisIndex: 0,
-        data: props.klines.map((bar) => bar.ma?.[maFastKey] ?? null),
-        showSymbol: false,
-        connectNulls: true,
-        lineStyle: { width: 1 },
-        itemStyle: { color: '#f59e0b' },
-      },
-      {
-        name: `MA${MA_SLOW_PERIOD}`,
-        type: 'line',
-        xAxisIndex: 0,
-        yAxisIndex: 0,
-        data: props.klines.map((bar) => bar.ma?.[maSlowKey] ?? null),
-        showSymbol: false,
-        connectNulls: true,
-        lineStyle: { width: 1 },
-        itemStyle: { color: '#6366f1' },
-      },
-      {
-        name: '金叉',
-        type: 'scatter',
-        xAxisIndex: 0,
-        yAxisIndex: 0,
-        data: goldenPoints.value,
-        symbol: 'triangle',
-        symbolSize: 10,
-        symbolOffset: [0, '60%'],
-        itemStyle: { color: trendSet.value.up },
-        z: 10,
-      },
-      {
-        name: '死叉',
-        type: 'scatter',
-        xAxisIndex: 0,
-        yAxisIndex: 0,
-        data: deathPoints.value,
-        symbol: 'triangle',
-        symbolSize: 10,
-        symbolRotate: 180,
-        symbolOffset: [0, '-60%'],
-        itemStyle: { color: trendSet.value.down },
-        z: 10,
-      },
-      {
-        name: '成交量',
-        type: 'bar',
-        xAxisIndex: 1,
-        yAxisIndex: 1,
-        data: volumeData.value,
-      },
-      {
-        name: 'MACD',
-        type: 'bar',
-        xAxisIndex: 2,
-        yAxisIndex: 2,
-        data: macdBarData.value,
-      },
-      {
-        name: 'DIF',
-        type: 'line',
-        xAxisIndex: 2,
-        yAxisIndex: 2,
-        data: props.klines.map((bar) => bar.macd?.dif ?? null),
-        showSymbol: false,
-        connectNulls: true,
-        lineStyle: { width: 1 },
-        itemStyle: { color: '#f59e0b' },
-      },
-      {
-        name: 'DEA',
-        type: 'line',
-        xAxisIndex: 2,
-        yAxisIndex: 2,
-        data: props.klines.map((bar) => bar.macd?.dea ?? null),
-        showSymbol: false,
-        connectNulls: true,
-        lineStyle: { width: 1 },
-        itemStyle: { color: '#6366f1' },
-      },
-    ],
-  };
+// 涨跌配色主题切换时重建样式（蜡烛模式跟随，分时/五日面积线固定色不受影响）
+watch(trendSet, () => {
+  chartRef.value?.setStyles(buildStyles());
 });
 </script>
 
 <template>
-  <BaseChart :options="option" :style="{ height: `${CHART_HEIGHT_PX}px` }" />
+  <!-- 容器始终保留 ≥ 480px 高度；KLineChart canvas 内部会铺满父级可见区域 -->
+  <div
+    ref="containerRef"
+    class="h-[480px] min-h-[480px] w-full"
+  />
 </template>
