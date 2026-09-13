@@ -124,6 +124,7 @@ server/           # vite 中间件：/stock-proxy（仅浏览器 dev 使用）
 
 - 提交作者统一 `ZCode <zcode@users.noreply.github.com>`（`-c user.name="ZCode" -c user.email=...`）
 - `.ai/` 目录为本地开发沉淀，不入库
+- 不要自动 push 到远端仓库，除非开发者主动要求
 
 ## UI 风格规范
 

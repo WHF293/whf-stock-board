@@ -35,6 +35,8 @@ const props = defineProps<{
   bars: KLineData[];
   /** 图表模式 */
   mode: 'timeline' | 'candle';
+  /** 昨收价（timeline 模式涨跌幅基准；缺失时回退可视区首根收盘） */
+  preClose?: number | null;
 }>();
 
 const settingsStore = useSettingsStore();
@@ -65,7 +67,9 @@ const TIMELINE_PCT_YAXIS: YAxisTemplate = {
   minSpan: () => 0.01,
   displayValueToText: (value) => `${value.toFixed(2)}%`,
   createRange: ({ chart, defaultRange }) => {
-    const base = chart.getDataList()[chart.getVisibleRange().from]?.close;
+    // 优先用昨收（标准分时口径，0 轴 = 昨收）；快照未就绪时回退首根收盘
+    const base =
+      props.preClose ?? chart.getDataList()[chart.getVisibleRange().from]?.close;
     if (!base) return defaultRange;
     const toPercent = (price: number): number => ((price - base) / base) * 100;
     const displayFrom = toPercent(defaultRange.from);
@@ -311,6 +315,16 @@ watch(
 );
 
 // 涨跌配色主题切换时重建样式（蜡烛模式跟随，分时/五日面积线固定色不受影响）
+// 昨收异步就绪（报价轮询返回）后重载数据，触发涨跌幅轴以昨收为基准重算
+watch(
+  () => props.preClose,
+  () => {
+    if (props.mode === 'timeline' && props.preClose) {
+      applyData();
+    }
+  },
+);
+
 watch(trendSet, () => {
   chartRef.value?.setStyles(buildStyles());
 });
