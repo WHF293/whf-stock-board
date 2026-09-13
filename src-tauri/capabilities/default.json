@@ -26,6 +26,12 @@
           "url": "https://*.sina.com.cn/*"
         },
         {
+          "url": "https://*.sina.cn/*"
+        },
+        {
+          "url": "https://*.sinajs.cn/*"
+        },
+        {
           "url": "https://*.linkdiary.cn/*"
         }
       ]
