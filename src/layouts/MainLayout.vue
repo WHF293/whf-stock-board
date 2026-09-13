@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useIntervalFn, useMediaQuery, watchImmediate } from "@vueuse/core";
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import MarketStatusBadge from "../components/business/MarketStatusBadge.vue";
 import StockSearchModal from "../components/business/StockSearchModal.vue";
@@ -79,10 +79,20 @@ const menuOrderPaths = computed<string[]>(() =>
   menuItems.value.map((item) => item.path),
 );
 
-// ---------- 页面切换过渡方向 ----------
+// ---------- 页面进入动画（纯 CSS keyframes，方向按侧栏顺序） ----------
 
-/** 过渡名：page-forward（新页从右滑入）/ page-back（新页从左滑入） */
-const pageTransition = ref("page-forward");
+/**
+ * 当前页面的进入动画类名（空串 = 本轮不播放）
+ *
+ * 为什么不用 `<Transition mode="out-in">`：out-in 必须先等旧页离场动画回调整完
+ * 才会插入新页；一旦该回调没触发（快速连点、WebView 窗口被遮挡时节流动画等），
+ * 新页就永远不会插入 —— 表现为「内容区空白，且怎么切路由都无法恢复」。
+ * keyframes 在元素插入时直接播放，没有离场/进入状态机，不存在卡死路径。
+ */
+const pageAnim = ref("");
+
+/** 页面滑入方向：前进（右侧滑入）/ 后退（左侧滑入） */
+type PageAnim = "" | "page-anim-forward" | "page-anim-back";
 
 watch(
   () => route.path,
@@ -90,10 +100,16 @@ watch(
     const order = menuOrderPaths.value;
     const toIndex = order.indexOf(to);
     const fromIndex = order.indexOf(from);
-    pageTransition.value =
+    const next: PageAnim =
       toIndex >= 0 && fromIndex >= 0 && toIndex < fromIndex
-        ? "page-back"
-        : "page-forward";
+        ? "page-anim-back"
+        : "page-anim-forward";
+    // KeepAlive 复用已缓存页面的 DOM 时，同一个元素上的 CSS 动画不会自动重播；
+    // 先清空类名、下一帧再赋回，强制动画重新触发
+    pageAnim.value = "";
+    void nextTick(() => {
+      pageAnim.value = next;
+    });
   },
 );
 
@@ -315,13 +331,15 @@ void marketStatusStore.refresh();
       </header>
       <main class="flex-1 overflow-y-auto">
         <div class="@container mx-auto w-full max-w-[1440px] p-4 lg:p-6">
-          <!-- 页面切换过渡：按菜单顺序决定滑入/滑出方向；KeepAlive 缓存页面状态 -->
+          <!-- 页面切换：KeepAlive 缓存页面状态；进入动画由 pageAnim 类名驱动（无离场状态机） -->
           <RouterView v-slot="{ Component, route: routeRecord }">
-            <Transition :name="pageTransition" mode="out-in">
-              <KeepAlive>
-                <component :is="Component" :key="routeRecord.path" />
-              </KeepAlive>
-            </Transition>
+            <KeepAlive>
+              <component
+                :is="Component"
+                :key="routeRecord.path"
+                :class="pageAnim"
+              />
+            </KeepAlive>
           </RouterView>
         </div>
       </main>

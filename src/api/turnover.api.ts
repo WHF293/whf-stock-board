@@ -1,84 +1,78 @@
-import { TURNOVER_INDEX_SECIDS } from '../constants/turnover.constants';
+import { TURNOVER_INDEX_SYMBOLS } from '../constants/turnover.constants';
 import type { TurnoverDayItem } from '../types/turnover.types';
 import { proxyFetch } from './proxy-fetch';
 
 /**
  * 沪深两市总成交额历史（成交额变化模块数据源）
  *
- * 数据源：东方财富 push2 kline（push2.eastmoney.com，经 proxyFetch 同源代理转发，
- * 与 panorama / sdk 共用同一可达域；返回真实成交金额 f57，无需 volume×收盘价近似）
- * —— 直接取上证指数(1.000001) + 深证成指(0.399001) 日 K 的成交额字段，同交易日相加。
+ * 数据源：腾讯行情 K 线 `web.ifzq.gtimg.cn/appstock/app/newfqkline/get`
+ * （域已在代理白名单 `gtimg.cn` 与 Tauri capability 内，无需额外配置）
  *
- * 为什么不走新浪：新浪指数日 K 仅返回 volume（成交量，单位手），无成交额字段；
- * 且「成交额 = 成交量 × 收盘价」对指数不成立（指数是成分股加权聚合，非单一证券，
- * 实测上证该式结果约为真实成交额的 235 倍），故不采用新浪源。
+ * 为什么是腾讯而不是东财：东财行情域（push2his / push2）在本机被 TCP 层封禁，
+ * 仅 `push2delay` 可达但该域不提供历史 K 线（返回 200 + 空 klines）。腾讯该接口
+ * 直接返回**真实成交金额**，无需用成交量近似。
+ *
+ * 字段口径（实测与腾讯实时接口交叉验证一致）：
+ * 行结构 `[日期, 开, 收, 高, 低, 成交量(手), {}, 换手率?, 成交额(万元), ...]`，
+ * 取第 9 段（下标 8）成交额 × 1e4 得「元」。
+ * 例：2026-09-11 上证该字段 95818633.70 → 958,186,336,998 元，
+ * 与腾讯实时接口 `3888.11/579123145/958186336970` 的成交额完全吻合。
  *
  * ⚠️ 重接口（K 线 × 2）：仅挂载时拉取一次，不参与轮询；
- * 数据不变性强，30 / 60 / 180 交易日窗口由调用方本地切片
+ * 30 / 60 / 180 交易日窗口由调用方本地切片
  */
 
-/** 东财 kline 公共 ut 参数（与 sdk / panorama 一致） */
-const EM_UT = '7eea3edcaed734bea9cbfc24409ed989';
+/** 腾讯日 K 接口（`param=<symbol>,day,<起>,<止>,<条数>,<复权>`） */
+const TENCENT_KLINE_URL = 'https://web.ifzq.gtimg.cn/appstock/app/newfqkline/get';
 
-/**
- * kline 候选 host：push2 为主，push2delay 为兜底
- * （两者同属 eastmoney.com，已在代理白名单内；push2 为 kline 标准实时域）
- */
-const KLINE_HOSTS = [
-  'https://push2.eastmoney.com/api/qt/stock/kline/get',
-  'https://push2delay.eastmoney.com/api/qt/stock/kline/get',
-] as const;
+/** 腾讯源需要 gu.qq.com 作为 Referer，否则可能被拒 */
+const TENCENT_REFERER = 'https://gu.qq.com/';
 
-/** 东财 kline 上游响应体（仅取成交额所需字段） */
-interface EmKlineResponse {
-  data: {
-    /** 每行为「日期,开,收,高,低,成交量,成交额,振幅,涨跌幅,涨跌额,换手率」逗号串 */
-    klines: string[];
-  } | null;
+/** 单指数拉取的最大日 K 条数（≈1.5 年交易日，覆盖 180 日窗口且留足余量） */
+const MAX_DAYS = 400;
+
+/** 腾讯 K 线响应体（只需日 K 数组） */
+interface TencentKlineResponse {
+  data?: Record<
+    string,
+    {
+      /** 前复权日 K（请求 qfq 时返回） */
+      qfqday?: string[][];
+      /** 不复权日 K（兜底） */
+      day?: string[][];
+    }
+  >;
 }
 
 /**
  * 拉取单指数逐日成交额（元），返回 日期 -> 成交额 映射
- *
- * 依次尝试 KLINE_HOSTS，任一成功即用；全部失败抛出（便于上层空态提示）
- * @param secid 东财 secid（如 1.000001）
+ * @param symbol 腾讯符号（如 sh000001 / sz399001）
  * @returns 日期 -> 成交额（元）映射
  */
-const fetchIndexAmountMap = async (secid: string): Promise<Map<string, number>> => {
-  const query = [
-    'fields1=f1,f2,f3,f4,f5,f6',
-    // f51 日期 … f57 成交额(元) … f61 换手率
-    'fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61',
-    `ut=${EM_UT}`,
-    'klt=101', // 日 K
-    'fqt=0', // 不复权
-    `secid=${secid}`,
-    'beg=20250901',
-    'end=20500101',
-    'smplmt=400',
-    'lmt=400',
-  ].join('&');
-
-  let lastErr: unknown;
-  for (const host of KLINE_HOSTS) {
-    try {
-      const response = await proxyFetch(`${host}?${query}`);
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-      const body = (await response.json()) as EmKlineResponse;
-      const map = new Map<string, number>();
-      for (const line of body.data?.klines ?? []) {
-        const parts = line.split(',');
-        // [0] 日期；[6] 成交额(元)
-        map.set(parts[0], Number(parts[6]) || 0);
-      }
-      return map;
-    } catch (err) {
-      lastErr = err;
-    }
+const fetchIndexAmountMap = async (symbol: string): Promise<Map<string, number>> => {
+  const url = `${TENCENT_KLINE_URL}?param=${symbol},day,,,${MAX_DAYS},qfq`;
+  const response = await proxyFetch(url, { headers: { Referer: TENCENT_REFERER } });
+  if (!response.ok) {
+    throw new Error(`腾讯日K HTTP ${response.status}`);
   }
-  throw new Error(`东财成交额拉取失败：${String(lastErr)}`);
+  const body = (await response.json()) as TencentKlineResponse;
+  const rows = body.data?.[symbol]?.qfqday ?? body.data?.[symbol]?.day ?? [];
+
+  const map = new Map<string, number>();
+  for (const row of rows) {
+    const date = row[0];
+    // 下标 8：成交额（万元）-> 元；非交易日 / 未收盘行为 0，跳过以免污染曲线
+    const amountYuan = Number(row[8]) * 1e4;
+    if (!date || !Number.isFinite(amountYuan) || amountYuan <= 0) {
+      continue;
+    }
+    map.set(date, amountYuan);
+  }
+
+  if (map.size === 0) {
+    throw new Error(`腾讯成交额为空：${symbol}`);
+  }
+  return map;
 };
 
 /**
@@ -88,14 +82,14 @@ const fetchIndexAmountMap = async (secid: string): Promise<Map<string, number>> 
  * @returns 逐日 { 日期, 总成交额, 上证成交额, 深证成交额 } 序列（按日期升序）
  */
 export const fetchMarketTurnover = async (): Promise<TurnoverDayItem[]> => {
-  const shMap = await fetchIndexAmountMap(TURNOVER_INDEX_SECIDS.SH);
-  const szMap = await fetchIndexAmountMap(TURNOVER_INDEX_SECIDS.SZ);
+  // 串行错峰：同上游连续两次请求间隔少量时间，避免触发限频
+  const shanghaiMap = await fetchIndexAmountMap(TURNOVER_INDEX_SYMBOLS.SH);
+  const shenzhenMap = await fetchIndexAmountMap(TURNOVER_INDEX_SYMBOLS.SZ);
 
-  // 两指数交易日历基本一致，取并集按日期升序遍历
-  const dates = [...new Set([...shMap.keys(), ...szMap.keys()])].sort();
+  const dates = [...new Set([...shanghaiMap.keys(), ...shenzhenMap.keys()])].sort();
   return dates.map((date) => {
-    const shanghaiAmount = shMap.get(date) ?? 0;
-    const shenzhenAmount = szMap.get(date) ?? 0;
+    const shanghaiAmount = shanghaiMap.get(date) ?? 0;
+    const shenzhenAmount = shenzhenMap.get(date) ?? 0;
     return {
       date,
       shanghaiAmount,

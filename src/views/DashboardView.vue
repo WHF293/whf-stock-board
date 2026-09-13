@@ -192,7 +192,7 @@ usePolling({
   tradingAware: true,
 });
 
-// ---------- 成交量变化（沪深两市总成交额，挂载拉取一次，不轮询） ----------
+// ---------- 成交额变化（沪深两市总成交额，挂载拉取一次，不轮询） ----------
 
 /** 两市总成交额历史（近一年日 K，升序；30/60/180 交易日窗口本地切片） */
 const turnoverHistory = ref<TurnoverDayItem[]>([]);
@@ -200,10 +200,10 @@ const turnoverHistory = ref<TurnoverDayItem[]>([]);
 /** 成交额首载是否失败（且无快照）——供卡片空态展示 */
 const isTurnoverError = ref(false);
 
-/** 成交量当前展示形式（局部状态，不持久化） */
+/** 成交额当前展示形式（局部状态，不持久化） */
 const turnoverViewMode = ref<typeof VIEW_MODE[keyof typeof VIEW_MODE]>(VIEW_MODE.CHART);
 
-/** 成交量当前交易日窗口 */
+/** 成交额当前交易日窗口 */
 const turnoverRange = ref<TurnoverRange>(TURNOVER_RANGE_DEFAULT);
 
 /** 交易日窗口按钮组 v-model 适配：BaseTabs 要求字符串 value，窗口存 number */
@@ -215,8 +215,10 @@ const turnoverRangeModel = computed<string>({
 });
 
 // 快照播种：切换回本页先展示上次数据
+// 校验字段口径——历史版本快照用 totalVolume 等旧字段名，直接播种会让图表拿到
+// undefined 画出空白曲线、且掩盖后续请求失败（必须丢弃）
 const cachedTurnover = dataCache.get<TurnoverDayItem[]>(DATA_CACHE_KEY.DASHBOARD_TURNOVER);
-if (cachedTurnover) {
+if (cachedTurnover?.length && typeof cachedTurnover[0].totalAmount === 'number') {
   turnoverHistory.value = cachedTurnover;
 }
 
@@ -236,7 +238,7 @@ onMounted(() => {
   void fetchTurnoverHistory();
 });
 
-/** 当前窗口内的成交量序列（升序，供折线图） */
+/** 当前窗口内的成交额序列（升序，供折线图） */
 const turnoverRows = computed(() =>
   turnoverHistory.value.slice(-turnoverRange.value),
 );
