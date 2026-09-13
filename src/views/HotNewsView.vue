@@ -109,11 +109,14 @@ const openInNewWindow = (url: string): void => {
 
 <template>
   <div class="space-y-4">
+    <!-- 数据源切换（与行情全景一致的 underline 风格） -->
+    <div class="flex items-center justify-between gap-2">
+      <BaseTabs v-model="activeSource" :options="SOURCE_TAB_OPTIONS" variant="underline" />
+      <span v-if="isSinaSource" class="text-xs text-text-tertiary">
+        共 {{ newsItems.length }} 条 · 点击条目在新窗口查看原文
+      </span>
+    </div>
     <BaseCard>
-      <template #extra>
-        <BaseTabs v-model="activeSource" :options="SOURCE_TAB_OPTIONS" />
-      </template>
-
       <!-- 新浪财经（已接入） -->
       <template v-if="isSinaSource">
         <div v-if="isLoading"><BaseSkeleton /></div>
