@@ -235,12 +235,12 @@ const openDetail = (code: string): void => {
 
 <template>
   <div class="space-y-4">
-    <BaseCard title="龙虎榜 · 大宗交易">
-      <template #extra>
-        <!-- 视图切换：龙虎榜 / 大宗交易 -->
-        <BaseTabs v-model="activeTab" :options="VIEW_TAB_OPTIONS" />
-      </template>
-
+    <!-- 视图切换：龙虎榜 / 大宗交易（与行情全景一致的 underline 风格） -->
+    <div class="flex items-center justify-between gap-2">
+      <BaseTabs v-model="activeTab" :options="VIEW_TAB_OPTIONS" variant="underline" />
+      <span class="text-xs text-text-tertiary">近 7 日数据 · 按日期下拉切换</span>
+    </div>
+    <BaseCard>
       <!-- 龙虎榜 -->
       <template v-if="activeTab === 'dragon-tiger'">
         <div v-if="isDragonLoading"><BaseSkeleton /></div>
@@ -266,9 +266,7 @@ const openDetail = (code: string): void => {
             </div>
             <!-- 涨/跌按钮组（与板块热力「热力图/列表」同 BaseTabs 样式） -->
             <div>
-              <span class="text-xs text-text-tertiary mr-2"
-                >共 {{ dragonRows.length }} 只上榜（总 {{ dragonTotal }}）</span
-              >
+              <span class="text-xs text-text-tertiary mr-2">共 {{ dragonRows.length }} 只上榜（总 {{ dragonTotal }}）</span>
               <BaseTabs
                 v-model="activeDirection"
                 :options="DIRECTION_TAB_OPTIONS"
@@ -377,9 +375,7 @@ const openDetail = (code: string): void => {
                 {{ option.label }}
               </option>
             </select>
-            <span class="text-xs text-text-tertiary"
-              >共 {{ blockRows.length }} 笔（总 {{ blockTotal }}）</span
-            >
+            <span class="text-xs text-text-tertiary">共 {{ blockRows.length }} 笔（总 {{ blockTotal }}）</span>
           </div>
           <div @scroll="onBlockScroll">
             <BaseTable
