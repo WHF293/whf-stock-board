@@ -52,13 +52,34 @@ const CANDLE_PANE_ID = 'candle_pane';
 /** 主图 MA 周期（蜡烛模式） */
 const MA_PERIODS = [5, 10, 30];
 
-/** 涨跌幅百分比 y 轴模板（仅 timeline 模式挂载）：y 值 = 百分比，刻度自动按 3 等分 */
-const PERCENTAGE_YAXIS: YAxisTemplate = {
-  name: 'percentage',
+/**
+ * 涨跌幅百分比 y 轴模板（仅 timeline 模式挂载）
+ *
+ * 不能用内置 percentage 轴：其 convertToPixel 把入参当百分比值换算，
+ * 而面积线 / 指标绘制传入的是原始价格，会被画到面板外（曲线不可见）。
+ * 本模板只映射 display 空间（刻度文本 = 相对可视区首根收盘的涨跌幅%），
+ * 像素换算（real 空间）保持价格原值，曲线 / 均价线 / 十字光标均正常
+ */
+const TIMELINE_PCT_YAXIS: YAxisTemplate = {
+  name: 'timeline_pct',
+  minSpan: () => 0.01,
   displayValueToText: (value) => `${value.toFixed(2)}%`,
+  createRange: ({ chart, defaultRange }) => {
+    const base = chart.getDataList()[chart.getVisibleRange().from]?.close;
+    if (!base) return defaultRange;
+    const toPercent = (price: number): number => ((price - base) / base) * 100;
+    const displayFrom = toPercent(defaultRange.from);
+    const displayTo = toPercent(defaultRange.to);
+    return {
+      ...defaultRange,
+      displayFrom,
+      displayTo,
+      displayRange: displayTo - displayFrom,
+    };
+  },
 };
 
-registerYAxis(PERCENTAGE_YAXIS);
+registerYAxis(TIMELINE_PCT_YAXIS);
 
 /** 当前涨跌色阶（依赖 trendTheme，切换时本 computed 消费方自动重算） */
 const trendSet = computed(() => {
@@ -176,11 +197,11 @@ const setupIndicators = (chart: Chart): void => {
  */
 const applyAxisOptions = (chart: Chart): void => {
   const isTimeline = props.mode === 'timeline';
-  // 主图 Y 轴：左 + 3 等分；分时/五日切换到 percentage 涨跌幅轴
+  // 主图 Y 轴：左 + 3 等分；分时/五日切换到涨跌幅百分比轴（价格空间换算的自定义模板）
   chart.overrideYAxis({
     paneId: CANDLE_PANE_ID,
     position: 'left',
-    name: isTimeline ? 'percentage' : 'normal',
+    name: isTimeline ? 'timeline_pct' : 'normal',
     createTicks: buildYAxisTicks,
   });
   // 副图（成交量 / MACD / MACD&KDJ）：保留轴标但隐藏刻度线
