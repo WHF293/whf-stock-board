@@ -21,6 +21,7 @@ export const STOCK_PROXY_ALLOWED_HOSTS = [
   // 新浪（行情快照 hq.sinajs.cn / K 线 quotes.sina.cn）
   'sina.com.cn',
   'sina.cn',
+  'sinajs.cn',
   // stock-sdk 静态资源（代码表等参考数据）
   'linkdiary.cn',
 ] as const;

@@ -2,6 +2,7 @@
 import { computed, ref } from "vue";
 import BaseButton from "../components/ui/BaseButton.vue";
 import BaseCard from "../components/ui/BaseCard.vue";
+import BaseConfirmModal from "../components/ui/BaseConfirmModal.vue";
 import BaseSwitch from "../components/ui/BaseSwitch.vue";
 import NoticeBar from "../components/ui/NoticeBar.vue";
 import BaseTag from "../components/ui/BaseTag.vue";
@@ -10,6 +11,12 @@ import { STOCK_PROXY_PATH } from "../constants/proxy.constants";
 import { REFRESH_INTERVAL_OPTIONS } from "../constants/polling.constants";
 import { THEME_COLOR_OPTIONS } from "../constants/theme-color.constants";
 import { TREND_THEME_OPTIONS } from "../constants/trend-theme.constants";
+import {
+  APP_VERSION,
+  CHECK_UPDATE_TIMEOUT_MS,
+  RELEASES_LATEST_API,
+  RELEASES_URL,
+} from "../constants/app-info.constants";
 import { useSettingsStore } from "../stores/settings";
 import {
   DATA_SOURCE_LABEL,
@@ -38,6 +45,85 @@ const activeIntervalLabel = computed(
 const onClearCaches = (): void => {
   sdk.clearCaches();
   window.alert("SDK 缓存已清空，下次请求将重新拉取");
+};
+
+// ---------- 检查更新 ----------
+/** 检查状态：idle 未检查 / checking 检查中 / latest 已是最新 / newer 发现新版 / fail 失败 */
+type UpdateStatus = "idle" | "checking" | "latest" | "newer" | "fail";
+
+/** 检查更新状态 */
+const updateStatus = ref<UpdateStatus>("idle");
+
+/** 最新版本号（去掉 tag 前缀 v） */
+const latestVersion = ref<string>("");
+
+/** 新版弹窗显隐 */
+const updateModalOpen = ref(false);
+
+/**
+ * 解析版本号为可比较的数字数组（'v0.1.5' -> [0, 1, 5]，缺位补 0）
+ * @param tag 版本 tag 或纯版本号
+ * @returns 数字数组（长度 3）
+ */
+const parseVersion = (tag: string): number[] =>
+  tag
+    .replace(/^v/i, "")
+    .split(".")
+    .map((part) => Number.parseInt(part, 10) || 0)
+    .concat([0, 0, 0])
+    .slice(0, 3);
+
+/**
+ * 检查更新：请求 GitHub Releases 最新版，与当前版本比较
+ * （api.github.com 免鉴权且 CORS 允许任意来源，浏览器 / Tauri 均可直连）
+ */
+const onCheckUpdate = async (): Promise<void> => {
+  updateStatus.value = "checking";
+  try {
+    const controller = new AbortController();
+    const timer = window.setTimeout(
+      () => controller.abort(),
+      CHECK_UPDATE_TIMEOUT_MS,
+    );
+    const response = await fetch(RELEASES_LATEST_API, {
+      signal: controller.signal,
+      headers: { Accept: "application/vnd.github+json" },
+    });
+    window.clearTimeout(timer);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const release = (await response.json()) as { tag_name?: string };
+    const tag = release.tag_name ?? "";
+    if (!tag) throw new Error("响应缺少 tag_name");
+
+    latestVersion.value = tag.replace(/^v/i, "");
+    const current = parseVersion(APP_VERSION);
+    const latest = parseVersion(tag);
+    const hasNewer =
+      latest[0] !== current[0] ||
+      latest[1] !== current[1] ||
+      latest[2] !== current[2];
+    // 仅当远端严格更新时弹窗，本地更高（未发布）视为最新
+    updateStatus.value = hasNewer ? "newer" : "latest";
+    if (hasNewer) {
+      updateModalOpen.value = true;
+    }
+  } catch (error) {
+    updateStatus.value = "fail";
+    console.error("[settings] check-update", error);
+  }
+};
+
+/** 检查按钮文案（随状态变化） */
+const updateButtonText = computed(() => {
+  if (updateStatus.value === "checking") return "检查中...";
+  if (updateStatus.value === "latest") return "已是最新";
+  if (updateStatus.value === "fail") return "检查失败，点击重试";
+  return "检查更新";
+});
+
+/** 弹窗「前往下载」：打开 Releases 页 */
+const onGoDownload = (): void => {
+  window.open(RELEASES_URL, "_blank", "noopener");
 };
 
 /** 自检探测地址：腾讯指数轻量行情（与真实数据链路一致，走同源代理） */
@@ -280,5 +366,57 @@ const onProbeProxy = async (): Promise<void> => {
         </BaseButton>
       </div>
     </BaseCard>
+
+    <BaseCard title="检查更新">
+      <div class="flex items-center justify-between gap-4">
+        <div class="min-w-0">
+          <p class="text-sm text-text">
+            当前版本 v{{ APP_VERSION }}
+            <BaseTag
+              v-if="updateStatus === 'latest'"
+              tone="primary"
+              class="ml-1"
+            >
+              已是最新
+            </BaseTag>
+          </p>
+          <p class="mt-0.5 text-xs text-text-tertiary">
+            对比 GitHub Releases 最新版本
+          </p>
+        </div>
+        <BaseButton
+          variant="ghost"
+          :disabled="updateStatus === 'checking'"
+          @click="onCheckUpdate"
+        >
+          {{ updateButtonText }}
+        </BaseButton>
+      </div>
+    </BaseCard>
+
+    <!-- 发现新版本弹窗：展示版本号与下载地址 -->
+    <BaseConfirmModal
+      v-model:open="updateModalOpen"
+      title="发现新版本"
+      :ok-text="'前往下载'"
+      cancel-text="关闭"
+      @ok="onGoDownload"
+    >
+      <p class="text-sm text-text">
+        最新版本
+        <span class="font-semibold text-primary">v{{ latestVersion }}</span>
+        <span class="text-text-tertiary">（当前 v{{ APP_VERSION }}）</span>
+      </p>
+      <p class="mt-2 text-xs text-text-tertiary">下载地址：</p>
+      <a
+        :href="RELEASES_URL"
+        target="_blank"
+        rel="noopener"
+        class="mt-1 block break-all text-xs text-primary underline underline-offset-2"
+        @click="updateModalOpen = false"
+      >
+        {{ RELEASES_URL }}
+      </a>
+    </BaseConfirmModal>
   </div>
 </template>
