@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "股票看板",
-  "version": "0.1.7",
+  "productName": "stock-board",
+  "version": "0.1.8",
   "identifier": "cn.whf.stockboard",
   "build": {
     "frontendDist": "../dist",
@@ -27,7 +27,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": "all",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

@@ -17,7 +17,7 @@ pnpm dev          # 浏览器开发（vite，含 /stock-proxy 本地代理中间
 pnpm tauri dev    # PC 客户端开发（Rust 直连数据源，无 CORS）
 pnpm build        # vue-tsc 类型检查 + vite 构建
 pnpm lint         # ESLint（提交前必须 0 error / 0 warning）
-pnpm tauri build  # Windows 安装包（仅 nsis，产出 src-tauri/target/release/bundle/nsis/）
+pnpm tauri build  # Windows 安装包（msi + nsis，产出 src-tauri/target/release/bundle/）
 ```
 
 注意：`cargo` 需在 PATH（`~/.cargo/bin`）；bash 会话中用 `export PATH="/c/Users/wanghaofeng/.cargo/bin:$PATH"`。
@@ -117,8 +117,8 @@ server/           # vite 中间件：/stock-proxy（仅浏览器 dev 使用）
 
 ### 打包注意
 
-- `bundle.targets` 固定为 `["nsis"]`：productName 为中文「股票看板」，WiX/MSI 不支持非 ASCII 产品名，勿改回 `"all"` 或加 msi
-- `pnpm tauri build` 打 NSIS 工具链需下载，国内网络先设 `HTTPS_PROXY`
+- `productName` 固定为 ASCII（`stock-board`）：WiX/MSI 不支持非 ASCII 产品名；中文「股票看板」只用于窗口标题 / Release 描述等展示文案，勿把 productName 设为中文
+- `pnpm tauri build` 打 WiX/NSIS 工具链需下载，国内网络先设 `HTTPS_PROXY`
 
 ## 其他
 
