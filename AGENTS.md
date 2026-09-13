@@ -17,7 +17,7 @@ pnpm dev          # 浏览器开发（vite，含 /stock-proxy 本地代理中间
 pnpm tauri dev    # PC 客户端开发（Rust 直连数据源，无 CORS）
 pnpm build        # vue-tsc 类型检查 + vite 构建
 pnpm lint         # ESLint（提交前必须 0 error / 0 warning）
-pnpm tauri build  # Windows 安装包（msi + nsis，产出 src-tauri/target/release/bundle/）
+pnpm tauri build  # Windows 安装包（仅 nsis，产出 src-tauri/target/release/bundle/nsis/）
 ```
 
 注意：`cargo` 需在 PATH（`~/.cargo/bin`）；bash 会话中用 `export PATH="/c/Users/wanghaofeng/.cargo/bin:$PATH"`。
@@ -97,15 +97,33 @@ server/           # vite 中间件：/stock-proxy（仅浏览器 dev 使用）
 
 ## 发布流程（PC 客户端）
 
-1. 改 `src-tauri/tauri.conf.json` 的 `version`
+1. 版本号三处同步改：`src-tauri/tauri.conf.json`、`package.json`、`src/constants/app-info.constants.ts`（APP_VERSION，供「检查更新」比较）
 2. 提交后 `git tag v0.x.0 && git push origin main v0.x.0`
-3. `release.yml` 在 Windows runner 自动构建并上传安装包到 GitHub Release
+3. `release.yml` 在 Windows runner 自动构建并上传安装包到 GitHub Release；
+   Release 描述由 workflow 从「上一个 tag..HEAD」的提交主题自动生成带编号的变更列表
+
+### 提交信息规范（Conventional Commits，硬性）
+
+提交主题（subject）格式：`<type>: <中文描述>`，type 取值：
+
+- `feat`：新增功能
+- `fix`：修复 bug
+- `refactor`：重构（不改行为）
+- `perf`：性能优化
+- `docs`：文档
+- `chore`：构建 / 依赖 / 配置
+
+提交主题会原样进入 GitHub Release 的「更新内容」编号列表，因此必须写成面向用户可读的一句话；一次提交含多项变更时在 body 里分条列出。示例：`feat: 新增设置页检查更新`、`fix: 修复打包后新浪源无数据`。
+
+### 打包注意
+
+- `bundle.targets` 固定为 `["nsis"]`：productName 为中文「股票看板」，WiX/MSI 不支持非 ASCII 产品名，勿改回 `"all"` 或加 msi
+- `pnpm tauri build` 打 NSIS 工具链需下载，国内网络先设 `HTTPS_PROXY`
 
 ## 其他
 
 - 提交作者统一 `ZCode <zcode@users.noreply.github.com>`（`-c user.name="ZCode" -c user.email=...`）
 - `.ai/` 目录为本地开发沉淀，不入库
-- `pnpm tauri build` 打 WiX/NSIS 工具链需下载，国内网络先设 `HTTPS_PROXY`
 
 ## UI 风格规范
 

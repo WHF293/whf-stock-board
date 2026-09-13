@@ -42,13 +42,38 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # 从上一个 tag 到当前 HEAD 的提交主题生成带编号的变更列表，
+      # 作为 Release 描述（提交须遵循 conventional commits：feat:/fix:/refactor: ...）
+      - name: Generate release notes
+        id: changelog
+        shell: bash
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
+          if [ -n "$PREV_TAG" ]; then
+            SUBJECTS=$(git log --pretty=format:"%s" "${PREV_TAG}..HEAD")
+          else
+            SUBJECTS=$(git log --pretty=format:"%s")
+          fi
+          NUMBERED=$(echo "$SUBJECTS" | sed '/^$/d' | awk '{printf "%d. %s\n", NR, $0}')
+          {
+            echo "body<<CHANGELOG_EOF"
+            echo "## 更新内容"
+            echo ""
+            echo "$NUMBERED"
+            echo ""
+            echo "下载下方 Assets 中的安装包（*_x64-setup.exe）即可安装。"
+            echo ""
+            echo "数据仅供个人学习参考，不构成投资建议。"
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: v__VERSION__
-          releaseName: 'Whf Stock Board v__VERSION__'
-          releaseBody: 'A 股看板 PC 客户端。数据仅供个人学习参考，不构成投资建议。'
+          releaseName: '股票看板 v__VERSION__'
+          releaseBody: ${{ steps.changelog.outputs.body }}
           releaseDraft: false
           prerelease: false
