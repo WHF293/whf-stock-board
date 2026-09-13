@@ -36,6 +36,15 @@
           "url": "https://*.10jqka.com/*"
         },
         {
+          "url": "https://*.10jqka.com.cn/*"
+        },
+        {
+          "url": "https://*.cls.cn/*"
+        },
+        {
+          "url": "https://cls.cn/*"
+        },
+        {
           "url": "https://*.linkdiary.cn/*"
         }
       ]

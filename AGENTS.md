@@ -64,6 +64,7 @@ server/           # vite 中间件：/stock-proxy（仅浏览器 dev 使用）
 - **响应体按原始字节透传（arrayBuffer）**：SDK 对腾讯源固定按 GBK 解码，任何转码都会乱码
 - JSONP 类源（腾讯行情/分时，script 注入）不走代理，浏览器直连
 - 新增数据域名：浏览器侧改 `constants/proxy.constants.ts` 白名单，Tauri 侧改 capabilities scope
+- **接口与数据源完整清单见根目录 `SERVER_API.md`**（每个页面调了什么接口 / 什么 stock-sdk 方法、上游 host、本机封禁与频率红线），新增或排查取数问题时先查此文件
 
 ## 请求频率红线（踩过坑）
 

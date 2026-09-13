@@ -10,6 +10,7 @@ import { TREND_THEME_DEFAULT } from '../constants/trend-theme.constants';
 import type { TrendTheme } from '../constants/trend-theme.constants';
 import { WATERMARK_ENABLED_DEFAULT } from '../constants/watermark.constants';
 import { SIDEBAR_COLLAPSED_DEFAULT } from '../constants/sidebar.constants';
+import { MENU_DEFAULT_ORDER } from '../constants/router-meta.constants';
 import { PANORAMA_CN_VIEW_MODE_DEFAULT } from '../constants/panorama.constants';
 import type { HeatmapViewMode } from '../types/heatmap.types';
 import type { PanoramaCnViewMode } from '../constants/panorama.constants';
@@ -28,6 +29,8 @@ interface SettingsState {
   panoramaCnViewMode: PanoramaCnViewMode;
   /** 左侧导航栏是否收起（仅桌面端生效，窄屏抽屉不受影响） */
   sidebarCollapsed: boolean;
+  /** 左侧导航顺序（存路由 path 数组；默认按 MENU_ITEMS 声明顺序） */
+  menuOrder: string[];
   /** 主题色（清新绿 / 淡雅蓝 / 淡雅粉 / 极光紫） */
   themeColor: ThemeColor;
   /** 涨跌配色主题（红涨绿跌 / 红跌绿涨 / 红涨蓝跌） */
@@ -47,6 +50,7 @@ export const useSettingsStore = defineStore('settings', {
     heatmapViewMode: HEATMAP_VIEW_MODE_DEFAULT,
     panoramaCnViewMode: PANORAMA_CN_VIEW_MODE_DEFAULT,
     sidebarCollapsed: SIDEBAR_COLLAPSED_DEFAULT,
+    menuOrder: [...MENU_DEFAULT_ORDER],
     themeColor: THEME_COLOR_DEFAULT,
     trendTheme: TREND_THEME_DEFAULT,
     watermarkEnabled: WATERMARK_ENABLED_DEFAULT,
@@ -128,6 +132,19 @@ export const useSettingsStore = defineStore('settings', {
     /** 切换侧栏收起状态 */
     toggleSidebarCollapsed(): void {
       this.sidebarCollapsed = !this.sidebarCollapsed;
+    },
+
+    /**
+     * 设置左侧导航顺序（持久化，下次进入自动恢复）
+     * @param order 编排后的路由 path 数组
+     */
+    setMenuOrder(order: string[]): void {
+      this.menuOrder = [...order];
+    },
+
+    /** 重置左侧导航顺序为默认（MENU_ITEMS 声明顺序） */
+    resetMenuOrder(): void {
+      this.menuOrder = [...MENU_DEFAULT_ORDER];
     },
   },
 

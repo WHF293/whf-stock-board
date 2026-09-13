@@ -6,6 +6,8 @@ export const DATA_CACHE_KEY = {
   DASHBOARD_INDEX_QUOTES: 'dashboard.indexQuotes',
   /** 总览：市场宽度聚合（分布 / 成交额 / 板块 / 资金流 / 北向） */
   DASHBOARD_BREADTH: 'dashboard.breadth',
+  /** 总览：沪深两市总成交额历史（成交量变化模块） */
+  DASHBOARD_TURNOVER: 'dashboard.turnover',
   /** 自选：报价映射 */
   WATCHLIST_QUOTES_MAP: 'watchlist.quotesMap',
   /** 板块排行（按 tab） */

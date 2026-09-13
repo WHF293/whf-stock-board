@@ -20,3 +20,6 @@ export const STORAGE_NS_COLOR_SCHEME = 'colorScheme';
 
 /** 右侧停靠面板命名空间（宽度 / 侧栏开关） */
 export const STORAGE_NS_DOCK_PANEL = 'dockPanel';
+
+/** 热点新闻页 - 源勾选状态命名空间（用户启用哪些新闻源） */
+export const STORAGE_NS_HOT_NEWS_FILTER = 'hotNews.filter';

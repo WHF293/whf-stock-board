@@ -60,6 +60,21 @@ const routes = [
         meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.HOT_NEWS] },
       },
       {
+        path: ROUTE_PATH.STOCK_ACCOUNT,
+        component: () => import('../views/StockAccountView.vue'),
+        meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.STOCK_ACCOUNT] },
+      },
+      {
+        path: ROUTE_PATH.TRADE_IMPORT,
+        component: () => import('../views/TradeImportView.vue'),
+        meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.TRADE_IMPORT] },
+      },
+      {
+        path: ROUTE_PATH.AGENT_ANALYSIS,
+        component: () => import('../views/AgentAnalysisView.vue'),
+        meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.AGENT_ANALYSIS] },
+      },
+      {
         path: ROUTE_PATH.MARKET_RANK,
         component: () => import('../views/MarketRankView.vue'),
         meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.MARKET_RANK] },

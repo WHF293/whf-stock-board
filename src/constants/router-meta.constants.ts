@@ -11,6 +11,9 @@ export const ROUTE_PATH = {
   SCREENER: "/screener",
   HOT_NEWS: "/hot-news",
   MARKET_RANK: "/market-rank",
+  STOCK_ACCOUNT: "/stock-account",
+  TRADE_IMPORT: "/trade-import",
+  AGENT_ANALYSIS: "/agent-analysis",
   SETTINGS: "/settings",
 } as const;
 
@@ -27,6 +30,9 @@ export const MENU_ICON = {
   FILTER: "filter",
   NEWS: "news",
   RANK: "rank",
+  ACCOUNT: "account",
+  TRADE_IMPORT: "tradeImport",
+  AGENT: "agent",
   SETTINGS: "settings",
 } as const;
 
@@ -43,4 +49,21 @@ export const MENU_ITEMS = [
   { path: ROUTE_PATH.WATCHLIST, title: "自选股", icon: MENU_ICON.STAR },
   { path: ROUTE_PATH.SCREENER, title: "选股器", icon: MENU_ICON.FILTER },
   { path: ROUTE_PATH.HOT_NEWS, title: "热点新闻", icon: MENU_ICON.NEWS },
+  // 账户与交割单是「本地 Agent 分析」的数据输入，排在 Agent 分析之前
+  { path: ROUTE_PATH.STOCK_ACCOUNT, title: "股票账户", icon: MENU_ICON.ACCOUNT },
+  {
+    path: ROUTE_PATH.TRADE_IMPORT,
+    title: "交割单导入",
+    icon: MENU_ICON.TRADE_IMPORT,
+  },
+  { path: ROUTE_PATH.AGENT_ANALYSIS, title: "Agent 分析", icon: MENU_ICON.AGENT },
 ] as const;
+
+/**
+ * 默认侧栏顺序（= MENU_ITEMS 声明顺序的 path 数组）
+ *
+ * 供设置页「重置」与主布局兜底使用；用户自定义顺序存于 settings.menuOrder
+ */
+export const MENU_DEFAULT_ORDER: readonly string[] = MENU_ITEMS.map(
+  (item) => item.path,
+);

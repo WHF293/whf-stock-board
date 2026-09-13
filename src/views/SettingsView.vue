@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { VueDraggable } from "vue-draggable-plus";
 import BaseButton from "../components/ui/BaseButton.vue";
 import BaseCard from "../components/ui/BaseCard.vue";
 import BaseConfirmModal from "../components/ui/BaseConfirmModal.vue";
 import BaseSwitch from "../components/ui/BaseSwitch.vue";
+import MenuIcon from "../components/ui/MenuIcon.vue";
 import NoticeBar from "../components/ui/NoticeBar.vue";
 import BaseTag from "../components/ui/BaseTag.vue";
 import { sdk } from "../api/sdk";
+import { MENU_ITEMS } from "../constants/router-meta.constants";
 import { STOCK_PROXY_PATH } from "../constants/proxy.constants";
 import { REFRESH_INTERVAL_OPTIONS } from "../constants/polling.constants";
 import { THEME_COLOR_OPTIONS } from "../constants/theme-color.constants";
@@ -47,6 +50,62 @@ const onClearCaches = (): void => {
   window.alert("SDK 缓存已清空，下次请求将重新拉取");
 };
 
+// ---------- 侧栏导航顺序编排 ----------
+
+/** 编排弹窗显隐 */
+const menuOrderModalOpen = ref(false);
+
+/** 编排草稿（打开弹窗时按当前顺序初始化；未点「确认」前仅本地改动，不落盘） */
+const menuOrderDraft = ref<{ path: string; title: string; icon: string }[]>([]);
+
+/**
+ * 按当前持久化顺序排好的菜单项（不含设置页；未在顺序里的新页面追加末尾）
+ * @returns 有序菜单项（path / title / icon）
+ */
+const orderedMenuItems = computed(() => {
+  const byPath = new Map<string, (typeof MENU_ITEMS)[number]>();
+  for (const item of MENU_ITEMS) {
+    byPath.set(item.path, item);
+  }
+  const ordered: { path: string; title: string; icon: string }[] = [];
+  for (const path of settingsStore.menuOrder) {
+    const item = byPath.get(path);
+    if (item) {
+      ordered.push({ path: item.path, title: item.title, icon: item.icon });
+      byPath.delete(path);
+    }
+  }
+  for (const item of MENU_ITEMS) {
+    if (byPath.has(item.path)) {
+      ordered.push({ path: item.path, title: item.title, icon: item.icon });
+    }
+  }
+  return ordered;
+});
+
+/** 当前顺序是否为默认（用于禁用「重置」按钮） */
+const isDefaultMenuOrder = computed(
+  () =>
+    orderedMenuItems.value.map((item) => item.path).join(",") ===
+    MENU_ITEMS.map((item) => item.path).join(","),
+);
+
+/** 打开编排弹窗：以当前顺序初始化草稿 */
+const openMenuOrderModal = (): void => {
+  menuOrderDraft.value = orderedMenuItems.value.map((item) => ({ ...item }));
+  menuOrderModalOpen.value = true;
+};
+
+/** 确认编排：持久化新顺序，侧栏即时刷新（下次进入仍生效） */
+const onConfirmMenuOrder = (): void => {
+  settingsStore.setMenuOrder(menuOrderDraft.value.map((item) => item.path));
+};
+
+/** 重置侧栏顺序为默认 */
+const onResetMenuOrder = (): void => {
+  settingsStore.resetMenuOrder();
+};
+
 // ---------- 检查更新 ----------
 /** 检查状态：idle 未检查 / checking 检查中 / latest 已是最新 / newer 发现新版 / fail 失败 */
 type UpdateStatus = "idle" | "checking" | "latest" | "newer" | "fail";
@@ -60,10 +119,19 @@ const latestVersion = ref<string>("");
 /** 快捷键说明弹窗 */
 const shortcutsModalOpen = ref(false);
 
-/** 快捷键列表 */
+/**
+ * 快捷键清单（供「快捷键说明」弹窗展示）
+ *
+ * 全局键在 `layouts/MainLayout.vue` 的 capture 阶段监听；弹窗内键见对应组件
+ * （`StockSearchModal` / `BaseConfirmModal` / `DockPanel`）
+ */
 const SHORTCUTS = [
+  {
+    key: 'Ctrl + Shift + B',
+    action: '收起 / 展开左侧导航栏（仅桌面端生效）',
+  },
   { key: 'Shift + Tab', action: '切换页面（按侧栏顺序循环，不含设置页）' },
-  { key: 'Esc', action: '关闭股票详情面板 / 搜索弹窗' },
+  { key: 'Esc', action: '关闭股票详情面板 / 搜索弹窗 / 对话框' },
   { key: '↑ ↓', action: '搜索弹窗内切换标的' },
   { key: 'Enter', action: '搜索弹窗内确认选中标的' },
 ] as const;
@@ -385,6 +453,33 @@ const onProbeProxy = async (): Promise<void> => {
       </div>
     </BaseCard>
 
+    <BaseCard title="侧栏导航">
+      <div class="flex items-center justify-between gap-4">
+        <div>
+          <p class="text-sm text-text">路由顺序编排</p>
+          <p class="mt-0.5 text-xs text-text-tertiary">
+            拖拽调整左侧导航各页面的排列顺序，确认后立即生效并记住
+          </p>
+        </div>
+        <BaseButton variant="ghost" @click="openMenuOrderModal">编排</BaseButton>
+      </div>
+      <div class="mt-4 flex items-center justify-between gap-4 border-t border-flat-weak pt-4">
+        <div>
+          <p class="text-sm text-text">重置顺序</p>
+          <p class="mt-0.5 text-xs text-text-tertiary">
+            恢复为默认的侧栏导航顺序
+          </p>
+        </div>
+        <BaseButton
+          variant="ghost"
+          :disabled="isDefaultMenuOrder"
+          @click="onResetMenuOrder"
+        >
+          重置
+        </BaseButton>
+      </div>
+    </BaseCard>
+
     <BaseCard title="系统">
       <div class="flex items-center justify-between gap-4 mb-4">
         <div class="text-sm text-text">作者</div>
@@ -460,6 +555,45 @@ const onProbeProxy = async (): Promise<void> => {
       >
         {{ RELEASES_URL }}
       </a>
+    </BaseConfirmModal>
+
+    <!-- 路由顺序编排弹窗：拖拽调整侧栏顺序，确认后持久化并即时生效 -->
+    <BaseConfirmModal
+      v-model:open="menuOrderModalOpen"
+      title="路由顺序编排"
+      ok-text="确认"
+      cancel-text="取消"
+      max-width-class="max-w-md"
+      @ok="onConfirmMenuOrder"
+    >
+      <p class="mb-3 text-xs text-text-tertiary">
+        拖拽下方条目调整顺序，点击「确认」保存并立即刷新侧栏
+      </p>
+      <VueDraggable
+        v-model="menuOrderDraft"
+        tag="ul"
+        :animation="150"
+        handle=".draft-handle"
+        :force-fallback="true"
+        fallback-class="sortable-fallback bg-surface shadow-lg ring-1 ring-flat-weak"
+        ghost-class="opacity-40"
+        chosen-class="bg-flat-weak"
+        class="space-y-1"
+      >
+        <li
+          v-for="item in menuOrderDraft"
+          :key="item.path"
+          class="flex select-none items-center gap-3 rounded-lg border border-flat-weak px-3 py-2.5 text-sm text-text-secondary"
+        >
+          <MenuIcon
+            name="grip"
+            :size="16"
+            class="draft-handle cursor-grab text-text-tertiary active:cursor-grabbing"
+          />
+          <MenuIcon :name="item.icon" :size="16" class="text-text-tertiary" />
+          <span class="text-text">{{ item.title }}</span>
+        </li>
+      </VueDraggable>
     </BaseConfirmModal>
   </div>
 </template>
