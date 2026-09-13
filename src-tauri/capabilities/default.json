@@ -7,6 +7,7 @@
   ],
   "permissions": [
     "core:default",
+    "opener:default",
     {
       "identifier": "http:default",
       "allow": [
@@ -30,6 +31,9 @@
         },
         {
           "url": "https://*.sinajs.cn/*"
+        },
+        {
+          "url": "https://*.10jqka.com/*"
         },
         {
           "url": "https://*.linkdiary.cn/*"

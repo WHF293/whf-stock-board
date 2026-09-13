@@ -47,6 +47,25 @@ watchImmediate(
 /** 头部页面标题（路由 meta.title） */
 const pageTitle = computed(() => route.meta.title ?? "");
 
+// ---------- 页面切换过渡方向 ----------
+/** 菜单路径 -> 顺序下标（决定滑动方向） */
+const MENU_ORDER: string[] = MENU_ITEMS.map((item) => item.path);
+
+/** 过渡名：page-forward（新页从右滑入）/ page-back（新页从左滑入） */
+const pageTransition = ref("page-forward");
+
+watch(
+  () => route.path,
+  (to, from) => {
+    const toIndex = MENU_ORDER.indexOf(to);
+    const fromIndex = MENU_ORDER.indexOf(from);
+    pageTransition.value =
+      toIndex >= 0 && fromIndex >= 0 && toIndex < fromIndex
+        ? "page-back"
+        : "page-forward";
+  },
+);
+
 /** 窄屏抽屉侧栏开关（桌面端常驻显示，不受影响） */
 const sidebarOpen = ref(false);
 
@@ -263,7 +282,14 @@ void marketStatusStore.refresh();
       </header>
       <main class="flex-1 overflow-y-auto">
         <div class="@container mx-auto w-full max-w-[1440px] p-4 lg:p-6">
-          <RouterView />
+          <!-- 页面切换过渡：按菜单顺序决定滑入/滑出方向；KeepAlive 缓存页面状态 -->
+          <RouterView v-slot="{ Component, route: routeRecord }">
+            <Transition :name="pageTransition" mode="out-in">
+              <KeepAlive>
+                <component :is="Component" :key="routeRecord.path" />
+              </KeepAlive>
+            </Transition>
+          </RouterView>
         </div>
       </main>
     </div>

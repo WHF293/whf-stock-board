@@ -1,5 +1,6 @@
 <script setup lang="ts" generic="T">
 import { computed, ref } from 'vue';
+import MenuIcon from './MenuIcon.vue';
 import type { TableColumn } from '../../types/table.types';
 
 /**
@@ -28,6 +29,13 @@ const props = defineProps<{
   rowClickable?: boolean;
   /** 底部提示文案（如懒加载进度），显示为横跨全列的提示行 */
   footerText?: string;
+  /**
+   * 行扩展：开启后每行行首自动追加一列展开 icon（chevron），
+   * 点击切换该行的扩展行（内容由 #expanded 作用域插槽提供）；默认关闭
+   */
+  expandable?: boolean;
+  /** 当前已展开的行 key 列表（受控模式，父级维护） */
+  expandedKeys?: string[];
 }>();
 
 const emit = defineEmits<{
@@ -35,6 +43,8 @@ const emit = defineEmits<{
   rowClick: [row: T];
   /** 容器滚动（透传给外部懒加载逻辑） */
   scroll: [event: Event];
+  /** 展开图标点击（切换扩展行；父级维护 expandedKeys） */
+  toggleExpand: [row: T];
 }>();
 
 /** 排序列 key；null 表示未排序 */
@@ -90,6 +100,17 @@ const sortMark = (col: TableColumn<T>): string => {
 };
 
 /**
+ * 行是否处于展开态
+ * @param row 行数据
+ * @returns 是否展开
+ */
+const isExpanded = (row: T): boolean =>
+  !!props.expandable && (props.expandedKeys ?? []).includes(props.rowKey(row));
+
+/** 扩展行的横跨列数（业务列 + 展开列） */
+const spanCols = computed(() => props.columns.length + (props.expandable ? 1 : 0));
+
+/**
  * 默认单元格取值（未提供插槽时）
  * @param row 行数据
  * @param key 列键
@@ -115,6 +136,7 @@ const alignClass = (col: TableColumn<T>, isHead: boolean): string => {
     <table class="w-full text-sm tabular-nums" :style="minWidth ? { minWidth } : undefined">
       <thead>
         <tr class="border-b border-flat-weak text-left text-xs text-text-tertiary">
+          <th v-if="expandable" class="w-8" />
           <th
             v-for="col in columns"
             :key="col.key"
@@ -128,25 +150,44 @@ const alignClass = (col: TableColumn<T>, isHead: boolean): string => {
         </tr>
       </thead>
       <tbody>
-        <tr
-          v-for="row in sortedRows"
-          :key="rowKey(row)"
-          :data-row-key="rowKey(row)"
-          class="border-b border-flat-weak last:border-0"
-          :class="rowClickable ? 'cursor-pointer hover:bg-flat-weak/50' : ''"
-          @click="emit('rowClick', row)"
-        >
-          <td
-            v-for="col in columns"
-            :key="col.key"
-            class="py-2 pr-2 last:pr-0"
-            :class="alignClass(col, false)"
+        <template v-for="(row, index) in sortedRows" :key="rowKey(row)">
+          <tr
+            :data-row-key="rowKey(row)"
+            class="border-b border-flat-weak last:border-0"
+            :class="[
+              index % 2 === 1 ? 'bg-flat-weak/35' : '',
+              rowClickable ? 'cursor-pointer hover:bg-flat-weak/50' : '',
+            ]"
+            @click="emit('rowClick', row)"
           >
-            <slot :name="col.key" :row="row">{{ cellValue(row, col.key) }}</slot>
-          </td>
-        </tr>
+            <td v-if="expandable" class="w-8 py-2 pl-1">
+              <button
+                type="button"
+                class="pressable rounded p-0.5 text-text-tertiary hover:bg-flat-weak hover:text-text"
+                :aria-label="isExpanded(row) ? '收起扩展行' : '展开扩展行'"
+                @click.stop="emit('toggleExpand', row)"
+              >
+                <MenuIcon :name="isExpanded(row) ? 'chevronDown' : 'chevronRight'" :size="14" />
+              </button>
+            </td>
+            <td
+              v-for="col in columns"
+              :key="col.key"
+              class="py-2 pr-2 last:pr-0"
+              :class="alignClass(col, false)"
+            >
+              <slot :name="col.key" :row="row">{{ cellValue(row, col.key) }}</slot>
+            </td>
+          </tr>
+          <!-- 扩展行：内容由 #expanded 作用域插槽提供 -->
+          <tr v-if="isExpanded(row)">
+            <td :colspan="spanCols" class="bg-flat-weak/20 px-10 py-5">
+              <slot name="expanded" :row="row" />
+            </td>
+          </tr>
+        </template>
         <tr v-if="footerText">
-          <td :colspan="columns.length" class="py-2 text-center text-xs text-text-tertiary">
+          <td :colspan="spanCols" class="py-2 text-center text-xs text-text-tertiary">
             {{ footerText }}
           </td>
         </tr>

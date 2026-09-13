@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import BaseCard from '../components/ui/BaseCard.vue';
+import BaseEmpty from '../components/ui/BaseEmpty.vue';
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue';
+import BaseTable from '../components/ui/BaseTable.vue';
 import DistributionChart from '../components/charts/DistributionChart.vue';
 import HeatmapChart from '../components/charts/HeatmapChart.vue';
 import HeatmapBoardList from '../components/business/HeatmapBoardList.vue';
+import MarketFundFlowTrendChart from '../components/charts/MarketFundFlowTrendChart.vue';
 import BaseTabs from '../components/ui/BaseTabs.vue';
+import MenuIcon from '../components/ui/MenuIcon.vue';
 import StockQuoteCard from '../components/business/StockQuoteCard.vue';
 import {
   fetchAllMarketQuotes,
@@ -31,7 +35,9 @@ import type {
   IndustryBoard,
 } from '../types/board.types';
 import type { MarketFundFlow } from '../types/flow.types';
+import type { TableColumn } from '../types/table.types';
 import type { FullQuote } from '../types/stock-quote.types';
+import { formatPercent } from '../utils/format-percent';
 import { formatAmount } from '../utils/format-amount';
 import { formatYuanWithSign } from '../utils/format-yuan';
 import { countDistribution } from '../utils/count-distribution';
@@ -42,6 +48,30 @@ import { DATA_CACHE_KEY } from '../constants/data-cache.constants';
 
 /** 市场宽度各接口请求间隔（毫秒）：对同一上游串行错峰 */
 const BREADTH_REQUEST_GAP_MS = 500;
+
+/** 大盘资金流保留的交易日数（近 10 日） */
+const MARKET_FLOW_DAYS = 10;
+
+/** 大盘资金流视图高度（像素）：与涨跌分布图表等高，保证同排两卡视觉一致 */
+const MARKET_FLOW_VIEW_HEIGHT_PX = 220;
+
+/** 展示形式：图表（默认） / 列表（涨跌分布与大盘资金流共用同一组值） */
+const VIEW_MODE = {
+  CHART: 'chart',
+  TABLE: 'table',
+} as const;
+
+/** 展示形式按钮组选项 */
+const VIEW_MODE_OPTIONS = [
+  { label: '图表', value: VIEW_MODE.CHART },
+  { label: '列表', value: VIEW_MODE.TABLE },
+] as const;
+
+/** 涨跌分布当前展示形式（局部状态，不持久化） */
+const distributionViewMode = ref<typeof VIEW_MODE[keyof typeof VIEW_MODE]>(VIEW_MODE.CHART);
+
+/** 大盘资金流当前展示形式（局部状态，不持久化） */
+const marketViewMode = ref<typeof VIEW_MODE[keyof typeof VIEW_MODE]>(VIEW_MODE.CHART);
 
 /**
  * 市场总览：指数卡片（轮询，点击跳 K 线详情）+ 涨跌分布 / 资金速览 +
@@ -74,6 +104,8 @@ const distribution = ref<DistributionCount[]>([]);
 const industryBoards = ref<IndustryBoard[]>([]);
 /** 当日大盘资金流（取最新一条） */
 const marketFundFlow = ref<MarketFundFlow | null>(null);
+/** 大盘资金流历史（近 10 日，升序；供曲线 / 列表） */
+const marketFlowHistory = ref<MarketFundFlow[]>([]);
 /** 两市成交额合计（万） */
 const totalAmountWan = ref<number | null>(null);
 
@@ -83,6 +115,7 @@ interface BreadthSnapshot {
   totalAmountWan: number;
   boards: IndustryBoard[];
   fundFlow: MarketFundFlow | null;
+  flowHistory: MarketFundFlow[];
 }
 
 // 快照播种：切换回本页先展示上次数据
@@ -96,6 +129,7 @@ if (cachedBreadth) {
   totalAmountWan.value = cachedBreadth.totalAmountWan;
   industryBoards.value = cachedBreadth.boards;
   marketFundFlow.value = cachedBreadth.fundFlow;
+  marketFlowHistory.value = cachedBreadth.flowHistory ?? [];
 }
 
 /** 拉取指数行情（成功后写快照） */
@@ -104,27 +138,37 @@ const fetchIndexQuotes = async (): Promise<void> => {
   dataCache.set(DATA_CACHE_KEY.DASHBOARD_INDEX_QUOTES, indexQuotes.value);
 };
 
+/** 市场宽度首载是否失败（且无快照）——供资金流卡片空态展示 */
+const isBreadthError = ref(false);
+
 /** 拉取市场宽度数据（全市场快照 + 板块 + 资金流；成功后写快照） */
 const fetchMarketBreadth = async (): Promise<void> => {
-  // 对同一上游（东财系）串行错峰请求，避免并发齐射触发反爬封禁
-  const quotes = await fetchAllMarketQuotes();
-  await delay(BREADTH_REQUEST_GAP_MS);
-  const boards = await fetchIndustryBoards();
-  await delay(BREADTH_REQUEST_GAP_MS);
-  const flows = await fetchMarketFundFlow();
+  try {
+    // 对同一上游（东财系）串行错峰请求，避免并发齐射触发反爬封禁
+    const quotes = await fetchAllMarketQuotes();
+    await delay(BREADTH_REQUEST_GAP_MS);
+    const boards = await fetchIndustryBoards();
+    await delay(BREADTH_REQUEST_GAP_MS);
+    const flows = await fetchMarketFundFlow();
 
   distribution.value = countDistribution(quotes.map((quote) => quote.changePercent));
   totalAmountWan.value = quotes.reduce((acc, quote) => acc + (quote.amount ?? 0), 0);
   industryBoards.value = boards;
   marketFundFlow.value = flows.at(-1) ?? null;
+  marketFlowHistory.value = flows.slice(-MARKET_FLOW_DAYS);
 
-  const snapshot: BreadthSnapshot = {
-    distribution: distribution.value,
-    totalAmountWan: totalAmountWan.value,
-    boards: industryBoards.value,
-    fundFlow: marketFundFlow.value,
-  };
-  dataCache.set(DATA_CACHE_KEY.DASHBOARD_BREADTH, snapshot);
+    const snapshot: BreadthSnapshot = {
+      distribution: distribution.value,
+      totalAmountWan: totalAmountWan.value,
+      boards: industryBoards.value,
+      fundFlow: marketFundFlow.value,
+      flowHistory: marketFlowHistory.value,
+    };
+    dataCache.set(DATA_CACHE_KEY.DASHBOARD_BREADTH, snapshot);
+  } catch (error) {
+    isBreadthError.value = marketFlowHistory.value.length === 0;
+    console.error('[dashboard] breadth', error);
+  }
 };
 
 usePolling({
@@ -178,6 +222,46 @@ const onOpenHeatmapStock = (code: string): void => {
   dockPanel.openStock(code);
 };
 
+/** 涨跌分布列配置 */
+const distributionColumns: TableColumn<DistributionCount>[] = [
+  { key: 'label', label: '涨跌区间' },
+  {
+    key: 'count',
+    label: '家数',
+    align: 'right',
+    sortable: true,
+    sortValue: (bucket) => bucket.count,
+  },
+  { key: 'ratio', label: '占比', align: 'right' },
+];
+
+/** 涨跌分布总家数（占比分母） */
+const distributionTotal = computed(() =>
+  distribution.value.reduce((acc, bucket) => acc + bucket.count, 0),
+);
+
+/** 大盘资金流列配置 */
+const marketColumns: TableColumn<MarketFundFlow>[] = [
+  { key: 'date', label: '日期' },
+  {
+    key: 'mainNetInflow',
+    label: '主力净流入',
+    align: 'right',
+    sortable: true,
+    sortValue: (day) => day.mainNetInflow,
+  },
+  { key: 'mainNetInflowPercent', label: '主力占比', align: 'right' },
+  { key: 'superLargeNetInflow', label: '超大单', align: 'right' },
+  { key: 'largeNetInflow', label: '大单', align: 'right' },
+  { key: 'smallNetInflow', label: '小单', align: 'right' },
+];
+
+/** 大盘近 10 日数据（倒序展示） */
+const marketFlowRows = computed(() => [...marketFlowHistory.value].reverse());
+
+/** 大盘近 10 日数据（升序，供折线图） */
+const marketFlowAsc = computed(() => marketFlowHistory.value);
+
 /** 涨跌分布是否就绪（首次加载完成） */
 const isDistributionReady = computed(() => distribution.value.length > 0);
 </script>
@@ -198,31 +282,121 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
       <BaseCard v-for="i in 4" :key="i"><BaseSkeleton /></BaseCard>
     </div>
 
-    <!-- 涨跌分布 + 资金速览 -->
-    <div class="grid gap-4 @3xl:grid-cols-3">
-      <BaseCard title="涨跌分布" class="@3xl:col-span-2">
-        <DistributionChart v-if="isDistributionReady" :data="distribution" />
-        <BaseSkeleton v-else />
-      </BaseCard>
-      <BaseCard title="资金速览">
-        <div v-if="totalAmountWan !== null" class="space-y-4">
-          <div>
-            <p class="text-xs text-text-tertiary">两市成交额</p>
-            <p class="mt-1 text-xl font-semibold tabular-nums text-text">
-              {{ formatAmount(totalAmountWan) }}
-            </p>
-          </div>
-          <div>
-            <p class="text-xs text-text-tertiary">主力净流入</p>
-            <p
-              class="mt-1 text-xl font-semibold tabular-nums"
-              :class="(marketFundFlow?.mainNetInflow ?? 0) >= 0 ? 'text-up' : 'text-down'"
-            >
-              {{ formatYuanWithSign(marketFundFlow?.mainNetInflow) }}
-            </p>
-          </div>
+    <!-- 资金速览（全宽，指标横排） -->
+    <BaseCard title="资金速览">
+      <div v-if="totalAmountWan !== null" class="grid grid-cols-2 gap-4 @3xl:grid-cols-4">
+        <div>
+          <p class="text-xs text-text-tertiary">两市成交额</p>
+          <p class="mt-1 text-xl font-semibold tabular-nums text-text">
+            {{ formatAmount(totalAmountWan) }}
+          </p>
         </div>
-        <BaseSkeleton v-else />
+        <div>
+          <p class="text-xs text-text-tertiary">主力净流入</p>
+          <p
+            class="mt-1 text-xl font-semibold tabular-nums"
+            :class="(marketFundFlow?.mainNetInflow ?? 0) >= 0 ? 'text-up' : 'text-down'"
+          >
+            {{ formatYuanWithSign(marketFundFlow?.mainNetInflow) }}
+          </p>
+        </div>
+      </div>
+      <BaseSkeleton v-else />
+    </BaseCard>
+
+    <!-- 涨跌分布 + 大盘资金流：各占 50%，容器不足（每项最小 500px）时换行为全宽 -->
+    <div class="flex flex-wrap gap-4">
+      <BaseCard
+        title="涨跌分布"
+        class="min-w-[500px] flex-1 basis-[calc(50%-0.5rem)]"
+      >
+        <template #extra>
+          <BaseTabs v-model="distributionViewMode" :options="VIEW_MODE_OPTIONS" />
+        </template>
+        <div v-if="!isDistributionReady"><BaseSkeleton /></div>
+        <!-- 图表视图 -->
+        <DistributionChart v-else-if="distributionViewMode === VIEW_MODE.CHART" :data="distribution" />
+        <!-- 列表视图 -->
+        <BaseTable
+          v-else
+          :columns="distributionColumns"
+          :rows="distribution"
+          :row-key="(bucket) => bucket.key"
+          scroll-class="table-scroll-chart"
+        >
+          <template #label="{ row }">
+            <span class="flex items-center gap-1.5">
+              <span class="h-2 w-2 rounded-full" :style="{ backgroundColor: row.color }" />
+              <span class="text-text-secondary">{{ row.label }}%</span>
+            </span>
+          </template>
+          <template #count="{ row }">
+            <span class="tabular-nums text-text">{{ row.count }}</span>
+          </template>
+          <template #ratio="{ row }">
+            <span class="text-text-secondary">
+              {{ distributionTotal ? ((row.count / distributionTotal) * 100).toFixed(2) : '0.00' }}%
+            </span>
+          </template>
+        </BaseTable>
+      </BaseCard>
+
+      <!-- 大盘资金流（近10日）：曲线 / 列表 -->
+      <BaseCard
+        title="大盘资金流（近10日）"
+        class="min-w-[500px] flex-1 basis-[calc(50%-0.5rem)]"
+      >
+        <template #extra>
+          <BaseTabs v-model="marketViewMode" :options="VIEW_MODE_OPTIONS" />
+        </template>
+        <div v-if="isBreadthError" class="py-10">
+          <BaseEmpty text="资金数据加载失败，请稍后重试（上游可能限频或封禁）" />
+        </div>
+        <BaseSkeleton v-else-if="marketFlowHistory.length === 0" />
+        <template v-else>
+          <!-- 曲线视图 -->
+          <div v-if="marketViewMode === VIEW_MODE.CHART">
+            <MarketFundFlowTrendChart :days="marketFlowAsc" :height="MARKET_FLOW_VIEW_HEIGHT_PX" />
+          </div>
+          <!-- 列表视图 -->
+          <BaseTable
+            v-else
+            :columns="marketColumns"
+            :rows="marketFlowRows"
+            :row-key="(day) => day.date"
+            scroll-class="table-scroll-chart"
+          >
+            <template #date="{ row }">
+              <span class="text-text-secondary">{{ row.date.slice(5) }}</span>
+            </template>
+            <template #mainNetInflow="{ row }">
+              <span
+                class="font-medium"
+                :class="(row.mainNetInflow ?? 0) >= 0 ? 'text-up' : 'text-down'"
+              >
+                {{ formatYuanWithSign(row.mainNetInflow) }}
+              </span>
+            </template>
+            <template #mainNetInflowPercent="{ row }">
+              <span class="text-text-secondary">{{ formatPercent(row.mainNetInflowPercent) }}</span>
+            </template>
+            <template #superLargeNetInflow="{ row }">
+              <span :class="(row.superLargeNetInflow ?? 0) >= 0 ? 'text-up' : 'text-down'">
+                {{ formatYuanWithSign(row.superLargeNetInflow) }}
+              </span>
+            </template>
+            <template #largeNetInflow="{ row }">
+              <span :class="(row.largeNetInflow ?? 0) >= 0 ? 'text-up' : 'text-down'">
+                {{ formatYuanWithSign(row.largeNetInflow) }}
+              </span>
+            </template>
+            <template #smallNetInflow="{ row }">
+              <span :class="(row.smallNetInflow ?? 0) >= 0 ? 'text-up' : 'text-down'">
+                {{ formatYuanWithSign(row.smallNetInflow) }}
+              </span>
+            </template>
+          </BaseTable>
+        </template>
       </BaseCard>
     </div>
 
@@ -237,17 +411,37 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
         </div>
       </template>
       <template v-if="topBoards.length > 0">
-        <!-- 热力图形式 -->
+        <!-- 热力图形式：点击板块不下钻替换，而是在下方追加成分股热力图 -->
         <HeatmapChart
           v-if="settingsStore.heatmapViewMode === HEATMAP_VIEW_MODE.HEATMAP"
           :boards="heatmapBoards"
-          :drill-view="drillView"
+          :drill-view="null"
           :is-drill-loading="isDrillLoading"
           :drill-error="drillError"
-          @stock-click="onOpenHeatmapStock"
           @board-click="drillInto"
-          @back="backToBoards"
         />
+        <!-- 成分股热力图（点击上方板块后出现；返回后隐藏） -->
+        <template v-if="settingsStore.heatmapViewMode === HEATMAP_VIEW_MODE.HEATMAP && drillView">
+          <div class="mt-4 flex items-center gap-2 text-sm">
+            <button
+              type="button"
+              class="pressable flex items-center gap-1 rounded-lg px-2 py-1 text-text-secondary hover:bg-flat-weak hover:text-text active:scale-90"
+              @click="backToBoards"
+            >
+              <MenuIcon name="arrowLeft" :size="14" />
+              返回板块
+            </button>
+            <span class="font-medium text-text">{{ drillView.board.name }}</span>
+            <span class="text-xs text-text-tertiary">成分股热力（面积 = 成交额）· 点击个股查看详情</span>
+          </div>
+          <HeatmapChart
+            :boards="[]"
+            :drill-view="drillView"
+            :is-drill-loading="isDrillLoading"
+            :drill-error="drillError"
+            @stock-click="onOpenHeatmapStock"
+          />
+        </template>
         <!-- 列表形式 -->
         <HeatmapBoardList
           v-else

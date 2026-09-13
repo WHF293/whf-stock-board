@@ -37,10 +37,23 @@ const POOL_CHUNK_SIZE = 50;
 
 const dataCache = useDataCacheStore();
 
+withDefaults(
+  defineProps<{
+    /**
+     * 展示模式（供父级页面按 tab 拆分复用）：
+     * - zt：连板梯队 + 股池（涨停维度）
+     * - events：盘口异动 + 板块异动（异动维度）
+     * 数据轮询与模式无关，两个维度共享同一份预取结果
+     */
+    mode?: "zt" | "events";
+  }>(),
+  { mode: "zt" },
+);
+
 /**
- * 涨停与异动：股池 tab + 连板梯队 + 盘口异动时间轴 + 板块异动
+ * 涨停与异动：股池 + 连板梯队（zt）/ 盘口异动时间轴 + 板块异动（events）
  *
- * 三个接口串行错峰轮询（对上游保持克制）
+ * 接口串行错峰轮询（对上游保持克制）
  */
 const dockPanel = useDockPanelStore();
 
@@ -184,7 +197,7 @@ const openDetail = (code: string): void => {
 <template>
   <div class="space-y-4">
     <!-- 连板梯队 -->
-    <BaseCard v-if="activePool === 'zt' && ladder.length > 0" title="连板梯队">
+    <BaseCard v-if="mode === 'zt' && activePool === 'zt' && ladder.length > 0" title="连板梯队">
       <div class="flex flex-wrap items-center gap-2">
         <span
           v-for="[count, num] in ladder"
@@ -198,7 +211,7 @@ const openDetail = (code: string): void => {
     </BaseCard>
 
     <!-- 股池 -->
-    <BaseCard title="股池">
+    <BaseCard v-if="mode === 'zt'" title="股池">
       <template #extra>
         <BaseTabs v-model="activePool" :options="ZT_POOL_OPTIONS" />
       </template>
@@ -209,6 +222,7 @@ const openDetail = (code: string): void => {
           :rows="visiblePoolItems"
           :row-key="(item) => item.code"
           min-width="720px"
+          scroll-class="table-scroll-xs"
           row-clickable
           :footer-text="poolHasMore ? `已展示 ${visiblePoolItems.length} / 共 ${poolTotal}，继续滚动加载更多` : undefined"
           @row-click="(item) => openDetail(item.code)"
@@ -260,7 +274,7 @@ const openDetail = (code: string): void => {
       <BaseEmpty v-else text="股池暂无数据" />
     </BaseCard>
 
-    <div class="grid gap-4 @4xl:grid-cols-2">
+    <div v-if="mode === 'events'" class="grid gap-4 @4xl:grid-cols-2">
       <!-- 盘口异动 -->
       <BaseCard title="盘口异动">
         <div v-if="isEventsLoading && stockChanges.length === 0"><BaseSkeleton /></div>

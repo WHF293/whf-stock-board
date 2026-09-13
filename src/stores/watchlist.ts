@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { STORAGE_NS_WATCHLIST } from '../constants/storage-key.constants';
 import { appStorage } from '../utils/app-local-storage';
 import { DEFAULT_GROUP_ID, DEFAULT_GROUP_NAME } from '../constants/watchlist.constants';
+import { normalizeSymbol } from 'stock-sdk';
 import type { WatchlistGroup, WatchlistStock } from '../types/watchlist.types';
 
 /** 自选股 store 状态 */
@@ -39,8 +40,12 @@ export const useWatchlistStore = defineStore('watchlist', {
      * @returns 是否成功加入（false 表示已存在于任一分组）
      */
     addStock(stock: WatchlistStock, groupId: string = DEFAULT_GROUP_ID): boolean {
+      const symbol: string = String(normalizeSymbol(stock.symbol));
+      if (!symbol) {
+        return false;
+      }
       const exists = this.groups.some((group) =>
-        group.stocks.some((item) => item.symbol === stock.symbol),
+        group.stocks.some((item) => item.symbol === symbol),
       );
       if (exists) {
         return false;
@@ -49,7 +54,7 @@ export const useWatchlistStore = defineStore('watchlist', {
       if (!target) {
         return false;
       }
-      target.stocks.push(stock);
+      target.stocks.push({ ...stock, symbol });
       this.$persist();
       return true;
     },
@@ -116,6 +121,37 @@ export const useWatchlistStore = defineStore('watchlist', {
       this.groups = this.groups.filter((group) => group.id !== groupId);
       this.$persist();
     },
+
+    /**
+     * 把同一只股票一次性加入多个分组（弹窗勾选确认后调用）
+     * @param stock 自选股条目
+     * @param groupIds 目标分组 id 列表
+     * @returns 实际新增成功的分组 id 列表
+     */
+    addStockToGroups(stock: WatchlistStock, groupIds: string[]): string[] {
+      const added: string[] = [];
+      for (const groupId of groupIds) {
+        if (this.addStock(stock, groupId)) {
+          added.push(groupId);
+        }
+      }
+      return added;
+    },
+
+    /**
+     * 一次性从所有分组移除指定股票（弹窗「删除全部」确认后调用）
+     * @param symbol 待移除的股票符号
+     */
+    removeStockFromAllGroups(symbol: string): void {
+      const normalized: string = String(normalizeSymbol(symbol));
+      for (const group of this.groups) {
+        const before = group.stocks.length;
+        group.stocks = group.stocks.filter((stock) => stock.symbol !== normalized);
+        if (group.stocks.length !== before) {
+          this.$persist();
+        }
+      }
+    },
   },
 
   persist: {
@@ -125,3 +161,4 @@ export const useWatchlistStore = defineStore('watchlist', {
     debug: import.meta.env.DEV,
   },
 });
+

@@ -38,6 +38,8 @@ const props = defineProps<{
   mode: 'timeline' | 'candle';
   /** 昨收价（timeline 模式涨跌幅基准；缺失时回退可视区首根收盘） */
   preClose?: number | null;
+  /** 外部强制重绘信号（自增 tick）：dock 拖拽结束后父级触发一次 */
+  resizeTick?: number;
 }>();
 
 const emit = defineEmits<{
@@ -270,12 +272,16 @@ const applyData = (): void => {
   chart.setDataLoader({
     getBars: ({ callback }) => {
       callback(displayBars.value, { forward: false, backward: false });
-      // 分时 / 五日：按容器宽度反推 bar 宽度，保证全部数据一屏显示
+      // 分时 / 五日：barSpace = 容器宽度 / 根数（下限 1px），让全部数据恰好铺满画布；
+      // 首屏渲染后再 resize 让父容器高度稳定后画布正确铺开
       if (props.mode === 'timeline' && displayBars.value.length > 0) {
         const width = containerRef.value?.clientWidth ?? 0;
         const barSpace = Math.max(1, Math.floor(width / displayBars.value.length));
-        chart.setBarSpace(Math.min(barSpace, 20));
-        chart.scrollToRealTime();
+        chart.setBarSpace(barSpace);
+        nextTick(() => {
+          chart.resize();
+          chart.scrollToRealTime();
+        });
       }
     },
   });
@@ -353,8 +359,39 @@ onBeforeUnmount(() => {
 useResizeObserver(containerRef, () => {
   const chart = chartRef.value;
   if (!chart) return;
-  nextTick(() => chart.resize());
+  nextTick(() => {
+    // 分时 / 五日：宽度变化时重算 barSpace，保持全量数据铺满
+    if (props.mode === 'timeline' && props.bars.length > 0) {
+      const width = containerRef.value?.clientWidth ?? 0;
+      chart.setBarSpace(Math.max(1, Math.floor(width / props.bars.length)));
+    }
+    chart.resize();
+  });
 });
+
+/**
+ * 重算分时/五日 barSpace 并强制重绘（拖拽结束等场景的确定性兜底，
+ * 不依赖 ResizeObserver 的触发时机）
+ */
+const refitChart = (): void => {
+  const chart = chartRef.value;
+  if (!chart) return;
+  nextTick(() => {
+    if (props.mode === 'timeline' && props.bars.length > 0) {
+      const width = containerRef.value?.clientWidth ?? 0;
+      chart.setBarSpace(Math.max(1, Math.floor(width / props.bars.length)));
+    }
+    chart.resize();
+  });
+};
+
+// 拖拽结束信号：强制重绘适配最终布局
+watch(
+  () => props.resizeTick,
+  () => {
+    refitChart();
+  },
+);
 
 // 展示数据或模式变化时整体重新加载（周期 / 标的切换由父组件重新拉取）；
 // 模式变化时指标集不同，先清空重建；
@@ -386,6 +423,6 @@ watch(trendSet, () => {
   <!-- 容器始终保留 ≥ 480px 高度；KLineChart canvas 内部会铺满父级可见区域 -->
   <div
     ref="containerRef"
-    class="h-[480px] min-h-[480px] w-full"
+    class="h-[420px] w-full"
   />
 </template>

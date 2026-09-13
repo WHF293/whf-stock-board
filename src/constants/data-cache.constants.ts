@@ -32,4 +32,6 @@ export const DATA_CACHE_KEY = {
   DETAIL_TIMELINE_PREFIX: 'detail.timeline.',
   DETAIL_KLINE_PREFIX: 'detail.kline.',
   HOT_NEWS_ITEMS: 'hot-news.items.',
+  /** 市场榜单：全 A 股报价快照（按 sortKey 客户端排序） */
+  MARKET_RANK_QUOTES: 'marketRank.quotes',
 } as const;

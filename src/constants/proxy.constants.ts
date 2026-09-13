@@ -18,10 +18,12 @@ export const STOCK_PROXY_ALLOWED_HOSTS = [
   'eastmoney.com',
   // 腾讯行情 / 交易日历 / 搜索
   'gtimg.cn',
-  // 新浪（行情快照 hq.sinajs.cn / K 线 quotes.sina.cn）
+  // 新浪（行情快照 hq.sinajs.cn / K 线 quotes.sina.cn / 新闻 feed.mix.sina.com.cn）
   'sina.com.cn',
   'sina.cn',
   'sinajs.cn',
+  // 同花顺（热点新闻 news.10jqka.com.cn）
+  '10jqka.com.cn',
   // stock-sdk 静态资源（代码表等参考数据）
   'linkdiary.cn',
 ] as const;

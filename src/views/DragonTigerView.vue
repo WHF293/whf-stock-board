@@ -42,8 +42,35 @@ const VIEW_TAB_OPTIONS = [
   { label: "大宗交易", value: "block-trade" },
 ] as const;
 
-/** 当前视图 */
-const activeTab = ref<string>("dragon-tiger");
+const props = defineProps<{
+  /**
+   * 受控视图：父级页面级 tabs 接管时传入，内部不再渲染视图切换；
+   * 未传入时保持内部自管（保持单页独立可用）
+   */
+  modelValue?: "dragon-tiger" | "block-trade";
+}>();
+
+const emit = defineEmits<{
+  /** 受控视图变化同步 */
+  "update:modelValue": [value: "dragon-tiger" | "block-trade"];
+}>();
+
+/** 内部视图（非受控模式兜底） */
+const internalTab = ref<string>("dragon-tiger");
+
+/** 当前视图：受控优先 */
+const activeTab = computed<string>({
+  get: () => props.modelValue ?? internalTab.value,
+  set: (value) => {
+    internalTab.value = value;
+    if (props.modelValue !== undefined) {
+      emit("update:modelValue", value as "dragon-tiger" | "block-trade");
+    }
+  },
+});
+
+/** 是否渲染内部视图切换（父级接管时隐藏） */
+const showViewTabs = computed(() => props.modelValue === undefined);
 
 /** 龙虎榜涨/跌筛选按钮组（参考板块热力「热力图/列表」样式） */
 const DIRECTION_TAB_OPTIONS = [
@@ -235,8 +262,8 @@ const openDetail = (code: string): void => {
 
 <template>
   <div class="space-y-4">
-    <!-- 视图切换：龙虎榜 / 大宗交易（与行情全景一致的 underline 风格） -->
-    <div class="flex items-center justify-between gap-2">
+    <!-- 视图切换：龙虎榜 / 大宗交易（父级页面接管时不渲染） -->
+    <div v-if="showViewTabs" class="flex items-center justify-between gap-2">
       <BaseTabs v-model="activeTab" :options="VIEW_TAB_OPTIONS" variant="underline" />
       <span class="text-xs text-text-tertiary">近 7 日数据 · 按日期下拉切换</span>
     </div>

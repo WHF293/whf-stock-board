@@ -13,6 +13,8 @@ const ICON_PATHS: Record<string, string> = {
     '<rect x="3" y="4" width="18" height="4" rx="1"/><rect x="3" y="10" width="8" height="10" rx="1"/><rect x="13" y="10" width="8" height="10" rx="1"/>',
   funds:
     '<polyline points="3 17 9 11 13 15 21 7"/><polyline points="15 7 21 7 21 13"/>',
+  rank:
+    '<rect x="3" y="3" width="18" height="18" rx="2"/><rect x="6" y="6" width="4" height="4"/><rect x="14" y="6" width="4" height="4"/><rect x="6" y="14" width="4" height="4"/><rect x="14" y="14" width="4" height="4"/>',
   news:
     '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 9h6M7 12h6M7 15h4M16 9h1v6h-1z"/>',
   flame:
@@ -49,6 +51,8 @@ const ICON_PATHS: Record<string, string> = {
     '<path d="M15 6l-6 6 6 6"/>',
   chevronRight:
     '<path d="M9 6l6 6-6 6"/>',
+  chevronDown:
+    '<path d="M6 9l6 6 6-6"/>',
   panelLeft:
     '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>',
 };

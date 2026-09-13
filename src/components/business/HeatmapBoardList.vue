@@ -1,10 +1,9 @@
 <script setup lang="ts">
+import { ref } from "vue";
 import BaseSkeleton from "../ui/BaseSkeleton.vue";
 import BaseTable from "../ui/BaseTable.vue";
-import MenuIcon from "../ui/MenuIcon.vue";
 import { getTrendByChangePercent } from "../../constants/trend.constants";
 import { TREND_TEXT_CLASS } from "../../constants/stock-colors.constants";
-import { HEATMAP_VIEW_HEIGHT_PX } from "../../constants/heatmap.constants";
 import {
   NUMBER_PLACEHOLDER,
   YUAN_PER_WAN,
@@ -25,9 +24,10 @@ import type { TableColumn } from "../../types/table.types";
 /**
  * 板块热力列表视图：与 HeatmapChart 交互对称的表格形态
  *
- * 板块层展示 Top N 板块（完整行情字段，信息量比热力图 cell 更丰富），
- * 行点击下钻成分股；成分股层行点击 emit stock-click 跳个股 K 线详情；
- * 下钻状态由父级 useHeatmapDrill 统一管理（与热力图视图共享，切换展示形式不丢位置）
+ * 板块层展示 Top N 板块，开启行扩展（BaseTable expandable）：
+ * 点击行首 chevron（或点击行）展开扩展行，扩展行内渲染该板块的成分股表格，
+ * 成分股行点击 emit stock-click 跳个股详情；
+ * 成分股数据由父级 useHeatmapDrill 拉取（board-click 事件触发），与热力图视图共享
  */
 defineProps<{
   /** 板块列表（Top N，完整行情字段） */
@@ -93,6 +93,9 @@ const stockColumns: TableColumn<IndustryBoardConstituent>[] = [
   { key: "turnoverRate", label: "换手率", align: "right" },
 ];
 
+/** 已展开的板块 code（扩展行受控列表） */
+const expandedCodes = ref<string[]>([]);
+
 /**
  * 涨跌语义文本色类名
  * @param changePercent 涨跌幅（百分数数值，空值按平盘处理）
@@ -102,11 +105,14 @@ const trendTextClass = (changePercent: number | null): string =>
   TREND_TEXT_CLASS[getTrendByChangePercent(changePercent ?? 0)];
 
 /**
- * 板块行点击：请求父级下钻
+ * 板块行 / 展开图标点击：切换扩展行，并请求父级拉取该板块成分股
  * @param board 板块行数据
  */
-const onBoardRowClick = (board: IndustryBoard): void => {
+const onBoardToggle = (board: IndustryBoard): void => {
   emit("boardClick", board);
+  expandedCodes.value = expandedCodes.value.includes(board.code)
+    ? expandedCodes.value.filter((code) => code !== board.code)
+    : [...expandedCodes.value, board.code];
 };
 
 /**
@@ -120,98 +126,85 @@ const onStockRowClick = (stock: IndustryBoardConstituent): void => {
 
 <template>
   <div>
-    <!-- 下钻状态条：返回 + 当前板块名 -->
-    <div v-if="drillView" class="mb-2 flex items-center gap-2 text-sm">
-      <button
-        type="button"
-        class="pressable flex items-center gap-1 rounded-lg px-2 py-1 text-text-secondary hover:bg-flat-weak hover:text-text active:scale-90"
-        @click="emit('back')"
-      >
-        <MenuIcon name="arrowLeft" :size="14" />
-        返回板块
-      </button>
-      <span class="font-medium text-text">{{ drillView.board.name }}</span>
-      <span class="text-xs text-text-tertiary">
-        成分股 Top{{ drillView.constituents.length }}（按成交额）
-      </span>
-    </div>
-    <div v-if="isDrillLoading" class="flex items-center justify-center py-24">
-      <BaseSkeleton />
-    </div>
-    <!-- 成分股层：行点击跳个股详情 -->
-    <div
-      v-else-if="drillView"
-      class="overflow-y-auto"
-      :style="{ maxHeight: `${HEATMAP_VIEW_HEIGHT_PX + 10}px` }"
+    <BaseTable
+      :columns="boardColumns"
+      :rows="boards"
+      :row-key="(board) => board.code"
+      row-clickable
+      expandable
+      :expanded-keys="expandedCodes"
+      @row-click="onBoardToggle"
+      @toggle-expand="onBoardToggle"
     >
-      <BaseTable
-        :columns="stockColumns"
-        :rows="drillView.constituents"
-        :row-key="(stock) => stock.code"
-        row-clickable
-        @row-click="onStockRowClick"
-      >
-        <template #changePercent="{ row }">
-          <span :class="trendTextClass(row.changePercent)">
-            {{ formatPercent(row.changePercent) }}
+      <template #price="{ row }">
+        {{ formatPrice(row.price) }}
+      </template>
+      <template #changePercent="{ row }">
+        <span :class="trendTextClass(row.changePercent)">
+          {{ formatPercent(row.changePercent) }}
+        </span>
+      </template>
+      <template #totalMarketCap="{ row }">
+        {{ formatAmount((row.totalMarketCap ?? 0) / YUAN_PER_WAN) }}
+      </template>
+      <template #turnoverRate="{ row }">
+        {{ formatPercentUnsigned(row.turnoverRate) }}
+      </template>
+      <template #riseFall="{ row }">
+        {{ row.riseCount ?? NUMBER_PLACEHOLDER }} /
+        {{ row.fallCount ?? NUMBER_PLACEHOLDER }}
+      </template>
+      <template #leadingStock="{ row }">
+        <template v-if="row.leadingStock">
+          {{ row.leadingStock }}
+          <span
+            class="ml-1 text-xs"
+            :class="trendTextClass(row.leadingStockChangePercent)"
+          >
+            {{ formatPercent(row.leadingStockChangePercent) }}
           </span>
         </template>
-        <template #price="{ row }">
-          {{ formatPrice(row.price) }}
+        <template v-else>{{ NUMBER_PLACEHOLDER }}</template>
+      </template>
+
+      <!-- 扩展行：该板块成分股表格（数据由父级 useHeatmapDrill 拉取） -->
+      <template #expanded="{ row }">
+        <div v-if="isDrillLoading && drillView?.board.code !== row.code" class="py-6">
+          <BaseSkeleton />
+        </div>
+        <div v-else-if="drillError === row.name && drillView?.board.code !== row.code" class="py-3 text-xs text-down">
+          {{ row.name }} 成分股加载失败，请稍后重试
+        </div>
+        <template v-else-if="drillView && drillView.board.code === row.code">
+          <p class="mb-2 text-xs text-text-tertiary">
+            {{ drillView.board.name }} 成分股 Top{{ drillView.constituents.length }}（按成交额）· 点击行查看个股详情
+          </p>
+          <BaseTable
+            :columns="stockColumns"
+            :rows="drillView.constituents"
+            :row-key="(stock) => stock.code"
+            row-clickable
+            @row-click="onStockRowClick"
+          >
+            <template #changePercent="{ row: stock }">
+              <span :class="trendTextClass(stock.changePercent)">
+                {{ formatPercent(stock.changePercent) }}
+              </span>
+            </template>
+            <template #price="{ row: stock }">
+              {{ formatPrice(stock.price) }}
+            </template>
+            <template #amount="{ row: stock }">
+              {{ formatAmount((stock.amount ?? 0) / YUAN_PER_WAN) }}
+            </template>
+            <template #turnoverRate="{ row: stock }">
+              {{ formatPercentUnsigned(stock.turnoverRate) }}
+            </template>
+          </BaseTable>
         </template>
-        <template #amount="{ row }">
-          {{ formatAmount((row.amount ?? 0) / YUAN_PER_WAN) }}
-        </template>
-        <template #turnoverRate="{ row }">
-          {{ formatPercentUnsigned(row.turnoverRate) }}
-        </template>
-      </BaseTable>
-    </div>
-    <!-- 板块层：行点击下钻成分股 -->
-    <div
-      v-else
-      class="overflow-y-auto"
-      :style="{ maxHeight: `${HEATMAP_VIEW_HEIGHT_PX}px` }"
-    >
-      <BaseTable
-        :columns="boardColumns"
-        :rows="boards"
-        :row-key="(board) => board.code"
-        row-clickable
-        @row-click="onBoardRowClick"
-      >
-        <template #price="{ row }">
-          {{ formatPrice(row.price) }}
-        </template>
-        <template #changePercent="{ row }">
-          <span :class="trendTextClass(row.changePercent)">
-            {{ formatPercent(row.changePercent) }}
-          </span>
-        </template>
-        <template #totalMarketCap="{ row }">
-          {{ formatAmount((row.totalMarketCap ?? 0) / YUAN_PER_WAN) }}
-        </template>
-        <template #turnoverRate="{ row }">
-          {{ formatPercentUnsigned(row.turnoverRate) }}
-        </template>
-        <template #riseFall="{ row }">
-          {{ row.riseCount ?? NUMBER_PLACEHOLDER }} /
-          {{ row.fallCount ?? NUMBER_PLACEHOLDER }}
-        </template>
-        <template #leadingStock="{ row }">
-          <template v-if="row.leadingStock">
-            {{ row.leadingStock }}
-            <span
-              class="ml-1 text-xs"
-              :class="trendTextClass(row.leadingStockChangePercent)"
-            >
-              {{ formatPercent(row.leadingStockChangePercent) }}
-            </span>
-          </template>
-          <template v-else>{{ NUMBER_PLACEHOLDER }}</template>
-        </template>
-      </BaseTable>
-    </div>
+        <p v-else class="py-2 text-xs text-text-tertiary">成分股加载中...</p>
+      </template>
+    </BaseTable>
     <p v-if="drillError" class="mt-2 text-xs text-down">
       {{ drillError }} 成分股加载失败，请稍后重试
     </p>
