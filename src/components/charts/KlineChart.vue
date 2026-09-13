@@ -40,6 +40,11 @@ const props = defineProps<{
   preClose?: number | null;
 }>();
 
+const emit = defineEmits<{
+  /** 十字光标悬停在 K 线上时发出该根 bar（原始数据）；离开图表时发 null */
+  crosshairBar: [bar: KLineData | null];
+}>();
+
 const settingsStore = useSettingsStore();
 
 /** 图表容器 */
@@ -102,6 +107,7 @@ const displayBars = computed<KLineData[]>(() => {
  * 分时 tooltip 自定义：开/高/低/收显示「价格（相对昨收涨跌幅）」，
  * 如 `10.10（+4.23%）`；数据取自 displayBars（price/pre/close 已就位）
  * @param data 十字光标邻域数据
+ * @param data.current
  * @returns tooltip 图例列表
  */
 const timelineCandleTooltipLegends = (data: {
@@ -140,7 +146,8 @@ const buildStyles = (): DeepPartial<Styles> => {
   const trend = trendSet.value;
   const isTimeline = props.mode === 'timeline';
   return {
-    grid: { horizontal: { color: CHART_SPLIT_LINE_COLOR }, vertical: { show: false } },
+    // 水平网格线不显示
+    grid: { horizontal: { show: false }, vertical: { show: false } },
     candle: {
       type: isTimeline ? 'area' : 'candle_solid',
       bar: {
@@ -181,23 +188,6 @@ const buildStyles = (): DeepPartial<Styles> => {
     },
     separator: { color: CHART_SPLIT_LINE_COLOR },
   };
-};
-
-/**
- * 3 等分 Y 轴：根据可见范围线性插值出 3 个等距刻度。
- * 库内 defaultTicks 已按正常 niceInterval 算好 text，本回调保留其渲染行为，
- * 仅覆盖 value 字段（决定屏幕坐标的源数据点）
- * @param params 轴创建参数
- * @returns 等距刻度序列
- */
-const buildYAxisTicks = (params: AxisCreateTicksParams) => {
-  const from = params.range.displayFrom;
-  const to = params.range.displayTo;
-  if (Number.isNaN(from) || Number.isNaN(to) || to === from) return params.defaultTicks;
-  return [from, (from + to) / 2, to].map((value, index) => ({
-    ...params.defaultTicks[index],
-    value,
-  }));
 };
 
 /**
@@ -243,6 +233,7 @@ const setupIndicators = (chart: Chart): void => {
 /**
  * 应用轴规格：主图 Y 轴左 + 3 等分；副图隐藏 Y 轴刻度线；
  * X 轴 5 等分；分时/五日主图使用 percentage 涨跌幅轴；分时/五日锁定缩放
+ * @param chart
  */
 const applyAxisOptions = (chart: Chart): void => {
   const isTimeline = props.mode === 'timeline';
@@ -251,7 +242,6 @@ const applyAxisOptions = (chart: Chart): void => {
     paneId: CANDLE_PANE_ID,
     position: 'left',
     name: isTimeline ? 'timeline_pct' : 'normal',
-    createTicks: buildYAxisTicks,
   });
   // 副图（成交量 / MACD / MACD&KDJ）：保留轴标但隐藏刻度线
   chart.getIndicators().forEach((indicator) => {
@@ -260,7 +250,6 @@ const applyAxisOptions = (chart: Chart): void => {
       paneId: indicator.paneId,
       position: 'left',
       needWidget: true,
-      createTicks: buildYAxisTicks,
     });
   });
   // X 轴 5 等分
@@ -298,10 +287,19 @@ const applyData = (): void => {
   chart.setPeriod({ type: 'day', span: 1 });
 };
 
-/** 两位补零 */
+/**
+ * 两位补零
+ * @param n 数字
+ * @returns 两位字符串
+ */
 const pad2 = (n: number): string => n.toString().padStart(2, '0');
 
-/** 跨模式通用十字光标 / X 轴日期格式化 */
+/**
+ * 跨模式通用十字光标 / X 轴日期格式化
+ * @param timestamp 毫秒时间戳
+ * @param mode 图表模式
+ * @returns 格式化日期文本
+ */
 const formatCrosshairDate = (
   timestamp: number,
   mode: 'timeline' | 'candle',
@@ -313,7 +311,12 @@ const formatCrosshairDate = (
   return `${d.getFullYear()}/${pad2(d.getMonth() + 1)}/${pad2(d.getDate())}`;
 };
 
-/** 当前模式的日期格式化器（由 setupChart 注入 chart.setFormatter） */
+/**
+ * 当前模式的日期格式化器（由 setupChart 注入 chart.setFormatter）
+ * @returns 格式化日期文本
+ * @param params
+ * @param params.timestamp
+ */
 const formatDateByMode = (params: { timestamp: number }): string =>
   formatCrosshairDate(params.timestamp, props.mode);
 
@@ -327,6 +330,11 @@ onMounted(() => {
   setupIndicators(chart);
   applyAxisOptions(chart);
   chart.setFormatter({ formatDate: (timestamp) => formatDateByMode(timestamp) });
+  // 十字光标联动：悬停 bar 对外发事件（行情头联动展示），离开发 null
+  chart.subscribeAction('onCrosshairChange', (raw) => {
+    const data = raw as { kLineData?: KLineData } | undefined;
+    emit('crosshairBar', data?.kLineData ?? null);
+  });
   applyData();
 });
 

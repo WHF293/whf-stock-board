@@ -60,6 +60,11 @@ const routes = [
         meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.SCREENER] },
       },
       {
+        path: ROUTE_PATH.HOT_NEWS,
+        component: () => import('../views/HotNewsView.vue'),
+        meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.HOT_NEWS] },
+      },
+      {
         path: ROUTE_PATH.SETTINGS,
         component: () => import('../views/SettingsView.vue'),
         meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.SETTINGS] },
