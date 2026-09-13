@@ -183,10 +183,17 @@ body {
   overflow: auto;
 }
 
+/* 图表等高表格：与 220px 图表（涨跌分布 / 大盘资金流）同高 */
+.table-scroll-chart {
+  max-height: 220px;
+  overflow: auto;
+}
+
 /* 表头吸顶 */
 .table-scroll thead th,
 .table-scroll-sm thead th,
-.table-scroll-xs thead th {
+.table-scroll-xs thead th,
+.table-scroll-chart thead th {
   position: sticky;
   top: 0;
   z-index: 1;
@@ -196,7 +203,8 @@ body {
 /* 第一列吸左（表体单元格） */
 .table-scroll td:first-child,
 .table-scroll-sm td:first-child,
-.table-scroll-xs td:first-child {
+.table-scroll-xs td:first-child,
+.table-scroll-chart td:first-child {
   position: sticky;
   left: 0;
   z-index: 0;
@@ -226,4 +234,62 @@ body {
 
 #nprogress .peg {
   box-shadow: 0 0 10px var(--color-primary), 0 0 5px var(--color-primary) !important;
+}
+
+
+/*
+ * 全局点击光标：所有可点击模块（按钮 / 链接 / tab / 下拉 / 标签 / 行点击等）
+ * hover 时统一显示小手；输入框（input / textarea）保持文本光标不受影响
+ *
+ * 注：Tailwind v4 preflight 将 button 默认设为 cursor: default，此处覆盖回 pointer
+ */
+button:not(:disabled),
+[role='button']:not(:disabled),
+[role='tab'],
+a,
+summary,
+select,
+label,
+.clickable {
+  cursor: pointer;
+}
+
+input:not([type='button']):not([type='submit']):not([type='reset']),
+textarea {
+  cursor: auto;
+}
+
+
+/*
+ * 页面切换过渡：前页滑走 + 后页滑入（方向由 MainLayout 按菜单顺序决定）
+ * - page-forward：前进，旧页左滑出 / 新页右侧滑入
+ * - page-back：后退，旧页右滑出 / 新页左侧滑入
+ */
+.page-forward-enter-active,
+.page-forward-leave-active,
+.page-back-enter-active,
+.page-back-leave-active {
+  transition:
+    transform 0.25s ease,
+    opacity 0.25s ease;
+}
+
+.page-forward-enter-from {
+  transform: translateX(32px);
+  opacity: 0;
+}
+
+.page-forward-leave-to {
+  transform: translateX(-32px);
+  opacity: 0;
+}
+
+.page-back-enter-from {
+  transform: translateX(-32px);
+  opacity: 0;
+}
+
+.page-back-leave-to {
+  transform: translateX(32px);
+  opacity: 0;
 }

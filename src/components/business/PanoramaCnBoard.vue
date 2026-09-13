@@ -20,8 +20,8 @@ import {
   formatPercentUnsigned,
 } from "../../utils/format-percent";
 import { formatPrice } from "../../utils/format-price";
-import { formatYuan } from "../../utils/format-yuan";
 import { useLazyRows } from "../../composables/use-lazy-rows";
+import { formatYuan } from "../../utils/format-yuan";
 import { useDockPanelStore } from "../../stores/dock-panel";
 import { useDataCacheStore } from "../../stores/data-cache";
 import { DATA_CACHE_KEY } from "../../constants/data-cache.constants";
@@ -51,7 +51,6 @@ import {
 const BOARDS_CHUNK_SIZE = 60;
 
 /** 成分股表每批放行行数 */
-const CONSTITUENTS_CHUNK_SIZE = 30;
 
 const dataCache = useDataCacheStore();
 
@@ -174,54 +173,45 @@ const {
   onScroll: onBoardsScroll,
 } = useLazyRows<BoardRow>(() => sortedBoardsFull.value, BOARDS_CHUNK_SIZE);
 
-/** 当前选中板块（成分股展示目标） */
-const selectedBoard = ref<BoardRow | null>(null);
-const constituents = ref<IndustryBoardConstituent[]>([]);
-const isConstituentsLoading = ref(false);
+/** 已展开的板块 code 列表（扩展行受控） */
+const expandedBoardCodes = ref<string[]>([]);
+/** 各板块成分股（code -> 列表，扩展行内渲染） */
+const constituentsMap = ref<Record<string, IndustryBoardConstituent[]>>({});
+/** 正在拉取成分股的板块 code */
+const loadingBoardCode = ref<string | null>(null);
 
 /**
- * 点击板块行：切换选中并按需拉取成分股（重接口，不轮询）
+ * 板块行 / 展开图标点击：切换扩展行，并按需拉取成分股（重接口，不轮询）
  * @param board 板块行
  */
-const onSelectBoard = (board: BoardRow): void => {
-  selectedBoard.value = board;
-  void loadConstituents(board);
-};
-
-const loadConstituents = async (board: BoardRow): Promise<void> => {
-  isConstituentsLoading.value = true;
-  constituents.value = [];
-  try {
-    // 快照播种：同板块先前拉取过则秒出
-    const cacheKey = DATA_CACHE_KEY.BOARDS_CONSTITUENTS_PREFIX + board.code;
-    const cached = dataCache.get<IndustryBoardConstituent[]>(cacheKey);
-    if (cached) {
-      constituents.value = cached;
-      isConstituentsLoading.value = false;
-    }
-    const list = await fetchIndustryConstituents(board.code);
-    constituents.value = list;
-    dataCache.set(cacheKey, list);
-  } catch (error) {
-    if (constituents.value.length === 0) {
-      constituents.value = [];
-    }
-    console.error("[panorama-cn] constituents", error);
-  } finally {
-    isConstituentsLoading.value = false;
+const onBoardToggle = (board: BoardRow): void => {
+  expandedBoardCodes.value = expandedBoardCodes.value.includes(board.code)
+    ? expandedBoardCodes.value.filter((code) => code !== board.code)
+    : [...expandedBoardCodes.value, board.code];
+  if (expandedBoardCodes.value.includes(board.code)) {
+    void loadConstituents(board);
   }
 };
 
-/** 成分股懒加载 */
-const {
-  rows: visibleConstituents,
-  total: constituentsTotal,
-  hasMore: constituentsHasMore,
-  onScroll: onConstituentsScroll,
-} = useLazyRows<IndustryBoardConstituent>(
-  () => constituents.value,
-  CONSTITUENTS_CHUNK_SIZE,
-);
+const loadConstituents = async (board: BoardRow): Promise<void> => {
+  // 快照播种：同板块先前拉取过则直接复用
+  const cacheKey = DATA_CACHE_KEY.BOARDS_CONSTITUENTS_PREFIX + board.code;
+  const cached = dataCache.get<IndustryBoardConstituent[]>(cacheKey);
+  if (cached) {
+    constituentsMap.value = { ...constituentsMap.value, [board.code]: cached };
+    return;
+  }
+  loadingBoardCode.value = board.code;
+  try {
+    const list = await fetchIndustryConstituents(board.code);
+    constituentsMap.value = { ...constituentsMap.value, [board.code]: list };
+    dataCache.set(cacheKey, list);
+  } catch (error) {
+    console.error("[panorama-cn] constituents", error);
+  } finally {
+    loadingBoardCode.value = null;
+  }
+};
 
 /** 排行表列配置（涨跌幅默认开启排序） */
 const boardColumns: TableColumn<BoardRow>[] = [
@@ -326,13 +316,10 @@ const openDetail = (code: string): void => {
         class="table-scroll"
       >
         <div class="grid grid-cols-2 gap-2 @2xl:grid-cols-3 @4xl:grid-cols-4">
-          <button
+          <div
             v-for="board in sortedBoardsFull"
             :key="board.code"
-            type="button"
-            class="pressable flex items-center justify-between gap-2 rounded-lg bg-flat-weak px-3 py-2.5 text-left hover:bg-flat-weak/70 active:scale-[0.98]"
-            :title="`查看 ${board.name} 成分股`"
-            @click="onSelectBoard(board)"
+            class="flex items-center justify-between gap-2 rounded-lg bg-flat-weak px-3 py-2.5"
           >
             <span class="truncate text-sm text-text">{{ board.name }}</span>
             <span
@@ -343,7 +330,7 @@ const openDetail = (code: string): void => {
             >
               {{ formatPercent(board.changePercent) }}
             </span>
-          </button>
+          </div>
         </div>
       </div>
       <div v-else-if="sortedBoardsFull.length > 0">
@@ -353,13 +340,16 @@ const openDetail = (code: string): void => {
           :row-key="(board) => board.code"
           min-width="760px"
           row-clickable
+          expandable
+          :expanded-keys="expandedBoardCodes"
           scroll-class="table-scroll-xs"
           :footer-text="
             boardsHasMore
               ? `已展示 ${sortedBoards.length} / 共 ${boardsTotal}，继续滚动加载更多`
               : undefined
           "
-          @row-click="onSelectBoard"
+          @row-click="onBoardToggle"
+          @toggle-expand="onBoardToggle"
           @scroll="onBoardsScroll"
         >
           <template #price="{ row }">
@@ -409,69 +399,62 @@ const openDetail = (code: string): void => {
               {{ formatPercent(row.leadingStockChangePercent) }}
             </span>
           </template>
+
+          <!-- 扩展行：成分股表格 -->
+          <template #expanded="{ row }">
+            <div
+              v-if="loadingBoardCode === row.code && !constituentsMap[row.code]"
+              class="py-4"
+            >
+              <BaseSkeleton />
+            </div>
+            <BaseTable
+              v-else-if="constituentsMap[row.code]?.length"
+              :columns="constituentColumns"
+              :rows="constituentsMap[row.code]"
+              :row-key="(stock) => stock.code"
+              min-width="560px"
+              row-clickable
+              @row-click="(stock) => openDetail(stock.code)"
+            >
+              <template #name="{ row: stock }">
+                <span class="font-medium text-text">{{ stock.name }}</span>
+                <span class="ml-2 text-xs text-text-tertiary">{{ stock.code }}</span>
+              </template>
+              <template #price="{ row: stock }">
+                <span
+                  :class="
+                    TREND_TEXT_CLASS[
+                      getTrendByChangePercent(stock.changePercent ?? 0)
+                    ]
+                  "
+                >
+                  {{ formatPrice(stock.price) }}
+                </span>
+              </template>
+              <template #changePercent="{ row: stock }">
+                <span
+                  class="rounded-full px-2 py-0.5 text-xs font-semibold"
+                  :class="
+                    TREND_PILL_CLASS[
+                      getTrendByChangePercent(stock.changePercent ?? 0)
+                    ]
+                  "
+                >
+                  {{ formatPercent(stock.changePercent) }}
+                </span>
+              </template>
+              <template #amount="{ row: stock }">
+                <span class="text-text-secondary">
+                  {{ formatAmount(stock.amount === null ? null : stock.amount / 10_000) }}
+                </span>
+              </template>
+            </BaseTable>
+            <p v-else class="py-2 text-xs text-text-tertiary">暂无成分股数据</p>
+          </template>
         </BaseTable>
       </div>
       <BaseEmpty v-else text="暂无板块数据" />
-    </BaseCard>
-
-    <!-- 成分股 -->
-    <BaseCard
-      v-if="selectedBoard"
-      :title="`${selectedBoard.name} · 成分股（${constituents.length}）`"
-    >
-      <div v-if="isConstituentsLoading"><BaseSkeleton /></div>
-      <div v-else-if="constituents.length > 0">
-        <BaseTable
-          :columns="constituentColumns"
-          :rows="visibleConstituents"
-          :row-key="(stock) => stock.code"
-          min-width="560px"
-          row-clickable
-          :footer-text="
-            constituentsHasMore
-              ? `已展示 ${visibleConstituents.length} / 共 ${constituentsTotal}，继续滚动加载更多`
-              : undefined
-          "
-          @row-click="(stock) => openDetail(stock.code)"
-          @scroll="onConstituentsScroll"
-        >
-          <template #name="{ row }">
-            <span class="font-medium text-text">{{ row.name }}</span>
-            <span class="ml-2 text-xs text-text-tertiary">{{ row.code }}</span>
-          </template>
-          <template #price="{ row }">
-            <span
-              :class="
-                TREND_TEXT_CLASS[
-                  getTrendByChangePercent(row.changePercent ?? 0)
-                ]
-              "
-            >
-              {{ formatPrice(row.price) }}
-            </span>
-          </template>
-          <template #changePercent="{ row }">
-            <span
-              class="rounded-full px-2 py-0.5 text-xs font-semibold"
-              :class="
-                TREND_PILL_CLASS[
-                  getTrendByChangePercent(row.changePercent ?? 0)
-                ]
-              "
-            >
-              {{ formatPercent(row.changePercent) }}
-            </span>
-          </template>
-          <template #amount="{ row }">
-            <span class="text-text-secondary">
-              {{
-                formatAmount(row.amount === null ? null : row.amount / 10_000)
-              }}
-            </span>
-          </template>
-        </BaseTable>
-      </div>
-      <BaseEmpty v-else text="暂无成分股数据" />
     </BaseCard>
   </div>
 </template>

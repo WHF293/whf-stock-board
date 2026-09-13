@@ -1,4 +1,4 @@
-import { computed, ref, watch } from 'vue';
+import { computed, onActivated, onDeactivated, ref, watch } from 'vue';
 import { useDocumentVisibility, useIntervalFn } from '@vueuse/core';
 import { POLLING_INTERVAL } from '../constants/polling.constants';
 import { useMarketStatusStore } from '../stores/market-status';
@@ -102,6 +102,16 @@ export const usePolling = (options: PollingOptions): UsePollingReturn => {
     },
     { immediate: true },
   );
+
+  // KeepAlive 场景：页面被缓存（切走）时暂停轮询，重新激活时恢复——
+  // 避免隐藏页在后台持续请求公共上游
+  onDeactivated(() => pause());
+  onActivated(() => {
+    if (settingsStore.pollingEnabled && (!tradingAware || inWindow.value)) {
+      resume();
+      void runSafely();
+    }
+  });
 
   // 可见性调度：隐藏暂停，恢复可见且处于窗口内时立即补刷一次
   watch(visibility, (state) => {

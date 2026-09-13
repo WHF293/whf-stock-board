@@ -20,6 +20,10 @@ interface StockProxyCacheEntry {
 }
 
 /** 同 URL 短 TTL 内存缓存：行情类请求 3 秒内命中直接回放，收敛上游压力 */
+/** 浏览器 UA：同花顺等上游用 UA 反爬，需模拟为真实 Chrome 桌面端 */
+const BROWSER_USER_AGENT =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
 const cache = new Map<string, StockProxyCacheEntry>();
 
 /**
@@ -90,7 +94,7 @@ export const createStockProxyMiddleware = (): Connect.NextHandleFunction => {
       // 调用方显式指定（?r=）时优先使用（如新浪新闻要求 finance.sina.com.cn）；带通用 UA
       const referer = customReferer ?? new URL(target).origin;
       const upstream = await fetch(target, {
-        headers: { Referer: referer, 'User-Agent': 'Mozilla/5.0' },
+        headers: { Referer: referer, 'User-Agent': BROWSER_USER_AGENT },
         signal: AbortSignal.timeout(PROXY_TIMEOUT_MS),
       });
       const body = new Uint8Array(await upstream.arrayBuffer());

@@ -39,21 +39,16 @@ const routes = [
         component: () => import('../views/PanoramaView.vue'),
         meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.PANORAMA] },
       },
+      // 资金动向已并入市场榜单（旧路径重定向）
+      { path: '/funds', redirect: ROUTE_PATH.MARKET_RANK },
       {
-        path: ROUTE_PATH.FUNDS,
-        component: () => import('../views/FundFlowView.vue'),
-        meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.FUNDS] },
+        path: ROUTE_PATH.MARKET_MOOD,
+        component: () => import('../views/MarketMoodView.vue'),
+        meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.MARKET_MOOD] },
       },
-      {
-        path: ROUTE_PATH.MARKET_EVENT,
-        component: () => import('../views/MarketEventView.vue'),
-        meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.MARKET_EVENT] },
-      },
-      {
-        path: ROUTE_PATH.DRAGON_TIGER,
-        component: () => import('../views/DragonTigerView.vue'),
-        meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.DRAGON_TIGER] },
-      },
+      // 旧路径重定向（历史收藏 / 外链兼容）
+      { path: ROUTE_PATH.MARKET_EVENT, redirect: ROUTE_PATH.MARKET_MOOD },
+      { path: '/dragon-tiger', redirect: ROUTE_PATH.MARKET_MOOD },
       {
         path: ROUTE_PATH.SCREENER,
         component: () => import('../views/ScreenerView.vue'),
@@ -63,6 +58,11 @@ const routes = [
         path: ROUTE_PATH.HOT_NEWS,
         component: () => import('../views/HotNewsView.vue'),
         meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.HOT_NEWS] },
+      },
+      {
+        path: ROUTE_PATH.MARKET_RANK,
+        component: () => import('../views/MarketRankView.vue'),
+        meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.MARKET_RANK] },
       },
       {
         path: ROUTE_PATH.SETTINGS,

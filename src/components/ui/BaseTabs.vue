@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed } from "vue";
 
 /**
  * 标签页组件：v-model 选中值，选项驱动渲染
@@ -12,20 +12,21 @@ const props = withDefaults(
     /** 选项列表（value 需唯一） */
     options: readonly { label: string; value: string }[];
     /** 视觉变体：segmented 胶囊 / underline 下划线（antd 风格） */
-    variant?: 'segmented' | 'underline';
+    variant?: "segmented" | "underline";
   }>(),
-  { variant: 'segmented' },
+  { variant: "segmented" },
 );
 
 const model = defineModel<string>({ required: true });
 
 /** 容器类名 */
 const containerClass = computed(() => {
-  if (props.variant === 'underline') {
-    // antd 风格：透明容器 + 底部 1px 分隔线（被激活 tab 的 2px 主色下划线覆盖）
-    return 'flex border-b border-flat-weak';
+  if (props.variant === "underline") {
+    // antd 风格：透明容器 + 底部 1px 分隔线（被激活 tab 的 2px 主色下划线覆盖）；
+    // 父容器放不下所有子项时横向滚动
+    return "flex overflow-y-hidden overflow-x-auto border-b border-flat-weak [scrollbar-width:thin]";
   }
-  return 'inline-flex items-center gap-0.5 rounded-lg bg-flat-weak p-0.5';
+  return "inline-flex max-w-full items-center gap-0.5 overflow-y-hidden overflow-x-auto rounded-lg bg-flat-weak p-0.5 [scrollbar-width:none]";
 });
 
 /**
@@ -34,20 +35,21 @@ const containerClass = computed(() => {
  * @returns 类名数组
  */
 const tabClass = (active: boolean): string[] => {
-  if (props.variant === 'underline') {
+  if (props.variant === "underline") {
     return [
-      // -mb-px 让 2px 边框覆盖容器的 1px 分隔线，激活态形成无缝连接的内容区
-      'pressable px-4 py-2.5 text-sm transition-colors -mb-px border-b-2',
+      // -mb-px 让 2px 边框覆盖容器的 1px 分隔线，激活态形成无缝连接的内容区；
+      // shrink-0 + whitespace-nowrap：禁止压缩换行（否则文字竖排），超出由容器横向滚动
+      "pressable shrink-0 whitespace-nowrap px-4 py-2.5 text-sm transition-colors -mb-px border-b-2",
       active
-        ? 'font-medium text-primary border-primary'
-        : 'border-transparent text-text-secondary hover:text-text',
+        ? "font-medium text-primary border-primary"
+        : "border-transparent text-text-secondary hover:text-text",
     ];
   }
   return [
-    'pressable whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-medium active:scale-95',
+    "pressable shrink-0 whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-medium active:scale-95",
     active
-      ? 'bg-surface text-text shadow-sm'
-      : 'text-text-secondary hover:text-text',
+      ? "bg-surface text-text shadow-sm"
+      : "text-text-secondary hover:text-text",
   ];
 };
 </script>

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import BaseButton from '../ui/BaseButton.vue';
 import BaseCard from '../ui/BaseCard.vue';
+import BaseConfirmModal from '../ui/BaseConfirmModal.vue';
 import BaseEmpty from '../ui/BaseEmpty.vue';
 import BaseSkeleton from '../ui/BaseSkeleton.vue';
 import KlineChart from '../charts/KlineChart.vue';
@@ -15,6 +17,8 @@ import type { KLineData } from 'klinecharts';
 import type { FullQuote } from '../../types/stock-quote.types';
 import { normalizeSymbol, toTencentSymbol } from 'stock-sdk';
 import { useDataCacheStore } from '../../stores/data-cache';
+import { useWatchlistStore } from '../../stores/watchlist';
+import { DEFAULT_GROUP_ID } from '../../constants/watchlist.constants';
 import { useDockPanelStore } from '../../stores/dock-panel';
 import { DATA_CACHE_KEY } from '../../constants/data-cache.constants';
 
@@ -36,10 +40,11 @@ const dockPanel = useDockPanelStore();
 /** 侧栏最小可视宽度阈值（像素），低于此宽度隐藏五档盘口避免挤占主图 */
 const SIDEBAR_MIN_WIDTH_PX = 500;
 
-/** 侧栏是否展示（仅分时/五日显示五档盘口，且面板宽 ≥ 阈值） */
-const showSidebar = computed(
-  () => chartMode.value === 'timeline' && dockPanel.width >= SIDEBAR_MIN_WIDTH_PX,
-);
+/**
+ * 五档盘口展示条件：仅分时/五日下展示，且面板宽 ≥ 阈值（与原 showSidebar 同步）
+ * - 蜡烛周期不展示（产品语义是分时关注短期盘口变化）
+ */
+const showOrderBook = computed(() => dockPanel.width >= SIDEBAR_MIN_WIDTH_PX);
 
 /**
  * 归一化符号：600519 / SH600519 / sh600519 等形态统一为 sh600519
@@ -53,6 +58,83 @@ const symbol = computed<string>(() => {
     return raw;
   }
 });
+
+// ---------- 加自选 / 删自选弹窗 ----------
+/** 弹窗类型：null 关闭 / add 加自选 / remove 删自选 */
+type WatchDialogType = null | 'add' | 'remove';
+const watchDialog = ref<WatchDialogType>(null);
+/** 加自选：勾选的目标分组 id（可多选，一支股票可入多组） */
+const addGroupIds = ref<string[]>([]);
+/** 删自选：勾选的待删分组 id（空数组 = 全部删除） */
+const removeGroupIds = ref<string[]>([]);
+/** 新建分组名（加自选弹窗内直接建组） */
+const newGroupName = ref('');
+
+const watchlistStore = useWatchlistStore();
+
+/** 当前股票是否已加入自选（任一分组） */
+const isInWatchlist = computed(() =>
+  watchlistStore.allSymbols.includes(symbol.value),
+);
+
+/** 该股票当前所在的分组列表（删自选弹窗选项） */
+const containingGroups = computed(() =>
+  watchlistStore.groups.filter((group) =>
+    group.stocks.some((stock) => stock.symbol === symbol.value),
+  ),
+);
+
+/** 打开加自选弹窗：默认勾选默认分组 */
+const openAddDialog = (): void => {
+  addGroupIds.value = [DEFAULT_GROUP_ID];
+  newGroupName.value = '';
+  watchDialog.value = 'add';
+};
+
+/** 打开删自选弹窗：默认勾选该股所在的全部分组 */
+const openRemoveDialog = (): void => {
+  removeGroupIds.value = containingGroups.value.map((group) => group.id);
+  watchDialog.value = 'remove';
+};
+
+/** 弹窗内新建分组（立即入列表并勾选） */
+const createGroupInDialog = (): void => {
+  const name = newGroupName.value.trim();
+  if (!name) return;
+  const group = watchlistStore.addGroup(name);
+  if (watchDialog.value === 'add') {
+    addGroupIds.value = [...addGroupIds.value, group.id];
+  }
+  newGroupName.value = '';
+};
+
+/** 确认加自选：把当前股票加入所有勾选分组 */
+const confirmAdd = (): void => {
+  if (!quoteRef.value) return;
+  watchlistStore.addStockToGroups(
+    {
+      symbol: symbol.value,
+      name: quoteRef.value.name,
+      addedAt: Date.now(),
+    },
+    addGroupIds.value,
+  );
+  watchDialog.value = null;
+};
+
+/**
+ * 确认删自选：勾选了分组则只删这些分组；一个都没勾 = 从全部分组删除
+ */
+const confirmRemove = (): void => {
+  if (removeGroupIds.value.length === 0) {
+    watchlistStore.removeStockFromAllGroups(symbol.value);
+  } else {
+    for (const groupId of removeGroupIds.value) {
+      watchlistStore.removeStock(groupId, symbol.value);
+    }
+  }
+  watchDialog.value = null;
+};
 
 // ---------- 报价头（4s 轮询；快照播种） ----------
 const quoteRef = ref<FullQuote | null>(
@@ -179,38 +261,48 @@ watch(chartPeriod, () => {
 const onDockResize = (clientX: number): void => {
   dockPanel.setWidth(window.innerWidth - clientX);
 };
+
+/** 拖拽结束信号（自增 tick，驱动 K 线图强制重绘适配最终宽度） */
+const chartResizeTick = ref(0);
+const onDockResizeEnd = (): void => {
+  chartResizeTick.value += 1;
+};
 </script>
 
 <template>
   <div class="space-y-3">
     <!-- 报价头 -->
     <BaseCard>
-      <StockQuoteHeader :quote="displayQuote" />
+      <StockQuoteHeader
+        :quote="displayQuote"
+        :is-in-watchlist="isInWatchlist"
+        @add-to-watchlist="openAddDialog"
+        @remove-from-watchlist="openRemoveDialog"
+      />
     </BaseCard>
 
-    <!-- 图表周期下拉：分时 / 五日 -> 侧栏固定五档盘口；其余 -> 侧栏固定筹码分布 -->
-    <div class="flex items-center gap-3 border-b border-flat-weak pr-1">
-      <select
-        v-model="chartPeriod"
-        class="rounded-lg border border-flat-weak bg-surface px-2 py-1 text-xs text-text"
-        aria-label="K 线周期"
-      >
-        <option v-for="option in CHART_PERIOD_OPTIONS" :key="option.value" :value="option.value">
-          {{ option.label }}
-        </option>
-      </select>
-    </div>
+    <!-- 主图区（relative 供拖拽手柄定位）：K 线卡片 + 五档盘口卡片 -->
+    <div class="relative flex flex-col gap-3">
+      <!-- 拖拽手柄：挂在 K 线卡片左缘 -->
+      <DockResizer
+        v-if="dockPanel.open"
+        :on-resize="onDockResize"
+        @resize-end="onDockResizeEnd"
+      />
 
-    <!-- 主图 + 侧栏（侧栏按周期自动切换：分时/五日五档盘口，其余筹码分布） -->
-    <div
-      class="relative grid gap-3"
-      :class="showSidebar ? 'xl:grid-cols-[7fr_3fr]' : ''"
-    >
-      <!-- 通用 dock 拖拽手柄：长按（≥ 120ms）出现贯穿竖线并进入拖拽态；窄屏隐藏；
-           后续新增任何 dock 内容（基金 / 期货详情）直接复用 DockResizer 即可 -->
-      <DockResizer v-if="dockPanel.open" :on-resize="onDockResize" />
-
-      <div class="h-[480px] min-h-[480px]">
+      <!-- K 线卡片：extra 为周期切换 -->
+      <BaseCard title="K 线图">
+        <template #extra>
+          <select
+            v-model="chartPeriod"
+            class="rounded-lg border border-flat-weak bg-surface px-2 py-1 text-xs text-text"
+            aria-label="K 线周期"
+          >
+            <option v-for="option in CHART_PERIOD_OPTIONS" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </option>
+          </select>
+        </template>
         <div v-if="klineError" class="py-10">
           <BaseEmpty text="K 线数据加载失败，请稍后重试（上游可能限频，稍后自动恢复）" />
         </div>
@@ -220,16 +312,81 @@ const onDockResize = (clientX: number): void => {
           :bars="klines"
           :mode="chartMode"
           :pre-close="quoteRef?.prevClose ?? null"
+          :resize-tick="chartResizeTick"
           @crosshair-bar="onCrosshairBar"
         />
         <BaseSkeleton v-else />
-      </div>
+      </BaseCard>
 
-      <aside v-if="showSidebar" class="space-y-3">
-        <BaseCard title="五档盘口">
-          <StockOrderBook :quote="quoteRef" />
-        </BaseCard>
-      </aside>
+      <!-- 五档盘口：分时/五日模式下展示在 K 线下方，宽度 100%，左右分栏 -->
+      <BaseCard v-if="showOrderBook" title="五档盘口">
+        <StockOrderBook :quote="quoteRef" />
+      </BaseCard>
     </div>
+    <!-- 加自选弹窗：分组多选 + 新建分组 -->
+    <BaseConfirmModal
+      :open="watchDialog === 'add'"
+      title="加入自选"
+      ok-text="确认添加"
+      cancel-text="取消"
+      @ok="confirmAdd"
+      @cancel="watchDialog = null"
+    >
+      <div class="space-y-2">
+        <label
+          v-for="group in watchlistStore.groups"
+          :key="group.id"
+          class="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-flat-weak"
+        >
+          <input
+            v-model="addGroupIds"
+            type="checkbox"
+            :value="group.id"
+            class="accent-primary"
+          />
+          <span class="text-sm text-text">{{ group.name }}</span>
+          <span class="text-xs text-text-tertiary">{{ group.stocks.length }} 只</span>
+        </label>
+        <div class="flex items-center gap-2 border-t border-flat-weak pt-2">
+          <input
+            v-model="newGroupName"
+            placeholder="新建分组名称"
+            class="flex-1 rounded-lg border border-flat-weak bg-surface px-2 py-1 text-sm text-text outline-none focus:border-primary"
+            @keydown.enter="createGroupInDialog"
+          />
+          <BaseButton variant="ghost" @click="createGroupInDialog">新建</BaseButton>
+        </div>
+      </div>
+    </BaseConfirmModal>
+
+    <!-- 删自选弹窗：选择删除范围（不勾 = 全部删除） -->
+    <BaseConfirmModal
+      :open="watchDialog === 'remove'"
+      title="从自选移除"
+      ok-text="确认删除"
+      cancel-text="取消"
+      :ok-variant="'danger'"
+      @ok="confirmRemove"
+      @cancel="watchDialog = null"
+    >
+      <p class="mb-2 text-xs text-text-tertiary">
+        勾选要移除的分组；全部不勾则从所有分组移除
+      </p>
+      <div class="space-y-2">
+        <label
+          v-for="group in containingGroups"
+          :key="group.id"
+          class="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-flat-weak"
+        >
+          <input
+            v-model="removeGroupIds"
+            type="checkbox"
+            :value="group.id"
+            class="accent-primary"
+          />
+          <span class="text-sm text-text">{{ group.name }}</span>
+        </label>
+      </div>
+    </BaseConfirmModal>
   </div>
 </template>

@@ -25,6 +25,11 @@ const props = withDefaults(
   { onResize: undefined },
 );
 
+const emit = defineEmits<{
+  /** 拖拽结束（pointerup）：父级可在此触发依赖最终宽度的重绘 */
+  'resize-end': [];
+}>();
+
 /** 长按触发阈值（毫秒） */
 const LONG_PRESS_MS = 120;
 
@@ -40,6 +45,7 @@ let longPressTimer: number | null = null;
 
 /**
  * 手柄按下：启动长按定时器；达到阈值后进入拖拽态
+ * @param event
  */
 const onPointerDown = (event: PointerEvent): void => {
   if (event.button !== 0) return;
@@ -68,7 +74,10 @@ const onPointerUpEarly = (): void => {
   document.removeEventListener('pointermove', onPointerMoveEarly);
 };
 
-/** 进入拖拽态 */
+/**
+ * 进入拖拽态
+ * @param startX
+ */
 const enterDrag = (startX: number): void => {
   dragging = true;
   isDragging.value = true;
@@ -79,7 +88,10 @@ const enterDrag = (startX: number): void => {
   document.addEventListener('pointerup', onDragEnd, { once: true });
 };
 
-/** 拖拽中：转交父级处理 */
+/**
+ * 拖拽中：转交父级处理
+ * @param event
+ */
 const onDragMove = (event: PointerEvent): void => {
   if (!dragging) return;
   dragLineX.value = event.clientX;
@@ -93,6 +105,7 @@ const onDragEnd = (): void => {
   document.body.style.userSelect = '';
   document.body.style.cursor = '';
   document.removeEventListener('pointermove', onDragMove);
+  emit('resize-end');
 };
 
 onBeforeUnmount(() => {

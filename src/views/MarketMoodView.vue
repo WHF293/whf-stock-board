@@ -1,0 +1,47 @@
+<script setup lang="ts">
+import { computed, ref } from 'vue';
+import BaseTabs from '../components/ui/BaseTabs.vue';
+import MarketEventView from './MarketEventView.vue';
+import DragonTigerView from './DragonTigerView.vue';
+
+/**
+ * 市场异动：涨停 / 异动 / 龙虎榜 / 大宗交易 四合一页面，
+ * 页面级 underline tabs 与行情全景风格一致；
+ * 龙虎榜 / 大宗共享 DragonTigerView（受控视图，内部切换隐藏）
+ */
+
+/** 页签选项 */
+const MOOD_TAB_OPTIONS = [
+  { label: '涨停', value: 'event' },
+  { label: '异动', value: 'events' },
+  { label: '龙虎榜', value: 'dragon-tiger' },
+  { label: '大宗交易', value: 'block-trade' },
+] as const;
+
+/** 当前页签 */
+const activeTab = ref<string>('event');
+
+/** DragonTigerView 受控视图（event 页签时保持上次值即可，隐藏不销毁数据也无必要） */
+const dragonTab = computed<'dragon-tiger' | 'block-trade'>(() =>
+  activeTab.value === 'block-trade' ? 'block-trade' : 'dragon-tiger',
+);
+</script>
+
+<template>
+  <div class="space-y-4">
+    <!-- 页面级切换（与行情全景一致的 underline 风格） -->
+    <div class="flex items-center justify-between gap-2">
+      <BaseTabs v-model="activeTab" :options="MOOD_TAB_OPTIONS" variant="underline" />
+      <span class="text-xs text-text-tertiary">近 7 日数据 · 重接口不参与轮询</span>
+    </div>
+
+    <!-- 涨停（连板梯队 + 股池） -->
+    <MarketEventView v-if="activeTab === 'event'" mode="zt" />
+
+    <!-- 异动（盘口异动 + 板块异动） -->
+    <MarketEventView v-else-if="activeTab === 'events'" mode="events" />
+
+    <!-- 龙虎榜 / 大宗交易（受控视图） -->
+    <DragonTigerView v-else v-model="dragonTab" />
+  </div>
+</template>

@@ -216,6 +216,15 @@ const onProbeProxy = async (): Promise<void> => {
           {{ probeResultText }}
         </BaseTag>
       </p>
+      <p class="my-2 text-sm text-text">缓存管理</p>
+      <div class="flex items-center justify-between gap-4">
+        <p class="text-xs text-text-tertiary">
+          清空代码表 / 交易日历 / 板块映射等实例级缓存
+        </p>
+        <BaseButton variant="ghost" @click="onClearCaches">
+          清空 SDK 缓存
+        </BaseButton>
+      </div>
     </BaseCard>
     <BaseCard title="轮询">
       <div class="flex items-center justify-between">
@@ -303,9 +312,8 @@ const onProbeProxy = async (): Promise<void> => {
       <p class="mt-2 text-xs text-text-tertiary">
         主色即时生效并记住选择，暗色模式自动适配
       </p>
-    </BaseCard>
 
-    <BaseCard title="涨跌颜色">
+      <p class="my-4 text-sm text-text">涨跌颜色</p>
       <div class="flex flex-wrap gap-3" role="radiogroup" aria-label="涨跌配色">
         <button
           v-for="option in TREND_THEME_OPTIONS"
@@ -356,18 +364,11 @@ const onProbeProxy = async (): Promise<void> => {
       </div>
     </BaseCard>
 
-    <BaseCard title="缓存管理">
-      <div class="flex items-center justify-between gap-4">
-        <p class="text-xs text-text-tertiary">
-          清空代码表 / 交易日历 / 板块映射等实例级缓存
-        </p>
-        <BaseButton variant="ghost" @click="onClearCaches">
-          清空 SDK 缓存
-        </BaseButton>
+    <BaseCard title="系统">
+      <div class="flex items-center justify-between gap-4 mb-4">
+        <div class="text-sm text-text">作者</div>
+        <div class="mt-0.5 text-xs text-text-tertiary">WHF293</div>
       </div>
-    </BaseCard>
-
-    <BaseCard title="检查更新">
       <div class="flex items-center justify-between gap-4">
         <div class="min-w-0">
           <p class="text-sm text-text">

@@ -1,7 +1,7 @@
 {
   "name": "whf-stock-board",
   "private": true,
-  "version": "0.1.14",
+  "version": "0.1.15",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -13,6 +13,7 @@
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-http": "^2.6.0",
+    "@tauri-apps/plugin-opener": "^2.5.5",
     "@vueuse/core": "^14.4.0",
     "dayjs": "^1.11.23",
     "echarts": "^6.1.0",

@@ -89,3 +89,121 @@ export const fetchSinaHotNews = async (
     img: item.img,
   }));
 };
+
+// ---------- 东方财富 7×24 快讯 ----------
+// 文档中的 push2 clist 接口实测不可用；改用官方 7×24 快讯列表接口（实测 GET 直连、无需 Referer）。
+// 上游无 url 字段，点击跳转用站内搜索页按标题检索；翻页为 sortEnd 游标（上一页末条的 realSort）。
+
+/** 东财快讯翻页结果（游标式） */
+export interface EastmoneyNewsPage {
+  items: HotNewsItem[];
+  /** 下一页游标（传回 fetchEastmoneyHotNews；null 表示没有更多） */
+  nextCursor: string | null;
+}
+
+/** 东财快讯原始条目 */
+interface EastmoneyFastNews {
+  code: string;
+  title: string;
+  summary: string;
+  showTime: string;
+  realSort: string;
+}
+
+interface EastmoneyNewsResponse {
+  code: string;
+  data?: {
+    sortEnd?: string;
+    fastNewsList?: EastmoneyFastNews[];
+  };
+}
+
+/**
+ * 拉取东方财富 7×24 快讯（单页，游标翻页）
+ * @param cursor 翻页游标（首页传空串）
+ * @param num 单页条数
+ * @returns 本页条目与下一页游标
+ */
+export const fetchEastmoneyHotNews = async (
+  cursor: string,
+  num = 20,
+): Promise<EastmoneyNewsPage> => {
+  const url =
+    `https://np-listapi.eastmoney.com/comm/web/getFastNewsList?client=web` +
+    `&biz=web_724&fastColumn=102&sortEnd=${cursor}&pageSize=${num}&req_trace=${Date.now()}`;
+  const response = await proxyFetch(url);
+  if (!response.ok) {
+    throw new Error(`东财新闻请求失败：${response.status}`);
+  }
+  const payload = (await response.json()) as EastmoneyNewsResponse;
+  if (payload.code !== '1' || !payload.data) {
+    throw new Error('东财新闻业务异常');
+  }
+  const items = (payload.data.fastNewsList ?? []).map((item) => ({
+    oid: item.code,
+    title: item.title,
+    summary: item.summary,
+    // 上游无原文链接：跳转东财站内搜索页按标题检索
+    url: `https://so.eastmoney.com/news/s?keyword=${encodeURIComponent(item.title)}`,
+    // showTime 为 "YYYY-MM-DD HH:mm:SS"，转秒级时间戳与新浪口径统一
+    ctime: String(Math.floor(new Date(item.showTime.replace(/-/g, '/')).getTime() / 1000)),
+    media: '东方财富',
+    img: '',
+  }));
+  return { items, nextCursor: payload.data.sortEnd ?? null };
+};
+
+// ---------- 同花顺 课堂/快讯推送 ----------
+// 文档中的 news.10jqka.com.cn/api/rollnews 实测 404，改用实测可用的 tapp/news/push/stock 接口
+// （GET 直连可用；文档建议携带 Referer，带上以应对 WAF 收紧）
+
+/** 同花顺响应（仅取渲染所需字段） */
+interface ThsNewsResponse {
+  code: string;
+  data?: {
+    list?: Array<{
+      id: string;
+      title: string;
+      digest: string;
+      url: string;
+      ctime: string;
+      source: string;
+      picUrl: string;
+    }>;
+  };
+}
+
+/**
+ * 拉取同花顺股市快讯（单页）
+ * @param page 页码（从 1 开始）
+ * @param num 单页条数
+ * @returns 新闻条目
+ */
+export const fetchThsHotNews = async (
+  page: number,
+  num = 20,
+): Promise<HotNewsItem[]> => {
+  const url =
+    `https://news.10jqka.com.cn/tapp/news/push/stock/?page=${page}` +
+    `&limit=${num}&pagesize=${num}&tag=&track=website`;
+  // 浏览器态经 /stock-proxy（白名单含 10jqka.com.cn）；Tauri 态 Rust 直连
+  const response = await proxyFetch(url, {
+    headers: { Referer: 'https://10jqka.com.cn' },
+  });
+  if (!response.ok) {
+    throw new Error(`同花顺新闻请求失败：${response.status}`);
+  }
+  const payload = (await response.json()) as ThsNewsResponse;
+  if (payload.code !== '200' || !payload.data) {
+    throw new Error('同花顺新闻业务异常');
+  }
+  return (payload.data.list ?? []).map((item) => ({
+    oid: item.id,
+    title: item.title,
+    summary: item.digest,
+    url: item.url,
+    ctime: item.ctime,
+    media: item.source || '同花顺',
+    img: item.picUrl,
+  }));
+};
