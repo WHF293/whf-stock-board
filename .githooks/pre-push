@@ -1,0 +1,23 @@
+#!/bin/bash
+# 阻止直接 push 功能提交到 main：只允许 merge commit（父母至少 2 个）通过
+# 临时放开：git push --no-verify
+while read local_ref local_sha local_remote remote_ref remote_sha; do
+  if [ "$remote_ref" != "refs/heads/main" ]; then
+    continue
+  fi
+  # 新分支（远端尚无 main）
+  if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
+    continue
+  fi
+  # 遍历本次推送新增的提交，存在任一非 merge 提交则拒绝
+  for commit in $(git rev-list "$remote_sha..$local_sha"); do
+    parents=$(git rev-list --parents -n 1 "$commit" | wc -w)
+    if [ "$parents" -le 2 ]; then
+      echo "✗ 拒绝直接 push 到 main：$commit 不是 merge commit"
+      echo "  请走流程：git switch -c feature/xxx && git push -u origin feature/xxx，然后在 GitHub 发起 Pull Request 合并"
+      echo "  （或本地 git merge --no-ff 后再推送；紧急情况可 git push --no-verify 临时绕过）"
+      exit 1
+    fi
+  done
+done
+exit 0
