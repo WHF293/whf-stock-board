@@ -17,6 +17,7 @@ import {
   fetchNorthboundHoldingRank,
   fetchSectorFundFlowRank,
 } from '../api/flow.api';
+import { fetchIndustryConstituents } from '../api/board.api';
 import { getTrendByChangePercent } from '../constants/trend.constants';
 import { TREND_PILL_CLASS, TREND_TEXT_CLASS } from '../constants/stock-colors.constants';
 import { formatAmount } from '../utils/format-amount';
@@ -30,6 +31,7 @@ import type {
   NorthboundHoldingRankItem,
   SectorFundFlowItem,
 } from '../types/flow.types';
+import type { IndustryBoardConstituent } from '../types/board.types';
 import { delay } from '../utils/delay';
 
 /**
@@ -115,6 +117,53 @@ const northRank = ref<NorthboundHoldingRankItem[]>(
 );
 const isFlowLoading = ref(false);
 const flowError = ref(false);
+
+// ---------- 板块主力扩展行：成分股 ----------
+/** 已展开的板块 code 列表（BK 编号） */
+const expandedSectorCodes = ref<string[]>([]);
+/** 各板块成分股（BK 编号 -> 列表） */
+const sectorConstituentsMap = ref<Record<string, IndustryBoardConstituent[]>>({});
+/** 正在拉取成分股的板块 code */
+const loadingSectorCode = ref<string | null>(null);
+
+/**
+ * 板块行 / 展开图标点击：切换扩展行，并按需拉取成分股
+ * @param board 板块主力行
+ */
+const onSectorToggle = (board: SectorFundFlowItem): void => {
+  expandedSectorCodes.value = expandedSectorCodes.value.includes(board.code)
+    ? expandedSectorCodes.value.filter((code) => code !== board.code)
+    : [...expandedSectorCodes.value, board.code];
+  if (expandedSectorCodes.value.includes(board.code) && !sectorConstituentsMap.value[board.code]) {
+    void loadSectorConstituents(board.code);
+  }
+};
+
+const loadSectorConstituents = async (code: string): Promise<void> => {
+  loadingSectorCode.value = code;
+  try {
+    const list = await fetchIndustryConstituents(code);
+    sectorConstituentsMap.value = { ...sectorConstituentsMap.value, [code]: list };
+  } catch (error) {
+    console.error('[market-rank] sector constituents', error);
+  } finally {
+    loadingSectorCode.value = null;
+  }
+};
+
+/** 成分股列配置 */
+const sectorConstituentColumns: TableColumn<IndustryBoardConstituent>[] = [
+  { key: 'name', label: '名称' },
+  { key: 'price', label: '现价', align: 'right' },
+  {
+    key: 'changePercent',
+    label: '涨跌幅',
+    align: 'right',
+    sortable: true,
+    sortValue: (stock) => stock.changePercent,
+  },
+  { key: 'amount', label: '成交额', align: 'right' },
+];
 
 /** 拉取资金流三榜单（串行错峰；成功写快照） */
 const loadFlowRanks = async (): Promise<void> => {
@@ -319,7 +368,15 @@ const openDetail = (code: string): void => {
         min-width="720px"
         scroll-class="table-scroll"
         :row-clickable="sortKey !== 'sector'"
-        @row-click="(row: FlowRow) => sortKey !== 'sector' && openDetail(String(row.code))"
+        :expandable="sortKey === 'sector'"
+        :expanded-keys="expandedSectorCodes"
+        @row-click="
+          (row: FlowRow) =>
+            sortKey === 'sector'
+              ? onSectorToggle(row as SectorFundFlowItem)
+              : openDetail(String(row.code))
+        "
+        @toggle-expand="(row: FlowRow) => onSectorToggle(row as SectorFundFlowItem)"
       >
         <template #name="{ row }: { row: FlowRow }">
           <span class="font-medium text-text">{{ row.name }}</span>
@@ -352,6 +409,53 @@ const openDetail = (code: string): void => {
         </template>
         <template #holdRatioFloat="{ row }: { row: FlowRow }">
           <span class="text-text-secondary">{{ formatPercentUnsigned(row.holdRatioFloat) }}</span>
+        </template>
+
+        <!-- 扩展行（仅板块主力）：成分股表格 -->
+        <template v-if="sortKey === 'sector'" #expanded="{ row }: { row: FlowRow }">
+          <div
+            v-if="loadingSectorCode === String(row.code) && !sectorConstituentsMap[String(row.code)]"
+            class="py-4"
+          >
+            <BaseSkeleton />
+          </div>
+          <BaseTable
+            v-else-if="sectorConstituentsMap[String(row.code)]?.length"
+            :columns="sectorConstituentColumns"
+            :rows="sectorConstituentsMap[String(row.code)]"
+            :row-key="(stock: IndustryBoardConstituent) => stock.code"
+            min-width="560px"
+            row-clickable
+            @row-click="(stock: IndustryBoardConstituent) => openDetail(stock.code)"
+          >
+            <template #name="{ row: stock }: { row: IndustryBoardConstituent }">
+              <span class="font-medium text-text">{{ stock.name }}</span>
+              <span class="ml-2 text-xs text-text-tertiary">{{ stock.code }}</span>
+            </template>
+            <template #price="{ row: stock }: { row: IndustryBoardConstituent }">
+              <span
+                :class="
+                  TREND_TEXT_CLASS[getTrendByChangePercent(stock.changePercent ?? 0)]
+                "
+              >
+                {{ formatPrice(stock.price) }}
+              </span>
+            </template>
+            <template #changePercent="{ row: stock }: { row: IndustryBoardConstituent }">
+              <span
+                class="rounded-full px-2 py-0.5 text-xs font-semibold"
+                :class="
+                  TREND_PILL_CLASS[getTrendByChangePercent(stock.changePercent ?? 0)]
+                "
+              >
+                {{ formatPercent(stock.changePercent) }}
+              </span>
+            </template>
+            <template #amount="{ row: stock }: { row: IndustryBoardConstituent }">
+              <span class="text-text-secondary">{{ formatAmount(stock.amount) }}</span>
+            </template>
+          </BaseTable>
+          <p v-else class="py-2 text-xs text-text-tertiary">暂无成分股数据</p>
         </template>
       </BaseTable>
       <BaseEmpty v-else text="暂无数据" />

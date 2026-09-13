@@ -57,6 +57,17 @@ const updateStatus = ref<UpdateStatus>("idle");
 /** 最新版本号（去掉 tag 前缀 v） */
 const latestVersion = ref<string>("");
 
+/** 快捷键说明弹窗 */
+const shortcutsModalOpen = ref(false);
+
+/** 快捷键列表 */
+const SHORTCUTS = [
+  { key: 'Shift + Tab', action: '切换页面（按侧栏顺序循环，不含设置页）' },
+  { key: 'Esc', action: '关闭股票详情面板 / 搜索弹窗' },
+  { key: '↑ ↓', action: '搜索弹窗内切换标的' },
+  { key: 'Enter', action: '搜索弹窗内确认选中标的' },
+] as const;
+
 /** 新版弹窗显隐 */
 const updateModalOpen = ref(false);
 
@@ -349,18 +360,28 @@ const onProbeProxy = async (): Promise<void> => {
       </p>
     </BaseCard>
 
-    <BaseCard title="水印">
-      <div class="flex items-center justify-between">
-        <div>
-          <p class="text-sm text-text">全局水印</p>
-          <p class="mt-0.5 text-xs text-text-tertiary">
-            斜向平铺展示「数据仅供个人学习参考」，覆盖全部页面
-          </p>
+    <!-- 水印开关 + 快捷键说明（合并一卡） -->
+    <BaseCard title="水印 & 快捷键">
+      <div class="space-y-4">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-sm text-text">全局水印</p>
+            <p class="mt-0.5 text-xs text-text-tertiary">
+              斜向平铺展示「数据仅供个人学习参考」，覆盖全部页面
+            </p>
+          </div>
+          <BaseSwitch
+            :model-value="settingsStore.watermarkEnabled"
+            @update:model-value="settingsStore.setWatermarkEnabled"
+          />
         </div>
-        <BaseSwitch
-          :model-value="settingsStore.watermarkEnabled"
-          @update:model-value="settingsStore.setWatermarkEnabled"
-        />
+        <div class="flex items-center justify-between border-t border-flat-weak pt-4">
+          <div>
+            <p class="text-sm text-text">快捷键说明</p>
+            <p class="mt-0.5 text-xs text-text-tertiary">查看当前软件支持的快捷操作</p>
+          </div>
+          <BaseButton variant="ghost" @click="shortcutsModalOpen = true">查看</BaseButton>
+        </div>
       </div>
     </BaseCard>
 
@@ -394,6 +415,27 @@ const onProbeProxy = async (): Promise<void> => {
         </BaseButton>
       </div>
     </BaseCard>
+
+    <!-- 快捷键说明弹窗 -->
+    <BaseConfirmModal
+      v-model:open="shortcutsModalOpen"
+      title="快捷键说明"
+      ok-text="知道了"
+      cancel-text=""
+    >
+      <ul class="space-y-3">
+        <li
+          v-for="shortcut in SHORTCUTS"
+          :key="shortcut.key"
+          class="flex items-center gap-3"
+        >
+          <kbd class="min-w-[80px] shrink-0 rounded-md border border-flat-weak bg-flat-weak px-2.5 py-1 text-center text-xs font-semibold text-text tabular-nums">
+            {{ shortcut.key }}
+          </kbd>
+          <span class="text-sm text-text-secondary">{{ shortcut.action }}</span>
+        </li>
+      </ul>
+    </BaseConfirmModal>
 
     <!-- 发现新版本弹窗：展示版本号与下载地址 -->
     <BaseConfirmModal
