@@ -3,7 +3,7 @@
  */
 
 /** 当前应用版本（与 src-tauri/tauri.conf.json 的 version 同步维护） */
-export const APP_VERSION = '0.1.11';
+export const APP_VERSION = '0.1.12';
 
 /** GitHub Releases 发布页地址（检查更新 / 手动下载入口） */
 export const RELEASES_URL = 'https://github.com/WHF293/whf-stock-board/releases';

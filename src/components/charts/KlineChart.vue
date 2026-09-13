@@ -10,6 +10,7 @@ import {
   type DeepPartial,
   type KLineData,
   type Styles,
+  type TooltipLegend,
   type YAxisTemplate,
 } from 'klinecharts';
 import {
@@ -75,6 +76,7 @@ registerYAxis(TIMELINE_PCT_YAXIS);
  * - pre：昨收基准（取 preClose，快照未就绪时回退首根收盘）
  * - close：涨跌幅小数 = (price - pre) / pre，保留 3 位小数
  * - avgPrice：均价同步转为涨跌幅小数（与 close 同轴，否则均价线画出范围）
+ * - avgPriceRaw：原始均价（tooltip 展示「价格 + 涨跌幅」用）
  */
 const displayBars = computed<KLineData[]>(() => {
   if (props.mode !== 'timeline') return props.bars;
@@ -83,16 +85,46 @@ const displayBars = computed<KLineData[]>(() => {
   const round3 = (value: number): number => Number(value.toFixed(3));
   return props.bars.map((bar) => {
     const price = bar.close;
+    const avgPriceRaw = typeof bar.avgPrice === 'number' ? bar.avgPrice : null;
     return {
       ...bar,
       price,
       pre,
       close: round3((price - pre) / pre),
       avgPrice:
-        typeof bar.avgPrice === 'number' ? round3((bar.avgPrice - pre) / pre) : bar.avgPrice,
+        avgPriceRaw === null ? bar.avgPrice : round3((avgPriceRaw - pre) / pre),
+      avgPriceRaw,
     };
   });
 });
+
+/**
+ * 分时 tooltip 自定义：开/高/低/收显示「价格（相对昨收涨跌幅）」，
+ * 如 `10.10（+4.23%）`；数据取自 displayBars（price/pre/close 已就位）
+ * @param data 十字光标邻域数据
+ * @returns tooltip 图例列表
+ */
+const timelineCandleTooltipLegends = (data: {
+  current: KLineData | null;
+}): TooltipLegend[] => {
+  const bar = data.current as (KLineData & { price?: number; pre?: number }) | null;
+  if (!bar) return [];
+  const pre = bar.pre;
+  const formatItem = (label: string, price: number | undefined, pct?: number): TooltipLegend => ({
+    title: label,
+    value: `${price?.toFixed(2) ?? '--'}（${pct === undefined || pct === null ? '--' : `${pct >= 0 ? '+' : ''}${(pct * 100).toFixed(2)}%`}）`,
+  });
+  const pctOf = (value: number | undefined): number | undefined =>
+    pre && value !== undefined ? (value - pre) / pre : undefined;
+  return [
+    formatItem('开', bar.open, pctOf(bar.open)),
+    formatItem('高', bar.high, pctOf(bar.high)),
+    formatItem('低', bar.low, pctOf(bar.low)),
+    // close 已是涨跌幅小数，price 才是原始价
+    formatItem('收', bar.price, bar.close),
+    { title: '成交量', value: String(bar.volume ?? '--') },
+  ];
+};
 
 /** 当前涨跌色阶（依赖 trendTheme，切换时本 computed 消费方自动重算） */
 const trendSet = computed(() => {
@@ -132,6 +164,10 @@ const buildStyles = (): DeepPartial<Styles> => {
           { offset: 1, color: 'rgba(79, 131, 204, 0.02)' },
         ],
       },
+      // 分时 tooltip：开高低收显示「价格（涨跌幅）」；蜡烛模式保留默认模板
+      ...(isTimeline
+        ? { tooltip: { legend: { template: timelineCandleTooltipLegends } } }
+        : {}),
     },
     xAxis: {
       axisLine: { color: CHART_AXIS_LINE_COLOR },
