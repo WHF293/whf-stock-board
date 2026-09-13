@@ -56,6 +56,15 @@ const ICON_PATHS: Record<string, string> = {
     '<path d="M6 9l6 6 6-6"/>',
   panelLeft:
     '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>',
+  // 机器人/Agent：方形头 + 天线 + 双眼 + 嘴
+  agent:
+    '<rect x="5" y="8" width="14" height="11" rx="2"/><path d="M12 4v4"/><circle cx="12" cy="3" r="1"/><circle cx="9" cy="13" r="1.1"/><circle cx="15" cy="13" r="1.1"/><path d="M9 16.5h6"/>',
+  // 股票账户：人像（账户主体）
+  account:
+    '<circle cx="12" cy="8" r="3.4"/><path d="M5.2 20a6.8 6.8 0 0 1 13.6 0"/>',
+  // 交割单导入：单据 + 向上导入箭头
+  tradeImport:
+    '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M12 18v-6"/><path d="M9.5 14.5 12 12l2.5 2.5"/>',
 };
 
 const props = withDefaults(

@@ -48,9 +48,38 @@ watchImmediate(
 /** 头部页面标题（路由 meta.title） */
 const pageTitle = computed(() => route.meta.title ?? "");
 
+// ---------- 侧栏顺序（用户可在设置页编排，持久化在 settings.menuOrder） ----------
+
+/**
+ * 按用户编排顺序渲染的菜单项：
+ * 以 `settings.menuOrder` 为准；持久化里没有的新页面（版本升级新增）追加到末尾，
+ * 保证升级后新入口不丢失
+ */
+const menuItems = computed(() => {
+  const byPath = new Map<string, (typeof MENU_ITEMS)[number]>();
+  for (const item of MENU_ITEMS) {
+    byPath.set(item.path, item);
+  }
+  const ordered: (typeof MENU_ITEMS)[number][] = [];
+  for (const path of settingsStore.menuOrder) {
+    const item = byPath.get(path);
+    if (item) {
+      ordered.push(item);
+      byPath.delete(path);
+    }
+  }
+  for (const item of MENU_ITEMS) {
+    if (byPath.has(item.path)) ordered.push(item);
+  }
+  return ordered;
+});
+
+/** 当前侧栏顺序下的路径列表（驱动页面过渡方向与 Shift+Tab 循环） */
+const menuOrderPaths = computed<string[]>(() =>
+  menuItems.value.map((item) => item.path),
+);
+
 // ---------- 页面切换过渡方向 ----------
-/** 菜单路径 -> 顺序下标（决定滑动方向） */
-const MENU_ORDER: string[] = MENU_ITEMS.map((item) => item.path);
 
 /** 过渡名：page-forward（新页从右滑入）/ page-back（新页从左滑入） */
 const pageTransition = ref("page-forward");
@@ -58,8 +87,9 @@ const pageTransition = ref("page-forward");
 watch(
   () => route.path,
   (to, from) => {
-    const toIndex = MENU_ORDER.indexOf(to);
-    const fromIndex = MENU_ORDER.indexOf(from);
+    const order = menuOrderPaths.value;
+    const toIndex = order.indexOf(to);
+    const fromIndex = order.indexOf(from);
     pageTransition.value =
       toIndex >= 0 && fromIndex >= 0 && toIndex < fromIndex
         ? "page-back"
@@ -100,10 +130,24 @@ const onHeaderSearchSelect = (result: SearchResult): void => {
 const routeOrderIndex = ref(0);
 
 /**
- * 全局键盘：Shift+Tab 切到上一个页面（到顶回最后一个）
- * @param event
+ * 全局键盘快捷键：
+ * - Ctrl+Shift+B：切换左侧导航栏收起 / 展开（仅桌面端可见效果）
+ * - Shift+Tab：按侧栏顺序切到下一个页面（到尾回第一个）
+ * @param event 键盘事件
  */
 const onGlobalKeydown = (event: KeyboardEvent): void => {
+  // Ctrl+Shift+B：展开则收起，反之展开
+  if (
+    event.ctrlKey &&
+    event.shiftKey &&
+    !event.altKey &&
+    !event.metaKey &&
+    event.code === "KeyB"
+  ) {
+    event.preventDefault();
+    toggleSidebar();
+    return;
+  }
   if (
     event.shiftKey &&
     event.key === "Tab" &&
@@ -112,8 +156,10 @@ const onGlobalKeydown = (event: KeyboardEvent): void => {
     !event.metaKey
   ) {
     event.preventDefault();
-    routeOrderIndex.value = (routeOrderIndex.value + 1) % MENU_ORDER.length;
-    void router.push(MENU_ORDER[routeOrderIndex.value]);
+    const order = menuOrderPaths.value;
+    if (order.length === 0) return;
+    routeOrderIndex.value = (routeOrderIndex.value + 1) % order.length;
+    void router.push(order[routeOrderIndex.value]);
   }
 };
 
@@ -193,7 +239,7 @@ void marketStatusStore.refresh();
       </div>
       <nav class="flex-1 space-y-1 overflow-y-auto px-2">
         <RouterLink
-          v-for="item in MENU_ITEMS"
+          v-for="item in menuItems"
           :key="item.path"
           :to="item.path"
           class="group relative pressable flex items-center gap-3 rounded-lg py-2 text-sm active:scale-[0.98]"

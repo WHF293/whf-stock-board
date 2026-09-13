@@ -24,6 +24,8 @@ export const STOCK_PROXY_ALLOWED_HOSTS = [
   'sinajs.cn',
   // 同花顺（热点新闻 news.10jqka.com.cn）
   '10jqka.com.cn',
+  // 财联社（电报快讯 www.cls.cn，需动态计算 sign；本期未接入，预留白名单）
+  'cls.cn',
   // stock-sdk 静态资源（代码表等参考数据）
   'linkdiary.cn',
 ] as const;
