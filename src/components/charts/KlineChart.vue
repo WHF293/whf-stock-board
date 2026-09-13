@@ -57,28 +57,42 @@ const MA_PERIODS = [5, 10, 30];
 /**
  * 涨跌幅百分比 y 轴模板（仅 timeline 模式挂载）
  *
- * 不能用内置 percentage 轴：其 convertToPixel 把入参当百分比值换算，
- * 而面积线 / 指标绘制传入的是原始价格，会被画到面板外（曲线不可见）。
- * 本模板只映射 display 空间（刻度文本 = 相对可视区首根收盘的涨跌幅%），
- * 像素换算（real 空间）保持价格原值，曲线 / 均价线 / 十字光标均正常
+ * 空间约定与内置 percentage 轴一致：from/to 空间 = 价格，real/display 空间 = 涨跌幅%。
+ * （createRangeImp 会丢弃 createRange 返回的 display 值并经 realValueToDisplayValue
+ * 重算 display，因此必须让 real 空间承载百分比，不能只映射 display 字段）
+ * 差异点仅一处：基准价优先用昨收 prevClose（标准分时口径，0 轴 = 昨收），
+ * 缺失时回退可视区首根收盘
  */
 const TIMELINE_PCT_YAXIS: YAxisTemplate = {
   name: 'timeline_pct',
   minSpan: () => 0.01,
   displayValueToText: (value) => `${value.toFixed(2)}%`,
+  valueToRealValue: (value, { range }) =>
+    range.range === 0
+      ? range.realFrom
+      : ((value - range.from) / range.range) * range.realRange + range.realFrom,
+  realValueToValue: (value, { range }) =>
+    range.realRange === 0
+      ? range.from
+      : ((value - range.realFrom) / range.realRange) * range.range + range.from,
   createRange: ({ chart, defaultRange }) => {
-    // 优先用昨收（标准分时口径，0 轴 = 昨收）；快照未就绪时回退首根收盘
+    const { from, to, range } = defaultRange;
     const base =
       props.preClose ?? chart.getDataList()[chart.getVisibleRange().from]?.close;
     if (!base) return defaultRange;
     const toPercent = (price: number): number => ((price - base) / base) * 100;
-    const displayFrom = toPercent(defaultRange.from);
-    const displayTo = toPercent(defaultRange.to);
+    const realFrom = toPercent(from);
+    const realTo = toPercent(to);
     return {
-      ...defaultRange,
-      displayFrom,
-      displayTo,
-      displayRange: displayTo - displayFrom,
+      from,
+      to,
+      range,
+      realFrom,
+      realTo,
+      realRange: realTo - realFrom,
+      displayFrom: realFrom,
+      displayTo: realTo,
+      displayRange: realTo - realFrom,
     };
   },
 };
@@ -220,8 +234,10 @@ const applyAxisOptions = (chart: Chart): void => {
   });
   // X 轴 5 等分
   chart.overrideXAxis({ createTicks: buildXAxisTicks });
-  // 分时 / 五日：禁用 X 轴缩放（klinecharts v10 主图默认 isStack=true 会整图缩放，副图通过 scrollZoomEnabled 关闭）
+  // 分时 / 五日：禁用缩放与滚动，固定全量展示（setScrollEnabled(false) 后
+  // setDataLoader 内部 resetData 的滚动重置也不可再拖动视窗）
   chart.setZoomEnabled(!isTimeline);
+  chart.setScrollEnabled(!isTimeline);
   chart.overrideXAxis({ scrollZoomEnabled: !isTimeline });
 };
 
@@ -234,6 +250,13 @@ const applyData = (): void => {
   chart.setDataLoader({
     getBars: ({ callback }) => {
       callback(props.bars, { forward: false, backward: false });
+      // 分时 / 五日：按容器宽度反推 bar 宽度，保证全部数据一屏显示
+      if (props.mode === 'timeline' && props.bars.length > 0) {
+        const width = containerRef.value?.clientWidth ?? 0;
+        const barSpace = Math.max(1, Math.floor(width / props.bars.length));
+        chart.setBarSpace(Math.min(barSpace, 20));
+        chart.scrollToRealTime();
+      }
     },
   });
   chart.setSymbol({
