@@ -57,47 +57,42 @@ const MA_PERIODS = [5, 10, 30];
 /**
  * 涨跌幅百分比 y 轴模板（仅 timeline 模式挂载）
  *
- * 空间约定与内置 percentage 轴一致：from/to 空间 = 价格，real/display 空间 = 涨跌幅%。
- * （createRangeImp 会丢弃 createRange 返回的 display 值并经 realValueToDisplayValue
- * 重算 display，因此必须让 real 空间承载百分比，不能只映射 display 字段）
- * 差异点仅一处：基准价优先用昨收 prevClose（标准分时口径，0 轴 = 昨收），
- * 缺失时回退可视区首根收盘
+ * timeline 模式的数据在传入前已完成转换：close = (price - pre) / pre（昨收涨跌幅小数），
+ * 轴上没有价格，只有涨跌幅小数值，因此默认恒等换算即可，仅需格式化刻度文本
  */
 const TIMELINE_PCT_YAXIS: YAxisTemplate = {
   name: 'timeline_pct',
-  minSpan: () => 0.01,
-  displayValueToText: (value) => `${value.toFixed(2)}%`,
-  valueToRealValue: (value, { range }) =>
-    range.range === 0
-      ? range.realFrom
-      : ((value - range.from) / range.range) * range.realRange + range.realFrom,
-  realValueToValue: (value, { range }) =>
-    range.realRange === 0
-      ? range.from
-      : ((value - range.realFrom) / range.realRange) * range.range + range.from,
-  createRange: ({ chart, defaultRange }) => {
-    const { from, to, range } = defaultRange;
-    const base =
-      props.preClose ?? chart.getDataList()[chart.getVisibleRange().from]?.close;
-    if (!base) return defaultRange;
-    const toPercent = (price: number): number => ((price - base) / base) * 100;
-    const realFrom = toPercent(from);
-    const realTo = toPercent(to);
-    return {
-      from,
-      to,
-      range,
-      realFrom,
-      realTo,
-      realRange: realTo - realFrom,
-      displayFrom: realFrom,
-      displayTo: realTo,
-      displayRange: realTo - realFrom,
-    };
-  },
+  minSpan: () => 0.0001,
+  displayValueToText: (value) => `${(value * 100).toFixed(2)}%`,
 };
 
 registerYAxis(TIMELINE_PCT_YAXIS);
+
+/**
+ * timeline 模式的展示数据派生（分时 / 五日专用，蜡烛模式原样透传）：
+ *
+ * - price：原始价格（转换前的 close）
+ * - pre：昨收基准（取 preClose，快照未就绪时回退首根收盘）
+ * - close：涨跌幅小数 = (price - pre) / pre，保留 3 位小数
+ * - avgPrice：均价同步转为涨跌幅小数（与 close 同轴，否则均价线画出范围）
+ */
+const displayBars = computed<KLineData[]>(() => {
+  if (props.mode !== 'timeline') return props.bars;
+  const pre = props.preClose ?? props.bars[0]?.close ?? null;
+  if (!pre) return props.bars;
+  const round3 = (value: number): number => Number(value.toFixed(3));
+  return props.bars.map((bar) => {
+    const price = bar.close;
+    return {
+      ...bar,
+      price,
+      pre,
+      close: round3((price - pre) / pre),
+      avgPrice:
+        typeof bar.avgPrice === 'number' ? round3((bar.avgPrice - pre) / pre) : bar.avgPrice,
+    };
+  });
+});
 
 /** 当前涨跌色阶（依赖 trendTheme，切换时本 computed 消费方自动重算） */
 const trendSet = computed(() => {
@@ -249,11 +244,11 @@ const applyData = (): void => {
   if (!chart) return;
   chart.setDataLoader({
     getBars: ({ callback }) => {
-      callback(props.bars, { forward: false, backward: false });
+      callback(displayBars.value, { forward: false, backward: false });
       // 分时 / 五日：按容器宽度反推 bar 宽度，保证全部数据一屏显示
-      if (props.mode === 'timeline' && props.bars.length > 0) {
+      if (props.mode === 'timeline' && displayBars.value.length > 0) {
         const width = containerRef.value?.clientWidth ?? 0;
-        const barSpace = Math.max(1, Math.floor(width / props.bars.length));
+        const barSpace = Math.max(1, Math.floor(width / displayBars.value.length));
         chart.setBarSpace(Math.min(barSpace, 20));
         chart.scrollToRealTime();
       }
@@ -317,11 +312,12 @@ useResizeObserver(containerRef, () => {
   nextTick(() => chart.resize());
 });
 
-// 数据或模式变化时整体重新加载（周期 / 标的切换由父组件重新拉取）；
-// 模式变化时指标集不同，先清空重建
+// 展示数据或模式变化时整体重新加载（周期 / 标的切换由父组件重新拉取）；
+// 模式变化时指标集不同，先清空重建；
+// preClose 异步就绪会触发 displayBars 重算，无需单独 watch
 let prevMode = props.mode;
 watch(
-  () => [props.bars, props.mode] as const,
+  () => [displayBars.value, props.mode] as const,
   ([, mode]) => {
     const chart = chartRef.value;
     if (!chart) return;
@@ -334,17 +330,6 @@ watch(
       chart.setFormatter({ formatDate: (timestamp) => formatDateByMode(timestamp) });
     }
     applyData();
-  },
-);
-
-// 涨跌配色主题切换时重建样式（蜡烛模式跟随，分时/五日面积线固定色不受影响）
-// 昨收异步就绪（报价轮询返回）后重载数据，触发涨跌幅轴以昨收为基准重算
-watch(
-  () => props.preClose,
-  () => {
-    if (props.mode === 'timeline' && props.preClose) {
-      applyData();
-    }
   },
 );
 
