@@ -9,6 +9,7 @@ export const ROUTE_PATH = {
   MARKET_EVENT: '/market-event',
   DRAGON_TIGER: '/dragon-tiger',
   SCREENER: '/screener',
+  HOT_NEWS: '/hot-news',
   SETTINGS: '/settings',
 } as const;
 
@@ -23,6 +24,7 @@ export const MENU_ICON = {
   FLAME: 'flame',
   TROPHY: 'trophy',
   FILTER: 'filter',
+  NEWS: 'news',
   SETTINGS: 'settings',
 } as const;
 
@@ -39,4 +41,5 @@ export const MENU_ITEMS = [
   { path: ROUTE_PATH.MARKET_EVENT, title: '涨停与异动', icon: MENU_ICON.FLAME },
   { path: ROUTE_PATH.DRAGON_TIGER, title: '龙虎榜·大宗', icon: MENU_ICON.TROPHY },
   { path: ROUTE_PATH.SCREENER, title: '选股器', icon: MENU_ICON.FILTER },
+  { path: ROUTE_PATH.HOT_NEWS, title: '热点新闻', icon: MENU_ICON.NEWS },
 ] as const;

@@ -13,6 +13,8 @@ const ICON_PATHS: Record<string, string> = {
     '<rect x="3" y="4" width="18" height="4" rx="1"/><rect x="3" y="10" width="8" height="10" rx="1"/><rect x="13" y="10" width="8" height="10" rx="1"/>',
   funds:
     '<polyline points="3 17 9 11 13 15 21 7"/><polyline points="15 7 21 7 21 13"/>',
+  news:
+    '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 9h6M7 12h6M7 15h4M16 9h1v6h-1z"/>',
   flame:
     '<path d="M12 3c1.5 3.5-4 5.5-4 9.5a4 4 0 0 0 8 0c0-1.8-1-3-1-3s2.5 1 2.5 3.5"/><path d="M12 21a8 8 0 0 0 8-8c0-4-3-7-4-9"/>',
   trophy:

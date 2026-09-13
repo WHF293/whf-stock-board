@@ -31,5 +31,5 @@ export const DATA_CACHE_KEY = {
   DETAIL_QUOTE_PREFIX: 'detail.quote.',
   DETAIL_TIMELINE_PREFIX: 'detail.timeline.',
   DETAIL_KLINE_PREFIX: 'detail.kline.',
-  DETAIL_CHIPS_PREFIX: 'detail.chips.',
+  HOT_NEWS_ITEMS: 'hot-news.items.',
 } as const;

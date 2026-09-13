@@ -27,7 +27,19 @@ export const proxyFetch: typeof fetch = (url, init) => {
     return tauriFetch(target, init);
   }
 
-  const proxiedUrl = `${STOCK_PROXY_PATH}?u=${encodeURIComponent(target)}`;
+  // Referer 是浏览器 forbidden header，无法经 fetch 头透传；
+  // 改用查询参数 ?r= 携带给代理中间件（中间件转发上游时优先使用）
+  const referer =
+    init?.headers instanceof Headers
+      ? init.headers.get('Referer')
+      : Array.isArray(init?.headers)
+        ? init.headers.find(([key]) => key.toLowerCase() === 'referer')?.[1] ?? null
+        : (init?.headers as Record<string, string> | undefined)?.Referer ?? null;
+
+  let proxiedUrl = `${STOCK_PROXY_PATH}?u=${encodeURIComponent(target)}`;
+  if (referer) {
+    proxiedUrl += `&r=${encodeURIComponent(referer)}`;
+  }
 
   // 透传 init（signal/headers/method），SDK 的超时与 hooks 语义保持不变
   return fetch(proxiedUrl, init);

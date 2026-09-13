@@ -3,16 +3,14 @@ import { computed, ref, watch } from 'vue';
 import BaseCard from '../ui/BaseCard.vue';
 import BaseEmpty from '../ui/BaseEmpty.vue';
 import BaseSkeleton from '../ui/BaseSkeleton.vue';
-import StockDetailSidebar from '../business/StockDetailSidebar.vue';
 import KlineChart from '../charts/KlineChart.vue';
 import StockQuoteHeader from '../business/StockQuoteHeader.vue';
+import StockOrderBook from '../business/StockOrderBook.vue';
 import DockResizer from '../business/DockResizer.vue';
 import { fetchFullQuotes } from '../../api/quotes.api';
-import { fetchChipDistribution } from '../../api/kline.api';
 import { fetchSinaKline, type SinaKlinePeriod } from '../../api/sina-kline.api';
 import { usePolling } from '../../composables/use-polling';
 import { POLLING_INTERVAL } from '../../constants/polling.constants';
-import type { ChipDistributionItem } from '../../types/kline.types';
 import type { KLineData } from 'klinecharts';
 import type { FullQuote } from '../../types/stock-quote.types';
 import { normalizeSymbol, toTencentSymbol } from 'stock-sdk';
@@ -22,7 +20,7 @@ import { DATA_CACHE_KEY } from '../../constants/data-cache.constants';
 
 /**
  * 个股详情面板（右侧停靠面板内容，布局参考同花顺移动端）：
- * 报价头 + 分时/五日/5分/日K/周K/月K 下拉切换 + 可开关的联动侧栏（分时 -> 五档盘口；K 线 -> 筹码分布）
+ * 报价头 + 分时/五日/5分/日K/周K/月K 下拉切换 + 侧栏（分时/五日 -> 五档盘口）
  *
  * K 线走新浪源（不复权），为重接口，仅在打开面板或切换周期时拉取一次，不参与轮询；
  * 全部数据有内存快照：同标的重复打开先展示快照，接口返回后刷新
@@ -35,14 +33,13 @@ const props = defineProps<{
 const dataCache = useDataCacheStore();
 const dockPanel = useDockPanelStore();
 
-/** 侧栏最小可视宽度阈值（像素），低于此宽度隐藏五档 / 筹码避免挤占主图 */
+/** 侧栏最小可视宽度阈值（像素），低于此宽度隐藏五档盘口避免挤占主图 */
 const SIDEBAR_MIN_WIDTH_PX = 500;
 
-/** 周期对应的固定侧栏：分时/五日 -> 五档盘口；K 线 -> 筹码分布 */
-const sidebarMode = computed<'timeline' | 'candle'>(() => chartMode.value);
-
-/** 侧栏是否展示（面板宽 ≥ 阈值才显示） */
-const showSidebar = computed(() => dockPanel.width >= SIDEBAR_MIN_WIDTH_PX);
+/** 侧栏是否展示（仅分时/五日显示五档盘口，且面板宽 ≥ 阈值） */
+const showSidebar = computed(
+  () => chartMode.value === 'timeline' && dockPanel.width >= SIDEBAR_MIN_WIDTH_PX,
+);
 
 /**
  * 归一化符号：600519 / SH600519 / sh600519 等形态统一为 sh600519
@@ -58,15 +55,15 @@ const symbol = computed<string>(() => {
 });
 
 // ---------- 报价头（4s 轮询；快照播种） ----------
-const quote = ref<FullQuote | null>(
+const quoteRef = ref<FullQuote | null>(
   dataCache.get<FullQuote>(DATA_CACHE_KEY.DETAIL_QUOTE_PREFIX + symbol.value),
 );
 
 const fetchQuote = async (): Promise<void> => {
   const quotes = await fetchFullQuotes([symbol.value]);
-  quote.value = quotes[0] ?? null;
-  if (quote.value) {
-    dataCache.set(DATA_CACHE_KEY.DETAIL_QUOTE_PREFIX + symbol.value, quote.value);
+  quoteRef.value = quotes[0] ?? null;
+  if (quoteRef.value) {
+    dataCache.set(DATA_CACHE_KEY.DETAIL_QUOTE_PREFIX + symbol.value, quoteRef.value);
   }
 };
 
@@ -75,6 +72,38 @@ usePolling({
   intervalMs: POLLING_INTERVAL.QUOTES_INTRADAY,
   tradingAware: true,
 });
+
+// ---------- 十字光标联动（K 线悬停 bar -> 行情头临时展示该根 OHLCV） ----------
+/** 十字光标悬停的 K 线（null = 未悬停，展示最新报价） */
+const hoveredBar = ref<KLineData | null>(null);
+const onCrosshairBar = (bar: KLineData | null): void => {
+  hoveredBar.value = bar;
+};
+
+/**
+ * 行情头展示数据：悬停时把该根 K 线的开高低收/量/额覆盖到最新报价上
+ * （价格与涨跌幅按该根 close 相对昨收重算；其余字段保留实时报价）
+ */
+const displayQuote = computed<FullQuote | null>(() => {
+  const quote = quoteRef.value;
+  const bar = hoveredBar.value;
+  if (!quote || !bar) return quote;
+  const prevClose = quote.prevClose;
+  const price = bar.close;
+  const change = prevClose ? price - prevClose : 0;
+  return {
+    ...quote,
+    price,
+    open: bar.open,
+    high: bar.high,
+    low: bar.low,
+    volume: bar.volume ?? quote.volume,
+    amount: (bar.turnover as number | undefined) ?? quote.amount,
+    change,
+    changePercent: prevClose ? (change / prevClose) * 100 : 0,
+  };
+});
+
 
 // ---------- 图表周期（下拉切换：分时 / 五日 / 5分 / 日K / 周K / 月K，均走新浪源） ----------
 /** 图表周期值 */
@@ -129,41 +158,11 @@ const loadKline = async (): Promise<void> => {
   }
 };
 
-// ---------- 筹码分布（随符号拉取一次；快照播种） ----------
-const chipsCacheKey = computed(
-  () => `${DATA_CACHE_KEY.DETAIL_CHIPS_PREFIX}${symbol.value}`,
-);
-const chipItem = ref<ChipDistributionItem | null>(
-  dataCache.get<ChipDistributionItem>(chipsCacheKey.value + '.last'),
-);
-const isChipsLoading = ref(false);
-
-const loadChips = async (): Promise<void> => {
-  isChipsLoading.value = true;
-  try {
-    const cachedChips = dataCache.get<ChipDistributionItem>(chipsCacheKey.value + '.last');
-    if (cachedChips) {
-      chipItem.value = cachedChips;
-    }
-    const items = await fetchChipDistribution(symbol.value);
-    chipItem.value = items.at(-1) ?? null;
-    if (chipItem.value) {
-      dataCache.set(chipsCacheKey.value + '.last', chipItem.value);
-    }
-  } catch (error) {
-    chipItem.value = dataCache.get<ChipDistributionItem>(chipsCacheKey.value + '.last');
-    console.error('[stock-detail] chips', error);
-  } finally {
-    isChipsLoading.value = false;
-  }
-};
-
 // 符号变化全量重拉；周期变化只刷 K 线（组件内状态切换，面板不重载）
 watch(
   symbol,
   () => {
     void loadKline();
-    void loadChips();
     void fetchQuote();
   },
   { immediate: true },
@@ -175,6 +174,7 @@ watch(chartPeriod, () => {
 /**
  * dock-panel 拖拽：把当前鼠标 X 换算为「面板右缘到视口右缘」的宽度
  * 写入 store（store 内 clamp 到 375 ~ 60vw 并持久化）
+ * @param clientX
  */
 const onDockResize = (clientX: number): void => {
   dockPanel.setWidth(window.innerWidth - clientX);
@@ -185,7 +185,7 @@ const onDockResize = (clientX: number): void => {
   <div class="space-y-3">
     <!-- 报价头 -->
     <BaseCard>
-      <StockQuoteHeader :quote="quote" />
+      <StockQuoteHeader :quote="displayQuote" />
     </BaseCard>
 
     <!-- 图表周期下拉：分时 / 五日 -> 侧栏固定五档盘口；其余 -> 侧栏固定筹码分布 -->
@@ -219,18 +219,16 @@ const onDockResize = (clientX: number): void => {
           :key="`${symbol}-${chartMode}`"
           :bars="klines"
           :mode="chartMode"
-          :pre-close="quote?.prevClose ?? null"
+          :pre-close="quoteRef?.prevClose ?? null"
+          @crosshair-bar="onCrosshairBar"
         />
         <BaseSkeleton v-else />
       </div>
 
       <aside v-if="showSidebar" class="space-y-3">
-        <StockDetailSidebar
-          :mode="sidebarMode"
-          :quote="quote"
-          :chip-item="chipItem"
-          :is-chips-loading="isChipsLoading"
-        />
+        <BaseCard title="五档盘口">
+          <StockOrderBook :quote="quoteRef" />
+        </BaseCard>
       </aside>
     </div>
   </div>

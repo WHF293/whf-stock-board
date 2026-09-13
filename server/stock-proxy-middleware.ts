@@ -72,8 +72,13 @@ export const createStockProxyMiddleware = (): Connect.NextHandleFunction => {
       return;
     }
 
+    // 调用方可经 ?r= 指定上游 Referer（浏览器 forbidden header 无法经头透传）；
+    // 缓存键包含 referer，避免同 URL 不同 Referer 的响应串味
+    const customReferer = requestUrl.searchParams.get('r');
+    const cacheKey = customReferer ? `${target}|r=${customReferer}` : target;
+
     // 短 TTL 命中：直接回放缓存，不打上游
-    const hit = cache.get(target);
+    const hit = cache.get(cacheKey);
     if (hit && hit.expiresAt > Date.now()) {
       res.setHeader('Content-Type', hit.contentType);
       res.end(hit.body);
@@ -81,17 +86,18 @@ export const createStockProxyMiddleware = (): Connect.NextHandleFunction => {
     }
 
     try {
-      // 部分上游（东财/新浪系）校验 Referer，伪装为同域页面请求；带通用 UA
-      const targetOrigin = new URL(target).origin;
+      // 部分上游（东财/新浪系）校验 Referer：默认伪装为目标域页面请求，
+      // 调用方显式指定（?r=）时优先使用（如新浪新闻要求 finance.sina.com.cn）；带通用 UA
+      const referer = customReferer ?? new URL(target).origin;
       const upstream = await fetch(target, {
-        headers: { Referer: targetOrigin, 'User-Agent': 'Mozilla/5.0' },
+        headers: { Referer: referer, 'User-Agent': 'Mozilla/5.0' },
         signal: AbortSignal.timeout(PROXY_TIMEOUT_MS),
       });
       const body = new Uint8Array(await upstream.arrayBuffer());
       const contentType = upstream.headers.get('content-type') ?? 'text/plain; charset=utf-8';
       // 仅缓存成功响应，失败不缓存以便快速恢复
       if (upstream.ok) {
-        setCacheEntry(target, { body, contentType, expiresAt: Date.now() + PROXY_CACHE_TTL_MS });
+        setCacheEntry(cacheKey, { body, contentType, expiresAt: Date.now() + PROXY_CACHE_TTL_MS });
       }
       res.statusCode = upstream.status;
       res.setHeader('Content-Type', contentType);
