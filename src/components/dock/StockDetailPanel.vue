@@ -219,6 +219,7 @@ const onDockResize = (clientX: number): void => {
           :key="`${symbol}-${chartMode}`"
           :bars="klines"
           :mode="chartMode"
+          :pre-close="quote?.prevClose ?? null"
         />
         <BaseSkeleton v-else />
       </div>
