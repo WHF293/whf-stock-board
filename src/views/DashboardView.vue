@@ -439,12 +439,13 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
             :drill-view="drillView"
             :is-drill-loading="isDrillLoading"
             :drill-error="drillError"
+            :show-back-bar="false"
             @stock-click="onOpenHeatmapStock"
           />
         </template>
-        <!-- 列表形式 -->
+        <!-- 列表形式（显式条件：与上方成分股块兄弟时 v-else 链会接错对象） -->
         <HeatmapBoardList
-          v-else
+          v-else-if="settingsStore.heatmapViewMode === HEATMAP_VIEW_MODE.LIST"
           :boards="topBoards"
           :drill-view="drillView"
           :is-drill-loading="isDrillLoading"

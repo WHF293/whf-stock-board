@@ -30,6 +30,8 @@ const props = defineProps<{
   isDrillLoading: boolean;
   /** 成分股拉取失败的板块名 */
   drillError: string | null;
+  /** 是否渲染内部「返回板块」状态条（父级已有返回入口时传 false） */
+  showBackBar?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -135,9 +137,9 @@ const option = computed<EChartsCoreOption>(() => {
 
 <template>
   <div>
-    <!-- 下钻状态条：返回 + 当前板块名 -->
+    <!-- 下钻状态条：返回 + 当前板块名（父级已有返回入口时可关闭） -->
     <div
-      v-if="drillView"
+      v-if="drillView && showBackBar !== false"
       class="mb-2 flex items-center gap-2 text-sm"
     >
       <button

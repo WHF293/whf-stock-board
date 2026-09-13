@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 /**
  * 内联 SVG 线性图标（不引第三方图标库，stroke 跟随 currentColor）
  *
@@ -67,8 +68,8 @@ const props = withDefaults(
   { size: 16 },
 );
 
-/** 当前图标的 path 片段；未知 key 渲染为空避免报错 */
-const paths = ICON_PATHS[props.name] ?? '';
+/** 当前图标的 path 片段；未知 key 渲染为空避免报错（响应式，name 变化即时切换） */
+const paths = computed(() => ICON_PATHS[props.name] ?? '');
 </script>
 
 <template>

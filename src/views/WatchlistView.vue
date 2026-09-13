@@ -7,7 +7,7 @@ import BaseEmpty from "../components/ui/BaseEmpty.vue";
 import BaseInput from "../components/ui/BaseInput.vue";
 import BaseTabs from "../components/ui/BaseTabs.vue";
 import MenuIcon from "../components/ui/MenuIcon.vue";
-import StockSearchInput from "../components/business/StockSearchInput.vue";
+import StockSearchModal from "../components/business/StockSearchModal.vue";
 import WatchlistTable from "../components/business/WatchlistTable.vue";
 import { fetchFullQuotes } from "../api/quotes.api";
 import { usePolling } from "../composables/use-polling";
@@ -130,6 +130,9 @@ const onConfirmRemove = (): void => {
   pendingRemoveGroupId.value = null;
 };
 
+/** 添加股票弹窗开关 */
+const searchModalOpen = ref(false);
+
 /**
  * 搜索结果加入当前分组自选
  * @param result 搜索结果
@@ -178,8 +181,11 @@ const onReorderStock = (fromIndex: number, toIndex: number): void => {
 
     <!-- 搜索添加（左侧）+ 新建分组（右侧） -->
     <div class="flex flex-wrap items-center justify-between gap-2">
-      <div class="min-w-0 flex-1 max-w-md">
-        <StockSearchInput @select="onAddStock" />
+      <div>
+        <BaseButton variant="ghost" @click="searchModalOpen = true">
+          <MenuIcon name="plus" :size="14" />
+          添加股票
+        </BaseButton>
       </div>
       <form class="flex items-center gap-2" @submit.prevent="onAddGroup">
         <BaseInput
@@ -239,6 +245,18 @@ const onReorderStock = (fromIndex: number, toIndex: number): void => {
       ok-text="删除"
       ok-variant="danger"
       @ok="onConfirmRemove"
+    />
+
+    <!-- 添加股票搜索弹窗 -->
+    <StockSearchModal
+      :open="searchModalOpen"
+      @close="searchModalOpen = false"
+      @select="
+        (result) => {
+          onAddStock(result);
+          searchModalOpen = false;
+        }
+      "
     />
   </div>
 </template>

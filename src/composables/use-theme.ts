@@ -10,6 +10,10 @@ import { appStorage } from '../utils/app-local-storage';
  */
 export const useTheme = () => {
   const isDark = useDark({ storageKey: STORAGE_NS_COLOR_SCHEME, storage: appStorage });
+  // 首次访问（localStorage 无偏好记录）默认进入黑暗模式
+  if (appStorage.getItem(STORAGE_NS_COLOR_SCHEME) === null) {
+    isDark.value = true;
+  }
   const toggleDark = useToggle(isDark);
   return { isDark, toggleDark };
 };

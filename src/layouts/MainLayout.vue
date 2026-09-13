@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { useIntervalFn, onClickOutside, useMediaQuery, watchImmediate } from "@vueuse/core";
-import { computed, ref, watch } from "vue";
-import { useRoute } from "vue-router";
+import { useIntervalFn, useMediaQuery, watchImmediate } from "@vueuse/core";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import MarketStatusBadge from "../components/business/MarketStatusBadge.vue";
-import StockSearchInput from "../components/business/StockSearchInput.vue";
+import StockSearchModal from "../components/business/StockSearchModal.vue";
 import DockPanel from "../components/dock/DockPanel.vue";
 import BaseTooltip from "../components/ui/BaseTooltip.vue";
 import MenuIcon from "../components/ui/MenuIcon.vue";
@@ -23,6 +23,7 @@ import type { SearchResult } from "../types/stock-quote.types";
  * 挂载后刷新市场状态并每 10 分钟同步，供全部轮询消费
  */
 const route = useRoute();
+const router = useRouter();
 const { isDark, toggleDark } = useTheme();
 const marketStatusStore = useMarketStatusStore();
 const settingsStore = useSettingsStore();
@@ -82,51 +83,47 @@ const sidebarWidthClass = computed(() =>
   effectiveCollapsed.value ? 'w-56 lg:w-16' : 'w-56',
 );
 
-/** 头部搜索面板开关 */
-const searchOpen = ref(false);
-
-/** 搜索区域根元素（搜索按钮 + 面板）：点击区域外任意位置关闭面板 */
-const searchAreaRef = ref<HTMLElement | null>(null);
-
-// 点击搜索区域（按钮 + 面板）以外时收起面板
-onClickOutside(searchAreaRef, () => {
-  searchOpen.value = false;
-});
-
-// 路由切换后自动收起抽屉与搜索面板
-watch(
-  () => route.path,
-  () => {
-    sidebarOpen.value = false;
-    searchOpen.value = false;
-  },
-);
+/** 头部搜索弹窗开关 */
+const searchModalOpen = ref(false);
 
 /**
- * 展开/收起搜索面板
- */
-const toggleSearch = (): void => {
-  searchOpen.value = !searchOpen.value;
-};
-
-/**
- * 搜索面板按键处理：Esc 关闭
- * @param event 键盘事件
- */
-const onSearchPanelKeydown = (event: KeyboardEvent): void => {
-  if (event.key === 'Escape') {
-    searchOpen.value = false;
-  }
-};
-
-/**
- * 选中搜索结果：右侧面板打开个股详情并收起搜索
+ * 选中搜索结果：右侧面板打开个股详情并关闭弹窗
  * @param result 搜索结果
  */
 const onHeaderSearchSelect = (result: SearchResult): void => {
   dockPanel.openStock(result.code);
-  searchOpen.value = false;
+  searchModalOpen.value = false;
 };
+
+// ---------- 快捷键：Shift + Tab 循环切换页面（按侧栏顺序，不含设置页） ----------
+/** 当前路由在菜单顺序中的下标 */
+const routeOrderIndex = ref(0);
+
+/**
+ * 全局键盘：Shift+Tab 切到上一个页面（到顶回最后一个）
+ * @param event
+ */
+const onGlobalKeydown = (event: KeyboardEvent): void => {
+  if (
+    event.shiftKey &&
+    event.key === "Tab" &&
+    !event.ctrlKey &&
+    !event.altKey &&
+    !event.metaKey
+  ) {
+    event.preventDefault();
+    routeOrderIndex.value = (routeOrderIndex.value + 1) % MENU_ORDER.length;
+    void router.push(MENU_ORDER[routeOrderIndex.value]);
+  }
+};
+
+onMounted(() => {
+  document.addEventListener("keydown", onGlobalKeydown, true);
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener("keydown", onGlobalKeydown, true);
+});
 
 /**
  * 菜单项是否激活（当前路由完全匹配或位于其子路径下）
@@ -259,25 +256,15 @@ void marketStatusStore.refresh();
           >
             <MenuIcon :name="isDark ? 'sun' : 'moon'" :size="16" />
           </button>
-          <!-- 搜索区域：按钮 + 浮层面板，点击区域外自动收起 -->
-          <div ref="searchAreaRef" class="relative flex items-center">
-            <button
-              type="button"
-              class="pressable rounded-lg p-2 text-text-secondary hover:bg-flat-weak active:scale-90"
-              :class="searchOpen ? 'text-primary' : ''"
-              :aria-label="searchOpen ? '关闭搜索' : '搜索个股'"
-              @click="toggleSearch"
-            >
-              <MenuIcon :name="searchOpen ? 'close' : 'search'" :size="16" />
-            </button>
-            <div
-              v-if="searchOpen"
-              class="absolute right-0 top-full z-30 mt-2 w-80 max-w-[calc(100vw-2rem)]"
-              @keydown="onSearchPanelKeydown"
-            >
-              <StockSearchInput auto-focus @select="onHeaderSearchSelect" />
-            </div>
-          </div>
+          <!-- 搜索：点击打开弹窗 -->
+          <button
+            type="button"
+            class="pressable rounded-lg p-2 text-text-secondary hover:bg-flat-weak active:scale-90"
+            aria-label="搜索个股"
+            @click="searchModalOpen = true"
+          >
+            <MenuIcon name="search" :size="16" />
+          </button>
         </div>
       </header>
       <main class="flex-1 overflow-y-auto">
@@ -296,5 +283,12 @@ void marketStatusStore.refresh();
 
     <!-- 右侧停靠面板（个股详情等可插拔内容，默认收起；窄屏全屏覆盖） -->
     <DockPanel />
+
+    <!-- 全局标的搜索弹窗 -->
+    <StockSearchModal
+      :open="searchModalOpen"
+      @close="searchModalOpen = false"
+      @select="onHeaderSearchSelect"
+    />
   </div>
 </template>
