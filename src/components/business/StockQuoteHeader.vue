@@ -56,7 +56,9 @@ const metrics = computed<HeaderMetric[]>(() => {
 
 <template>
   <BaseSkeleton v-if="!quote" />
-  <div v-else class="flex flex-col gap-4 xl:flex-row xl:items-start">
+  <!-- @container 容器查询：面板宽 <560px 纵向堆叠，≥560px 横排（视口断点在窄面板内会误判） -->
+  <div v-else class="@container">
+    <div class="flex flex-col gap-4 @[560px]:flex-row @[560px]:items-start">
     <!-- 价格区 -->
     <div class="w-48 shrink-0">
       <p class="text-sm font-medium text-text-secondary">{{ quote.name }}</p>
@@ -80,7 +82,7 @@ const metrics = computed<HeaderMetric[]>(() => {
     </div>
 
     <!-- 关键指标 -->
-    <dl class="grid flex-1 grid-cols-3 gap-x-3 gap-y-2 self-center text-sm md:grid-cols-3">
+    <dl class="grid flex-1 grid-cols-2 gap-x-3 gap-y-2 self-center text-sm @[560px]:grid-cols-3">
       <div v-for="metric in metrics" :key="metric.label" class="flex items-baseline justify-between gap-1">
         <dt class="shrink-0 whitespace-nowrap text-xs text-text-tertiary">{{ metric.label }}</dt>
         <dd class="whitespace-nowrap tabular-nums text-text" :class="metric.tone ? TREND_TEXT_CLASS[metric.tone] : ''">
@@ -88,5 +90,6 @@ const metrics = computed<HeaderMetric[]>(() => {
         </dd>
       </div>
     </dl>
+    </div>
   </div>
 </template>

@@ -1,4 +1,4 @@
-import { registerIndicator, type IndicatorTemplate } from 'klinecharts';
+import { registerIndicator, type IndicatorTemplate, type KLineData } from 'klinecharts';
 import { readTrendColors } from '../../../utils/trend-colors';
 
 /**
@@ -142,6 +142,25 @@ const AVG_PRICE_TEMPLATE: IndicatorTemplate<{ avg: number | null }> = {
     dataList.map((bar) => ({
       avg: (bar.avgPrice as number | undefined) ?? bar.close,
     })),
+  // tooltip 显示「原始均价 + 相对昨收涨跌幅」，如 `194.38 +0.33%`
+  // （数据来自 KlineChart 的 displayBars：avgPriceRaw 原始均价 / pre 昨收 / avgPrice 涨跌幅小数）
+  createTooltipDataSource: ({ crosshair }) => {
+    const bar = crosshair.kLineData as
+      | (KLineData & { avgPriceRaw?: number | null; avgPrice?: number })
+      | undefined;
+    const raw = bar?.avgPriceRaw;
+    const pct = bar?.avgPrice;
+    const value =
+      raw === undefined || raw === null
+        ? 'n/a'
+        : `${raw.toFixed(2)} ${pct === undefined ? '' : `${pct >= 0 ? '+' : ''}${(pct * 100).toFixed(2)}%`}`;
+    return {
+      name: '均价',
+      calcParamsText: '',
+      features: [],
+      legends: [{ title: '均价: ', value }],
+    };
+  },
 };
 
 registerIndicator(MACD_KDJ_TEMPLATE);
