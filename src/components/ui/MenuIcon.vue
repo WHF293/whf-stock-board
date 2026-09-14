@@ -86,6 +86,12 @@ const ICON_PATHS: Record<string, string> = {
   // 板块日历：日历框 + 挂环 + 横线 + 日期点
   calendar:
     '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/><circle cx="9" cy="15" r="1"/><circle cx="15" cy="15" r="1"/>',
+  // 放大打开（跳转详情页）
+  expand:
+    '<path d="M15 3h6v6M21 3l-8 8M9 21H3v-6M3 21l8-8"/>',
+  // 竖向三滑杆（tabs 显示配置）
+  sliders:
+    '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>',
 };
 
 const props = withDefaults(

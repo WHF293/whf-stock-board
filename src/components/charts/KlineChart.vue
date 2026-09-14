@@ -20,6 +20,7 @@ import {
 } from '../../constants/chart.constants';
 import { readTrendColors } from '../../utils/trend-colors';
 import { useSettingsStore } from '../../stores/settings';
+import { isIndexSymbol } from '../../utils/normalize-a-share-code';
 import '../charts/indicators/custom-indicators';
 
 /**
@@ -40,6 +41,20 @@ const props = defineProps<{
   preClose?: number | null;
   /** 外部强制重绘信号（自增 tick）：dock 拖拽结束后父级触发一次 */
   resizeTick?: number;
+  /** 高度自适应：容器 h-full 由父级 flex 布局决定实际高度（默认定高 420px） */
+  autoHeight?: boolean;
+  /**
+   * 蜡烛模式主图指标清单（klinecharts 指标名，如 ['MA','BOLL']）；
+   * 不传用固定默认（MA + VOL + MACD_KDJ，与历史行为一致）。timeline 模式忽略
+   */
+  mainIndicators?: string[];
+  /** 蜡烛模式副图指标清单（每项独立面板）；不传用固定默认。timeline 模式忽略 */
+  subIndicators?: string[];
+  /**
+   * 当前标的符号（sh600519 形态）：用于判定分时/五日是否绘制均价线——
+   * 指数（sh000xxx / sz399xxx）无均价概念，不绘制；不传默认绘制
+   */
+  symbol?: string;
 }>();
 
 const emit = defineEmits<{
@@ -212,24 +227,42 @@ const buildXAxisTicks = (params: AxisCreateTicksParams) => {
 
 /**
  * 按 mode 挂载主图 / 副图指标
+ *
+ * 蜡烛模式按 mainIndicators / subIndicators 清单挂载（未传时用固定默认，
+ * 与历史行为一致）；timeline 模式固定四件套，不参与配置。
  * @param chart 图表实例
  */
+/** 分时/五日是否绘制均价线：指数无均价概念，仅个股绘制 */
+const showAvgLine = computed(() => !props.symbol || !isIndexSymbol(props.symbol));
+
 const setupIndicators = (chart: Chart): void => {
   if (props.mode === 'timeline') {
-    // 分时均价线叠加主图；副图成交量 + MACD
-    chart.createIndicator({ name: 'AVG_PRICE', paneId: CANDLE_PANE_ID }, true);
+    // 分时均价线叠加主图（仅个股）；副图成交量 + MACD
+    if (showAvgLine.value) {
+      chart.createIndicator({ name: 'AVG_PRICE', paneId: CANDLE_PANE_ID }, true);
+    }
     chart.createIndicator('VOL');
     chart.createIndicator('MACD');
     return;
   }
-  // 蜡烛模式：主图 MA[5,10,30]；副图成交量 + MACD&KDJ 复合指标
-  chart.createIndicator({
-    name: 'MA',
-    paneId: CANDLE_PANE_ID,
-    calcParams: MA_PERIODS,
-  });
-  chart.createIndicator('VOL');
-  chart.createIndicator('MACD_KDJ');
+  const main = props.mainIndicators ?? ['MA'];
+  const sub = props.subIndicators ?? ['VOL', 'MACD_KDJ'];
+  // 主图指标叠加蜡烛面板（MA 用本项目口径 [5,10,30]，其余走内置默认参数）
+  for (const name of main) {
+    if (name === 'MA') {
+      chart.createIndicator({
+        name: 'MA',
+        paneId: CANDLE_PANE_ID,
+        calcParams: MA_PERIODS,
+      });
+    } else {
+      chart.createIndicator({ name, paneId: CANDLE_PANE_ID });
+    }
+  }
+  // 副图指标：不传 paneId，klinecharts 自动新建独立面板
+  for (const name of sub) {
+    chart.createIndicator(name);
+  }
 };
 
 /**
@@ -393,6 +426,28 @@ watch(
   },
 );
 
+// 指标配置变化（蜡烛模式）：清空重建全部指标（与模式切换同路径；
+// BOLL 可同时挂主图与副图，整build重建避免按 name 过滤误删同名指标）
+watch(
+  () => [props.mainIndicators, props.subIndicators] as const,
+  () => {
+    const chart = chartRef.value;
+    if (!chart || props.mode === 'timeline') return;
+    chart.removeIndicator({});
+    setupIndicators(chart);
+    applyAxisOptions(chart);
+  },
+);
+
+// 均价线显隐变化（timeline 模式下切换指数/个股）：清空重建指标
+watch(showAvgLine, () => {
+  const chart = chartRef.value;
+  if (!chart || props.mode !== 'timeline') return;
+  chart.removeIndicator({});
+  setupIndicators(chart);
+  applyAxisOptions(chart);
+});
+
 // 展示数据或模式变化时整体重新加载（周期 / 标的切换由父组件重新拉取）；
 // 模式变化时指标集不同，先清空重建；
 // preClose 异步就绪会触发 displayBars 重算，无需单独 watch
@@ -423,6 +478,6 @@ watch(trendSet, () => {
   <!-- 容器始终保留 ≥ 480px 高度；KLineChart canvas 内部会铺满父级可见区域 -->
   <div
     ref="containerRef"
-    class="h-[420px] w-full"
+    :class="autoHeight ? 'h-full min-h-[420px] w-full' : 'h-[420px] w-full'"
   />
 </template>

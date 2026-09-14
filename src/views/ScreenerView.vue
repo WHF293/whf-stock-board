@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue';
 import BaseTabs from '../components/ui/BaseTabs.vue';
+import TabConfigButton from '../components/ui/TabConfigButton.vue';
+import { useTabConfig } from '../composables/use-tab-config';
 import BasicScreener from '../components/screener/BasicScreener.vue';
 import EodPicker from '../components/screener/EodPicker.vue';
 import SignalScanner from '../components/screener/SignalScanner.vue';
@@ -23,12 +24,19 @@ const TOOL_TABS = [
 ] as const;
 
 /** 当前工具 tab */
-const activeTool = ref<string>('basic');
+// 页签显隐 + 顺序可配置（持久化）；激活值被隐藏时自动回退首个可见 tab
+const { visibleOptions: toolTabOptions, activeValue: activeTool } = useTabConfig(
+  'screener',
+  TOOL_TABS,
+);
 </script>
 
 <template>
   <div class="space-y-4">
-    <BaseTabs v-model="activeTool" :options="TOOL_TABS" variant="underline" />
+    <div class="flex items-center gap-1">
+      <BaseTabs v-model="activeTool" :options="toolTabOptions" variant="underline" />
+      <TabConfigButton page-id="screener" :options="TOOL_TABS" />
+    </div>
 
     <BasicScreener v-if="activeTool === 'basic'" />
     <SignalScanner v-else-if="activeTool === 'scanner'" />

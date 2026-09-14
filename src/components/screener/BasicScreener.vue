@@ -20,7 +20,7 @@ import { formatAmount } from '../../utils/format-amount';
 import { formatPercent, formatPercentUnsigned } from '../../utils/format-percent';
 import { formatPrice } from '../../utils/format-price';
 import { normalizeAShareCode } from '../../utils/normalize-a-share-code';
-import { useDockPanelStore } from '../../stores/dock-panel';
+import { useStockOpen } from '../../composables/use-stock-open';
 import { getTrendByChangePercent } from '../../constants/trend.constants';
 import { TREND_PILL_CLASS, TREND_TEXT_CLASS } from '../../constants/stock-colors.constants';
 
@@ -29,7 +29,7 @@ import { TREND_PILL_CLASS, TREND_TEXT_CLASS } from '../../constants/stock-colors
  *
  * 全市场快照与 K 线均为重接口，全部由用户点击触发，不做轮询
  */
-const dockPanel = useDockPanelStore();
+const { openSidebar, openPage, toContextList } = useStockOpen();
 
 // ---------- 筛选条件 ----------
 const filters = reactive({
@@ -92,7 +92,7 @@ const onScreen = async (): Promise<void> => {
  * @param quote 筛选结果项
  */
 const openDetail = (quote: FullQuote): void => {
-  dockPanel.openStock(quote.code);
+  openSidebar(quote.code);
 };
 
 // ---------- 简单回测 ----------
@@ -151,7 +151,7 @@ const resultColumns: TableColumn<FullQuote>[] = [
   <div class="space-y-4">
     <!-- 筛选条件 -->
     <BaseCard title="筛选条件（留空表示不过滤）">
-      <div class="grid grid-cols-2 gap-3 @2xl:grid-cols-3 @4xl:grid-cols-6">
+      <div class="grid grid-cols-6 gap-3">
         <label class="space-y-1">
           <span class="text-xs text-text-tertiary">涨幅 ≥ (%)</span>
           <BaseInput v-model="filters.changeMin" placeholder="-100" />
@@ -209,6 +209,8 @@ const resultColumns: TableColumn<FullQuote>[] = [
         :row-key="(quote) => quote.code"
         row-clickable
         @row-click="openDetail"
+        :enable-dblclick-nav="true"
+        @row-dblclick="(row) => openPage(row.code, toContextList(results, (item) => item.code))"
       >
         <template #name="{ row }">
           <span class="font-medium text-text">{{ row.name }}</span>
@@ -267,7 +269,7 @@ const resultColumns: TableColumn<FullQuote>[] = [
         <BaseEmpty text="回测失败，请检查标的后重试" />
       </div>
       <template v-else-if="backtestResult">
-        <div class="mt-4 grid grid-cols-2 gap-3 @3xl:grid-cols-5">
+        <div class="mt-4 grid grid-cols-5 gap-3">
           <div class="rounded-card bg-flat-weak p-3">
             <p class="text-xs text-text-tertiary">策略总收益</p>
             <p

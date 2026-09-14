@@ -63,15 +63,15 @@
 | `fetchIsTradingDay` | `api/calendar.api.ts` | `sdk.calendar.isTradingDay()` | 腾讯日历 | 是否 A 股交易日（异步，带缓存） |
 | `getMarketStatus` | `api/calendar.api.ts` | `sdk.calendar.marketStatus(market)` | 同步 | 当前市场状态（盘前/交易中/午休/盘后/休市，不识假） |
 | `fetchTodayTimeline` | `api/kline.api.ts` | `sdk.quotes.timeline(symbol)` | 腾讯(JSONP) | 当日分时（昨收+逐分钟价/均价） |
-| `fetchKlineWithIndicators` | `api/kline.api.ts` | `sdk.kline.withIndicators(symbol,{period,adjust,startDate,indicators})` | 东财 K线(push2 系列) | 日/周 K + MA[5,20]/MACD。⚠️ 上游为东财行情域，**本机被封 → 大概率失败**；个股详情主图 K 线已改用新浪源 `fetchSinaKline` |
+| `fetchKlineWithIndicators` | `api/kline.api.ts` | `sdk.kline.withIndicators(symbol,{period,adjust,startDate,indicators})` | 东财 K线(push2 系列) | ⚠️ 上游为东财行情域，**本机被封 → 大概率失败**；个股详情主图 K 线已改用新浪源 `fetchSinaKline`；信号扫描 / MA 回测也已改走新浪 + SDK 纯函数（2026-09-14 方案 A） |
 | `fetchKlineSignals` | `api/kline.api.ts` | `sdk.kline.signals(symbol,{...})` | 东财 | 技术信号（MA/MACD 金叉死叉等 14 种） |
 | `searchStocks` | `api/search.api.ts` | `sdk.search(keyword)` | 腾讯搜索 | 模糊搜索（代码/名称/拼音） |
 | `fetchDragonTigerDetail` | `api/dragon-tiger.api.ts` | `sdk.dragonTiger.detail({startDate,endDate})` | 东财 | 龙虎榜明细（近 N 日） |
 | `fetchBlockTradeDetail` | `api/dragon-tiger.api.ts` | `sdk.blockTrade.detail({startDate,endDate})` | 东财 | 大宗交易明细 |
 | `runScreener` | `api/screener.api.ts` | `screen(quotes)` + `fetchAllMarketQuotes` | 东财 | 基础条件筛选（全市场快照链式 `where`，按成交额降序取前 N） |
-| `runMaCrossBacktest` | `api/screener.api.ts` | `sdk.kline.withIndicators` + `backtest()` | 东财 | MA 金叉死叉回测（近一年日 K 前复权） |
-| 信号扫描 | `api/analysis.api.ts` | `sdk.kline.withIndicators`（并发 3） | 东财 | 对股票池逐票拉日 K 判定 MA/MACD/RSI/BOLL 信号 |
-| 尾盘选股 | `api/analysis.api.ts` | `sdk.quotes.timeline`（并发 2） + `fetchAllMarketQuotes` | 腾讯+东财 | 全市场快照基础过滤 + 分时强度精筛 |
+| `runMaCrossBacktest` | `api/screener.api.ts` | `fetchSinaKline`(daily) + `calcMA[5,20]` + `backtest()` | 新浪 | MA 金叉死叉回测（近一年窗口本地截取）。⚠️ 新浪不复权，除权日附近为近似口径 |
+| 信号扫描 | `api/analysis.api.ts` | `fetchScanBars`（`fetchSinaKline` daily + `calcMA/calcMACD/calcRSI/calcBOLL` 纯函数，并发 3，单票失败跳过） | 新浪 | 对股票池逐票拉日 K 判定 MA/MACD/RSI/BOLL 信号。原 `sdk.kline.withIndicators`（东财）已弃用 |
+| 尾盘选股 | `api/analysis.api.ts` | `sdk.quotes.timeline`（并发 2，单票失败跳过） + `fetchAllMarketQuotes` | 腾讯+东财 | 全市场快照基础过滤 + 分时强度精筛 |
 | `fetchGlobalFuturesPanorama` | `api/panorama.api.ts` | `sdk.futures.globalSpot({pageSize})` | 东财 futsseapi | 外盘商品期货 |
 | — | `api/sdk.ts` | `sdk.clearCaches()` | — | 强刷实例缓存（设置页「清除缓存」调用） |
 

@@ -5,11 +5,13 @@ import BaseEmpty from '../components/ui/BaseEmpty.vue';
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue';
 import BaseTable from '../components/ui/BaseTable.vue';
 import BaseTabs from '../components/ui/BaseTabs.vue';
+import TabConfigButton from '../components/ui/TabConfigButton.vue';
+import { useTabConfig } from '../composables/use-tab-config';
 import type { TableColumn } from '../types/table.types';
 import { sdk } from '../api/sdk';
 import { usePolling } from '../composables/use-polling';
 import { useDataCacheStore } from '../stores/data-cache';
-import { useDockPanelStore } from '../stores/dock-panel';
+import { useStockOpen } from '../composables/use-stock-open';
 import { DATA_CACHE_KEY } from '../constants/data-cache.constants';
 import { POLLING_INTERVAL } from '../constants/polling.constants';
 import {
@@ -41,7 +43,14 @@ import { delay } from '../utils/delay';
  * 一次拉取全市场报价（约 5k+ 只），在前端按 sortKey 排序展示前 N 条；
  * 默认轮询 2 分钟（与市场宽度一致）；行点击打开右侧个股详情
  */
-const dockPanel = useDockPanelStore();
+const { openSidebar, openPage, toContextList } = useStockOpen();
+
+/** 资金流表上下文列表（板块 tab 行非个股，给空列表走单只兜底） */
+const flowContextList = computed(() =>
+  sortKey.value === 'sector'
+    ? []
+    : toContextList(currentFlowItems.value, (row) => String(row.code)),
+);
 const dataCache = useDataCacheStore();
 
 /** 列表展示条数（Top N） */
@@ -61,8 +70,11 @@ const SORT_TAB_OPTIONS = [
 /** 页签值 */
 type RankTab = (typeof SORT_TAB_OPTIONS)[number]['value'];
 
-/** 当前页签 */
-const sortKey = ref<RankTab>('changePercent');
+// 页签显隐 + 顺序可配置（持久化）；激活值被隐藏时自动回退首个可见 tab
+const { visibleOptions: sortTabOptions, activeValue: sortKey } = useTabConfig<RankTab>(
+  'market-rank',
+  SORT_TAB_OPTIONS,
+);
 
 /** 是否为资金流榜单类页签 */
 const isFlowTab = computed(() =>
@@ -339,7 +351,7 @@ const northColumns: TableColumn<NorthboundHoldingRankItem>[] = [
  * @param code 个股 6 位代码
  */
 const openDetail = (code: string): void => {
-  dockPanel.openStock(code);
+  openSidebar(code);
 };
 
 </script>
@@ -348,7 +360,10 @@ const openDetail = (code: string): void => {
   <div class="space-y-4">
     <!-- 排序维度切换（与行情全景一致的 underline 风格） -->
     <div class="flex items-center justify-between gap-2">
-      <BaseTabs v-model="sortKey" :options="SORT_TAB_OPTIONS" variant="underline" />
+      <div class="flex items-center gap-1">
+        <BaseTabs v-model="sortKey" :options="sortTabOptions" variant="underline" />
+        <TabConfigButton page-id="market-rank" :options="SORT_TAB_OPTIONS" />
+      </div>
       <span class="text-xs text-text-tertiary">
         共 {{ allQuotes.length }} 只 · 前 {{ displayedRows.length }} 名 · 2 分钟自动刷新
       </span>
@@ -370,12 +385,12 @@ const openDetail = (code: string): void => {
         :row-clickable="sortKey !== 'sector'"
         :expandable="sortKey === 'sector'"
         :expanded-keys="expandedSectorCodes"
+        :enable-dblclick-nav="true"
         @row-click="
           (row: FlowRow) =>
-            sortKey === 'sector'
-              ? onSectorToggle(row as SectorFundFlowItem)
-              : openDetail(String(row.code))
+            sortKey !== 'sector' && openDetail(String(row.code))
         "
+        @row-dblclick="(row) => sortKey !== 'sector' && openPage(String(row.code), flowContextList)"
         @toggle-expand="(row: FlowRow) => onSectorToggle(row as SectorFundFlowItem)"
       >
         <template #name="{ row }: { row: FlowRow }">
@@ -427,6 +442,8 @@ const openDetail = (code: string): void => {
             min-width="560px"
             row-clickable
             @row-click="(stock: IndustryBoardConstituent) => openDetail(stock.code)"
+            :enable-dblclick-nav="true"
+            @row-dblclick="(stock) => openPage(stock.code, toContextList(sectorConstituentsMap[String(row.code)] ?? [], (item) => item.code))"
           >
             <template #name="{ row: stock }: { row: IndustryBoardConstituent }">
               <span class="font-medium text-text">{{ stock.name }}</span>
@@ -476,6 +493,8 @@ const openDetail = (code: string): void => {
         scroll-class="table-scroll"
         row-clickable
         @row-click="(row) => openDetail(row.code)"
+        :enable-dblclick-nav="true"
+        @row-dblclick="(row) => openPage(row.code, toContextList(displayedRows, (item) => item.code))"
       >
         <template #name="{ row }">
           <span class="font-medium text-text">{{ row.name }}</span>

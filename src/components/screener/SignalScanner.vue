@@ -25,7 +25,7 @@ import {
   SCAN_ZT_POOL_OPTIONS,
   SIGNAL_TEMPLATES,
 } from '../../constants/analysis.constants';
-import { useDockPanelStore } from '../../stores/dock-panel';
+import { useStockOpen } from '../../composables/use-stock-open';
 import { useWatchlistStore } from '../../stores/watchlist';
 import type {
   AnalysisProgress,
@@ -60,7 +60,7 @@ const toSymbol = (code: string): string => {
   return `bj${code}`;
 };
 
-const dockPanel = useDockPanelStore();
+const { openSidebar, openPage, toContextList } = useStockOpen();
 const watchlistStore = useWatchlistStore();
 
 /** 股票池来源 tab */
@@ -327,7 +327,7 @@ onBeforeUnmount(() => {
  * @param row 结果行
  */
 const openDetail = (row: ScanSignalResult): void => {
-  dockPanel.openStock(row.symbol);
+  openSidebar(row.symbol);
 };
 
 /**
@@ -425,7 +425,7 @@ const resultColumns: TableColumn<ScanSignalResult>[] = [
 
     <!-- 信号模板 -->
     <BaseCard title="信号模板（可多选）">
-      <div class="grid grid-cols-2 gap-2 @3xl:grid-cols-4">
+      <div class="grid grid-cols-4 gap-2">
         <button
           v-for="template in SIGNAL_TEMPLATES"
           :key="template.key"
@@ -474,6 +474,8 @@ const resultColumns: TableColumn<ScanSignalResult>[] = [
         row-clickable
         scroll-class="table-scroll-sm"
         @row-click="openDetail"
+        :enable-dblclick-nav="true"
+        @row-dblclick="(row) => openPage(row.symbol, toContextList(results, (item) => item.symbol))"
       >
         <template #name="{ row }">
           <span class="font-medium text-text">{{ row.name }}</span>

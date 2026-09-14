@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "stock-board",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "identifier": "cn.whf.stockboard",
   "build": {
     "frontendDist": "../dist",
@@ -17,7 +17,7 @@
         "height": 900,
         "resizable": true,
         "fullscreen": false,
-        "minWidth": 420,
+        "minWidth": 1024,
         "minHeight": 640
       }
     ],

@@ -3,6 +3,8 @@ import { computed, ref } from 'vue';
 import BaseCard from '../components/ui/BaseCard.vue';
 import BaseEmpty from '../components/ui/BaseEmpty.vue';
 import BaseTabs from '../components/ui/BaseTabs.vue';
+import TabConfigButton from '../components/ui/TabConfigButton.vue';
+import { useTabConfig } from '../composables/use-tab-config';
 import PanoramaCnBoard from '../components/business/PanoramaCnBoard.vue';
 import {
   fetchGlobalFuturesPanorama,
@@ -38,8 +40,11 @@ const MODULE_TABS = [
 /** 各接口请求间隔（毫秒）：对同一上游串行错峰 */
 const REQUEST_GAP_MS = 500;
 
-/** 当前模块 */
-const activeModule = ref<string>('cn');
+// 页签显隐 + 顺序可配置（持久化）；激活值被隐藏时自动回退首个可见 tab
+const { visibleOptions: moduleTabOptions, activeValue: activeModule } = useTabConfig(
+  'panorama',
+  MODULE_TABS,
+);
 
 const dataCache = useDataCacheStore();
 
@@ -171,12 +176,15 @@ const isEmpty = computed(
 <template>
   <div class="space-y-4">
     <div class="flex items-center justify-between gap-2">
-      <BaseTabs
-        v-model="activeModule"
-        :options="MODULE_TABS"
-        variant="underline"
-        @update:model-value="onSelectModule"
-      />
+      <div class="flex items-center gap-1">
+        <BaseTabs
+          v-model="activeModule"
+          :options="moduleTabOptions"
+          variant="underline"
+          @update:model-value="onSelectModule"
+        />
+        <TabConfigButton page-id="panorama" :options="MODULE_TABS" />
+      </div>
       <span class="text-xs text-text-tertiary">未开盘时展示最近交易日收盘数据</span>
     </div>
 
@@ -185,7 +193,7 @@ const isEmpty = computed(
 
     <!-- 加载骨架（美股 / 宏观） -->
     <BaseCard v-else-if="isLoading">
-      <div class="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-4" aria-hidden="true">
+      <div class="grid grid-cols-4 gap-2" aria-hidden="true">
         <div v-for="i in 12" :key="i" class="h-11 animate-pulse rounded-lg bg-flat-weak" />
       </div>
     </BaseCard>
@@ -198,7 +206,7 @@ const isEmpty = computed(
     <!-- 全球宏观：分组网格 -->
     <template v-else-if="isMacroModule">
       <BaseCard v-for="group in macroGroups" :key="group.label" :title="group.label">
-        <div class="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-4">
+        <div class="grid grid-cols-4 gap-2">
           <div
             v-for="item in group.items"
             :key="item.name"
@@ -218,7 +226,7 @@ const isEmpty = computed(
 
     <!-- 美股：扁平网格 -->
     <BaseCard v-else-if="isUsModule">
-      <div class="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-4">
+      <div class="grid grid-cols-4 gap-2">
         <div
           v-for="item in usBoards"
           :key="item.name"

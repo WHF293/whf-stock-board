@@ -8,6 +8,8 @@
   "permissions": [
     "core:default",
     "opener:default",
+    "core:window:allow-create",
+    "core:webview:allow-create-webview-window",
     "sql:default",
     "sql:allow-execute",
     {

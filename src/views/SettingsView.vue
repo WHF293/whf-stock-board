@@ -481,9 +481,25 @@ const onProbeProxy = async (): Promise<void> => {
     </BaseCard>
 
     <BaseCard title="系统">
-      <div class="flex items-center justify-between gap-4 mb-4">
+      <div class="mb-4 flex items-center justify-between gap-4">
         <div class="text-sm text-text">作者</div>
         <div class="mt-0.5 text-xs text-text-tertiary">WHF293</div>
+      </div>
+      <div class="mb-4 flex items-center justify-between gap-4">
+        <div class="min-w-0">
+          <p class="text-sm text-text">GitHub 仓库</p>
+          <p class="mt-0.5 truncate text-xs text-text-tertiary">
+            github.com/WHF293/whf-stock-board
+          </p>
+        </div>
+        <a
+          href="https://github.com/WHF293/whf-stock-board"
+          target="_blank"
+          rel="noreferrer"
+          class="pressable shrink-0 rounded-lg border border-flat-weak px-2 py-1 text-xs text-text-secondary hover:bg-flat-weak hover:text-text active:scale-95"
+        >
+          打开
+        </a>
       </div>
       <div class="flex items-center justify-between gap-4">
         <div class="min-w-0">

@@ -15,6 +15,7 @@ export const ROUTE_PATH = {
   STOCK_ACCOUNT: "/stock-account",
   AGENT_ANALYSIS: "/agent-analysis",
   SETTINGS: "/settings",
+  STOCK_DETAIL: "/stock-detail", // 股票详情整页（+/:symbol，不入菜单）
 } as const;
 
 /**

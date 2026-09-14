@@ -5,6 +5,8 @@ import BaseEmpty from "../components/ui/BaseEmpty.vue";
 import BaseSkeleton from "../components/ui/BaseSkeleton.vue";
 import BaseTable from "../components/ui/BaseTable.vue";
 import BaseTabs from "../components/ui/BaseTabs.vue";
+import TabConfigButton from "../components/ui/TabConfigButton.vue";
+import { useTabConfig } from "../composables/use-tab-config";
 import type { TableColumn } from "../types/table.types";
 import {
   fetchBlockTradeDetail,
@@ -19,7 +21,7 @@ import { formatPrice } from "../utils/format-price";
 import { formatYuanWithSign } from "../utils/format-yuan";
 import { useLazyRows } from "../composables/use-lazy-rows";
 import { useDataCacheStore } from "../stores/data-cache";
-import { useDockPanelStore } from "../stores/dock-panel";
+import { useStockOpen } from "../composables/use-stock-open";
 import { DATA_CACHE_KEY } from "../constants/data-cache.constants";
 import { getTrendByChangePercent } from "../constants/trend.constants";
 import {
@@ -35,7 +37,7 @@ const dataCache = useDataCacheStore();
 /**
  * 龙虎榜·大宗：龙虎榜明细 / 大宗交易明细，近 7 日数据按日期下拉切换（重接口不轮询）
  */
-const dockPanel = useDockPanelStore();
+const { openSidebar, openPage, toContextList } = useStockOpen();
 
 const VIEW_TAB_OPTIONS = [
   { label: "龙虎榜", value: "dragon-tiger" },
@@ -55,14 +57,18 @@ const emit = defineEmits<{
   "update:modelValue": [value: "dragon-tiger" | "block-trade"];
 }>();
 
-/** 内部视图（非受控模式兜底） */
-const internalTab = ref<string>("dragon-tiger");
+// 页签显隐 + 顺序可配置（持久化）；激活值被隐藏时自动回退首个可见 tab
+// （仅独立访问时生效；被父级 MarketMoodView 接管时以父级配置为准）
+const { visibleOptions: viewTabOptions, activeValue: internalTab } = useTabConfig(
+  "dragon-tiger",
+  VIEW_TAB_OPTIONS,
+);
 
 /** 当前视图：受控优先 */
 const activeTab = computed<string>({
   get: () => props.modelValue ?? internalTab.value,
   set: (value) => {
-    internalTab.value = value;
+    internalTab.value = value as (typeof VIEW_TAB_OPTIONS)[number]["value"];
     if (props.modelValue !== undefined) {
       emit("update:modelValue", value as "dragon-tiger" | "block-trade");
     }
@@ -256,7 +262,7 @@ const blockColumns: TableColumn<BlockTradeDetailItem>[] = [
  * @param code 个股 6 位代码
  */
 const openDetail = (code: string): void => {
-  dockPanel.openStock(code);
+  openSidebar(code);
 };
 </script>
 
@@ -264,7 +270,10 @@ const openDetail = (code: string): void => {
   <div class="space-y-4">
     <!-- 视图切换：龙虎榜 / 大宗交易（父级页面接管时不渲染） -->
     <div v-if="showViewTabs" class="flex items-center justify-between gap-2">
-      <BaseTabs v-model="activeTab" :options="VIEW_TAB_OPTIONS" variant="underline" />
+      <div class="flex items-center gap-1">
+        <BaseTabs v-model="activeTab" :options="viewTabOptions" variant="underline" />
+        <TabConfigButton page-id="dragon-tiger" :options="VIEW_TAB_OPTIONS" />
+      </div>
       <span class="text-xs text-text-tertiary">近 7 日数据 · 按日期下拉切换</span>
     </div>
     <BaseCard>
@@ -313,6 +322,8 @@ const openDetail = (code: string): void => {
                   : undefined
               "
               @row-click="(item) => openDetail(item.code)"
+              :enable-dblclick-nav="true"
+              @row-dblclick="(item) => openPage(item.code, toContextList(dragonRowsFull, (row) => row.code, (row) => row.close))"
             >
               <template #name="{ row }">
                 <span class="font-medium text-text">{{ row.name }}</span>
@@ -417,6 +428,8 @@ const openDetail = (code: string): void => {
                   : undefined
               "
               @row-click="(item) => openDetail(item.code)"
+              :enable-dblclick-nav="true"
+              @row-dblclick="(item) => openPage(item.code, toContextList(blockRowsFull, (row) => row.code, (row) => row.close))"
             >
               <template #name="{ row }">
                 <span class="font-medium text-text">{{ row.name }}</span>

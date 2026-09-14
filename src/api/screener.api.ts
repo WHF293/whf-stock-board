@@ -1,16 +1,14 @@
 import dayjs from 'dayjs';
-import { backtest, screen, normalizeSymbol, toTencentSymbol } from 'stock-sdk';
+import { backtest, calcMA, normalizeSymbol, screen } from 'stock-sdk';
 import type { BacktestReport } from '../types/screener.types';
-import type { HistoryKline, KlineWithIndicators } from '../types/kline.types';
 import type { FullQuote } from '../types/stock-quote.types';
 import {
   BACKTEST_FEE,
   BACKTEST_RANGE_DAYS,
   BACKTEST_INITIAL_CAPITAL,
 } from '../constants/screener.constants';
-import { KLINE_ADJUST, KLINE_PERIOD } from '../constants/kline.constants';
 import { fetchAllMarketQuotes } from './quotes.api';
-import { sdk } from './sdk';
+import { fetchSinaKline } from './sina-kline.api';
 
 /**
  * 选股条件（区间为闭区间；字段缺省表示不过滤）
@@ -68,17 +66,27 @@ export const runScreener = async (
     .top(topN);
 };
 
+/** 回测 K 线项（新浪日 K 截取近一年窗口 + MA 指标） */
+interface BacktestBar {
+  /** 交易日（YYYY-MM-DD） */
+  date: string;
+  /** 收盘价（不复权） */
+  close: number;
+  /** MA 指标（ma5 / ma20） */
+  ma: Record<string, number | null>;
+}
+
 /**
- * MA 金叉死叉策略：快线上穿慢线买入、下穿卖出（读 SDK 预计算指标，不引入前视）
+ * MA 金叉死叉策略：快线上穿慢线买入、下穿卖出（读预计算指标，不引入前视）
  * @param bar 当前 K 线（含 ma 指标）
  * @param index 当前下标
  * @param series 完整 K 线序列
  * @returns 买卖信号
  */
 const maCrossStrategy = (
-  bar: KlineWithIndicators<HistoryKline>,
+  bar: BacktestBar,
   index: number,
-  series: readonly KlineWithIndicators<HistoryKline>[],
+  series: readonly BacktestBar[],
 ): 'buy' | 'sell' | 'hold' => {
   const prev = series[index - 1];
   const fastNow = bar.ma?.ma5 ?? null;
@@ -110,23 +118,37 @@ export interface BacktestResult {
 }
 
 /**
- * 运行 MA 金叉死叉回测（近一年日 K，前复权）
+ * 运行 MA 金叉死叉回测（近一年日 K）
  *
- ⚠️ 重接口（K 线）：由用户点击触发，不做轮询
+ * ⚠️ 东财行情域（push2his）本机被封，`sdk.kline.withIndicators` 不可用，
+ * 改走新浪 `fetchSinaKline`（数据源更换可行性报告 · 方案 A）。
+ * ⚠️ 新浪日 K 为不复权：除权日附近会产生虚假跳空，回测结果为近似口径（R1 已知限制）。
  * @param rawSymbol 用户输入符号（600519 / sh600519 均可）
  * @returns 回测报告与权益曲线
  */
 export const runMaCrossBacktest = async (rawSymbol: string): Promise<BacktestResult> => {
-  const symbol = toTencentSymbol(normalizeSymbol(rawSymbol.trim()));
-  const bars = await sdk.kline.withIndicators(symbol, {
-    period: KLINE_PERIOD.DAILY,
-    adjust: KLINE_ADJUST.QFQ,
-    startDate: dayjs().subtract(BACKTEST_RANGE_DAYS, 'day').format('YYYYMMDD'),
-    indicators: { ma: [5, 20] },
-  }) as KlineWithIndicators<HistoryKline>[];
+  // normalizeSymbol 返回品牌化的 NormalizedSymbol（sh600519 形态），新浪源前缀一致
+  const symbol = String(normalizeSymbol(rawSymbol.trim()));
+  // 新浪按根数取数（daily 固定 400 根 ≈ 1.6 年），本地截取近一年窗口
+  const allBars = await fetchSinaKline(symbol, 'daily');
+  const startTs = dayjs().subtract(BACKTEST_RANGE_DAYS, 'day').startOf('day').valueOf();
+  const bars = allBars.filter((bar) => bar.timestamp >= startTs);
+  if (bars.length < 40) {
+    throw new Error(`日 K 数据不足（仅 ${bars.length} 根），无法回测`);
+  }
 
-  const report = backtest({
-    klines: bars,
+  const maRows = calcMA(
+    bars.map((bar) => bar.close),
+    { periods: [5, 20] },
+  );
+  const backtestBars: BacktestBar[] = bars.map((bar, index) => ({
+    date: dayjs(bar.timestamp).format('YYYY-MM-DD'),
+    close: bar.close,
+    ma: maRows[index],
+  }));
+
+  const report = backtest<BacktestBar>({
+    klines: backtestBars,
     strategy: maCrossStrategy,
     initialCapital: BACKTEST_INITIAL_CAPITAL,
     fee: { ...BACKTEST_FEE },
@@ -134,11 +156,11 @@ export const runMaCrossBacktest = async (rawSymbol: string): Promise<BacktestRes
   });
 
   // 买入持有基准曲线：initial * close[i] / close[0]（首个有效收盘）
-  const firstClose = bars.find((bar) => bar.close !== null)?.close ?? 1;
-  const dates = bars.map((bar) => bar.date);
+  const firstClose = backtestBars.find((bar) => bar.close > 0)?.close ?? 1;
+  const dates = backtestBars.map((bar) => bar.date);
   const equityCurve = report.equityCurve;
-  const buyHoldCurve = bars.map((bar) =>
-    bar.close === null ? BACKTEST_INITIAL_CAPITAL : (bar.close / firstClose) * BACKTEST_INITIAL_CAPITAL,
+  const buyHoldCurve = backtestBars.map((bar) =>
+    (bar.close / firstClose) * BACKTEST_INITIAL_CAPITAL,
   );
 
   return { report, dates, equityCurve, buyHoldCurve };

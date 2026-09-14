@@ -1,16 +1,18 @@
 <script setup lang="ts">
-import { useIntervalFn, useMediaQuery, watchImmediate } from "@vueuse/core";
+import { useIntervalFn, watchImmediate } from "@vueuse/core";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import MarketStatusBadge from "../components/business/MarketStatusBadge.vue";
 import StockSearchModal from "../components/business/StockSearchModal.vue";
+import BaseDrawer from "../components/ui/BaseDrawer.vue";
+import SettingsView from "../views/SettingsView.vue";
 import DockPanel from "../components/dock/DockPanel.vue";
 import BaseTooltip from "../components/ui/BaseTooltip.vue";
 import MenuIcon from "../components/ui/MenuIcon.vue";
 import { useTheme } from "../composables/use-theme";
 import { MARKET_STATUS_REFRESH_INTERVAL_MS } from "../constants/polling.constants";
-import { MENU_ITEMS, ROUTE_PATH } from "../constants/router-meta.constants";
-import { useDockPanelStore } from "../stores/dock-panel";
+import { MENU_ITEMS } from "../constants/router-meta.constants";
+import { useStockOpen } from "../composables/use-stock-open";
 import { useMarketStatusStore } from "../stores/market-status";
 import { useSettingsStore } from "../stores/settings";
 import type { SearchResult } from "../types/stock-quote.types";
@@ -27,7 +29,7 @@ const router = useRouter();
 const { isDark, toggleDark } = useTheme();
 const marketStatusStore = useMarketStatusStore();
 const settingsStore = useSettingsStore();
-const dockPanel = useDockPanelStore();
+const { openSidebar, toContextList } = useStockOpen();
 
 // 主题色写入 <html data-theme>（CSS 变量按属性覆盖，全站自动跟随）
 watchImmediate(
@@ -113,31 +115,28 @@ watch(
   },
 );
 
-/** 窄屏抽屉侧栏开关（桌面端常驻显示，不受影响） */
-const sidebarOpen = ref(false);
+/** 实际收起态（桌面专用应用，用户收起即生效） */
+const effectiveCollapsed = computed(() => settingsStore.sidebarCollapsed);
 
-/** 是否桌面端（≥ 1024px 视口）—— 收起状态仅桌面端生效 */
-const isDesktop = useMediaQuery('(min-width: 1024px)');
-
-/** 实际收起态：桌面端 + 用户已收起 */
-const effectiveCollapsed = computed(
-  () => isDesktop.value && settingsStore.sidebarCollapsed,
-);
-
-/** 侧栏宽度类名：移动端固定 w-56（抽屉），桌面端按收起态切换 */
+/** 侧栏宽度类名：按收起态切换 */
 const sidebarWidthClass = computed(() =>
-  effectiveCollapsed.value ? 'w-56 lg:w-16' : 'w-56',
+  effectiveCollapsed.value ? 'w-16' : 'w-56',
 );
 
 /** 头部搜索弹窗开关 */
 const searchModalOpen = ref(false);
 
+/** 设置抽屉显隐（设置不再是路由页，改为右侧抽屉） */
+const settingsOpen = ref(false);
+
 /**
  * 选中搜索结果：右侧面板打开个股详情并关闭弹窗
  * @param result 搜索结果
+ * @param results 完整搜索结果列表（写入详情页左侧来源列表）
  */
-const onHeaderSearchSelect = (result: SearchResult): void => {
-  dockPanel.openStock(result.code);
+const onHeaderSearchSelect = (result: SearchResult, results: SearchResult[]): void => {
+  // 携带完整搜索结果作为详情页左侧来源列表
+  openSidebar(result.code, toContextList(results, (item) => item.code));
   searchModalOpen.value = false;
 };
 
@@ -215,17 +214,10 @@ void marketStatusStore.refresh();
 
 <template>
   <div class="flex h-screen overflow-hidden">
-    <!-- 窄屏抽屉遮罩 -->
-    <div
-      v-if="sidebarOpen"
-      class="fixed inset-0 z-30 bg-black/40 lg:hidden"
-      @click="sidebarOpen = false"
-    />
-
-    <!-- 左侧导航：窄屏为抽屉，桌面常驻 -->
+    <!-- 左侧导航：常驻侧栏 -->
     <aside
-      class="fixed inset-y-0 left-0 z-40 flex shrink-0 transform flex-col border-r border-flat-weak bg-surface transition-all duration-200 lg:static lg:z-auto lg:translate-x-0"
-      :class="[sidebarWidthClass, sidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full lg:translate-x-0']"
+      class="flex shrink-0 flex-col border-r border-flat-weak bg-surface transition-all duration-200"
+      :class="sidebarWidthClass"
     >
       <div
         class="flex items-center gap-2 py-5"
@@ -241,11 +233,10 @@ void marketStatusStore.refresh();
           />
           <span v-if="!effectiveCollapsed" class="truncate text-base font-semibold text-text">股票看板</span>
         </div>
-        <!-- 收起/展开按钮：仅桌面端可见，持久化在 settings -->
+        <!-- 收起/展开按钮：持久化在 settings -->
         <button
-          v-if="isDesktop"
           type="button"
-          class="pressable hidden shrink-0 items-center justify-center rounded-md p-1 text-text-tertiary hover:bg-flat-weak hover:text-text active:scale-90 lg:flex"
+          class="pressable flex shrink-0 items-center justify-center rounded-md p-1 text-text-tertiary hover:bg-flat-weak hover:text-text active:scale-90"
           :aria-label="effectiveCollapsed ? '展开侧栏' : '收起侧栏'"
           @click="toggleSidebar"
         >
@@ -273,37 +264,26 @@ void marketStatusStore.refresh();
       </nav>
       <!-- 侧栏底部：设置入口（收起时仅显示图标） -->
       <div class="space-y-2 border-t border-flat-weak py-3" :class="effectiveCollapsed ? 'px-2' : 'px-4'">
-        <RouterLink
-          :to="ROUTE_PATH.SETTINGS"
-          class="group relative pressable flex items-center gap-2 rounded-lg py-1 text-xs active:scale-[0.98]"
-          :class="[
-            effectiveCollapsed ? 'justify-center px-1' : 'px-1',
-            isActive(ROUTE_PATH.SETTINGS)
-              ? 'font-medium text-primary'
-              : 'text-text-secondary hover:text-text',
-          ]"
+        <button
+          type="button"
+          class="group relative pressable flex items-center gap-2 rounded-lg py-1 text-xs active:scale-[0.98] text-text-secondary hover:text-text"
+          :class="effectiveCollapsed ? 'justify-center px-1' : 'px-1'"
+          aria-label="打开设置"
+          @click="settingsOpen = true"
         >
           <MenuIcon name="settings" :size="14" />
           <span v-if="!effectiveCollapsed">设置</span>
           <BaseTooltip v-if="effectiveCollapsed" text="设置" />
-        </RouterLink>
+        </button>
       </div>
     </aside>
 
     <!-- 右侧内容区 -->
     <div class="relative flex min-w-0 flex-1 flex-col">
       <header
-        class="flex h-14 shrink-0 items-center justify-between border-b border-flat-weak bg-surface px-4 lg:px-6"
+        class="flex h-14 shrink-0 items-center justify-between border-b border-flat-weak bg-surface px-6"
       >
         <div class="flex min-w-0 items-center gap-2">
-          <button
-            type="button"
-            class="pressable rounded-lg p-2 text-text-secondary hover:bg-flat-weak active:scale-90 lg:hidden"
-            aria-label="打开导航菜单"
-            @click="sidebarOpen = true"
-          >
-            <MenuIcon name="menu" :size="18" />
-          </button>
           <h1 class="truncate text-base font-semibold text-text">
             {{ pageTitle }}
           </h1>
@@ -330,7 +310,7 @@ void marketStatusStore.refresh();
         </div>
       </header>
       <main class="flex-1 overflow-y-auto">
-        <div class="@container mx-auto w-full max-w-[1440px] p-4 lg:p-6">
+        <div class="mx-auto w-full max-w-[1440px] p-6">
           <!-- 页面切换：KeepAlive 缓存页面状态；进入动画由 pageAnim 类名驱动（无离场状态机） -->
           <RouterView v-slot="{ Component, route: routeRecord }">
             <KeepAlive>
@@ -354,5 +334,10 @@ void marketStatusStore.refresh();
       @close="searchModalOpen = false"
       @select="onHeaderSearchSelect"
     />
+
+    <!-- 设置抽屉（右侧滑入，宽 2/3 视口） -->
+    <BaseDrawer v-model:open="settingsOpen" title="设置">
+      <SettingsView />
+    </BaseDrawer>
   </div>
 </template>

@@ -43,6 +43,8 @@ defineProps<{
 const emit = defineEmits<{
   /** 点击成分股行（code 为 6 位纯代码） */
   stockClick: [code: string];
+  /** 双击成分股行（跳股票详情整页） */
+  stockDblclick: [code: string];
   /** 点击板块行（请求父级下钻） */
   boardClick: [board: IndustryBoard];
   /** 点击返回板块 */
@@ -122,6 +124,14 @@ const onBoardToggle = (board: IndustryBoard): void => {
 const onStockRowClick = (stock: IndustryBoardConstituent): void => {
   emit("stockClick", stock.code);
 };
+
+/**
+ * 成分股行双击：上报跳股票详情整页
+ * @param stock 成分股行数据
+ */
+const onStockRowDblclick = (stock: IndustryBoardConstituent): void => {
+  emit("stockDblclick", stock.code);
+};
 </script>
 
 <template>
@@ -130,10 +140,8 @@ const onStockRowClick = (stock: IndustryBoardConstituent): void => {
       :columns="boardColumns"
       :rows="boards"
       :row-key="(board) => board.code"
-      row-clickable
       expandable
       :expanded-keys="expandedCodes"
-      @row-click="onBoardToggle"
       @toggle-expand="onBoardToggle"
     >
       <template #price="{ row }">
@@ -185,6 +193,8 @@ const onStockRowClick = (stock: IndustryBoardConstituent): void => {
             :row-key="(stock) => stock.code"
             row-clickable
             @row-click="onStockRowClick"
+            :enable-dblclick-nav="true"
+            @row-dblclick="onStockRowDblclick"
           >
             <template #changePercent="{ row: stock }">
               <span :class="trendTextClass(stock.changePercent)">

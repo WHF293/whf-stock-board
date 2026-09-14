@@ -13,7 +13,7 @@ import {
   EOD_FILTERS_DEFAULT,
   EOD_TIMELINE_CONCURRENCY,
 } from '../../constants/analysis.constants';
-import { useDockPanelStore } from '../../stores/dock-panel';
+import { useStockOpen } from '../../composables/use-stock-open';
 import type { AnalysisProgress, EodFilters, EodStock } from '../../types/analysis.types';
 import { formatPercent, formatPercentUnsigned } from '../../utils/format-percent';
 import { formatPrice } from '../../utils/format-price';
@@ -27,7 +27,7 @@ import { TREND_PILL_CLASS, TREND_TEXT_CLASS } from '../../constants/stock-colors
  *
  * 全市场快照与分时均为重接口，全部由用户点击触发，不做轮询
  */
-const dockPanel = useDockPanelStore();
+const { openSidebar, openPage, toContextList } = useStockOpen();
 
 /** 过滤条件（默认值参考尾盘选股法常用参数） */
 const filters = reactive<EodFilters>({ ...EOD_FILTERS_DEFAULT });
@@ -127,7 +127,7 @@ onBeforeUnmount(() => {
  * @param stock 结果行
  */
 const openDetail = (stock: EodStock): void => {
-  dockPanel.openStock(stock.symbol);
+  openSidebar(stock.symbol);
 };
 
 /** 结果列配置（涨跌幅默认开启排序） */
@@ -158,7 +158,7 @@ const resultColumns: TableColumn<EodStock>[] = [
   <div class="space-y-4">
     <!-- 筛选条件 -->
     <BaseCard title="筛选条件">
-      <div class="grid grid-cols-2 gap-3 @2xl:grid-cols-4">
+      <div class="grid grid-cols-4 gap-3">
         <label class="space-y-1">
           <span class="text-xs text-text-tertiary">流通市值 ≥ (亿)</span>
           <BaseInput v-model="filterForm.marketCapMin" />
@@ -223,6 +223,8 @@ const resultColumns: TableColumn<EodStock>[] = [
         :row-key="(stock) => stock.symbol"
         row-clickable
         @row-click="openDetail"
+        :enable-dblclick-nav="true"
+        @row-dblclick="(row) => openPage(row.symbol, toContextList(results, (item) => item.symbol))"
       >
         <template #name="{ row }">
           <span class="font-medium text-text">{{ row.name }}</span>

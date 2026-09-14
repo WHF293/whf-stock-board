@@ -13,7 +13,7 @@ import HotNewsView from '../views/HotNewsView.vue';
 import StockAccountView from '../views/StockAccountView.vue';
 import AgentAnalysisView from '../views/AgentAnalysisView.vue';
 import MarketRankView from '../views/MarketRankView.vue';
-import SettingsView from '../views/SettingsView.vue';
+import StockDetailView from '../views/StockDetailView.vue';
 
 /** 路由切换顶部进度条：钩子在路由表定义后立即挂载 */
 NProgress.configure({ showSpinner: false, speed: 300, minimum: 0.2 });
@@ -94,10 +94,13 @@ const routes = [
         component: MarketRankView,
         meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.MARKET_RANK] },
       },
+      // 设置已改为侧栏底部入口的右侧抽屉（历史收藏 / 旧路径兼容）
+      { path: ROUTE_PATH.SETTINGS, redirect: ROUTE_PATH.DASHBOARD },
+      // 股票详情整页：全站双击个股进入；不入左侧导航
       {
-        path: ROUTE_PATH.SETTINGS,
-        component: SettingsView,
-        meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.SETTINGS] },
+        path: `${ROUTE_PATH.STOCK_DETAIL}/:symbol`,
+        component: StockDetailView,
+        meta: { title: '股票详情' },
       },
     ],
   },

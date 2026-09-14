@@ -1,3 +1,4 @@
+import { calcBOLL, calcMA, calcMACD, calcRSI } from 'stock-sdk';
 import type {
   AnalysisProgress,
   EodFilters,
@@ -11,12 +12,13 @@ import type { TodayTimelineResponse } from '../types/kline.types';
 import { SCAN_CONCURRENCY, EOD_TIMELINE_CONCURRENCY } from '../constants/analysis.constants';
 import { mapWithConcurrency } from '../utils/map-with-concurrency';
 import { fetchAllMarketQuotes } from './quotes.api';
+import { fetchSinaKline } from './sina-kline.api';
 import { sdk } from './sdk';
 
 /**
  * 选股分析 api：技术信号扫描 + 尾盘选股（逻辑参考 stock-dashboard 实现）
  *
- * 信号扫描：对股票池逐票拉「日线前复权 + 按需指标」K 线，判定 MA/MACD/RSI/BOLL 八种信号；
+ * 信号扫描：对股票池逐票拉新浪日 K（SDK 纯函数按需算指标），判定 MA/MACD/RSI/BOLL 八种信号；
  * 尾盘选股：全市场快照做基础过滤（市值/量比/涨幅/换手/ST），再按分时强度
  * （分时价位于均价上方的时间占比）精筛
  */
@@ -32,6 +34,18 @@ interface ScanKlineBar {
 
 /** 进度回调 */
 type ProgressCallback = (progress: AnalysisProgress) => void;
+
+/** 信号扫描按需指标开关 */
+interface ScanIndicatorFlags {
+  /** MA（ma5 / ma10） */
+  ma?: boolean;
+  /** MACD（dif / dea / macd） */
+  macd?: boolean;
+  /** RSI（rsi6 / rsi12） */
+  rsi?: boolean;
+  /** BOLL（upper / mid / lower） */
+  boll?: boolean;
+}
 
 /** 扫描选项 */
 interface ScanOptions {
@@ -138,9 +152,44 @@ const detectSignals = (bars: ScanKlineBar[], signals: SignalKey[]): string[] => 
 };
 
 /**
- * 技术信号扫描：对股票池逐票拉日线前复权 K 线（按需指标）并判定命中
+ * 拉取单票日 K 并按需计算指标（新浪源 + SDK 纯函数）
+ *
+ * ⚠️ 东财行情域（push2his）本机被封，`sdk.kline.withIndicators` 不可用，
+ * 改走新浪 `fetchSinaKline`（数据源更换可行性报告 · 方案 A）。
+ * ⚠️ 新浪日 K 为不复权：除权日附近指标可能失真（方案报告 R1 已知限制）。
+ * @param symbol 完整符号（sh/sz 前缀；北交所新浪源不支持，由调用方跳过）
+ * @param flags 按需启用的指标（减少无谓计算）
+ * @returns 含指标的 K 线序列（升序，最长 400 根）
+ * @throws 上游返回为空或请求失败时抛错
+ */
+const fetchScanBars = async (
+  symbol: string,
+  flags: ScanIndicatorFlags,
+): Promise<ScanKlineBar[]> => {
+  const bars = await fetchSinaKline(symbol, 'daily');
+  if (bars.length === 0) {
+    throw new Error(`新浪日K返回为空：${symbol}`);
+  }
+  const closes: (number | null)[] = bars.map((bar) => bar.close);
+  const maRows = flags.ma ? calcMA(closes, { periods: [5, 10] }) : null;
+  const macdRows = flags.macd ? calcMACD(closes) : null;
+  const rsiRows = flags.rsi ? calcRSI(closes, { periods: [6, 12] }) : null;
+  const bollRows = flags.boll ? calcBOLL(closes) : null;
+  return bars.map((bar, index) => ({
+    close: bar.close,
+    ...(maRows ? { ma: maRows[index] } : {}),
+    ...(macdRows ? { macd: macdRows[index] } : {}),
+    ...(rsiRows ? { rsi: rsiRows[index] } : {}),
+    ...(bollRows ? { boll: bollRows[index] } : {}),
+  }));
+};
+
+/**
+ * 技术信号扫描：对股票池逐票拉新浪日 K（按需指标）并判定命中
+ *
+ * 单票取数失败仅跳过该票（记 console.error），不中断整场扫描
  * @param pool 股票池
- * @param signals 启用的信号 key（决定拉取哪些指标）
+ * @param signals 启用的信号 key（决定计算哪些指标）
  * @param options 中断 / 进度 / 即时结果回调
  * @returns 命中信号的结果列表
  */
@@ -154,34 +203,34 @@ export const scanSignalPool = async (
   }
 
   // 指标按需启用，减少无谓计算
-  const indicators = {
-    ...(signals.some((key) => key.startsWith('ma_')) ? { ma: [5, 10] } : {}),
-    ...(signals.some((key) => key.startsWith('macd_')) ? { macd: {} } : {}),
-    ...(signals.some((key) => key.startsWith('rsi_')) ? { rsi: [6, 12] } : {}),
-    ...(signals.some((key) => key.startsWith('boll_')) ? { boll: {} } : {}),
+  const flags: ScanIndicatorFlags = {
+    ma: signals.some((key) => key.startsWith('ma_')),
+    macd: signals.some((key) => key.startsWith('macd_')),
+    rsi: signals.some((key) => key.startsWith('rsi_')),
+    boll: signals.some((key) => key.startsWith('boll_')),
   };
 
   return mapWithConcurrency(
     pool,
     async (stock): Promise<ScanSignalResult | null> => {
-      const bars = (await sdk.kline.withIndicators(stock.symbol, {
-        period: 'daily',
-        adjust: 'qfq',
-        indicators,
-      })) as unknown as ScanKlineBar[];
-
-      const matchedLabels = detectSignals(bars, [...signals]);
-      if (matchedLabels.length === 0) {
+      try {
+        const bars = await fetchScanBars(stock.symbol, flags);
+        const matchedLabels = detectSignals(bars, [...signals]);
+        if (matchedLabels.length === 0) {
+          return null;
+        }
+        const result: ScanSignalResult = {
+          code: stock.code,
+          symbol: stock.symbol,
+          name: stock.name,
+          matchedLabels,
+        };
+        options?.onResult?.(result);
+        return result;
+      } catch (error) {
+        console.error(`[signal-scan] ${stock.symbol} 日K取数/指标失败，跳过`, error);
         return null;
       }
-      const result: ScanSignalResult = {
-        code: stock.code,
-        symbol: stock.symbol,
-        name: stock.name,
-        matchedLabels,
-      };
-      options?.onResult?.(result);
-      return result;
     },
     {
       concurrency: SCAN_CONCURRENCY,
@@ -285,8 +334,15 @@ export const analyzeEodStocks = async (
     async (quote): Promise<EodStock | null> => {
       // FullQuote.code 实测为 sz000002 完整符号形态，可直接消费
       const symbol = quote.code;
-      const timeline = await sdk.quotes.timeline(symbol);
-      const ratio = calculateTimelineStrength(timeline);
+      // 单票分时失败（北交所不支持 / 停牌无数据 / 偶发网络错误）仅跳过，不中断整场筛选
+      let ratio: number;
+      try {
+        const timeline = await sdk.quotes.timeline(symbol);
+        ratio = calculateTimelineStrength(timeline);
+      } catch (error) {
+        console.error(`[eod-picker] ${symbol} 分时拉取失败，跳过`, error);
+        return null;
+      }
       if (ratio < filters.timelineAboveAvgRatioMin) {
         return null;
       }

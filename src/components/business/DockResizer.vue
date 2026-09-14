@@ -123,7 +123,7 @@ onBeforeUnmount(() => {
   <!-- 手柄：长按出现贯穿竖线，垂直居中骑在父容器左缘 -->
   <button
     type="button"
-    class="pressable absolute left-0 top-1/2 z-30 hidden h-9 w-4 -translate-x-1/2 -translate-y-1/2 cursor-col-resize items-center justify-center gap-0.5 rounded-md bg-surface text-text-secondary shadow-md ring-1 ring-flat-weak transition-colors hover:bg-primary/10 hover:text-primary active:scale-95 lg:flex"
+    class="pressable absolute left-0 top-1/2 z-30 flex"
     aria-label="长按拖动调整面板宽度"
     @pointerdown="onPointerDown"
   >
