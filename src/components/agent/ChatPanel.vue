@@ -301,11 +301,17 @@ const showWelcome = computed(() => messages.value.length === 0);
 
 <template>
   <div class="flex h-full min-w-0 flex-1 flex-col bg-flat-weak">
-    <!-- 顶部：标题 + 模型徽标 + 运行状态 -->
+    <!-- 顶部：侧栏开关 + 模型徽标 + 运行状态（不放标题文案，标题见左侧栏 / 欢迎页） -->
     <header class="flex h-12 shrink-0 items-center gap-3 bg-surface px-4">
-      <h2 class="min-w-0 flex-1 truncate text-sm font-medium text-text">
-        {{ store.activeSession?.title ?? 'Agent 分析' }}
-      </h2>
+      <button
+        type="button"
+        class="pressable shrink-0 rounded-lg p-1.5 text-text-tertiary transition-colors hover:bg-flat-weak hover:text-text"
+        :aria-label="store.sidebarCollapsed ? '展开侧栏' : '收起侧栏'"
+        @click="store.sidebarCollapsed = !store.sidebarCollapsed"
+      >
+        <MenuIcon name="panelLeft" :size="16" />
+      </button>
+      <div class="min-w-0 flex-1" />
       <button
         type="button"
         class="flex items-center gap-1.5 rounded-full border border-flat-weak px-2.5 py-1 text-xs text-text-secondary transition-colors hover:border-primary hover:text-primary"

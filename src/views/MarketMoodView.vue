@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed } from 'vue';
 import BaseTabs from '../components/ui/BaseTabs.vue';
+import TabConfigButton from '../components/ui/TabConfigButton.vue';
+import { useTabConfig } from '../composables/use-tab-config';
 import MarketEventView from './MarketEventView.vue';
 import DragonTigerView from './DragonTigerView.vue';
 
@@ -18,8 +20,11 @@ const MOOD_TAB_OPTIONS = [
   { label: '大宗交易', value: 'block-trade' },
 ] as const;
 
-/** 当前页签 */
-const activeTab = ref<string>('event');
+// 页签显隐 + 顺序可配置（持久化）；激活值被隐藏时自动回退首个可见 tab
+const { visibleOptions: moodTabOptions, activeValue: activeTab } = useTabConfig(
+  'market-mood',
+  MOOD_TAB_OPTIONS,
+);
 
 /** DragonTigerView 受控视图（event 页签时保持上次值即可，隐藏不销毁数据也无必要） */
 const dragonTab = computed<'dragon-tiger' | 'block-trade'>(() =>
@@ -31,7 +36,10 @@ const dragonTab = computed<'dragon-tiger' | 'block-trade'>(() =>
   <div class="space-y-4">
     <!-- 页面级切换（与行情全景一致的 underline 风格） -->
     <div class="flex items-center justify-between gap-2">
-      <BaseTabs v-model="activeTab" :options="MOOD_TAB_OPTIONS" variant="underline" />
+      <div class="flex items-center gap-1">
+        <BaseTabs v-model="activeTab" :options="moodTabOptions" variant="underline" />
+        <TabConfigButton page-id="market-mood" :options="MOOD_TAB_OPTIONS" />
+      </div>
       <span class="text-xs text-text-tertiary">近 7 日数据 · 重接口不参与轮询</span>
     </div>
 

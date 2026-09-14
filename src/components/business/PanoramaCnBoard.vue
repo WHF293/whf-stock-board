@@ -22,7 +22,7 @@ import {
 import { formatPrice } from "../../utils/format-price";
 import { useLazyRows } from "../../composables/use-lazy-rows";
 import { formatYuan } from "../../utils/format-yuan";
-import { useDockPanelStore } from "../../stores/dock-panel";
+import { useStockOpen } from "../../composables/use-stock-open";
 import { useDataCacheStore } from "../../stores/data-cache";
 import { DATA_CACHE_KEY } from "../../constants/data-cache.constants";
 import { getTrendByChangePercent } from "../../constants/trend.constants";
@@ -59,7 +59,7 @@ const dataCache = useDataCacheStore();
  * 点击板块查看成分股（跳详情）
  */
 
-const dockPanel = useDockPanelStore();
+const { openSidebar, openPage, toContextList } = useStockOpen();
 const settingsStore = useSettingsStore();
 
 /** 板块排行展示形式：列表 / 平铺（设置持久化，默认列表） */
@@ -249,7 +249,7 @@ const constituentColumns: TableColumn<IndustryBoardConstituent>[] = [
  * @param code 成分股 6 位代码
  */
 const openDetail = (code: string): void => {
-  dockPanel.openStock(code);
+  openSidebar(code);
 };
 </script>
 
@@ -275,7 +275,7 @@ const openDetail = (code: string): void => {
 
       <!-- 涨跌统计 + 筛选（列表 / 平铺共用） -->
       <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <div class="grid grid-cols-2 gap-2 @3xl:grid-cols-4">
+        <div class="grid grid-cols-4 gap-2">
           <div class="rounded-lg bg-up-weak px-3 py-1.5">
             <p class="text-[10px] text-text-tertiary">涨幅&gt;3%</p>
             <p class="text-sm font-semibold tabular-nums text-up">
@@ -315,7 +315,7 @@ const openDetail = (code: string): void => {
         v-else-if="isTileMode && sortedBoardsFull.length > 0"
         class="table-scroll"
       >
-        <div class="grid grid-cols-2 gap-2 @2xl:grid-cols-3 @4xl:grid-cols-4">
+        <div class="grid grid-cols-4 gap-2">
           <div
             v-for="board in sortedBoardsFull"
             :key="board.code"
@@ -339,7 +339,6 @@ const openDetail = (code: string): void => {
           :rows="sortedBoards"
           :row-key="(board) => board.code"
           min-width="760px"
-          row-clickable
           expandable
           :expanded-keys="expandedBoardCodes"
           scroll-class="table-scroll-xs"
@@ -348,7 +347,6 @@ const openDetail = (code: string): void => {
               ? `已展示 ${sortedBoards.length} / 共 ${boardsTotal}，继续滚动加载更多`
               : undefined
           "
-          @row-click="onBoardToggle"
           @toggle-expand="onBoardToggle"
           @scroll="onBoardsScroll"
         >
@@ -416,6 +414,8 @@ const openDetail = (code: string): void => {
               min-width="560px"
               row-clickable
               @row-click="(stock) => openDetail(stock.code)"
+              :enable-dblclick-nav="true"
+              @row-dblclick="(stock) => openPage(stock.code, toContextList(constituentsMap[row.code] ?? [], (item) => item.code))"
             >
               <template #name="{ row: stock }">
                 <span class="font-medium text-text">{{ stock.name }}</span>

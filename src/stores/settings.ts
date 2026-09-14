@@ -16,6 +16,10 @@ import { WATERMARK_ENABLED_DEFAULT } from '../constants/watermark.constants';
 import { SIDEBAR_COLLAPSED_DEFAULT } from '../constants/sidebar.constants';
 import { MENU_DEFAULT_ORDER } from '../constants/router-meta.constants';
 import { PANORAMA_CN_VIEW_MODE_DEFAULT } from '../constants/panorama.constants';
+import {
+  CHART_MAIN_INDICATORS_DEFAULT,
+  CHART_SUB_INDICATORS_DEFAULT,
+} from '../constants/stock-indicator.constants';
 import type { HeatmapViewMode } from '../types/heatmap.types';
 import type { PanoramaCnViewMode } from '../constants/panorama.constants';
 import type { BoardCalendarHeatBasis, BoardCalendarRange } from '../types/board-calendar.types';
@@ -33,7 +37,7 @@ interface SettingsState {
   heatmapViewMode: HeatmapViewMode;
   /** 行情全景 · A股板块排行展示形式：平铺网格 或 列表表格 */
   panoramaCnViewMode: PanoramaCnViewMode;
-  /** 左侧导航栏是否收起（仅桌面端生效，窄屏抽屉不受影响） */
+  /** 左侧导航栏是否收起 */
   sidebarCollapsed: boolean;
   /** 左侧导航顺序（存路由 path 数组；默认按 MENU_ITEMS 声明顺序） */
   menuOrder: string[];
@@ -51,6 +55,10 @@ interface SettingsState {
   boardCalendarOrder: string[];
   /** 板块日历 · 未勾选的板块代码（不在表格中渲染） */
   boardCalendarHidden: string[];
+  /** 股票详情 · 蜡烛模式主图指标清单（如 ['MA']，klinecharts 指标名） */
+  chartMainIndicators: string[];
+  /** 股票详情 · 蜡烛模式副图指标清单（如 ['VOL', 'MACD_KDJ']，每项独立面板） */
+  chartSubIndicators: string[];
 }
 
 /**
@@ -72,6 +80,8 @@ export const useSettingsStore = defineStore('settings', {
     boardCalendarRange: BOARD_CALENDAR_RANGE_DEFAULT,
     boardCalendarOrder: [...BOARD_DEFAULT_ORDER],
     boardCalendarHidden: [],
+    chartMainIndicators: [...CHART_MAIN_INDICATORS_DEFAULT],
+    chartSubIndicators: [...CHART_SUB_INDICATORS_DEFAULT],
   }),
 
   actions: {
@@ -197,6 +207,16 @@ export const useSettingsStore = defineStore('settings', {
     resetBoardCalendarColumns(): void {
       this.boardCalendarOrder = [...BOARD_DEFAULT_ORDER];
       this.boardCalendarHidden = [];
+    },
+
+    /**
+     * 设置股票详情 · 图表指标配置（主图叠加 + 副图面板，持久化）
+     * @param mainIndicators 主图指标名数组
+     * @param subIndicators 副图指标名数组
+     */
+    setChartIndicators(mainIndicators: string[], subIndicators: string[]): void {
+      this.chartMainIndicators = [...mainIndicators];
+      this.chartSubIndicators = [...subIndicators];
     },
   },
 

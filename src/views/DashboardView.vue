@@ -36,7 +36,7 @@ import {
 } from '../constants/turnover.constants';
 import { POLLING_INTERVAL } from '../constants/polling.constants';
 import { useHeatmapDrill } from '../composables/use-heatmap-drill';
-import { useDockPanelStore } from '../stores/dock-panel';
+import { useStockOpen } from '../composables/use-stock-open';
 import type { DistributionCount } from '../types/distribution.types';
 import type {
   HeatmapBoard,
@@ -92,7 +92,7 @@ const marketViewMode = ref<typeof VIEW_MODE[keyof typeof VIEW_MODE]>(VIEW_MODE.C
  *
  * 注：北向净买额已从资金速览移除——上游实时与历史口径均已停止披露（NET_DEAL_AMT 恒 null）
  */
-const dockPanel = useDockPanelStore();
+const { openSidebar, openPage, toContextList } = useStockOpen();
 const settingsStore = useSettingsStore();
 const dataCache = useDataCacheStore();
 
@@ -322,7 +322,19 @@ const heatmapBoards = computed<HeatmapBoard[]>(() =>
 const onOpenIndexDetail = (index: number): void => {
   const symbol = INDEX_SYMBOLS[index];
   if (symbol) {
-    dockPanel.openStock(symbol);
+    openSidebar(symbol);
+  }
+};
+
+/**
+ * 指数卡片双击跳股票详情整页
+ * @param index 指数在 INDEX_SYMBOLS 中的下标
+ */
+const onOpenIndexDblclick = (index: number): void => {
+  const symbol = INDEX_SYMBOLS[index];
+  if (symbol) {
+    // 携带 4 个指数作为详情页左侧来源列表
+    openPage(symbol, toContextList(indexQuotes.value, (quote) => quote.code));
   }
 };
 
@@ -331,7 +343,7 @@ const onOpenIndexDetail = (index: number): void => {
  * @param code 成分股 6 位代码
  */
 const onOpenHeatmapStock = (code: string): void => {
-  dockPanel.openStock(code);
+  openSidebar(code);
 };
 
 /** 涨跌分布列配置 */
@@ -381,16 +393,17 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
 <template>
   <div class="space-y-6">
     <!-- 指数卡片：点击跳 K 线详情 -->
-    <div v-if="indexQuotes.length > 0" class="grid grid-cols-2 gap-4 @3xl:grid-cols-4">
+    <div v-if="indexQuotes.length > 0" class="grid grid-cols-4 gap-4">
       <StockQuoteCard
         v-for="(quote, index) in indexQuotes"
         :key="quote.code"
         :quote="quote"
         clickable
         @click="onOpenIndexDetail(index)"
+        @dblclick="onOpenIndexDblclick(index)"
       />
     </div>
-    <div v-else class="grid grid-cols-2 gap-4 @3xl:grid-cols-4">
+    <div v-else class="grid grid-cols-4 gap-4">
       <BaseCard v-for="i in 4" :key="i"><BaseSkeleton /></BaseCard>
     </div>
 
@@ -406,7 +419,7 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
       <!-- 资金速览：当日汇总指标（两市成交额 + 主力净流入） -->
       <div
         v-if="totalAmountWan !== null"
-        class="mb-4 grid grid-cols-2 gap-4 @3xl:grid-cols-4"
+        class="mb-4 grid grid-cols-4 gap-4"
       >
         <div>
           <p class="text-xs text-text-tertiary">两市成交额</p>
@@ -586,6 +599,7 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
             :drill-error="drillError"
             :show-back-bar="false"
             @stock-click="onOpenHeatmapStock"
+            @stock-dblclick="openPage"
           />
         </template>
         <!-- 列表形式（显式条件：与上方成分股块兄弟时 v-else 链会接错对象） -->
@@ -596,6 +610,7 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
           :is-drill-loading="isDrillLoading"
           :drill-error="drillError"
           @stock-click="onOpenHeatmapStock"
+          @stock-dblclick="openPage"
           @board-click="drillInto"
           @back="backToBoards"
         />

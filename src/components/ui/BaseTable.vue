@@ -31,21 +31,67 @@ const props = defineProps<{
   footerText?: string;
   /**
    * 行扩展：开启后每行行首自动追加一列展开 icon（chevron），
-   * 点击切换该行的扩展行（内容由 #expanded 作用域插槽提供）；默认关闭
+   * **仅点击该 icon** 切换扩展行（内容由 #expanded 作用域插槽提供）；
+   * 行其他位置的点击走 rowClick，不承担展开职责。默认关闭
    */
   expandable?: boolean;
   /** 当前已展开的行 key 列表（受控模式，父级维护） */
   expandedKeys?: string[];
+  /**
+   * 双击导航模式：开启后 rowClick 延迟派发（单击/双击合并），
+   * 双击取消未派发的 click 并直接 emit rowDblclick；默认关闭不拖累单击手感
+   */
+  enableDblclickNav?: boolean;
 }>();
 
 const emit = defineEmits<{
   /** 行点击 */
   rowClick: [row: T];
+  /** 行双击（仅 enableDblclickNav 开启时派发） */
+  rowDblclick: [row: T];
   /** 容器滚动（透传给外部懒加载逻辑） */
   scroll: [event: Event];
   /** 展开图标点击（切换扩展行；父级维护 expandedKeys） */
   toggleExpand: [row: T];
 }>();
+
+/** 单击延迟派发定时器（双击合并窗口；null = 无待派发单击） */
+const pendingClick = ref<{ timer: number; row: T } | null>(null);
+
+/** 单击/双击合并窗口（毫秒） */
+const DBLCLICK_MERGE_MS = 250;
+
+/**
+ * 行单击：开启双击导航时延迟派发，窗口内收到双击则取消
+ * @param row 行数据
+ */
+const onRowClick = (row: T): void => {
+  if (!props.enableDblclickNav) {
+    emit('rowClick', row);
+    return;
+  }
+  if (pendingClick.value) {
+    window.clearTimeout(pendingClick.value.timer);
+  }
+  const timer = window.setTimeout(() => {
+    pendingClick.value = null;
+    emit('rowClick', row);
+  }, DBLCLICK_MERGE_MS);
+  pendingClick.value = { timer, row };
+};
+
+/**
+ * 行双击：取消未派发的单击，直接派发双击
+ * @param row 行数据
+ */
+const onRowDblclick = (row: T): void => {
+  if (!props.enableDblclickNav) return;
+  if (pendingClick.value) {
+    window.clearTimeout(pendingClick.value.timer);
+    pendingClick.value = null;
+  }
+  emit('rowDblclick', row);
+};
 
 /** 排序列 key；null 表示未排序 */
 const sortKey = ref<string | null>(null);
@@ -158,7 +204,8 @@ const alignClass = (col: TableColumn<T>, isHead: boolean): string => {
               index % 2 === 1 ? 'bg-flat-weak/35' : '',
               rowClickable ? 'cursor-pointer hover:bg-flat-weak/50' : '',
             ]"
-            @click="emit('rowClick', row)"
+            @click="onRowClick(row)"
+            @dblclick="onRowDblclick(row)"
           >
             <td v-if="expandable" class="w-8 py-2 pl-1">
               <button

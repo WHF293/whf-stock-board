@@ -8,7 +8,7 @@ import { TREND_PILL_CLASS, TREND_TEXT_CLASS } from '../../constants/stock-colors
 import { formatAmount } from '../../utils/format-amount';
 import { formatPercent, formatPercentUnsigned } from '../../utils/format-percent';
 import { formatPrice } from '../../utils/format-price';
-import { useDockPanelStore } from '../../stores/dock-panel';
+import { useStockOpen } from '../../composables/use-stock-open';
 import type { FullQuote } from '../../types/stock-quote.types';
 import type { WatchlistStock } from '../../types/watchlist.types';
 import type { TableColumn } from '../../types/table.types';
@@ -31,7 +31,7 @@ const emit = defineEmits<{
   reorder: [fromIndex: number, toIndex: number];
 }>();
 
-const dockPanel = useDockPanelStore();
+const { openSidebar, openPage, toContextList } = useStockOpen();
 
 /** 拖拽中的行 key（symbol） */
 const dragRowKey = ref<string | null>(null);
@@ -80,7 +80,7 @@ const findQuote = (symbol: string): FullQuote | undefined =>
  * @param stock 自选股条目
  */
 const openDetail = (stock: WatchlistStock): void => {
-  dockPanel.openStock(stock.symbol);
+  openSidebar(stock.symbol);
 };
 
 /**
@@ -117,6 +117,8 @@ const columns: TableColumn<WatchlistStock>[] = [
     min-width="640px"
     row-clickable
     @row-click="openDetail"
+    :enable-dblclick-nav="true"
+    @row-dblclick="(row) => openPage(row.symbol, toContextList(stocks, (item) => item.symbol))"
     @dragover.prevent
     @drop="onDrop"
   >

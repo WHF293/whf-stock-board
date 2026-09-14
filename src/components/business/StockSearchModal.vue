@@ -18,7 +18,7 @@ const emit = defineEmits<{
   /** 关闭弹窗（遮罩 / × / Esc） */
   close: [];
   /** 选中某个搜索结果 */
-  select: [result: SearchResult];
+  select: [result: SearchResult, results: SearchResult[]];
 }>();
 
 const { keyword, results, searching } = useStockSearch();
@@ -63,7 +63,7 @@ const moveActive = (delta: number): void => {
  * @param result 搜索结果
  */
 const select = (result: SearchResult): void => {
-  emit('select', result);
+  emit('select', result, results.value);
   emit('close');
 };
 

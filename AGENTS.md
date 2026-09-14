@@ -99,9 +99,25 @@ server/           # vite 中间件：/stock-proxy（仅浏览器 dev 使用）
 ## 发布流程（PC 客户端）
 
 1. 版本号三处同步改：`src-tauri/tauri.conf.json`、`package.json`、`src/constants/app-info.constants.ts`（APP_VERSION，供「检查更新」比较）
-2. 提交后 `git tag v0.x.0 && git push origin main v0.x.0`
-3. `release.yml` 在 Windows runner 自动构建并上传安装包到 GitHub Release；
+2. 提交并推送代码（**先 push 代码，再处理 tag**）：
+
+   ```bash
+   git add -A
+   git commit -m "feat: <中文描述>（vX.Y.Z）"
+   git push origin main
+   ```
+
+3. 打 tag 并推送 tag（必须在代码 push 成功之后执行）：
+
+   ```bash
+   git tag vX.Y.Z
+   git push origin vX.Y.Z
+   ```
+
+4. `release.yml` 在 Windows runner 自动构建并上传安装包到 GitHub Release；
    Release 描述由 workflow 从「上一个 tag..HEAD」的提交主题自动生成带编号的变更列表
+
+注意：tag 必须打在**已推送的最新 commit** 上（先 push 后打 tag）；若 push 后有他人新提交，先用 `git pull --rebase` 再走流程。`pnpm lint` 与 `pnpm build` 必须在 commit 前全绿。
 
 ### 提交信息规范（Conventional Commits，硬性）
 

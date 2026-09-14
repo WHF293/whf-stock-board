@@ -210,6 +210,91 @@ CREATE TABLE IF NOT EXISTS board_sync_state (
 );
 ";
 
+/// stock-board.db v3：账户 · 对账单导入记录
+///
+/// 同花顺对账单按文件导入，一期先落导入档案（期间/原文），
+/// 结构化解析（资金流水 / 持仓变动）待字段定稿后追加子表
+const STOCK_BOARD_DB_V3: &str = "
+CREATE TABLE IF NOT EXISTS account_statement (
+  id           TEXT PRIMARY KEY,
+  account_id   TEXT NOT NULL,
+  file_name    TEXT NOT NULL,
+  period_start TEXT,
+  period_end   TEXT,
+  raw_content  TEXT,
+  imported_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_statement_account
+  ON account_statement(account_id, imported_at);
+";
+
+/// stock-board.db v4：交割单 / 对账单成交流水（结构对齐同花顺导出文件表头）
+///
+/// 两表结构完全一致，仅数据来源不同：
+/// - account_trade_record      ← 交割单（含「余额」列）
+/// - account_statement_record  ← 对账单（含「备注」列，一期不落备注原文）
+/// 去重键 dedupe_key 唯一，重复导入同一文件不会产生重复行；
+/// v3 的 account_statement 占位表被两表取代，直接弃用
+const STOCK_BOARD_DB_V4: &str = "
+DROP TABLE IF EXISTS account_statement;
+
+CREATE TABLE IF NOT EXISTS account_trade_record (
+  id           TEXT PRIMARY KEY,
+  account_id   TEXT NOT NULL,
+  trade_date   TEXT NOT NULL,
+  trade_time   TEXT NOT NULL,
+  symbol       TEXT NOT NULL,
+  stock_name   TEXT NOT NULL,
+  action       TEXT NOT NULL,
+  quantity     INTEGER NOT NULL,
+  price        REAL NOT NULL,
+  amount       REAL NOT NULL,
+  balance      REAL,
+  net_amount   REAL NOT NULL,
+  after_amount REAL,
+  stamp_tax    REAL NOT NULL DEFAULT 0,
+  commission   REAL NOT NULL DEFAULT 0,
+  transfer_fee REAL NOT NULL DEFAULT 0,
+  entrust_fee  REAL NOT NULL DEFAULT 0,
+  service_fee  REAL NOT NULL DEFAULT 0,
+  contract_no  TEXT,
+  deal_no      TEXT,
+  market       TEXT,
+  dedupe_key   TEXT NOT NULL UNIQUE,
+  imported_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_trade_record_account
+  ON account_trade_record(account_id, trade_date);
+
+CREATE TABLE IF NOT EXISTS account_statement_record (
+  id           TEXT PRIMARY KEY,
+  account_id   TEXT NOT NULL,
+  trade_date   TEXT NOT NULL,
+  trade_time   TEXT NOT NULL,
+  symbol       TEXT NOT NULL,
+  stock_name   TEXT NOT NULL,
+  action       TEXT NOT NULL,
+  quantity     INTEGER NOT NULL,
+  price        REAL NOT NULL,
+  amount       REAL NOT NULL,
+  balance      REAL,
+  net_amount   REAL NOT NULL,
+  after_amount REAL,
+  stamp_tax    REAL NOT NULL DEFAULT 0,
+  commission   REAL NOT NULL DEFAULT 0,
+  transfer_fee REAL NOT NULL DEFAULT 0,
+  entrust_fee  REAL NOT NULL DEFAULT 0,
+  service_fee  REAL NOT NULL DEFAULT 0,
+  contract_no  TEXT,
+  deal_no      TEXT,
+  market       TEXT,
+  dedupe_key   TEXT NOT NULL UNIQUE,
+  imported_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_statement_record_account
+  ON account_statement_record(account_id, trade_date);
+";
+
 /// stock-board.db 全部迁移（后续版本往后追加，勿改动已有版本）
 fn stock_board_db_migrations() -> Vec<Migration> {
   vec![
@@ -223,6 +308,18 @@ fn stock_board_db_migrations() -> Vec<Migration> {
       version: 2,
       description: "create_board_sync_state",
       sql: STOCK_BOARD_DB_V2,
+      kind: MigrationKind::Up,
+    },
+    Migration {
+      version: 3,
+      description: "create_account_statement",
+      sql: STOCK_BOARD_DB_V3,
+      kind: MigrationKind::Up,
+    },
+    Migration {
+      version: 4,
+      description: "create_account_record_tables",
+      sql: STOCK_BOARD_DB_V4,
       kind: MigrationKind::Up,
     },
   ]

@@ -1,71 +1,62 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import BaseButton from '../components/ui/BaseButton.vue';
 import BaseCard from '../components/ui/BaseCard.vue';
 import BaseEmpty from '../components/ui/BaseEmpty.vue';
 import BaseTooltip from '../components/ui/BaseTooltip.vue';
 import MenuIcon from '../components/ui/MenuIcon.vue';
+import NoticeBar from '../components/ui/NoticeBar.vue';
 import CreateAccountModal from '../components/account/CreateAccountModal.vue';
 import ImportTradeModal from '../components/account/ImportTradeModal.vue';
-import { DEFAULT_ACCOUNT_ID } from '../constants/account.constants';
+import ManageAccountModal from '../components/account/ManageAccountModal.vue';
+import AccountRecordsPanel from '../components/account/AccountRecordsPanel.vue';
+import BaseConfirmModal from '../components/ui/BaseConfirmModal.vue';
+import {
+  deleteTradeRecordsByAccount,
+  insertTradeRecords,
+} from '../api/account-records-db.api';
+import { parseThfTradeFile } from '../utils/thf-import';
 import { useStockAccountStore } from '../stores/stock-account';
 import type { TradeImportPayload } from '../types/account.types';
 
 /**
- * 股票账户（含交割单导入入口，合并原独立交割单页）
+ * 股票账户（交割单 / 对账单导入入口）
  *
- * 顶部账户 tab 条对照设计稿：active 主题色文字 + 下划线（primary token，
- * 跟随系统主题设置，不硬编码颜色）；
- * 右侧控制区：账户下拉 / 列表视图占位 / 交割单导入 / + 添加。
- * 内容区为占位骨架：持仓/盈亏待交割单解析入库（字段待定）后实现。
+ * 顶部账户 tab 条：active 主题色文字 + 下划线；不预置默认账户——
+ * 用户不创建账户就没有账户（内容区展示引导空态）。
+ * 右侧控制区：☰ 账户管理（显隐 + 排序）/ 对账单导入 / 交割单导入 / + 添加。
+ * 页面顶部 NoticeBar 提示：仅支持同花顺导出的对账单与交割单。
  */
 const accountStore = useStockAccountStore();
 
-/** 当前激活账户 id */
-const activeAccountId = ref<string>(DEFAULT_ACCOUNT_ID);
+/** 当前激活账户 id（空 = 无账户或未选择） */
+const activeAccountId = ref<string>('');
 
-/** 激活账户（容错回退到首个账户） */
+/** tab 条展示的账户（显隐 + 排序后） */
+const visibleAccounts = computed(() => accountStore.visibleAccounts);
+
+/** 激活账户（容错回退到首个可见账户） */
 const activeAccount = computed(
   () =>
     accountStore.accounts.find((account) => account.id === activeAccountId.value) ??
+    visibleAccounts.value[0] ??
     accountStore.accounts[0],
 );
 
-// 账户被删除后回退到默认账户
+// 激活账户被删除 / 尚未选择时回退到首个可见账户
 watch(
-  () => accountStore.accounts.length,
+  [() => accountStore.accounts.length, visibleAccounts],
   () => {
     if (
-      !accountStore.accounts.some(
-        (account) => account.id === activeAccountId.value,
-      )
+      activeAccountId.value &&
+      accountStore.accounts.some((account) => account.id === activeAccountId.value)
     ) {
-      activeAccountId.value = DEFAULT_ACCOUNT_ID;
+      return;
     }
+    activeAccountId.value = visibleAccounts.value[0]?.id ?? '';
   },
+  { immediate: true },
 );
-
-/** 账户下拉开关（▼ 快速切换，tab 溢出时的兜底入口） */
-const dropdownOpen = ref(false);
-
-/** 下拉根元素（点击外部关闭） */
-const dropdownRef = ref<HTMLElement | null>(null);
-
-/** 全局点击关闭下拉
- * @param event 鼠标事件
- */
-const onGlobalClick = (event: MouseEvent): void => {
-  if (
-    dropdownOpen.value &&
-    dropdownRef.value &&
-    !dropdownRef.value.contains(event.target as Node)
-  ) {
-    dropdownOpen.value = false;
-  }
-};
-
-onMounted(() => document.addEventListener('click', onGlobalClick));
-onBeforeUnmount(() => document.removeEventListener('click', onGlobalClick));
 
 /** 创建账户弹窗开关 */
 const createModalOpen = ref(false);
@@ -77,8 +68,26 @@ const onAccountCreated = (accountId: string): void => {
   activeAccountId.value = accountId;
 };
 
-/** 交割单导入弹窗开关 */
+/** 导入弹窗开关 */
 const importModalOpen = ref(false);
+
+/** 导入类型：trade 交割单 / statement 对账单 */
+const importKind = ref<'trade' | 'statement'>('trade');
+
+/** 账户管理弹窗开关（☰） */
+const manageModalOpen = ref(false);
+
+/** 删除账户二次确认弹窗 */
+const deleteConfirmOpen = ref(false);
+
+/** 确认删除：清账户档案 + 级联清两类流水 */
+const onDeleteAccount = (): void => {
+  if (!activeAccount.value) return;
+  const accountId = activeAccount.value.id;
+  accountStore.removeAccount(accountId);
+  void deleteTradeRecordsByAccount(accountId);
+  deleteConfirmOpen.value = false;
+};
 
 /** 导入提示横幅文案（空 = 不展示，数秒后自动消失） */
 const importHint = ref('');
@@ -87,25 +96,38 @@ const importHint = ref('');
 let importHintTimer: ReturnType<typeof setTimeout> | null = null;
 
 /**
- * 交割单导入确认回调（解析入库字段待定，本版仅提示）
- * TODO: 解析文件 → 生成成交记录 → 入库 SQLite（tauri-plugin-sql）
- *       表结构对齐《交割单与股票账户模块规划》待定稿
+ * 导入确认回调：对账单写入 account_statement 表（期间/原文解析待实现，暂存空）；
+ * 交割单解析入库字段待定（TODO: 解析文件 → 生成成交记录 → 入库 SQLite）
  * @param payload 导入载荷（账户 + 文件信息）
  */
-const onTradeImportConfirm = (payload: TradeImportPayload): void => {
-  importHint.value = `已接收「${payload.fileName}」，解析入库字段待定，导入功能即将实现`;
+const onTradeImportConfirm = async (payload: TradeImportPayload): Promise<void> => {
+  try {
+    // 解析同花顺 GBK TSV → 批量入库（dedupe_key 去重，重复导入不产生重复行）
+    const records = await parseThfTradeFile(payload.file, payload.accountId);
+    const inserted = await insertTradeRecords(records, payload.kind);
+    const skipped = records.length - inserted;
+    importHint.value =
+      skipped > 0
+        ? `${payload.kind === 'statement' ? '对账单' : '交割单'}「${payload.fileName}」解析 ${records.length} 条：新增 ${inserted} 条，跳过重复 ${skipped} 条`
+        : `${payload.kind === 'statement' ? '对账单' : '交割单'}「${payload.fileName}」已导入 ${inserted} 条记录`;
+  } catch (error) {
+    importHint.value =
+      error instanceof Error ? `导入失败：${error.message}` : '导入失败：文件解析异常';
+  }
   if (importHintTimer) {
     clearTimeout(importHintTimer);
   }
   importHintTimer = setTimeout(() => {
     importHint.value = '';
-  }, 4000);
+  }, 6000);
 };
 </script>
 
 <template>
   <div class="space-y-4">
-    <!-- 账户 tab 条（对照截图：tab + 右侧控制区） -->
+    <NoticeBar text="当前仅支持导入同花顺导出的「对账单」与「交割单」文件（CSV / XLSX / XLS）" />
+
+    <!-- 账户 tab 条（tab + 右侧控制区） -->
     <div class="flex items-end border-b border-flat-weak">
       <!-- 左侧：账户 tab（active 主题色字 + 下划线，溢出横向滚动） -->
       <div
@@ -113,7 +135,7 @@ const onTradeImportConfirm = (payload: TradeImportPayload): void => {
       >
         <div class="flex" role="tablist" aria-label="账户管理">
           <button
-            v-for="account in accountStore.accounts"
+            v-for="account in visibleAccounts"
             :key="account.id"
             type="button"
             role="tab"
@@ -132,57 +154,40 @@ const onTradeImportConfirm = (payload: TradeImportPayload): void => {
       </div>
 
       <!-- 右侧控制区 -->
-      <div
-        ref="dropdownRef"
-        class="relative flex shrink-0 items-center gap-1.5 px-2 pb-1.5"
-      >
-        <!-- ▼ 账户全量下拉（tab 溢出时快速切换） -->
-        <button
-          type="button"
-          class="pressable rounded-md p-1.5 text-text-tertiary hover:bg-flat-weak hover:text-text active:scale-90"
-          aria-label="全部账户"
-          @click="dropdownOpen = !dropdownOpen"
-        >
-          <MenuIcon name="chevronDown" :size="16" />
-        </button>
-        <div
-          v-if="dropdownOpen"
-          class="absolute right-2 top-full z-20 mt-1 min-w-36 rounded-lg border border-flat-weak bg-surface py-1 shadow-lg"
-        >
-          <button
-            v-for="account in accountStore.accounts"
-            :key="account.id"
-            type="button"
-            class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors hover:bg-flat-weak"
-            :class="
-              account.id === activeAccountId
-                ? 'text-primary'
-                : 'text-text-secondary'
-            "
-            @click="
-              activeAccountId = account.id;
-              dropdownOpen = false;
-            "
-          >
-            <span class="truncate">{{ account.name }}</span>
-          </button>
-        </div>
-
-        <!-- ☰ 列表视图（占位：账户管理入口，待实现） -->
+      <div class="flex shrink-0 items-center gap-1.5 px-2 pb-1.5">
+        <!-- ☰ 账户管理：勾选 tab 显隐 + 拖拽排序 -->
         <span class="relative group">
-          <BaseTooltip text="账户列表管理（开发中）" />
+          <BaseTooltip text="账户管理（显示与排序）" />
           <button
             type="button"
-            disabled
-            class="rounded-md p-1.5 text-text-tertiary opacity-50"
-            aria-label="账户列表管理（开发中）"
+            class="pressable rounded-md p-1.5 text-text-tertiary hover:bg-flat-weak hover:text-text active:scale-90"
+            aria-label="账户管理"
+            @click="manageModalOpen = true"
           >
             <MenuIcon name="menu" :size="16" />
           </button>
         </span>
 
-        <!-- 交割单导入（合并原独立页面入口） -->
-        <BaseButton variant="ghost" @click="importModalOpen = true">
+        <!-- 对账单导入 -->
+        <BaseButton
+          variant="ghost"
+          @click="
+            importKind = 'statement';
+            importModalOpen = true;
+          "
+        >
+          <MenuIcon name="book" :size="14" />
+          对账单导入
+        </BaseButton>
+
+        <!-- 交割单导入 -->
+        <BaseButton
+          variant="ghost"
+          @click="
+            importKind = 'trade';
+            importModalOpen = true;
+          "
+        >
           <MenuIcon name="tradeImport" :size="14" />
           交割单导入
         </BaseButton>
@@ -204,37 +209,42 @@ const onTradeImportConfirm = (payload: TradeImportPayload): void => {
       {{ importHint }}
     </p>
 
-    <!-- 内容区（占位骨架：持仓/盈亏待交割单数据就绪后实现） -->
-    <BaseCard :title="`账户-${activeAccount?.name ?? ''}`">
+    <!-- 内容区：无账户时展示引导空态（不预置默认账户） -->
+    <BaseCard v-if="!activeAccount">
+      <BaseEmpty
+        text="还没有账户：点击右上角「+ 添加」创建账户，或导入同花顺对账单 / 交割单开始使用"
+      />
+    </BaseCard>
+
+    <!-- 内容区：成交流水（对账单/交割单切换 + 分组展示 + 导出） -->
+    <BaseCard v-else :title="`账户-${activeAccount.name}`">
       <template #extra>
         <button
-          v-if="activeAccount?.id !== DEFAULT_ACCOUNT_ID"
           type="button"
           class="pressable shrink-0 rounded-md p-1.5 text-text-tertiary hover:bg-up-weak hover:text-up active:scale-90"
-          :aria-label="`删除账户 ${activeAccount?.name}`"
-          @click="accountStore.removeAccount(activeAccount!.id)"
+          :aria-label="`删除账户 ${activeAccount.name}`"
+          @click="deleteConfirmOpen = true"
         >
           <MenuIcon name="trash" :size="14" />
         </button>
       </template>
-      <BaseEmpty
-        text="暂无账户数据：点击「交割单导入」上传券商交割单，或等待手工记账上线"
-      />
-      <div
-        class="grid grid-cols-2 gap-3 px-1 pb-1 sm:grid-cols-4"
-        aria-hidden="true"
-      >
-        <div
-          v-for="metric in ['总资产', '持仓市值', '浮动盈亏', '当日盈亏']"
-          :key="metric"
-        >
-          <div class="rounded-xl border border-flat-weak px-4 py-3">
-            <p class="text-xs text-text-tertiary">{{ metric }}</p>
-            <p class="mt-1 text-lg font-medium text-text-tertiary">--</p>
-          </div>
-        </div>
-      </div>
+      <AccountRecordsPanel :account-id="activeAccount.id" />
     </BaseCard>
+
+    <!-- 删除账户二次确认 -->
+    <BaseConfirmModal
+      :open="deleteConfirmOpen"
+      title="删除账户"
+      ok-text="确认删除"
+      cancel-text="取消"
+      ok-variant="danger"
+      @ok="onDeleteAccount"
+      @cancel="deleteConfirmOpen = false"
+    >
+      <p class="text-sm text-text">
+        确认删除账户「{{ activeAccount?.name }}」？该账户下已导入的对账单 / 交割单流水将一并删除，且不可恢复。
+      </p>
+    </BaseConfirmModal>
 
     <!-- 创建手工账户弹窗 -->
     <CreateAccountModal
@@ -242,11 +252,15 @@ const onTradeImportConfirm = (payload: TradeImportPayload): void => {
       @created="onAccountCreated"
     />
 
-    <!-- 交割单导入弹窗 -->
+    <!-- 交割单 / 对账单导入弹窗 -->
     <ImportTradeModal
       v-model:open="importModalOpen"
+      :kind="importKind"
       :default-account-id="activeAccountId"
       @confirm="onTradeImportConfirm"
     />
+
+    <!-- 账户管理弹窗（显隐 + 排序） -->
+    <ManageAccountModal v-model:open="manageModalOpen" />
   </div>
 </template>

@@ -19,12 +19,19 @@ import type { FullQuote } from '../../types/stock-quote.types';
  * - 名称居中大字 + 代码居中小字；右上角自选按钮（未加 = 主色「+ 自选」，已加 = 红字「删自选」）
  * - 下方：左侧现价大字 + 涨跌额/幅；右侧 3x3 紧凑指标网格
  *   （高 / 低 / 开 / 市值 / 流通 / 量 / 换 / 额 / 市盈——label 灰 + 值紧跟）
+ * - stacked 模式（窄栏场景，如详情页右栏）：现价块与指标网格上下堆叠，
+ *   指标网格占满整行宽度，避免格内长数值溢出重叠
+ * - metricsOnly 模式（名称/代码/现价/涨跌/自选按钮由页面顶栏承载时用）：只渲染指标网格
  */
 const props = defineProps<{
   /** 完整报价；为 null 时展示骨架屏 */
   quote: FullQuote | null;
   /** 当前股票是否已加入自选（任一分组） */
   isInWatchlist?: boolean;
+  /** 上下堆叠布局（窄栏用；默认横排，同侧栏面板） */
+  stacked?: boolean;
+  /** 仅指标模式：只渲染 3x3 指标网格 */
+  metricsOnly?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -69,10 +76,27 @@ const metrics = computed<CompactMetric[]>(() => {
 
 <template>
   <BaseSkeleton v-if="!quote" />
+  <!-- 仅指标模式：只渲染指标网格 -->
+  <dl v-else-if="metricsOnly" class="grid w-full grid-cols-3 gap-x-2 gap-y-1 text-[10px]">
+    <div
+      v-for="metric in metrics"
+      :key="metric.label"
+      class="flex min-w-0 items-center justify-end gap-1 tabular-nums"
+    >
+      <span class="shrink-0 text-text-tertiary">{{ metric.label }}</span>
+      <span
+        class="truncate text-text"
+        :class="metric.tone ? TREND_TEXT_CLASS[metric.tone] : ''"
+        :title="metric.value"
+      >
+        {{ metric.value }}
+      </span>
+    </div>
+  </dl>
   <div v-else class="relative flex flex-col items-center gap-1">
     <!-- 名称 + 自选按钮（右上角） -->
     <div class="flex w-full items-center justify-center">
-      <p class="truncate text-base font-semibold text-text">{{ quote.name }}</p>
+      <p class="truncate text-sm font-semibold text-text">{{ quote.name }}</p>
       <div class="absolute right-0 top-0">
         <button
           v-if="!isInWatchlist"
@@ -104,30 +128,37 @@ const metrics = computed<CompactMetric[]>(() => {
     </div>
     <p class="text-xs text-text-tertiary">{{ quote.code }}</p>
 
-    <!-- 现价 + 涨跌 / 指标网格 -->
-    <div class="flex w-full items-center gap-4">
-      <div class="shrink-0">
+    <!-- 现价 + 涨跌 / 指标网格（stacked 时上下堆叠） -->
+    <div
+      class="flex w-full items-center gap-4"
+      :class="stacked ? 'flex-col items-stretch gap-2' : ''"
+    >
+      <div :class="stacked ? '' : 'shrink-0'">
         <span
           :key="flashKey"
-          class="block text-3xl font-semibold tabular-nums"
+          class="block text-2xl font-semibold tabular-nums"
           :class="[TREND_TEXT_CLASS[trend], flashClass]"
         >
           {{ formatPrice(quote.price) }}
         </span>
-        <div class="mt-0.5 flex items-center gap-2 text-sm tabular-nums" :class="TREND_TEXT_CLASS[trend]">
+        <div class="mt-0.5 flex items-center gap-2 text-xs tabular-nums" :class="TREND_TEXT_CLASS[trend]">
           <span>{{ quote.change > 0 ? '+' : '' }}{{ formatPrice(quote.change) }}</span>
           <span>{{ formatPercent(quote.changePercent) }}</span>
         </div>
       </div>
 
-      <dl class="grid flex-1 grid-cols-3 gap-x-3 gap-y-1 text-xs">
+      <dl class="grid min-w-0 flex-1 grid-cols-3 gap-x-2 gap-y-1 text-[10px]">
         <div
           v-for="metric in metrics"
           :key="metric.label"
-          class="flex items-center justify-end gap-1 tabular-nums"
+          class="flex min-w-0 items-center justify-end gap-1 tabular-nums"
         >
-          <span class="text-text-tertiary">{{ metric.label }}</span>
-          <span class="text-text" :class="metric.tone ? TREND_TEXT_CLASS[metric.tone] : ''">
+          <span class="shrink-0 text-text-tertiary">{{ metric.label }}</span>
+          <span
+            class="truncate text-text"
+            :class="metric.tone ? TREND_TEXT_CLASS[metric.tone] : ''"
+            :title="metric.value"
+          >
             {{ metric.value }}
           </span>
         </div>

@@ -22,6 +22,7 @@ import { formatBoardTime } from '../../utils/format-board-time';
 import { formatPercent, formatPercentUnsigned } from '../../utils/format-percent';
 import { formatYuan } from '../../utils/format-yuan';
 import { handleSdkError } from '../../utils/handle-sdk-error';
+import { useStockOpen } from '../../composables/use-stock-open';
 
 /**
  * 板块日历 · 单元格详情弹窗
@@ -30,9 +31,27 @@ import { handleSdkError } from '../../utils/handle-sdk-error';
  * ① 涨跌停明细 —— 来自本地库 board_limit_stock，历史任意交易日都可看（默认页签）
  * ② 全部成分股 —— 实时拉上游，**仅「当日」可用**（历史日没有成分股快照，避免误导）
  *
- * ⚠️ 需求明确要求「弹窗内点击股票不支持打开右侧个股详情」：
- * 两张表都**不传 row-clickable、不监听 row-click**，与全站表格惯例刻意相反，勿"修复"。
+ * 2026-09-14 需求更新：点击行直接跳转「股票详情整页」，并以弹窗内清单作为
+ * 详情页左侧来源列表（写入 stock-context store）；因此两张表均 row-clickable。
  */
+
+const { openPage, toContextList } = useStockOpen();
+
+/**
+ * 涨跌停明细行点击：跳股票详情页（上下文 = 涨跌停明细全表）
+ * @param stock 行数据
+ */
+const onLimitClick = (stock: BoardLimitStock): void => {
+  openPage(stock.symbol, toContextList(limitStocks.value, (item) => item.symbol));
+};
+
+/**
+ * 成分股行点击：跳股票详情页（上下文 = 成分股全表）
+ * @param stock 行数据
+ */
+const onConstituentClick = (stock: BoardConstituentQuote): void => {
+  openPage(stock.symbol, toContextList(constituents.value, (item) => item.symbol));
+};
 
 /** 页签标识 */
 const DETAIL_TAB = {
@@ -229,6 +248,8 @@ watch(activeTab, (tab) => {
           :columns="limitColumns"
           :rows="limitStocks"
           :row-key="stockRowKey"
+          row-clickable
+          @row-click="onLimitClick"
           scroll-class="table-scroll-sm"
         >
           <template #limitType="{ row }">
@@ -264,6 +285,8 @@ watch(activeTab, (tab) => {
             :columns="constituentColumns"
             :rows="constituents"
             :row-key="stockRowKey"
+            row-clickable
+            @row-click="onConstituentClick"
             scroll-class="table-scroll-sm"
             :footer-text="`共 ${constituents.length} 只成分股`"
           >

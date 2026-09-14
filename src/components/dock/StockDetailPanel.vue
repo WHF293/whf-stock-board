@@ -10,7 +10,8 @@ import StockQuoteHeader from '../business/StockQuoteHeader.vue';
 import StockOrderBook from '../business/StockOrderBook.vue';
 import DockResizer from '../business/DockResizer.vue';
 import { fetchFullQuotes } from '../../api/quotes.api';
-import { fetchSinaKline, type SinaKlinePeriod } from '../../api/sina-kline.api';
+import { fetchSinaKline } from '../../api/sina-kline.api';
+import { CHART_PERIOD_OPTIONS, type ChartPeriod } from '../../constants/stock-detail.constants';
 import { usePolling } from '../../composables/use-polling';
 import { POLLING_INTERVAL } from '../../constants/polling.constants';
 import type { KLineData } from 'klinecharts';
@@ -188,18 +189,7 @@ const displayQuote = computed<FullQuote | null>(() => {
 
 
 // ---------- 图表周期（下拉切换：分时 / 五日 / 5分 / 日K / 周K / 月K，均走新浪源） ----------
-/** 图表周期值 */
-type ChartPeriod = SinaKlinePeriod;
-
-/** 图表周期选项 */
-const CHART_PERIOD_OPTIONS: readonly { label: string; value: ChartPeriod }[] = [
-  { label: '分时', value: 'minute' },
-  { label: '五日', value: 'fiveDay' },
-  { label: '5分', value: 'min5' },
-  { label: '日K', value: 'daily' },
-  { label: '周K', value: 'weekly' },
-  { label: '月K', value: 'monthly' },
-];
+// 周期选项与详情页共用（constants/stock-detail.constants.ts），避免两处漂移
 
 /** 当前图表周期（默认分时） */
 const chartPeriod = ref<ChartPeriod>('minute');
@@ -312,6 +302,7 @@ const onDockResizeEnd = (): void => {
           :bars="klines"
           :mode="chartMode"
           :pre-close="quoteRef?.prevClose ?? null"
+          :symbol="symbol"
           :resize-tick="chartResizeTick"
           @crosshair-bar="onCrosshairBar"
         />

@@ -163,6 +163,13 @@ const confirmNewGroup = (): void => {
   newGroupModalOpen.value = false;
 };
 
+/** 供收起态侧栏直接唤起新建分组弹窗（BaseModal Teleport 到 body，不受 inert 层影响） */
+defineExpose({
+  openNewGroup: (): void => {
+    newGroupModalOpen.value = true;
+  },
+});
+
 /* --------------------------------- 会话选择 -------------------------------- */
 
 /**

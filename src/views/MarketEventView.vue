@@ -27,7 +27,7 @@ import { formatPercent, formatPercentUnsigned } from '../utils/format-percent';
 import { formatPrice } from '../utils/format-price';
 import { useLazyRows } from '../composables/use-lazy-rows';
 import { useDataCacheStore } from '../stores/data-cache';
-import { useDockPanelStore } from '../stores/dock-panel';
+import { useStockOpen } from '../composables/use-stock-open';
 import { DATA_CACHE_KEY } from '../constants/data-cache.constants';
 import { getTrendByChangePercent } from '../constants/trend.constants';
 import { TREND_PILL_CLASS, TREND_TEXT_CLASS } from '../constants/stock-colors.constants';
@@ -55,7 +55,7 @@ withDefaults(
  *
  * 接口串行错峰轮询（对上游保持克制）
  */
-const dockPanel = useDockPanelStore();
+const { openSidebar, openPage, toContextList } = useStockOpen();
 
 /** 各接口请求间隔（毫秒） */
 const EVENT_REQUEST_GAP_MS = 500;
@@ -190,7 +190,7 @@ usePolling({
  * @param code 个股 6 位代码
  */
 const openDetail = (code: string): void => {
-  dockPanel.openStock(code);
+  openSidebar(code);
 };
 </script>
 
@@ -226,6 +226,8 @@ const openDetail = (code: string): void => {
           row-clickable
           :footer-text="poolHasMore ? `已展示 ${visiblePoolItems.length} / 共 ${poolTotal}，继续滚动加载更多` : undefined"
           @row-click="(item) => openDetail(item.code)"
+          :enable-dblclick-nav="true"
+          @row-dblclick="(item) => openPage(item.code, toContextList(visiblePoolItems, (row) => row.code))"
           @scroll="onPoolScroll"
         >
           <template #name="{ row }">
@@ -274,7 +276,7 @@ const openDetail = (code: string): void => {
       <BaseEmpty v-else text="股池暂无数据" />
     </BaseCard>
 
-    <div v-if="mode === 'events'" class="grid gap-4 @4xl:grid-cols-2">
+    <div v-if="mode === 'events'" class="grid grid-cols-2 gap-4">
       <!-- 盘口异动 -->
       <BaseCard title="盘口异动">
         <div v-if="isEventsLoading && stockChanges.length === 0"><BaseSkeleton /></div>

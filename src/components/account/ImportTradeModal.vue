@@ -11,17 +11,19 @@ import {
 import type { TradeImportPayload } from '../../types/account.types';
 
 /**
- * 交割单导入弹窗
+ * 交割单 / 对账单导入弹窗（kind 切换文案，结构与流程一致）
  *
  * 上半部分：目标账户选择（radio，默认选中父层当前激活账户）
  * 下半部分：文件上传（点击/拖拽，csv/xlsx/xls，大小上限见常量）
  *
  * 确认后 emit confirm 携带 { accountId, fileName, fileSize }；
- * 解析与入库字段待定（TODO 由父层 handler 预留）
+ * 交割单解析入库待实现；对账单由父层写入 account_statement 表
  */
 const props = defineProps<{
   /** 打开时默认选中的账户 id（通常为父层当前激活 tab） */
   defaultAccountId?: string;
+  /** 导入类型：trade 交割单（默认）/ statement 对账单 */
+  kind?: 'trade' | 'statement';
 }>();
 
 const emit = defineEmits<{
@@ -58,6 +60,9 @@ watch(open, (isOpen) => {
     isDragOver.value = false;
   }
 });
+
+/** 弹窗标题 / 文件名词（按类型） */
+const kindLabel = computed(() => (props.kind === 'statement' ? '对账单' : '交割单'));
 
 /** 文件大小格式化展示（MB，保留 1 位） */
 const fileSizeText = computed(() => {
@@ -108,13 +113,15 @@ const canConfirm = computed(
   () => Boolean(selectedAccountId.value) && Boolean(pickedFile.value),
 );
 
-/** 确认导入：透传账户与文件信息（解析入库字段待定） */
+/** 确认导入：透传账户、类型与原始文件（解析由父层完成） */
 const onConfirm = (): void => {
   if (!canConfirm.value || !pickedFile.value) {
     return;
   }
   emit('confirm', {
     accountId: selectedAccountId.value,
+    kind: props.kind ?? 'trade',
+    file: pickedFile.value,
     fileName: pickedFile.value.name,
     fileSize: pickedFile.value.size,
   });
@@ -123,14 +130,14 @@ const onConfirm = (): void => {
 </script>
 
 <template>
-  <BaseModal v-model:open="open" title="导入交割单" max-width-class="max-w-lg">
+  <BaseModal v-model:open="open" :title="`导入${kindLabel}`" max-width-class="max-w-lg">
     <div class="space-y-5">
       <!-- 上半部分：账户选择 -->
       <section class="space-y-2">
         <h4 class="text-sm font-medium text-text">选择账户</h4>
         <div
           v-if="accountStore.accounts.length > 0"
-          class="grid grid-cols-1 gap-1.5 sm:grid-cols-2"
+          class="grid grid-cols-2 gap-1.5"
           role="radiogroup"
           aria-label="目标账户"
         >
@@ -161,7 +168,7 @@ const onConfirm = (): void => {
 
       <!-- 下半部分：文件上传 -->
       <section class="space-y-2">
-        <h4 class="text-sm font-medium text-text">选择交割单文件</h4>
+        <h4 class="text-sm font-medium text-text">选择{{ kindLabel }}文件</h4>
         <div
           class="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-8 text-center transition-colors"
           :class="
@@ -171,7 +178,7 @@ const onConfirm = (): void => {
           "
           role="button"
           tabindex="0"
-          aria-label="选择交割单文件"
+          aria-label="选择文件"
           @click="fileInputRef?.click()"
           @keydown.enter="fileInputRef?.click()"
           @dragover.prevent="isDragOver = true"

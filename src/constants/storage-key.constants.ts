@@ -26,3 +26,6 @@ export const STORAGE_NS_DOCK_PANEL = 'dockPanel';
 
 /** 热点新闻页 - 源勾选状态命名空间（用户启用哪些新闻源） */
 export const STORAGE_NS_HOT_NEWS_FILTER = 'hotNews.filter';
+
+/** 页面 tabs 配置命名空间（各页面 tab 显隐 + 顺序，按页面 key 分桶） */
+export const STORAGE_NS_TAB_CONFIG = 'tabConfig';
