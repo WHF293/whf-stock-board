@@ -24,6 +24,8 @@ export const STOCK_PROXY_ALLOWED_HOSTS = [
   'sinajs.cn',
   // 同花顺（热点新闻 news.10jqka.com.cn）
   '10jqka.com.cn',
+  // 澎湃新闻（热点新闻：频道页 www.thepaper.cn + 列表接口 api.thepaper.cn，POST）
+  'thepaper.cn',
   // 财联社（电报快讯 www.cls.cn，需动态计算 sign；本期未接入，预留白名单）
   'cls.cn',
   // stock-sdk 静态资源（代码表等参考数据）

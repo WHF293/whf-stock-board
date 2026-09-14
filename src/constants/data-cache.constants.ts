@@ -36,4 +36,8 @@ export const DATA_CACHE_KEY = {
   HOT_NEWS_ITEMS: 'hot-news.items.',
   /** 市场榜单：全 A 股报价快照（按 sortKey 客户端排序） */
   MARKET_RANK_QUOTES: 'marketRank.quotes',
+  /** 板块日历：交易日轴（会话内复用，避免每次挂载都请求腾讯） */
+  BOARD_CALENDAR_DATES: 'boardCalendar.dates',
+  /** 板块日历：矩阵原始行（切页秒出，接口返回后覆盖） */
+  BOARD_CALENDAR_MATRIX: 'boardCalendar.matrix',
 } as const;

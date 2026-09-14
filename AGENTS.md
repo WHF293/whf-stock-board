@@ -70,7 +70,7 @@ server/           # vite 中间件：/stock-proxy（仅浏览器 dev 使用）
 
 东财系接口高频请求会封 IP（全域名 TCP RST 数十分钟）：
 
-- 全市场快照（`fetchAllMarketQuotes`）串行分页 batchSize 500 / concurrency 1
+- 全市场快照（`fetchAllMarketQuotes`）小并发分页 batchSize 500 / concurrency 3（⚠️ 不得超过 3）
 - 同一上游连续请求用 `delay(500)` 错峰
 - 重接口（全市场快照 / K 线 / 资金流 / 分时循环）一律用户点击触发，不轮询
 - 并发扫描用 `utils/map-with-concurrency.ts`（信号扫描并发 3、尾盘分时并发 2）

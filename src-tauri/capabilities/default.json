@@ -8,9 +8,20 @@
   "permissions": [
     "core:default",
     "opener:default",
+    "sql:default",
+    "sql:allow-execute",
     {
       "identifier": "http:default",
       "allow": [
+        {
+          "url": "https://*"
+        },
+        {
+          "url": "http://localhost:*"
+        },
+        {
+          "url": "http://127.0.0.1:*"
+        },
         {
           "url": "https://*.eastmoney.com/*"
         },
@@ -37,6 +48,12 @@
         },
         {
           "url": "https://*.10jqka.com.cn/*"
+        },
+        {
+          "url": "https://*.thepaper.cn/*"
+        },
+        {
+          "url": "https://thepaper.cn/*"
         },
         {
           "url": "https://*.cls.cn/*"

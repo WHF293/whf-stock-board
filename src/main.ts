@@ -1,3 +1,6 @@
+// ⚠️ 必须最先导入：补 process/global 垫片，早于 deepagents 依赖链（micromatch →
+// picomatch）的模块求值，否则 WebView 下会白屏（详见该模块注释）
+import './utils/node-globals-shim';
 import { createApp } from 'vue';
 import { createPinia } from 'pinia';
 import piniaPluginPersistedstate from 'pinia-plugin-persistedstate';

@@ -12,6 +12,9 @@ export const STORAGE_KEY_APP = 'whf:app';
 /** 自选股分组命名空间 */
 export const STORAGE_NS_WATCHLIST = 'watchlist';
 
+/** 股票账户命名空间 */
+export const STORAGE_NS_STOCK_ACCOUNT = 'stock.account';
+
 /** 应用设置命名空间 */
 export const STORAGE_NS_SETTINGS = 'settings';
 

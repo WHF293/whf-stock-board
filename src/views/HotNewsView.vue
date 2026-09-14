@@ -11,6 +11,7 @@ import MenuIcon from "../components/ui/MenuIcon.vue";
 import {
   fetchEastmoneyHotNews,
   fetchSinaHotNews,
+  fetchThepaperHotNews,
   fetchThsHotNews,
   type HotNewsItem,
 } from "../api/news.api";
@@ -22,8 +23,8 @@ import { appStorage } from "../utils/app-local-storage";
 /**
  * 热点新闻：横向卡片流（每源一张卡片，固定 375px 宽，超出页面横向滚动）
  *
- * 翻页模型：新浪 / 财联社 / 央视 / 同花顺为页码递增（cursor=number），
- * 东财为 sortEnd 游标（cursor=string）；
+ * 翻页模型：新浪 / 同花顺为页码递增（cursor=number），
+ * 东财为 sortEnd 游标、澎湃为 startTime 游标（cursor=string）；
  * 每源独立维护状态与快照（oid 去重），卡片内点击条目在新窗口打开原文页面
  * （避开 X-Frame-Options / CSP）
  * 顶部「新闻源设置」面板：勾选控制显示/隐藏，拖拽手柄调整卡片顺序，
@@ -31,13 +32,14 @@ import { appStorage } from "../utils/app-local-storage";
  */
 
 /** 新闻源 */
-type NewsSource = "sina" | "eastmoney" | "ths";
+type NewsSource = "sina" | "eastmoney" | "ths" | "thepaper";
 
 /** 源展示名（面板与卡片标题共用） */
 const SOURCE_LABELS: Record<NewsSource, string> = {
   sina: "新浪财经",
   eastmoney: "东方财富",
   ths: "同花顺",
+  thepaper: "澎湃新闻",
 };
 
 /** 默认源顺序（首次进入 / 持久化数据缺源时按此补齐） */
@@ -45,6 +47,7 @@ const DEFAULT_SOURCE_ORDER: readonly NewsSource[] = [
   "sina",
   "eastmoney",
   "ths",
+  "thepaper",
 ];
 
 /** 持久化的单源设置条目（label 不落盘，渲染时经 SOURCE_LABELS 查询） */
@@ -105,7 +108,10 @@ const loadSourceItems = (): SourceItem[] => {
       console.error("[hot-news] 新闻源设置解析失败", error);
     }
   }
-  return DEFAULT_SOURCE_ORDER.map((value) => ({ value, enabled: true }));
+  return DEFAULT_SOURCE_ORDER.map((value) => ({
+    value,
+    enabled: true,
+  }));
 };
 
 /** 源设置列表（数组顺序 = 面板行序 = 卡片渲染顺序；持久化到 appStorage） */
@@ -137,7 +143,7 @@ const visibleCards = computed(() =>
 /** 缓存的快照条目（含抓取时间，用于 TTL 判定） */
 interface NewsCacheEntry {
   items: HotNewsItem[];
-  /** 新浪 / 财联社 / 央视 / 同花顺：下一页页码；东财：sortEnd 游标（'' = 首页） */
+  /** 新浪 / 同花顺：下一页页码；东财 / 澎湃：游标字符串（'' = 首页） */
   cursor: number | string;
   hasMore: boolean;
   fetchedAt: number;
@@ -146,9 +152,9 @@ interface NewsCacheEntry {
 /** 单个源的加载状态 */
 interface SourceState {
   items: HotNewsItem[];
-  /** 新浪 / 财联社 / 央视 / 同花顺：下一页页码；东财：sortEnd 游标（'' = 首页） */
+  /** 新浪 / 同花顺：下一页页码；东财 / 澎湃：游标字符串（'' = 首页） */
   cursor: number | string;
-  /** 是否还有更多（页码源按满页判定 / 东财按游标判定） */
+  /** 是否还有更多（页码源按满页判定 / 游标源按上游游标判定 / 单页源恒为 false） */
   hasMore: boolean;
   /** 是否正在加载 */
   loading: boolean;
@@ -208,6 +214,7 @@ const states = ref<Record<NewsSource, SourceState>>({
   sina: createSourceState("sina"),
   eastmoney: createSourceState("eastmoney"),
   ths: createSourceState("ths"),
+  thepaper: createSourceState("thepaper"),
 });
 
 /**
@@ -229,6 +236,15 @@ const loadMore = async (source: NewsSource): Promise<void> => {
       state.cursor = (state.cursor as number) + 1;
     } else if (source === "eastmoney") {
       const { items, nextCursor } = await fetchEastmoneyHotNews(
+        state.cursor as string,
+        PAGE_SIZE,
+      );
+      fresh = items;
+      state.hasMore = nextCursor !== null;
+      state.cursor = nextCursor ?? "";
+    } else if (source === "thepaper") {
+      // 澎湃：startTime 毫秒游标（'' = 首页），hasMore 由 hasNext 决定
+      const { items, nextCursor } = await fetchThepaperHotNews(
         state.cursor as string,
         PAGE_SIZE,
       );
@@ -282,14 +298,32 @@ const forceRefresh = async (source: NewsSource): Promise<void> => {
   await loadMore(source);
 };
 
-// 首屏：未初始化的源全部并发拉取（每源独立维护 loading / error）
+// 首屏：仅并发拉取**已勾选**的源（未勾选的源不请求，避免为不显示的卡片白打上游）
 onMounted(() => {
-  for (const { value } of sourceItems.value) {
-    if (!states.value[value].initialized) {
+  for (const { value, enabled } of sourceItems.value) {
+    if (enabled && !states.value[value].initialized) {
       void loadMore(value);
     }
   }
 });
+
+/**
+ * 勾选新启用的源时补拉首屏
+ *
+ * 首屏只拉已勾选的源，若不在这里补拉，用户临时勾选一个源后卡片会一直停在
+ * 「暂无热点新闻」（空列表不产生滚动事件，触底加载无从触发）
+ */
+watch(
+  sourceItems,
+  (items) => {
+    for (const { value, enabled } of items) {
+      if (enabled && !states.value[value].initialized) {
+        void loadMore(value);
+      }
+    }
+  },
+  { deep: true },
+);
 
 /**
  * 卡片内列表触底（距底 < 60px）时自动加载下一页
@@ -370,170 +404,179 @@ const loadMoreLabel = (state: SourceState): string => {
 </script>
 
 <template>
-  <!-- 「新闻源设置」折叠面板：点击标题展开/收起；展开后竖向列表，拖拽手柄排序 -->
-  <div class="relative shrink-0 border-b border-flat-weak">
-    <button
-      type="button"
-      class="pressable flex w-full items-center justify-between px-4 py-2 text-sm font-semibold text-text-secondary hover:text-text"
-      :aria-expanded="panelOpen"
-      @click="panelOpen = !panelOpen"
-    >
-      新闻源设置
-      <MenuIcon
-        name="chevronDown"
-        :size="14"
-        class="transition-transform"
-        :class="panelOpen ? 'rotate-180' : ''"
-      />
-    </button>
-
-    <!-- 竖向源列表（浮层，不挤压下方卡片流） -->
-    <div
-      v-if="panelOpen"
-      class="absolute inset-x-0 top-full z-20 border-b border-flat-weak bg-surface py-1 shadow-card"
-    >
-      <!-- vue-draggable-plus：v-model 直接重排 sourceItems，排序结果由 deep watch 落盘 -->
-      <!-- force-fallback：改用鼠标模拟拖拽，绕开原生 HTML5 DnD（在 Tauri WebView
-           下原生拖拽会显示禁拖光标且 drop 不触发，导致松手顺序不变） -->
-      <VueDraggable
-        v-model="sourceItems"
-        tag="ul"
-        :animation="150"
-        handle=".drag-handle"
-        :force-fallback="true"
-        fallback-class="sortable-fallback bg-surface shadow-lg ring-1 ring-flat-weak"
-        ghost-class="opacity-40"
-        chosen-class="bg-flat-weak"
+  <!-- 单根容器：MainLayout 通过 :class="pageAnim" 下发页面进入动画类名，
+         而多根组件无法继承 attrs（会丢动画并刷 Vue warn），故统一包一层 -->
+  <div>
+    <!-- 「新闻源设置」折叠面板：点击标题展开/收起；展开后竖向列表，拖拽手柄排序 -->
+    <div class="relative shrink-0 border-b border-flat-weak">
+      <button
+        type="button"
+        class="pressable flex w-full items-center justify-between px-4 py-2 text-sm font-semibold text-text-secondary hover:text-text"
+        :aria-expanded="panelOpen"
+        @click="panelOpen = !panelOpen"
       >
-        <li
-          v-for="item in sourceItems"
-          :key="item.value"
-          class="flex select-none items-center gap-3 px-4 py-2.5 text-sm text-text-secondary"
-        >
-          <!-- 拖拽手柄：仅手柄可拖（SortableJS handle），勾选框点击不受影响 -->
-          <MenuIcon
-            name="grip"
-            :size="16"
-            class="drag-handle cursor-grab text-text-tertiary active:cursor-grabbing"
-          />
-          <input
-            type="checkbox"
-            :checked="item.enabled"
-            class="h-4 w-4 cursor-pointer rounded border-flat-weak accent-primary"
-            @change="item.enabled = ($event.target as HTMLInputElement).checked"
-          />
-          <span class="text-text">{{ SOURCE_LABELS[item.value] }}</span>
-        </li>
-      </VueDraggable>
-    </div>
-  </div>
+        新闻源设置
+        <MenuIcon
+          name="chevronDown"
+          :size="14"
+          class="transition-transform"
+          :class="panelOpen ? 'rotate-180' : ''"
+        />
+      </button>
 
-  <!-- 横向卡片流：每源一张 375px 卡片，超出页面横向滚动 -->
-  <!-- 高度用 100dvh - 7rem：扣除 MainLayout 头部 h-14(56px) + main 内部 div 的 lg:p-6 上下(48px) + buffer -->
-  <div class="flex h-[calc(100dvh-9rem)] min-h-0 gap-4 overflow-x-auto p-4">
-    <BaseCard
-      v-for="card in visibleCards"
-      :key="card.value"
-      class="!flex !h-full !w-[375px] !shrink-0 !flex-col !overflow-hidden !p-0"
-    >
-      <!-- 卡片 header：源名称 + 当前条数 -->
-      <header
-        class="flex shrink-0 items-center justify-between gap-2 border-b border-flat-weak px-4 py-3"
-      >
-        <h2 class="text-sm font-semibold text-text">{{ card.label }}</h2>
-        <span class="text-xs text-text-tertiary">
-          {{ states[card.value].items.length }} 条
-        </span>
-      </header>
-
-      <!-- 卡片 body：列表（占满剩余高度，内部滚动） -->
+      <!-- 竖向源列表（浮层，不挤压下方卡片流） -->
       <div
-        class="flex-1 overflow-y-auto"
-        @scroll.passive="onListScroll(card.value, $event)"
+        v-if="panelOpen"
+        class="absolute inset-x-0 top-full z-20 border-b border-flat-weak bg-surface py-1 shadow-card"
       >
-        <div
-          v-if="
-            states[card.value].loading && states[card.value].items.length === 0
-          "
-          class="p-4"
-        >
-          <BaseSkeleton />
-        </div>
-        <div
-          v-else-if="
-            states[card.value].error && states[card.value].items.length === 0
-          "
-          class="py-10"
-        >
-          <BaseEmpty text="热点新闻加载失败，请稍后重试" />
-        </div>
-        <ul
-          v-else-if="states[card.value].items.length > 0"
-          class="divide-y divide-flat-weak"
+        <!-- vue-draggable-plus：v-model 直接重排 sourceItems，排序结果由 deep watch 落盘 -->
+        <!-- force-fallback：改用鼠标模拟拖拽，绕开原生 HTML5 DnD（在 Tauri WebView
+             下原生拖拽会显示禁拖光标且 drop 不触发，导致松手顺序不变） -->
+        <VueDraggable
+          v-model="sourceItems"
+          tag="ul"
+          :animation="150"
+          handle=".drag-handle"
+          :force-fallback="true"
+          fallback-class="sortable-fallback bg-surface shadow-lg ring-1 ring-flat-weak"
+          ghost-class="opacity-40"
+          chosen-class="bg-flat-weak"
         >
           <li
-            v-for="item in states[card.value].items"
-            :key="item.oid"
-            class="odd:bg-flat-weak/30"
+            v-for="item in sourceItems"
+            :key="item.value"
+            class="flex select-none items-center gap-3 px-4 py-2.5 text-sm text-text-secondary"
           >
-            <button
-              type="button"
-              class="pressable block w-full px-4 py-3 text-left active:scale-[0.99]"
-              @click="openInNewWindow(item.url)"
-            >
-              <p class="text-sm font-medium text-text">{{ item.title }}</p>
-              <p class="mt-1 line-clamp-2 text-xs text-text-tertiary">
-                {{ item.summary }}
-              </p>
-              <p
-                class="mt-1.5 flex items-center gap-2 text-xs text-text-tertiary"
-              >
-                <span>{{ item.media }}</span>
-                <span>{{ formatTime(item.ctime) }}</span>
-              </p>
-            </button>
+            <!-- 拖拽手柄：仅手柄可拖（SortableJS handle），勾选框点击不受影响 -->
+            <MenuIcon
+              name="grip"
+              :size="16"
+              class="drag-handle cursor-grab text-text-tertiary active:cursor-grabbing"
+            />
+            <input
+              type="checkbox"
+              :checked="item.enabled"
+              class="h-4 w-4 cursor-pointer rounded border-flat-weak accent-primary"
+              @change="item.enabled = ($event.target as HTMLInputElement).checked"
+            />
+            <span class="text-text">{{ SOURCE_LABELS[item.value] }}</span>
           </li>
-        </ul>
-        <BaseEmpty v-else text="暂无热点新闻" />
+        </VueDraggable>
       </div>
+    </div>
 
-      <!-- 卡片 footer：加载更多 / 强制刷新 / 缓存提示 -->
-      <div
-        v-if="states[card.value].items.length > 0"
-        class="flex shrink-0 flex-col items-center gap-1 border-t border-flat-weak px-4 py-3"
+    <!-- 横向卡片流：每源一张 375px 卡片，超出页面横向滚动 -->
+    <!-- 高度用 100dvh - 7rem：扣除 MainLayout 头部 h-14(56px) + main 内部 div 的 lg:p-6 上下(48px) + buffer -->
+    <div class="flex h-[calc(100dvh-9rem)] min-h-0 gap-4 overflow-x-auto p-4">
+      <BaseCard
+        v-for="card in visibleCards"
+        :key="card.value"
+        class="!flex !h-full !w-[375px] !shrink-0 !flex-col !overflow-hidden !p-0"
       >
-        <div class="flex items-center gap-2">
-          <BaseButton
-            variant="ghost"
-            :disabled="
-              states[card.value].loading || !states[card.value].hasMore
-            "
-            @click="loadMore(card.value)"
-          >
-            {{ loadMoreLabel(states[card.value]) }}
-          </BaseButton>
-          <BaseButton
-            variant="ghost"
-            :disabled="states[card.value].loading"
-            @click="forceRefresh(card.value)"
-          >
-            强制刷新
-          </BaseButton>
-        </div>
-        <!-- 加载中状态：旋转圈 + 文案 -->
-        <div
-          v-if="
-            states[card.value].loading && states[card.value].items.length > 0
-          "
-          class="flex items-center justify-center gap-2 py-1"
+        <!-- 卡片 header：源名称 + 当前条数 -->
+        <header
+          class="flex shrink-0 items-center justify-between gap-2 border-b border-flat-weak px-4 py-3"
         >
-          <span
-            class="h-3 w-3 animate-spin rounded-full border-2 border-flat-weak border-t-primary"
-            aria-hidden="true"
-          />
-          <span class="text-xs text-text-tertiary">正在加载更多...</span>
+          <h2 class="text-sm font-semibold text-text">{{ card.label }}</h2>
+          <span class="text-xs text-text-tertiary">
+            {{ states[card.value].items.length }} 条
+          </span>
+        </header>
+
+        <!-- 卡片 body：列表（占满剩余高度，内部滚动） -->
+        <div
+          class="flex-1 overflow-y-auto"
+          @scroll.passive="onListScroll(card.value, $event)"
+        >
+          <div
+            v-if="
+              states[card.value].loading && states[card.value].items.length === 0
+            "
+            class="p-4"
+          >
+            <BaseSkeleton />
+          </div>
+          <div
+            v-else-if="
+              states[card.value].error && states[card.value].items.length === 0
+            "
+            class="py-10"
+          >
+            <BaseEmpty text="热点新闻加载失败，请稍后重试" />
+          </div>
+          <ul
+            v-else-if="states[card.value].items.length > 0"
+            class="divide-y divide-flat-weak"
+          >
+            <li
+              v-for="item in states[card.value].items"
+              :key="item.oid"
+              class="odd:bg-flat-weak/30"
+            >
+              <button
+                type="button"
+                class="pressable block w-full px-4 py-3 text-left active:scale-[0.99]"
+                @click="openInNewWindow(item.url)"
+              >
+                <p class="text-sm font-medium text-text">{{ item.title }}</p>
+                <p
+                  v-if="item.summary"
+                  class="mt-1 line-clamp-2 text-xs text-text-tertiary"
+                >
+                  {{ item.summary }}
+                </p>
+                <p
+                  class="mt-1.5 flex items-center gap-2 text-xs text-text-tertiary"
+                >
+                  <span>{{ item.media }}</span>
+                  <span v-if="formatTime(item.ctime)">{{
+                    formatTime(item.ctime)
+                  }}</span>
+                </p>
+              </button>
+            </li>
+          </ul>
+          <BaseEmpty v-else text="暂无热点新闻" />
         </div>
-      </div>
-    </BaseCard>
+
+        <!-- 卡片 footer：加载更多 / 强制刷新 / 缓存提示 -->
+        <div
+          v-if="states[card.value].items.length > 0"
+          class="flex shrink-0 flex-col items-center gap-1 border-t border-flat-weak px-4 py-3"
+        >
+          <div class="flex items-center gap-2">
+            <BaseButton
+              variant="ghost"
+              :disabled="
+                states[card.value].loading || !states[card.value].hasMore
+              "
+              @click="loadMore(card.value)"
+            >
+              {{ loadMoreLabel(states[card.value]) }}
+            </BaseButton>
+            <BaseButton
+              variant="ghost"
+              :disabled="states[card.value].loading"
+              @click="forceRefresh(card.value)"
+            >
+              强制刷新
+            </BaseButton>
+          </div>
+          <!-- 加载中状态：旋转圈 + 文案 -->
+          <div
+            v-if="
+              states[card.value].loading && states[card.value].items.length > 0
+            "
+            class="flex items-center justify-center gap-2 py-1"
+          >
+            <span
+              class="h-3 w-3 animate-spin rounded-full border-2 border-flat-weak border-t-primary"
+              aria-hidden="true"
+            />
+            <span class="text-xs text-text-tertiary">正在加载更多...</span>
+          </div>
+        </div>
+      </BaseCard>
+    </div>
   </div>
 </template>
