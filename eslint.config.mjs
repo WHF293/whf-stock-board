@@ -63,6 +63,13 @@ export default tseslint.config(
 
       // —— Vue ——
       'vue/multi-word-component-names': 'off',
+      /*
+       * 未注册组件卡口：模板里用了但没 import（或没全局注册）的组件，
+       * vue-tsc / vite build / 其余 lint 规则**全都查不出来**——运行时只打一条
+       * `Failed to resolve component` 的 Vue warn，UI 表现为「点了没反应」。
+       * 全局注册的 vue-router 组件用 ignorePattern 放行。
+       */
+      'vue/no-undef-components': ['error', { ignorePatterns: ['^Router(View|Link)$'] }],
       // v-html 仅用于 MenuIcon 的本地静态 SVG path 白名单，无用户输入
       'vue/no-v-html': 'off',
       'vue/max-attributes-per-line': 'off',

@@ -207,3 +207,143 @@ export const fetchThsHotNews = async (
     img: item.picUrl,
   }));
 };
+
+// ---------- 澎湃新闻 财经频道 ----------
+// 频道页 https://www.thepaper.cn/channel_25951 的 SSR HTML 里带 __NEXT_DATA__（首批 12 条），
+// 但页面**不通过 URL 翻页**：站内走 POST /contentapi/nodeCont/getByChannelId，
+// 且实测 pageNum / pageSize 之外真正生效的是 **startTime 游标**（上一页末条的毫秒时间戳），
+// pageNum 传任何值都返回同一批 → 必须按 startTime 逐页取。
+// ⚠️ 该接口只认 POST（GET 一律返回 code 99998「系统繁忙」），故 /stock-proxy 中间件需支持 POST 透传。
+// ⚠️ 列表条目**没有摘要字段**（无 summary/brief），summary 恒为空串，卡片侧按空串隐藏该行。
+
+/** 澎湃财经频道 ID（对应 www.thepaper.cn/channel_25951） */
+const THEPAPER_FINANCE_CHANNEL_ID = '25951';
+
+/** 澎湃频道列表接口（POST JSON） */
+const THEPAPER_LIST_API =
+  'https://api.thepaper.cn/contentapi/nodeCont/getByChannelId';
+
+/** 澎湃文章详情页前缀（详情页形如 /newsDetail_forward_<contId>） */
+const THEPAPER_DETAIL_BASE = 'https://www.thepaper.cn/newsDetail_forward_';
+
+/** 澎湃翻页结果（游标式） */
+export interface ThepaperNewsPage {
+  items: HotNewsItem[];
+  /** 下一页游标（本页 startTime 毫秒时间戳字符串；null 表示没有更多） */
+  nextCursor: string | null;
+}
+
+/** 澎湃列表接口原始条目（仅取渲染所需字段） */
+interface ThepaperRawItem {
+  contId: string;
+  name: string;
+  /** 毫秒时间戳（字符串或数字两种形态都有） */
+  pubTimeLong?: string | number;
+  /** "YYYY-MM-DD HH:mm:SS" 形态的发布时间（pubTimeLong 缺失时兜底） */
+  publishTime?: string;
+  /** 站外转载的原始链接（isOutForword 为 1 时才有值） */
+  link?: string;
+  /** 站外转载标记（实测为字符串 "0"/"1"） */
+  isOutForword?: string | number;
+  /**
+   * 内容类型：0 文章（频道内实测全为 0）
+   * ⚠️ 同一字段在 API JSON 里是**数字** 0、在页面内联 JSON（`__NEXT_DATA__`）里是**字符串** "0"，
+   * 故一律经 String() 归一化后比较，别直接与 '0' 相等比较（会把全部条目过滤掉）
+   */
+  contType?: string | number;
+  smallPic?: string;
+  pic?: string;
+  nodeInfo?: {
+    name?: string;
+  };
+}
+
+interface ThepaperResponse {
+  code: number;
+  desc?: string;
+  data?: {
+    hasNext?: boolean;
+    startTime?: number;
+    list?: ThepaperRawItem[];
+  };
+}
+
+/**
+ * 毫秒时间戳 / "YYYY-MM-DD HH:mm:SS" 文本统一转秒级时间戳字符串
+ * @param ms 毫秒时间戳（字符串或数字）
+ * @param text 时间文本（毫秒值缺失时兜底解析）
+ * @returns 秒级时间戳字符串（均不可解析时返回空串）
+ */
+const toSecondTimestamp = (
+  ms: string | number | undefined,
+  text?: string,
+): string => {
+  const value = Number(ms);
+  if (Number.isFinite(value) && value > 0) {
+    return String(Math.floor(value / 1000));
+  }
+  if (text) {
+    const parsed = new Date(text.replace(/-/g, '/')).getTime();
+    if (!Number.isNaN(parsed)) return String(Math.floor(parsed / 1000));
+  }
+  return '';
+};
+
+/**
+ * 拉取澎湃财经频道新闻（单页，startTime 游标翻页）
+ * @param cursor 翻页游标（首页传空串，其余传上一页返回的 nextCursor）
+ * @param num 单页条数（上游实测上限 20，调大无效）
+ * @returns 本页条目与下一页游标
+ */
+export const fetchThepaperHotNews = async (
+  cursor: string,
+  num = 20,
+): Promise<ThepaperNewsPage> => {
+  const body: Record<string, string | number> = {
+    channelId: THEPAPER_FINANCE_CHANNEL_ID,
+    pageNum: 1,
+    pageSize: num,
+  };
+  if (cursor) {
+    // 首页不传 startTime（传 0 会被当作时间戳边界）；后续页传上一页的游标毫秒值
+    body.startTime = cursor;
+  }
+  const response = await proxyFetch(THEPAPER_LIST_API, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Referer: 'https://www.thepaper.cn/',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(`澎湃新闻请求失败：${response.status}`);
+  }
+  const payload = (await response.json()) as ThepaperResponse;
+  if (payload.code !== 200 || !payload.data) {
+    throw new Error(`澎湃新闻业务异常：${payload.desc ?? payload.code}`);
+  }
+  const items = (payload.data.list ?? [])
+    // 仅保留图文文章（contType 非 0 的条目详情页 URL 规则不同，避免生成死链）；
+    // contType 在 API JSON 里是数字 0、在内联 JSON 里是字符串 "0"，统一归一化后比较
+    .filter((item) => String(item.contType ?? '0') === '0')
+    .map((item) => ({
+      oid: item.contId,
+      title: item.name,
+      // 上游列表无摘要字段（实测 key 全集里没有 summary/brief）
+      summary: '',
+      url:
+        String(item.isOutForword ?? '0') === '1' && item.link
+          ? item.link
+          : `${THEPAPER_DETAIL_BASE}${item.contId}`,
+      // pubTimeLong 为毫秒时间戳，统一转秒级与其余源口径一致
+      ctime: toSecondTimestamp(item.pubTimeLong, item.publishTime),
+      // 频道名（如「牛市点线面」「金改实验室」）比站点名更有信息量
+      media: item.nodeInfo?.name || '澎湃新闻',
+      img: item.smallPic || item.pic || '',
+    }));
+  const nextCursor = payload.data.hasNext
+    ? String(payload.data.startTime ?? '')
+    : null;
+  return { items, nextCursor: nextCursor || null };
+};

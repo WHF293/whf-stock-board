@@ -189,6 +189,15 @@ body {
   overflow: auto;
 }
 
+/*
+ * 板块日历矩阵（31 行 × N 列，div 网格非 table）：
+ * 比常规表格更高——常规 560px 只露约 9 行，31 个一级行业需要更多可视行数
+ */
+.board-calendar-scroll {
+  max-height: 760px;
+  overflow: auto;
+}
+
 /* 表头吸顶 */
 .table-scroll thead th,
 .table-scroll-sm thead th,

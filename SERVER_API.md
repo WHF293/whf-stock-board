@@ -8,8 +8,9 @@
 - **唯一出口**：所有 `fetch` 型请求都经 `src/api/proxy-fetch.ts`（`proxyFetch`）；`stock-sdk` 的 `fetchImpl` 也被注入为 `proxyFetch`（`src/api/sdk.ts`）。
   - 浏览器态：同源 `/stock-proxy?u=<encoded>` 由 `server/stock-proxy-middleware.ts` 转发。
   - Tauri 态：`tauri-plugin-http` 由 Rust 直连，域名白名单在 `src-tauri/capabilities/default.json`。
+  - **方法透传**：中间件除 GET 外也转发 `method` / 请求体 / `Content-Type`（澎湃列表接口只认 POST）；**非 GET 不参与 3 秒缓存**（同 URL 不同请求体结果不同，避免串味）。
 - **代理白名单**：`src/constants/proxy.constants.ts` 的 `STOCK_PROXY_ALLOWED_HOSTS`（后缀匹配）：
-  `eastmoney.com`、`gtimg.cn`、`sina.com.cn`、`sina.cn`、`sinajs.cn`、`10jqka.com.cn`、`cls.cn`、`linkdiary.cn`。
+  `eastmoney.com`、`gtimg.cn`、`sina.com.cn`、`sina.cn`、`sinajs.cn`、`10jqka.com.cn`、`thepaper.cn`、`cls.cn`、`linkdiary.cn`。
   新增域名需同步改这里（浏览器）与 capability（Tauri）。
 - **本机关键约束（踩坑结论，2026-09-14 实测复现）**：
   - ⚠️ **东财行情域 `push2his.eastmoney.com` 与 `push2.eastmoney.com` 在本机被 TCP 层封禁**（`fetch failed` / `UND_ERR_SOCKET`，即 AGENTS 里记的「东财封 IP」）。**带数字前缀的镜像域同样不可达**（实测 `1./13./45.push2his`、`1./7./20./45./91.push2` 全部失败）→ `stock-sdk` 的 `sdk.kline.*` / `sdk.batch.cn` 等走东财行情域的方法也随之失败。
@@ -18,7 +19,7 @@
   - **指数日 K 成交额因此改走腾讯** `web.ifzq.gtimg.cn/appstock/app/newfqkline/get`（见 §1 `fetchMarketTurnover`）。该域已在代理白名单 `gtimg.cn` 与 Tauri capability `https://*.gtimg.cn/*` 内，无需新增配置。
   - 新浪 `quotes.sina.cn` K 线**无成交金额字段**（仅 `volume` 成交量），且 `volume×收盘价` 对指数不成立（实测约为真实成交额的 235 倍），故成交额不依赖新浪推算。
   - 腾讯历史日 K：`appstock/app/kline/kline` 与 `appstock/app/fqkline/get` 只有 6 段（无成交额），**只有 `appstock/app/newfqkline/get` 返回成交额**（见 §1）。
-- **频率红线**：东财系高频会封 IP；全市场快照串行 `batchSize 500 / concurrency 1`，同上游连续请求 `delay(500)` 错峰，重接口（快照/K线/资金流/分时）一律用户点击触发、不轮询。
+- **频率红线**：东财系高频会封 IP；全市场快照小并发 `batchSize 500 / concurrency 3`（**上限 3**），同上游连续请求 `delay(500)` 错峰，重接口（快照/K线/资金流/分时）一律用户点击触发、不轮询。
 
 ---
 
@@ -30,6 +31,7 @@
 | `fetchSinaHotNews` | `api/news.api.ts` | `feed.mix.sina.com.cn/api/roll/get?pageid=153&lid=2516/2517` | GET | 新浪滚动热点（财经综合 2516 / 股市快讯 2517）。带 `Referer: finance.sina.com.cn` |
 | `fetchEastmoneyHotNews` | `api/news.api.ts` | `np-listapi.eastmoney.com/comm/web/getFastNewsList?client=web&biz=web_724&fastColumn=102` | GET | 东财 7×24 快讯，游标翻页（`sortEnd`）。无原文链接，点击跳 `so.eastmoney.com/news/s?keyword=` |
 | `fetchThsHotNews` | `api/news.api.ts` | `news.10jqka.com.cn/tapp/news/push/stock/?page=&limit=` | GET | 同花顺股市快讯。带 `Referer: 10jqka.com.cn` |
+| `fetchThepaperHotNews` | `api/news.api.ts` | `api.thepaper.cn/contentapi/nodeCont/getByChannelId` | **POST**(JSON) | 澎湃财经频道（`channel_25951`）。⚠️ 只认 POST（GET 返回 `code 99998`）；`pageNum` 被忽略，翻页游标是 **`startTime`**（上一页末条毫秒时间戳，`hasNext` 决定终止）；`pageSize` 上限 20；列表**无摘要字段**（`summary` 恒空）；时间取 `pubTimeLong`（毫秒→秒） |
 | `fetchMarketTurnover` | `api/turnover.api.ts` | `web.ifzq.gtimg.cn/appstock/app/newfqkline/get` | GET | **沪深两市成交额**。`param=<sh000001\|sz399001>,day,,,400,qfq`（日 K 前复权，最多 400 条），取每行**下标 8「成交额(万元)」×1e4 → 元**，两指数按交易日相加。带 `Referer: gu.qq.com`。⚠️ 行结构：`[日期,开,收,高,低,成交量(手),{},?,成交额(万元),…]`；`fqkline`/`kline` 两个老接口**没有**这一段，别混用 |
 | `fetchClist` / `fetchGlobalIndexPanorama` | `api/panorama.api.ts` | `push2delay.eastmoney.com/api/qt/clist/get` | GET | 行情全景：全球指数（`fs=m:100`）、A股板块等快照列表 |
 | `fetchUsSectorPanorama` | `api/panorama.api.ts` | `push2delay.eastmoney.com/api/qt/ulist.np/get` | GET | 美股行业 ETF（按 `secids` 精确查询） |
@@ -45,7 +47,7 @@
 | 封装函数 | 文件 | SDK 方法 | 上游域（实测） | 说明 |
 | --- | --- | --- | --- | --- |
 | `fetchFullQuotes` | `api/quotes.api.ts` | `sdk.quotes.cn(codes)` | 腾讯 | 批量实时行情（腾讯源），codes 为 `sh600519` 完整形态；指数卡、个股报价头 |
-| `fetchAllMarketQuotes` | `api/quotes.api.ts` | `sdk.batch.cn({batchSize:500,concurrency:1})` | 东财 clist | 全市场 A 股快照（涨跌分布/市场宽度）；串行分页约 11 页 |
+| `fetchAllMarketQuotes` | `api/quotes.api.ts` | `sdk.batch.cn({batchSize:500,concurrency:3})` | 东财 clist | 全市场 A 股快照（涨跌分布/市场宽度）；小并发分页约 11 页（4 轮） |
 | `fetchIndustryBoards` | `api/board.api.ts` | `sdk.board.industry.list()` | 东财 | 行业板块列表 |
 | `fetchConceptBoards` | `api/board.api.ts` | `sdk.board.concept.list()` | 东财 | 概念板块列表 |
 | `fetchIndustryConstituents` | `api/board.api.ts` | `sdk.board.industry.constituents(symbol)` | 东财 | 行业板块成分股（点击触发，重接口） |
@@ -84,7 +86,7 @@
 - **涨停与异动 `MarketMoodView`**：`fetchZtPool` · `fetchStockChanges` · `fetchBoardChanges`
 - **龙虎榜·大宗 `DragonTigerView`**：`fetchDragonTigerDetail` · `fetchBlockTradeDetail`
 - **选股器 `ScreenerView`**：`runScreener` · `runMaCrossBacktest` · 信号扫描 / 尾盘选股（`analysis.api`）
-- **热点新闻 `HotNewsView`**：`fetchSinaHotNews` · `fetchEastmoneyHotNews` · `fetchThsHotNews`
+- **热点新闻 `HotNewsView`**：`fetchSinaHotNews` · `fetchEastmoneyHotNews` · `fetchThsHotNews` · `fetchThepaperHotNews`
 - **个股详情（停靠面板）`StockDetailPanel`**：`fetchSinaKline`(K线) · `fetchTodayTimeline`(分时) · `fetchIndividualFundFlow` · `fetchKlineWithIndicators` · `fetchKlineSignals`
 - **搜索**：`searchStocks`
 
@@ -97,4 +99,5 @@
 2. **新域名 403 FORBIDDEN_TARGET**：补 `proxy.constants.ts` 白名单（浏览器）+ capability scope（Tauri）。
 3. **403 / 空数据**：检查 `Referer`（新浪/同花顺需带），或上游换了字段（参考 `.ai/` 下的新浪接口文档、新浪新闻接口文档）。
 4. **JSONP 源乱码**：确保 `proxyFetch` 按 `arrayBuffer` 透传、腾讯源由 SDK 按 GBK 解码，不要自行转码。
-5. **封 IP**：东财高频 → 全域名 TCP RST 数十分钟；严格串行/错峰/不轮询重接口。
+5. **封 IP**：东财高频 → 全域名 TCP RST 数十分钟；重接口严格错峰、低并发（≤3）、不轮询。
+6. **境外财经站（已评估否决，勿重复尝试）**：**华尔街日报中文版 `cn.wsj.com` 不可接入**——境内 DNS 污染（解析到 108.160.169.55 / 31.13.69.245 等无关段）+ TCP 443 全超时；走本机代理（Clash 7897）或 DoH 取真实 Akamai IP 后，仍被 **DataDome 反爬**挡回 `401`（响应含 `set-cookie: datadome=…`，正文是「Please enable JS and disable any ad blocker」）→ **纯 HTTP 抓取永远拿不到 HTML，必须能执行 JS 的真浏览器**；存档站 `archive.org` 整域不可达，三方中转（allorigins / corsproxy / codetabs / r.jina.ai）全灭；WSJ 官方 RSS（`feeds.a.dj.com`）**已停更**（冻结在 2025-01-27）。同集团 MarketWatch 的 `feeds.content.dowjones.io/public/rss/mw_topstories`、`mw_bulletins` 实测**实时可达**（英文），是唯一可用的道琼斯系替代源。财联社 `www.cls.cn` 同理：站点下发 Next.js 壳、正文靠客户端再拉，需 `sign = md5(sha1(sortedQuery))`，暂缓。

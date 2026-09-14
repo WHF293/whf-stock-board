@@ -488,7 +488,7 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
 
       <!-- 大盘资金流（近10日）：曲线 / 列表 -->
       <BaseCard
-        title="大盘资金流（近10日）"
+        title="主力净流入（近10日）"
         class="min-w-[500px] flex-1 basis-[calc(50%-0.5rem)]"
       >
         <template #extra>

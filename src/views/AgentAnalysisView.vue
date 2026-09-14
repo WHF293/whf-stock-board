@@ -1,69 +1,83 @@
 <script setup lang="ts">
+import { onMounted, ref } from 'vue';
+import { isTauri } from '@tauri-apps/api/core';
+import { useAgentStore } from '@/stores/agent';
+import type { AgentManagerKey } from '@/types/agent.types';
+import AgentSidebar from '@/components/agent/AgentSidebar.vue';
+import ChatPanel from '@/components/agent/ChatPanel.vue';
+import ModelManageModal from '@/components/agent/ModelManageModal.vue';
+import SkillManageModal from '@/components/agent/SkillManageModal.vue';
+import McpManageModal from '@/components/agent/McpManageModal.vue';
+import AgentProfileManageModal from '@/components/agent/AgentProfileManageModal.vue';
+
 /**
- * Agent 分析（占位页）
+ * Agent 分析页（方案 §4：页面级双栏布局）
  *
- * 当前为占位实现：居中展示占位插画 + 说明文案，页面骨架预留给后续
- * 接入 deepagents 实现的「本地 Agent」分析能力（自选标的诊断、板块
- * 联动解读、策略建议等）。路由与左侧导航已就位，后续替换 <section>
- * 内部实现即可，无需改动路由与菜单。
+ * - 浏览器端整页降级提示（Agent 运行时依赖 Tauri：SQLite / http fetch / fs）；
+ * - 左栏 AgentSidebar（新建对话 + 管理入口 + 会话树）+ 右侧 ChatPanel；
+ * - 四个管理弹窗（Skills / MCP / Model / Agents）均为真 CRUD 落库。
  */
+const store = useAgentStore();
+
+/** 当前 Tauri 环境（模块级判定即可，运行中不会切换） */
+const tauriAvailable = isTauri();
+
+/** 打开中的管理弹窗 key（null 关闭） */
+const openManager = ref<AgentManagerKey | null>(null);
+
+/**
+ * 关闭管理弹窗（BaseModal @update:open 回调）
+ * @param value false = 请求关闭
+ */
+const onManagerOpenChange = (value: boolean): void => {
+  if (!value) openManager.value = null;
+};
+
+onMounted(() => {
+  if (tauriAvailable) {
+    void store.init();
+  }
+});
 </script>
 
 <template>
-  <section
-    class="flex min-h-[calc(100dvh-12rem)] flex-col items-center justify-center px-4 text-center"
+  <!-- 浏览器端降级提示 -->
+  <div
+    v-if="!tauriAvailable"
+    class="flex h-[calc(100dvh-6.5rem)] items-center justify-center rounded-2xl border border-flat-weak bg-surface"
   >
-    <!-- 占位插画：本地 Agent 概念图（内联 SVG，跟随主题 currentColor） -->
-    <div
-      class="mb-8 flex h-40 w-40 items-center justify-center rounded-3xl border border-flat-weak bg-flat-weak/30"
-    >
-      <svg
-        width="112"
-        height="112"
-        viewBox="0 0 120 120"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="3"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        class="text-primary"
-        aria-hidden="true"
-      >
-        <!-- 机器人头部 -->
-        <rect x="28" y="40" width="64" height="48" rx="10" />
-        <!-- 天线 -->
-        <path d="M60 40V26" />
-        <circle cx="60" cy="20" r="5" />
-        <!-- 双眼 -->
-        <circle cx="46" cy="62" r="5" />
-        <circle cx="74" cy="62" r="5" />
-        <!-- 嘴 -->
-        <path d="M44 80h32" />
-        <!-- 底座连接线（暗示本地运行） -->
-        <path d="M60 88v14" />
-        <rect x="40" y="102" width="40" height="8" rx="4" />
-      </svg>
+    <div class="max-w-sm text-center">
+      <p class="text-base font-medium text-text">Agent 分析仅 Tauri 桌面端可用</p>
+      <p class="mt-2 text-sm text-text-tertiary">
+        对话数据本地 SQLite、模型直连与 Skills 文件系统均依赖桌面端能力
+      </p>
     </div>
+  </div>
 
-    <h2 class="text-2xl font-semibold text-text">Agent 分析</h2>
-    <p class="mt-3 max-w-md text-sm text-text-secondary">
-      本地智能体分析即将上线。本页面为占位实现，后续将接入
-      <span class="font-medium text-text">deepagents</span>
-      实现的本地 Agent，提供标的诊断、板块联动解读与策略建议等能力。
-    </p>
+  <!-- 桌面端：页面级双栏（定高卡片：撑满可视区，输入框始终贴底） -->
+  <div
+    v-else
+    class="flex h-[calc(100dvh-6.5rem)] min-h-0 overflow-hidden rounded-2xl border border-flat-weak bg-surface shadow-sm"
+  >
+    <AgentSidebar @open-manager="openManager = $event" />
+    <ChatPanel @open-manager="openManager = $event" />
 
-    <!-- 待接入能力清单（占位提示，后续实现时移除） -->
-    <ul
-      class="mt-8 grid max-w-lg grid-cols-1 gap-3 text-left text-sm text-text-tertiary sm:grid-cols-2"
-    >
-      <li class="rounded-xl border border-flat-weak px-4 py-3">自选标的智能诊断</li>
-      <li class="rounded-xl border border-flat-weak px-4 py-3">板块联动与资金解读</li>
-      <li class="rounded-xl border border-flat-weak px-4 py-3">盘面异动自动归因</li>
-      <li class="rounded-xl border border-flat-weak px-4 py-3">个性化策略建议</li>
-    </ul>
-
-    <p class="mt-8 text-xs text-text-tertiary">
-      路由与左侧导航已就位，仅等待本地 Agent 能力接入
-    </p>
-  </section>
+    <!-- 管理弹窗（Skills / MCP / Model / Agents） -->
+    <ModelManageModal
+      :open="openManager === 'model'"
+      @update:open="onManagerOpenChange"
+    />
+    <SkillManageModal
+      :open="openManager === 'skills'"
+      @update:open="onManagerOpenChange"
+    />
+    <McpManageModal
+      :open="openManager === 'mcp'"
+      @update:open="onManagerOpenChange"
+    />
+    <AgentProfileManageModal
+      :open="openManager === 'agents'"
+      @update:open="onManagerOpenChange"
+    />
+  </div>
 </template>

@@ -1,6 +1,10 @@
 import { defineStore } from 'pinia';
 import { HEATMAP_TOP_DEFAULT } from '../constants/index-symbols.constants';
 import { HEATMAP_VIEW_MODE_DEFAULT } from '../constants/heatmap.constants';
+import {
+  BOARD_CALENDAR_HEAT_BASIS_DEFAULT,
+  BOARD_CALENDAR_RANGE_DEFAULT,
+} from '../constants/board-calendar.constants';
 import { STORAGE_NS_SETTINGS } from '../constants/storage-key.constants';
 import { appStorage } from '../utils/app-local-storage';
 import { REFRESH_INTERVAL_DEFAULT } from '../constants/polling.constants';
@@ -14,6 +18,8 @@ import { MENU_DEFAULT_ORDER } from '../constants/router-meta.constants';
 import { PANORAMA_CN_VIEW_MODE_DEFAULT } from '../constants/panorama.constants';
 import type { HeatmapViewMode } from '../types/heatmap.types';
 import type { PanoramaCnViewMode } from '../constants/panorama.constants';
+import type { BoardCalendarHeatBasis, BoardCalendarRange } from '../types/board-calendar.types';
+import { BOARD_DEFAULT_ORDER, normalizeBoardHidden, normalizeBoardOrder } from '../utils/board-order';
 
 /** 设置 store 状态 */
 interface SettingsState {
@@ -37,6 +43,14 @@ interface SettingsState {
   trendTheme: TrendTheme;
   /** 全局水印开关（默认开启） */
   watermarkEnabled: boolean;
+  /** 板块日历 · 热门口径（决定行的排序） */
+  boardCalendarHeatBasis: BoardCalendarHeatBasis;
+  /** 板块日历 · 展示范围（交易日列数） */
+  boardCalendarRange: BoardCalendarRange;
+  /** 板块日历 · 板块列顺序（31 个代码的完整排列；等于默认序表示「按热门口径自动排序」） */
+  boardCalendarOrder: string[];
+  /** 板块日历 · 未勾选的板块代码（不在表格中渲染） */
+  boardCalendarHidden: string[];
 }
 
 /**
@@ -54,6 +68,10 @@ export const useSettingsStore = defineStore('settings', {
     themeColor: THEME_COLOR_DEFAULT,
     trendTheme: TREND_THEME_DEFAULT,
     watermarkEnabled: WATERMARK_ENABLED_DEFAULT,
+    boardCalendarHeatBasis: BOARD_CALENDAR_HEAT_BASIS_DEFAULT,
+    boardCalendarRange: BOARD_CALENDAR_RANGE_DEFAULT,
+    boardCalendarOrder: [...BOARD_DEFAULT_ORDER],
+    boardCalendarHidden: [],
   }),
 
   actions: {
@@ -145,6 +163,40 @@ export const useSettingsStore = defineStore('settings', {
     /** 重置左侧导航顺序为默认（MENU_ITEMS 声明顺序） */
     resetMenuOrder(): void {
       this.menuOrder = [...MENU_DEFAULT_ORDER];
+    },
+
+    /**
+     * 设置板块日历 · 热门口径
+     * @param basis 热门口径（取值须为 BOARD_CALENDAR_HEAT_BASIS 中的值）
+     */
+    setBoardCalendarHeatBasis(basis: BoardCalendarHeatBasis): void {
+      this.boardCalendarHeatBasis = basis;
+    },
+
+    /**
+     * 设置板块日历 · 展示范围
+     * @param range 展示范围（取值须为 BOARD_CALENDAR_RANGE 中的值）
+     */
+    setBoardCalendarRange(range: BoardCalendarRange): void {
+      this.boardCalendarRange = range;
+    },
+
+    /**
+     * 设置板块日历 · 板块列（顺序 + 未勾选项）
+     *
+     * 顺序等于默认序时表示未自定义行序，表格回到「按热门口径自动排序」。
+     * @param order 列顺序（入库前归一化：丢未知、去重、补缺失到末尾）
+     * @param hidden 未勾选的板块代码
+     */
+    setBoardCalendarColumns(order: string[], hidden: string[]): void {
+      this.boardCalendarOrder = normalizeBoardOrder(order);
+      this.boardCalendarHidden = normalizeBoardHidden(hidden);
+    },
+
+    /** 重置板块日历 · 板块列（全部勾选 + 默认顺序 = 恢复按热门口径自动排序） */
+    resetBoardCalendarColumns(): void {
+      this.boardCalendarOrder = [...BOARD_DEFAULT_ORDER];
+      this.boardCalendarHidden = [];
     },
   },
 

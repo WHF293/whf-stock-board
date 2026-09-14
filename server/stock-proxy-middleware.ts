@@ -58,11 +58,27 @@ const isAllowedTarget = (rawUrl: string): boolean => {
 };
 
 /**
+ * 读取并拼接请求体（非 GET 请求透传用）
+ * @param req 入站请求流
+ * @returns 请求体字节
+ */
+const readRequestBody = (req: Connect.IncomingMessage): Promise<Buffer> =>
+  new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on('data', (chunk: Buffer) => chunks.push(chunk));
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
+
+/**
  * 创建 /stock-proxy 中间件：白名单校验 -> 缓存回放 -> 转发上游（Referer 伪装与超时控制）
  *
  * 响应体按原始字节透传、Content-Type 原样回写：
  * SDK 对腾讯源固定按 GBK 解码字节、对 JSON 源按 UTF-8 解析，
  * 中间件做任何转码都会破坏其预期
+ *
+ * 方法透传：GET 之外的请求（如澎湃列表接口只认 POST）原样转发 method / 请求体 /
+ * Content-Type；非 GET 请求**不读写缓存**（同 URL 不同请求体结果不同，缓存会串味）
  * @returns Connect 兼容中间件
  */
 export const createStockProxyMiddleware = (): Connect.NextHandleFunction => {
@@ -76,13 +92,16 @@ export const createStockProxyMiddleware = (): Connect.NextHandleFunction => {
       return;
     }
 
+    const method = (req.method ?? 'GET').toUpperCase();
+    const isReadOnly = method === 'GET';
+
     // 调用方可经 ?r= 指定上游 Referer（浏览器 forbidden header 无法经头透传）；
     // 缓存键包含 referer，避免同 URL 不同 Referer 的响应串味
     const customReferer = requestUrl.searchParams.get('r');
     const cacheKey = customReferer ? `${target}|r=${customReferer}` : target;
 
-    // 短 TTL 命中：直接回放缓存，不打上游
-    const hit = cache.get(cacheKey);
+    // 短 TTL 命中：直接回放缓存，不打上游（仅 GET 参与缓存）
+    const hit = isReadOnly ? cache.get(cacheKey) : undefined;
     if (hit && hit.expiresAt > Date.now()) {
       res.setHeader('Content-Type', hit.contentType);
       res.end(hit.body);
@@ -93,18 +112,25 @@ export const createStockProxyMiddleware = (): Connect.NextHandleFunction => {
       // 部分上游（东财/新浪系）校验 Referer：默认伪装为目标域页面请求，
       // 调用方显式指定（?r=）时优先使用（如新浪新闻要求 finance.sina.com.cn）；带通用 UA
       const referer = customReferer ?? new URL(target).origin;
+      const contentType = req.headers['content-type'];
       const upstream = await fetch(target, {
-        headers: { Referer: referer, 'User-Agent': BROWSER_USER_AGENT },
+        method,
+        headers: {
+          Referer: referer,
+          'User-Agent': BROWSER_USER_AGENT,
+          ...(contentType ? { 'Content-Type': contentType } : {}),
+        },
+        body: isReadOnly ? undefined : await readRequestBody(req),
         signal: AbortSignal.timeout(PROXY_TIMEOUT_MS),
       });
       const body = new Uint8Array(await upstream.arrayBuffer());
-      const contentType = upstream.headers.get('content-type') ?? 'text/plain; charset=utf-8';
+      const responseType = upstream.headers.get('content-type') ?? 'text/plain; charset=utf-8';
       // 仅缓存成功响应，失败不缓存以便快速恢复
-      if (upstream.ok) {
-        setCacheEntry(cacheKey, { body, contentType, expiresAt: Date.now() + PROXY_CACHE_TTL_MS });
+      if (upstream.ok && isReadOnly) {
+        setCacheEntry(cacheKey, { body, contentType: responseType, expiresAt: Date.now() + PROXY_CACHE_TTL_MS });
       }
       res.statusCode = upstream.status;
-      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Type', responseType);
       res.end(body);
     } catch (error) {
       res.statusCode = 502;

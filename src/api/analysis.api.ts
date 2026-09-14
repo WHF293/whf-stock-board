@@ -266,7 +266,7 @@ export const analyzeEodStocks = async (
 ): Promise<EodStock[]> => {
   options?.onProgress?.({ stage: '获取行情数据', completed: 0, total: 0 });
 
-  // 治理过的全市场快照（串行分页，避免触发上游反爬）
+  // 治理过的全市场快照（小并发分页，避免触发上游反爬）
   const quotes = await fetchAllMarketQuotes();
   const candidates = filterEodQuotes(quotes, filters);
 

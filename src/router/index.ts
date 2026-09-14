@@ -6,11 +6,11 @@ import { ROUTE_PATH, MENU_ITEMS } from '../constants/router-meta.constants';
 import DashboardView from '../views/DashboardView.vue';
 import WatchlistView from '../views/WatchlistView.vue';
 import PanoramaView from '../views/PanoramaView.vue';
+import BoardCalendarView from '../views/BoardCalendarView.vue';
 import MarketMoodView from '../views/MarketMoodView.vue';
 import ScreenerView from '../views/ScreenerView.vue';
 import HotNewsView from '../views/HotNewsView.vue';
 import StockAccountView from '../views/StockAccountView.vue';
-import TradeImportView from '../views/TradeImportView.vue';
 import AgentAnalysisView from '../views/AgentAnalysisView.vue';
 import MarketRankView from '../views/MarketRankView.vue';
 import SettingsView from '../views/SettingsView.vue';
@@ -52,6 +52,11 @@ const routes = [
         component: PanoramaView,
         meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.PANORAMA] },
       },
+      {
+        path: ROUTE_PATH.BOARD_CALENDAR,
+        component: BoardCalendarView,
+        meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.BOARD_CALENDAR] },
+      },
       // 资金动向已并入市场榜单（旧路径重定向）
       { path: '/funds', redirect: ROUTE_PATH.MARKET_RANK },
       {
@@ -77,11 +82,8 @@ const routes = [
         component: StockAccountView,
         meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.STOCK_ACCOUNT] },
       },
-      {
-        path: ROUTE_PATH.TRADE_IMPORT,
-        component: TradeImportView,
-        meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.TRADE_IMPORT] },
-      },
+      // 交割单导入已并入股票账户页（历史收藏 / 旧路径兼容）
+      { path: '/trade-import', redirect: ROUTE_PATH.STOCK_ACCOUNT },
       {
         path: ROUTE_PATH.AGENT_ANALYSIS,
         component: AgentAnalysisView,

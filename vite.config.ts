@@ -11,10 +11,20 @@ export default defineConfig({
   base: '/',
   plugins: [tailwindcss(), vue(), stockProxyPlugin()],
   resolve: {
-    alias: {
+    alias: [
+      /**
+       * 浏览器端把 Node 内置 `path` 换成 POSIX 垫片：
+       * deepagents（浏览器入口）→ micromatch → picomatch 会在模块顶层读
+       * `path.sep`，否则 Vite 会按 node 内置外部化并报控制台错误、取到 undefined。
+       * 正则精确匹配，避免误伤 `path-browserify` 之类的裸模块名。
+       */
+      {
+        find: /^path$/,
+        replacement: fileURLToPath(new URL('./src/utils/path-shim.ts', import.meta.url)),
+      },
       /** @ 指向 src 目录，业务代码统一用 @/xxx 导入 */
-      '@': fileURLToPath(new URL('./src', import.meta.url)),
-    },
+      { find: '@', replacement: fileURLToPath(new URL('./src', import.meta.url)) },
+    ],
   },
   build: {
     rollupOptions: {
