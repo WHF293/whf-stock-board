@@ -254,8 +254,10 @@ const openDetail = (code: string): void => {
 </script>
 
 <template>
-  <div class="space-y-4">
+  <div class="flex min-h-0 flex-col gap-4">
     <BaseCard
+      fill
+      class="min-h-0 flex-1"
       :title="`${activeTab === 'industry' ? '行业' : '概念'}板块排行（命中 ${sortedBoardsFull.length} / 共 ${boards.length} 个）`"
     >
       <template #extra>
@@ -273,8 +275,8 @@ const openDetail = (code: string): void => {
         </div>
       </template>
 
-      <!-- 涨跌统计 + 筛选（列表 / 平铺共用） -->
-      <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+      <!-- 涨跌统计 + 筛选（列表 / 平铺共用；固定高度，把剩余空间让给下方列表） -->
+      <div class="mb-3 flex shrink-0 flex-wrap items-center justify-between gap-3">
         <div class="grid grid-cols-4 gap-2">
           <div class="rounded-lg bg-up-weak px-3 py-1.5">
             <p class="text-[10px] text-text-tertiary">涨幅&gt;3%</p>
@@ -313,7 +315,7 @@ const openDetail = (code: string): void => {
       <!-- 平铺网格（与美股全景一致：板块名 + 涨跌幅；高度同列表，名称不可点击） -->
       <div
         v-else-if="isTileMode && sortedBoardsFull.length > 0"
-        class="table-scroll"
+        class="table-scroll-fill"
       >
         <div class="grid grid-cols-4 gap-2">
           <div
@@ -335,7 +337,9 @@ const openDetail = (code: string): void => {
           </div>
         </div>
       </div>
-      <div v-else-if="sortedBoardsFull.length > 0">
+      <!-- 列表：撑满卡片剩余高度（外层 div 是 flex 子项，必须自己也是 flex 列，
+           否则表格的 flex:1 被普通块级父级吃掉，高度会退化成内容高） -->
+      <div v-else-if="sortedBoardsFull.length > 0" class="flex min-h-0 flex-1 flex-col">
         <BaseTable
           :columns="boardColumns"
           :rows="sortedBoards"
@@ -343,7 +347,7 @@ const openDetail = (code: string): void => {
           min-width="760px"
           expandable
           :expanded-keys="expandedBoardCodes"
-          scroll-class="table-scroll-xs"
+          scroll-class="table-scroll-fill"
           :footer-text="
             boardsHasMore
               ? `已展示 ${sortedBoards.length} / 共 ${boardsTotal}，继续滚动加载更多`

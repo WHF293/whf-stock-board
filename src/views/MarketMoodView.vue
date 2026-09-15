@@ -33,9 +33,9 @@ const dragonTab = computed<'dragon-tiger' | 'block-trade'>(() =>
 </script>
 
 <template>
-  <div class="space-y-4">
+  <div class="flex h-[calc(100dvh-6.5rem)] min-h-0 flex-col gap-4">
     <!-- 页面级切换（与行情全景一致的 underline 风格） -->
-    <div class="flex items-center justify-between gap-2">
+    <div class="flex shrink-0 items-center justify-between gap-2">
       <div class="flex items-center gap-1">
         <BaseTabs v-model="activeTab" :options="moodTabOptions" variant="underline" />
         <TabConfigButton page-id="market-mood" :options="MOOD_TAB_OPTIONS" />
@@ -44,12 +44,12 @@ const dragonTab = computed<'dragon-tiger' | 'block-trade'>(() =>
     </div>
 
     <!-- 涨停（连板梯队 + 股池） -->
-    <MarketEventView v-if="activeTab === 'event'" mode="zt" />
+    <MarketEventView v-if="activeTab === 'event'" mode="zt" class="min-h-0 flex-1" />
 
     <!-- 异动（盘口异动 + 板块异动） -->
-    <MarketEventView v-else-if="activeTab === 'events'" mode="events" />
+    <MarketEventView v-else-if="activeTab === 'events'" mode="events" class="min-h-0 flex-1" />
 
     <!-- 龙虎榜 / 大宗交易（受控视图） -->
-    <DragonTigerView v-else v-model="dragonTab" />
+    <DragonTigerView v-else v-model="dragonTab" class="min-h-0 flex-1" />
   </div>
 </template>

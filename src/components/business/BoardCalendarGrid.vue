@@ -19,7 +19,7 @@ import { getBoardBucketBackground, getBoardBucketTextColor } from '../../utils/b
 /**
  * 板块日历矩阵
  *
- * 结构：横向滚动容器（复用 theme.css 的 .board-calendar-scroll 提供 max-height + overflow）
+ * 结构：横向滚动容器（theme.css 提供 max-height / flex 撑高 + overflow）
  * 内为「表头行 + N 个数据行」（N 由「板块过滤器」的勾选决定），每行为 flex：
  * 吸左首列（sticky left）+ 前置 spacer + 可视列（横向虚拟化）+ 尾部 spacer。
  *
@@ -33,7 +33,13 @@ import { getBoardBucketBackground, getBoardBucketTextColor } from '../../utils/b
 const props = defineProps<{
   /** 矩阵数据（行已按热门口径降序，日期降序） */
   matrix: BoardCalendarMatrix;
-  /** 滚动容器类（默认 .board-calendar-scroll：max-height 760px + overflow auto） */
+  /**
+   * 滚动容器类
+   *
+   * - 默认 `.board-calendar-scroll`：固定 max-height 760px 截断
+   * - 板块日历页传 `.board-calendar-fill`：撑满卡片剩余高度
+   *   （页面根部定高 → BaseCard fill → 本容器，链路上每层都要 min-h-0）
+   */
   scrollClass?: string;
 }>();
 

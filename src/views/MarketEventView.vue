@@ -195,9 +195,13 @@ const openDetail = (code: string): void => {
 </script>
 
 <template>
-  <div class="space-y-4">
-    <!-- 连板梯队 -->
-    <BaseCard v-if="mode === 'zt' && activePool === 'zt' && ladder.length > 0" title="连板梯队">
+  <div class="flex min-h-0 flex-col gap-4">
+    <!-- 连板梯队（内容高固定，剩余高度全部留给股池表） -->
+    <BaseCard
+      v-if="mode === 'zt' && activePool === 'zt' && ladder.length > 0"
+      title="连板梯队"
+      class="shrink-0"
+    >
       <div class="flex flex-wrap items-center gap-2">
         <span
           v-for="[count, num] in ladder"
@@ -211,18 +215,20 @@ const openDetail = (code: string): void => {
     </BaseCard>
 
     <!-- 股池 -->
-    <BaseCard v-if="mode === 'zt'" title="股池">
+    <BaseCard v-if="mode === 'zt'" title="股池" fill class="min-h-0 flex-1">
       <template #extra>
         <BaseTabs v-model="activePool" :options="ZT_POOL_OPTIONS" />
       </template>
       <div v-if="isPoolLoading && poolItems.length === 0"><BaseSkeleton /></div>
-      <div v-else-if="poolItems.length > 0">
+      <!-- 股池列表：撑满卡片剩余高度（外层 div 是 flex 子项，自身也要是 flex 列，
+           否则表格的 flex:1 被普通块级父级吃掉，高度会退化成内容高） -->
+      <div v-else-if="poolItems.length > 0" class="flex min-h-0 flex-1 flex-col">
         <BaseTable
           :columns="poolColumns"
           :rows="visiblePoolItems"
           :row-key="(item) => item.code"
           min-width="720px"
-          scroll-class="table-scroll-xs"
+          scroll-class="table-scroll-fill"
           row-clickable
           :footer-text="poolHasMore ? `已展示 ${visiblePoolItems.length} / 共 ${poolTotal}，继续滚动加载更多` : undefined"
           @row-click="(item) => openDetail(item.code)"
@@ -276,11 +282,14 @@ const openDetail = (code: string): void => {
       <BaseEmpty v-else text="股池暂无数据" />
     </BaseCard>
 
-    <div v-if="mode === 'events'" class="grid grid-cols-2 gap-4">
+    <div v-if="mode === 'events'" class="grid min-h-0 flex-1 grid-cols-2 gap-4">
       <!-- 盘口异动 -->
-      <BaseCard title="盘口异动">
+      <BaseCard title="盘口异动" fill class="min-h-0">
         <div v-if="isEventsLoading && stockChanges.length === 0"><BaseSkeleton /></div>
-        <ul v-else-if="stockChanges.length > 0" class="max-h-80 space-y-1 overflow-y-auto text-sm">
+        <ul
+          v-else-if="stockChanges.length > 0"
+          class="min-h-0 flex-1 space-y-1 overflow-y-auto text-sm"
+        >
           <li
             v-for="(change, index) in stockChanges.slice(0, STOCK_CHANGE_MAX_ITEMS)"
             :key="`${change.time}-${change.code}-${index}`"
@@ -313,14 +322,14 @@ const openDetail = (code: string): void => {
       </BaseCard>
 
       <!-- 板块异动 -->
-      <BaseCard title="板块异动">
+      <BaseCard title="板块异动" fill class="min-h-0">
         <div v-if="isEventsLoading && boardChanges.length === 0"><BaseSkeleton /></div>
         <BaseTable
           v-else-if="boardChanges.length > 0"
           :columns="boardChangeColumns"
           :rows="boardChanges"
           :row-key="(board) => board.name"
-          scroll-class="table-scroll-sm"
+          scroll-class="table-scroll-fill"
           min-width="420px"
         >
           <template #name="{ row }">

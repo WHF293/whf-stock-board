@@ -21,6 +21,9 @@ import type { BoardColumnSelection } from '../../types/board-calendar.types';
  *   这样才能区分「用户主动取消勾选」与「新版本新增的板块」。
  * - 拖拽用 `handle` 限定在手柄上，勾选框点击不受影响；
  *   `force-fallback` 是必须的（Tauri WebView 下原生 HTML5 DnD 不触发 drop）。
+ * - 板块池已 36 个，单列拖拽行程过长，故列表用**两列栅格**（`grid-cols-2`）：
+ *   顺序即 DOM 顺序（逐行从左到右），拖拽的行序语义与单列完全一致，
+ *   只是每行并排两个 —— 因此弹窗宽度同步放宽到 `max-w-xl` 保证每格信息不挤压。
  */
 
 const props = defineProps<{
@@ -123,7 +126,7 @@ const TOOL_BTN_CLASS =
 </script>
 
 <template>
-  <BaseModal v-model:open="open" title="板块过滤器" max-width-class="max-w-md">
+  <BaseModal v-model:open="open" title="板块过滤器" max-width-class="max-w-xl">
     <p class="mb-3 text-xs text-text-tertiary">
       勾选要在表格中显示的板块，拖拽手柄调整行序（拖拽后表格按此顺序渲染）；点击「确认」保存并记住。
     </p>
@@ -145,12 +148,12 @@ const TOOL_BTN_CLASS =
     </div>
 
     <!-- 列表表头（给右侧数值一个标签，避免只看到裸数字） -->
-    <div class="mb-1 flex items-center justify-between px-2.5 text-[10px] text-text-tertiary">
-      <span>拖拽手柄调整行序 · 勾选框控制是否显示</span>
+    <div class="mb-1 flex items-center justify-between px-2 text-[10px] text-text-tertiary">
+      <span>拖拽手柄调整行序（逐行从左到右）· 勾选框控制是否显示</span>
       <span>{{ heatLabel }}</span>
     </div>
 
-    <!-- 勾选 + 拖拽列表 -->
+    <!-- 勾选 + 拖拽列表（两列栅格，缩短拖拽行程；DOM 顺序 = 逐行从左到右 = 表格行序） -->
     <VueDraggable
       v-model="draftOrder"
       tag="ul"
@@ -160,12 +163,12 @@ const TOOL_BTN_CLASS =
       fallback-class="sortable-fallback"
       ghost-class="opacity-40"
       chosen-class="bg-flat-weak"
-      class="space-y-1"
+      class="grid grid-cols-2 gap-1.5"
     >
       <li
         v-for="code in draftOrder"
         :key="code"
-        class="flex select-none items-center gap-2.5 rounded-lg border border-flat-weak px-2.5 py-1.5 text-sm"
+        class="flex min-w-0 select-none items-center gap-2 rounded-lg border border-flat-weak px-2 py-1.5 text-sm"
       >
         <MenuIcon
           name="grip"

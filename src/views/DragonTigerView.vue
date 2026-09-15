@@ -267,16 +267,16 @@ const openDetail = (code: string): void => {
 </script>
 
 <template>
-  <div class="space-y-4">
+  <div class="flex min-h-0 flex-col gap-4">
     <!-- 视图切换：龙虎榜 / 大宗交易（父级页面接管时不渲染） -->
-    <div v-if="showViewTabs" class="flex items-center justify-between gap-2">
+    <div v-if="showViewTabs" class="flex shrink-0 items-center justify-between gap-2">
       <div class="flex items-center gap-1">
         <BaseTabs v-model="activeTab" :options="viewTabOptions" variant="underline" />
         <TabConfigButton page-id="dragon-tiger" :options="VIEW_TAB_OPTIONS" />
       </div>
       <span class="text-xs text-text-tertiary">近 7 日数据 · 按日期下拉切换</span>
     </div>
-    <BaseCard>
+    <BaseCard fill class="min-h-0 flex-1">
       <!-- 龙虎榜 -->
       <template v-if="activeTab === 'dragon-tiger'">
         <div v-if="isDragonLoading"><BaseSkeleton /></div>
@@ -284,7 +284,7 @@ const openDetail = (code: string): void => {
           <BaseEmpty text="龙虎榜数据加载失败，请稍后重试" />
         </div>
         <template v-else-if="dragonItems.length > 0">
-          <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div class="mb-3 flex shrink-0 flex-wrap items-center justify-between gap-2">
             <div>
               <span class="text-xs text-text-tertiary mr-2">上榜日期</span>
               <select
@@ -309,12 +309,13 @@ const openDetail = (code: string): void => {
               />
             </div>
           </div>
-          <div @scroll="onDragonScroll">
+          <div class="flex min-h-0 flex-1 flex-col">
             <BaseTable
               :columns="dragonColumns"
               :rows="dragonRows"
               :row-key="(item) => `${item.date}-${item.code}`"
               min-width="820px"
+              scroll-class="table-scroll-fill"
               row-clickable
               :footer-text="
                 dragonHasMore
@@ -322,6 +323,7 @@ const openDetail = (code: string): void => {
                   : undefined
               "
               @row-click="(item) => openDetail(item.code)"
+              @scroll="onDragonScroll"
               :enable-dblclick-nav="true"
               @row-dblclick="(item) => openPage(item.code, toContextList(dragonRowsFull, (row) => row.code, (row) => row.close))"
             >
@@ -399,7 +401,7 @@ const openDetail = (code: string): void => {
           <BaseEmpty text="大宗交易数据加载失败，请稍后重试" />
         </div>
         <template v-else-if="blockItems.length > 0">
-          <div class="mb-3 flex items-center gap-2">
+          <div class="mb-3 flex shrink-0 items-center gap-2">
             <span class="text-xs text-text-tertiary">交易日期</span>
             <select
               v-model="blockDate"
@@ -415,12 +417,13 @@ const openDetail = (code: string): void => {
             </select>
             <span class="text-xs text-text-tertiary">共 {{ blockRows.length }} 笔（总 {{ blockTotal }}）</span>
           </div>
-          <div @scroll="onBlockScroll">
+          <div class="flex min-h-0 flex-1 flex-col">
             <BaseTable
               :columns="blockColumns"
               :rows="blockRows"
               :row-key="(item) => `${item.date}-${item.code}`"
               min-width="820px"
+              scroll-class="table-scroll-fill"
               row-clickable
               :footer-text="
                 blockHasMore
@@ -428,6 +431,7 @@ const openDetail = (code: string): void => {
                   : undefined
               "
               @row-click="(item) => openDetail(item.code)"
+              @scroll="onBlockScroll"
               :enable-dblclick-nav="true"
               @row-dblclick="(item) => openPage(item.code, toContextList(blockRowsFull, (row) => row.code, (row) => row.close))"
             >

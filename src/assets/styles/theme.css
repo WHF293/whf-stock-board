@@ -167,9 +167,29 @@ body {
  * - table-scroll：整页宽表格（排行/明细，约 14 行）
  * - table-scroll-sm：卡片内小表格（多列布局中的排行，约 10 行）
  * - table-scroll-xs：紧凑表格（卡片内单列排行，约 8 行）
+ * - table-scroll-fill：不设固定高度，靠 flex 吃满剩余空间（见下方说明）
  */
 .table-scroll {
   max-height: 560px;
+  overflow: auto;
+}
+
+/*
+ * 填满容器高度的表格滚动容器（整页单表页：市场榜单 / 市场异动 / A股全景）
+ *
+ * 与前三个类的区别：那些是「固定 max-height 截断」，本类是「按容器剩余空间撑开」。
+ * 高度分配链（缺一环就退化成内容撑开、滚动条跑到页面上）：
+ *   页面根部定高 h-[calc(100dvh-6.5rem)]（flex 列）
+ *     → 卡片 BaseCard fill（flex 列，min-h-0）
+ *       → 本类（flex: 1 1 0% → 吃掉「卡片高 - 工具条/统计区」）
+ *
+ * ⚠️ 链路上每一层都要 `min-h-0`：flex 子项默认 `min-height: auto`，
+ * 会被内容撑开而失去「不超出容器」的约束（滚动条就会外溢到 main 上）。
+ * ⚠️ `min-height: 240px` 是兜底：窗口极矮时表格不压成一条缝，宁可让 main 出滚动条。
+ */
+.table-scroll-fill {
+  flex: 1 1 0%;
+  min-height: 240px;
   overflow: auto;
 }
 
@@ -234,11 +254,21 @@ body {
 }
 
 /*
- * 板块日历矩阵（31 行 × N 列，div 网格非 table）：
- * 比常规表格更高——常规 560px 只露约 9 行，板块池（申万一级 + 热门板块）行数更多
+ * 板块日历矩阵（31 行 × N 列，div 网格非 table）：比常规表格更高——常规 560px
+ * 只露约 9 行，板块池（申万一级 + 热门板块）行数更多
+ *
+ * - board-calendar-scroll：固定 max-height 760px（模态框等无定高外层时用）
+ * - board-calendar-fill：撑满容器剩余高度（与 table-scroll-fill 同语义，见下方注释）
  */
 .board-calendar-scroll {
   max-height: 760px;
+  overflow: auto;
+}
+
+/* 矩阵撑满剩余高度：高度链与 .table-scroll-fill 完全一致（页面定高 → 卡片 fill → 本类） */
+.board-calendar-fill {
+  flex: 1 1 0%;
+  min-height: 240px;
   overflow: auto;
 }
 
@@ -246,6 +276,7 @@ body {
 .table-scroll thead th,
 .table-scroll-sm thead th,
 .table-scroll-xs thead th,
+.table-scroll-fill thead th,
 .table-scroll-chart thead th {
   position: sticky;
   top: 0;
@@ -257,6 +288,7 @@ body {
 .table-scroll td:first-child,
 .table-scroll-sm td:first-child,
 .table-scroll-xs td:first-child,
+.table-scroll-fill td:first-child,
 .table-scroll-chart td:first-child {
   position: sticky;
   left: 0;
@@ -267,13 +299,15 @@ body {
 /* 行 hover 时首列底色跟随（需不透明遮住滚动内容） */
 .table-scroll tbody tr:hover td:first-child,
 .table-scroll-sm tbody tr:hover td:first-child,
-.table-scroll-xs tbody tr:hover td:first-child {
+.table-scroll-xs tbody tr:hover td:first-child,
+.table-scroll-fill tbody tr:hover td:first-child {
   background-color: var(--color-flat-weak);
 }
 
 /* 左上角单元格：双向固定，层级最高 */
 .table-scroll thead th:first-child,
-.table-scroll-sm thead th:first-child {
+.table-scroll-sm thead th:first-child,
+.table-scroll-fill thead th:first-child {
   left: 0;
   z-index: 2;
 }

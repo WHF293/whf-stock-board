@@ -456,9 +456,9 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
 </script>
 
 <template>
-  <div class="space-y-4">
-    <!-- 控制条：热门口径 / 范围 / 刷新 -->
-    <div class="flex flex-wrap items-center justify-between gap-2">
+  <div class="flex h-[calc(100dvh-6.5rem)] min-h-0 flex-col gap-4">
+    <!-- 控制条：热门口径 / 范围 / 刷新（内容高固定，剩余高度全部留给矩阵） -->
+    <div class="flex shrink-0 flex-wrap items-center justify-between gap-2">
       <div class="flex flex-wrap items-center gap-2">
         <BaseTabs
           :model-value="settingsStore.boardCalendarHeatBasis"
@@ -527,7 +527,10 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
 
     <p v-if="errorText" class="text-xs text-down" role="alert">{{ errorText }}</p>
 
+    <!-- 矩阵卡片：矩阵本身是卡片的直接 flex 子项，用 board-calendar-fill 吃满剩余高度 -->
     <BaseCard
+      fill
+      class="min-h-0 flex-1"
       :title="`板块日历 · 板块 ${matrix.rows.length}/${CALENDAR_BOARDS.length} 个 · 覆盖 ${coveredDateCount} 个交易日`"
     >
       <!-- 图例 -->
@@ -556,7 +559,12 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
         v-else-if="matrix.rows.length === 0 || matrix.dates.length === 0"
         :text="emptyText"
       />
-      <BoardCalendarGrid v-else :matrix="matrix" @cell-click="onCellClick" />
+      <BoardCalendarGrid
+        v-else
+        :matrix="matrix"
+        scroll-class="board-calendar-fill"
+        @cell-click="onCellClick"
+      />
     </BaseCard>
 
     <BoardFilterModal
