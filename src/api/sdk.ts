@@ -1,6 +1,22 @@
 import { StockSDK } from 'stock-sdk';
 import { SDK_REQUEST_OPTIONS } from '../constants/sdk.constants';
 import { proxyFetch } from './proxy-fetch';
+import { rerouteEastmoneyHost } from './eastmoney-reroute';
+
+/**
+ * SDK fetchImpl 包装：先对已封禁的东财镜像域做改道，再走统一代理通道
+ *
+ * stock-sdk 的东财地址是硬编码常量（`7/91.push2`、`33.push2his` 等），
+ * 而本机出口对这些域 TCP 层不通、对 `push2delay` 可达 —— 只能在此收口处改写。
+ * 详见 `eastmoney-reroute.ts` 的背景说明。
+ * @param url 上游请求地址（由 SDK 生成）
+ * @param init 请求初始化参数
+ * @returns 上游响应
+ */
+const reroutingProxyFetch: typeof fetch = (url, init) => {
+  const target = typeof url === 'string' ? url : url instanceof URL ? url.href : url.url;
+  return proxyFetch(rerouteEastmoneyHost(target), init);
+};
 
 /**
  * stock-sdk 全局单例
@@ -9,6 +25,6 @@ import { proxyFetch } from './proxy-fetch';
  * 必须模块顶层创建一份并全站复用；需要强刷时调用 sdk.clearCaches()
  */
 export const sdk = new StockSDK({
-  fetchImpl: proxyFetch,
+  fetchImpl: reroutingProxyFetch,
   ...SDK_REQUEST_OPTIONS,
 });

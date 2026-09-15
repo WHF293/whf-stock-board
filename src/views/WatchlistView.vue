@@ -167,9 +167,9 @@ const onReorderStock = (fromIndex: number, toIndex: number): void => {
 </script>
 
 <template>
-  <div class="space-y-4">
+  <div class="flex h-[calc(100dvh-6.5rem)] min-h-0 flex-col gap-4">
     <!-- 分组 tab -->
-    <div class="flex items-center gap-2">
+    <div class="flex shrink-0 items-center gap-2">
       <div class="min-w-0 flex-1 overflow-x-auto overflow-y-hidden">
         <BaseTabs
           v-model="activeGroupId"
@@ -180,7 +180,7 @@ const onReorderStock = (fromIndex: number, toIndex: number): void => {
     </div>
 
     <!-- 搜索添加（左侧）+ 新建分组（右侧） -->
-    <div class="flex flex-wrap items-center justify-between gap-2">
+    <div class="flex shrink-0 flex-wrap items-center justify-between gap-2">
       <div>
         <BaseButton variant="ghost" @click="searchModalOpen = true">
           <MenuIcon name="plus" :size="14" />
@@ -200,8 +200,11 @@ const onReorderStock = (fromIndex: number, toIndex: number): void => {
       </form>
     </div>
 
-    <!-- 分组表格 -->
+    <!-- 分组表格（撑满卡片剩余高度；表格容器必须是卡片的直接 flex 子项，
+         所以这里不留普通 block 包裹层，滚动容器类直接透传给 BaseTable） -->
     <BaseCard
+      fill
+      class="min-h-0 flex-1"
       :title="`当前分组-${activeGroup?.name ?? ''}（${activeGroup?.stocks.length ?? 0}只股票）`"
     >
       <template #extra>
@@ -216,14 +219,14 @@ const onReorderStock = (fromIndex: number, toIndex: number): void => {
         </button>
       </template>
       <template v-if="(activeGroup?.stocks.length ?? 0) > 0">
-        <div v-if="!isQuotesLoading" class="table-scroll">
-          <WatchlistTable
-            :stocks="activeGroup!.stocks"
-            :quotes-map="quotesMap"
-            @remove="onRemoveStock"
-            @reorder="onReorderStock"
-          />
-        </div>
+        <WatchlistTable
+          v-if="!isQuotesLoading"
+          scroll-class="table-scroll-fill"
+          :stocks="activeGroup!.stocks"
+          :quotes-map="quotesMap"
+          @remove="onRemoveStock"
+          @reorder="onReorderStock"
+        />
         <div v-else class="space-y-3" aria-hidden="true">
           <div
             v-for="i in Math.min(activeGroup!.stocks.length, 5)"

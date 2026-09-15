@@ -174,8 +174,8 @@ const isEmpty = computed(
 </script>
 
 <template>
-  <div class="space-y-4">
-    <div class="flex items-center justify-between gap-2">
+  <div class="flex h-[calc(100dvh-6.5rem)] min-h-0 flex-col gap-4">
+    <div class="flex shrink-0 items-center justify-between gap-2">
       <div class="flex items-center gap-1">
         <BaseTabs
           v-model="activeModule"
@@ -188,8 +188,8 @@ const isEmpty = computed(
       <span class="text-xs text-text-tertiary">未开盘时展示最近交易日收盘数据</span>
     </div>
 
-    <!-- A股全景：板块排行组件（数据自管） -->
-    <PanoramaCnBoard v-if="activeModule === 'cn'" />
+    <!-- A股全景：板块排行组件（数据自管；撑满剩余高度，表格尽量高） -->
+    <PanoramaCnBoard v-if="activeModule === 'cn'" class="min-h-0 flex-1" />
 
     <!-- 加载骨架（美股 / 宏观） -->
     <BaseCard v-else-if="isLoading">

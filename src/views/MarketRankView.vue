@@ -357,9 +357,9 @@ const openDetail = (code: string): void => {
 </script>
 
 <template>
-  <div class="space-y-4">
+  <div class="flex h-[calc(100dvh-6.5rem)] min-h-0 flex-col gap-4">
     <!-- 排序维度切换（与行情全景一致的 underline 风格） -->
-    <div class="flex items-center justify-between gap-2">
+    <div class="flex shrink-0 items-center justify-between gap-2">
       <div class="flex items-center gap-1">
         <BaseTabs v-model="sortKey" :options="sortTabOptions" variant="underline" />
         <TabConfigButton page-id="market-rank" :options="SORT_TAB_OPTIONS" />
@@ -370,7 +370,7 @@ const openDetail = (code: string): void => {
     </div>
 
     <!-- 资金流三榜单 -->
-    <BaseCard v-if="isFlowTab">
+    <BaseCard v-if="isFlowTab" fill class="min-h-0 flex-1">
       <div v-if="isFlowLoading && currentFlowItems.length === 0"><BaseSkeleton /></div>
       <div v-else-if="flowError && currentFlowItems.length === 0" class="py-10">
         <BaseEmpty text="资金流榜单加载失败，请稍后重试" />
@@ -381,7 +381,7 @@ const openDetail = (code: string): void => {
         :rows="currentFlowItems.slice(0, RANK_DISPLAY_COUNT)"
         :row-key="(row: FlowRow) => String(row.code)"
         min-width="720px"
-        scroll-class="table-scroll"
+        scroll-class="table-scroll-fill"
         :row-clickable="sortKey !== 'sector'"
         :expandable="sortKey === 'sector'"
         :expanded-keys="expandedSectorCodes"
@@ -479,7 +479,7 @@ const openDetail = (code: string): void => {
     </BaseCard>
 
     <!-- 报价排序榜 -->
-    <BaseCard v-else>
+    <BaseCard v-else fill class="min-h-0 flex-1">
       <div v-if="isLoading && allQuotes.length === 0"><BaseSkeleton /></div>
       <div v-else-if="isError && allQuotes.length === 0" class="py-10">
         <BaseEmpty text="市场榜单加载失败，请稍后重试（上游可能限频或封禁）" />
@@ -490,7 +490,7 @@ const openDetail = (code: string): void => {
         :rows="displayedRows"
         :row-key="(row) => row.code"
         min-width="900px"
-        scroll-class="table-scroll"
+        scroll-class="table-scroll-fill"
         row-clickable
         @row-click="(row) => openDetail(row.code)"
         :enable-dblclick-nav="true"

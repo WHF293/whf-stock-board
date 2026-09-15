@@ -22,6 +22,13 @@ const props = defineProps<{
   stocks: WatchlistStock[];
   /** 报价映射（key 为 FullQuote.code 原始形态） */
   quotesMap: Record<string, FullQuote>;
+  /**
+   * 滚动容器类（透传给 BaseTable）
+   *
+   * 不传时用 BaseTable 默认的 `table-scroll`（固定 560px 截断）；
+   * 整页布局（自选股页撑满可用高度）传 `table-scroll-fill`。
+   */
+  scrollClass?: string;
 }>();
 
 const emit = defineEmits<{
@@ -115,6 +122,7 @@ const columns: TableColumn<WatchlistStock>[] = [
     :rows="stocks"
     :row-key="(stock) => stock.symbol"
     min-width="640px"
+    :scroll-class="scrollClass"
     row-clickable
     @row-click="openDetail"
     :enable-dblclick-nav="true"
