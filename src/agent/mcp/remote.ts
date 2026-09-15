@@ -111,6 +111,24 @@ const readUiResourceUri = (meta: unknown): string | null => {
 };
 
 /**
+ * `ui://` 资源地址的宿主内重写。
+ *
+ * registry 按 `ui://<serverKey>/<rest>` 路由资源，远端服务器的 key 是
+ * `remote:<id>`，而服务器自己声明的 authority（如 `ui://todolist/app`）
+ * 不可能知道这个 id。于是在入口把服务器声明的地址重写为
+ * `ui://remote:<id>/<原authority>/<原path>`，出口（readUiResource）再换回
+ * 服务器认识的原始地址——对外协议不变，内部路由可控。
+ */
+const toInternalUiUri = (uri: string, key: string): string | null =>
+  uri.startsWith('ui://') ? 'ui://' + key + '/' + uri.slice('ui://'.length) : null;
+
+/** 宿主内部地址 → 服务器声明的原始地址；前缀不符（非本服务器资源）返回 null */
+const toOriginalUiUri = (uri: string, key: string): string | null => {
+  const prefix = 'ui://' + key + '/';
+  return uri.startsWith(prefix) ? 'ui://' + uri.slice(prefix.length) : null;
+};
+
+/**
  * SDK CallToolResult → 内部 McpCallToolResult
  * @param raw SDK 原始结果
  * @returns 内部结果（content 给模型 / structuredContent 给 UI）
@@ -173,12 +191,14 @@ export const connectRemoteMcp = async (config: RemoteMcpConfig): Promise<McpServ
       // MCP Apps：声明了 visibility 且不含 model 的工具只服务 UI，不暴露给模型
       if (visibility && !visibility.includes('model')) continue;
       const resourceUri = typeof ui?.resourceUri === 'string' ? ui.resourceUri : null;
+      // 声明级资源地址重写为宿主内路由地址（见 toInternalUiUri 注释）
+      const internalUri = resourceUri ? toInternalUiUri(resourceUri, key) : null;
       entries.push({
         definition: {
           name: tool.name,
           description: tool.description ?? '',
           inputSchema: (tool.inputSchema ?? { type: 'object' }) as Record<string, unknown>,
-          ...(resourceUri ? { _meta: { ui: { resourceUri } } } : {}),
+          ...(internalUri ? { _meta: { ui: { resourceUri: internalUri } } } : {}),
         },
         // 远端入参校验交给服务器（schema 在服务端是权威），本地用宽松对象放行
         schema: z.record(z.string(), z.unknown()),
@@ -193,7 +213,16 @@ export const connectRemoteMcp = async (config: RemoteMcpConfig): Promise<McpServ
             CALL_TIMEOUT_MS,
             '调用 ' + tool.name,
           );
-          return toCallToolResult(result);
+          const converted = toCallToolResult(result);
+          // 结果级资源地址同样重写（结果级优先于声明级，两处必须同构）
+          const original = converted._meta?.ui?.resourceUri;
+          if (original) {
+            const rewritten = toInternalUiUri(original, key);
+            converted._meta = rewritten
+              ? { ui: { resourceUri: rewritten } }
+              : { ui: { resourceUri: original } };
+          }
+          return converted;
         },
       });
     }
@@ -201,11 +230,14 @@ export const connectRemoteMcp = async (config: RemoteMcpConfig): Promise<McpServ
   };
 
   const readUiResource = async (uri: string): Promise<McpUiResource | null> => {
+    // 内部路由地址 → 服务器声明的原始地址（见 toInternalUiUri 注释）
+    const originalUri = toOriginalUiUri(uri, key);
+    if (!originalUri) return null;
     try {
       const result = await withTimeout(
-        client.readResource({ uri }),
+        client.readResource({ uri: originalUri }),
         CONNECT_TIMEOUT_MS,
-        '读取资源 ' + uri,
+        '读取资源 ' + originalUri,
       );
       const contents = Array.isArray(result.contents) ? result.contents : [];
       const first = contents[0] as { uri?: string; mimeType?: string; text?: string } | undefined;

@@ -3,6 +3,7 @@ import { reactive, ref } from 'vue';
 import { useAgentStore } from '@/stores/agent';
 import type { McpTransport } from '@/types/agent.types';
 import { BUILTIN_MCP_SERVERS, resetMcpRuntime } from '@/agent/mcp/registry';
+import { parseMcpJsonText } from '@/utils/mcp-json';
 import BaseModal from '@/components/ui/BaseModal.vue';
 import BaseButton from '@/components/ui/BaseButton.vue';
 import BaseSwitch from '@/components/ui/BaseSwitch.vue';
@@ -13,7 +14,8 @@ import MenuIcon from '@/components/ui/MenuIcon.vue';
  * MCP 服务器管理弹窗（一期仅 streamable HTTP / SSE 远端传输）
  *
  * - 列表：启用开关 + 删除；
- * - 添加：名称 / 传输方式 / URL / 请求头（JSON，可选）；
+ * - 添加：两种模式 —— 手动填写（名称 / 传输方式 / URL / 请求头），或粘贴 JSON
+ *   （支持 { "mcpServers": {...} } 标准格式与单服务器对象，批量导入）；
  * - 远端已接线：启用的服务器在下次 Agent 运行时连接并合入工具（连接失败跳过该服务器、
  *   不影响其余工具），故增删改后调用 `resetMcpRuntime()` 让运行时不缓存旧连接；
  * - 内置 MCP（应用接口 / stock-sdk）：进程内实现，不可删除、不可编辑，随应用常驻
@@ -24,6 +26,8 @@ const open = defineModel<boolean>('open', { required: true });
 
 /** 添加表单显隐 */
 const addOpen = ref(false);
+/** 添加模式：manual 手动填写 / json 粘贴 JSON */
+const addMode = ref<'manual' | 'json'>('manual');
 const form = reactive({
   name: '',
   transport: 'streamable-http' as McpTransport,
@@ -31,15 +35,58 @@ const form = reactive({
   headersText: '',
 });
 const formError = ref('');
+/** JSON 模式：文本、导入结果反馈 */
+const jsonText = ref('');
+const jsonImported = ref('');
+const importing = ref(false);
 
-/** 打开添加表单 */
+/** 打开添加表单（收起编辑表单） */
 const openAdd = (): void => {
+  editTarget.value = null;
   form.name = '';
   form.transport = 'streamable-http';
   form.url = '';
   form.headersText = '';
   formError.value = '';
+  jsonText.value = '';
+  jsonImported.value = '';
+  addMode.value = 'manual';
   addOpen.value = true;
+};
+
+/** 提交 JSON 批量导入 */
+const submitJsonImport = (): void => {
+  if (!jsonText.value.trim()) {
+    formError.value = '请粘贴 JSON 配置';
+    return;
+  }
+  let result;
+  try {
+    result = parseMcpJsonText(jsonText.value);
+  } catch (err) {
+    formError.value = err instanceof Error ? err.message : 'JSON 解析失败';
+    return;
+  }
+  if (result.servers.length === 0) {
+    formError.value = result.skipped[0] ?? '未解析出任何服务器';
+    return;
+  }
+  formError.value = '';
+  importing.value = true;
+  void Promise.all(result.servers.map((server) => store.addMcp(server)))
+    .then(() => resetMcpRuntime())
+    .then(() => {
+      const skippedNote =
+        result.skipped.length > 0 ? '；跳过 ' + result.skipped.length + ' 条（' + result.skipped.join('；') + '）' : '';
+      jsonImported.value = '已导入 ' + result.servers.length + ' 台服务器' + skippedNote;
+      jsonText.value = '';
+    })
+    .catch(() => {
+      formError.value = '导入失败，请重试';
+    })
+    .finally(() => {
+      importing.value = false;
+    });
 };
 
 /** 提交添加 */
@@ -98,6 +145,117 @@ const openDelete = (mcp: { id: number; name: string }): void => {
   deleteModalOpen.value = true;
 };
 
+/* -------------------------------- 编辑（远端 MCP） ------------------------------- */
+
+/** 编辑目标（null 表示未进入编辑模式） */
+const editTarget = ref<null | { id: number; name: string }>(null);
+/** 编辑模式：manual 输入框填写 / json 编辑 JSON 文本 */
+const editMode = ref<'manual' | 'json'>('manual');
+const editForm = reactive({
+  name: '',
+  transport: 'streamable-http' as McpTransport,
+  url: '',
+  headersText: '',
+});
+const editError = ref('');
+/** json 模式下的文本（进入编辑时预填当前配置） */
+const editJsonText = ref('');
+
+/**
+ * 进入编辑模式（同时收起添加表单）
+ * @param mcp 目标服务器
+ * @param mcp.id
+ * @param mcp.name
+ * @param mcp.transport
+ * @param mcp.url
+ * @param mcp.headers
+ */
+const openEdit = (mcp: { id: number; name: string; transport: McpTransport; url: string; headers: Record<string, string> | null }): void => {
+  addOpen.value = false;
+  editTarget.value = mcp;
+  editMode.value = 'manual';
+  editForm.name = mcp.name;
+  editForm.transport = mcp.transport;
+  editForm.url = mcp.url;
+  editForm.headersText = mcp.headers ? JSON.stringify(mcp.headers, null, 2) : '';
+  editJsonText.value = JSON.stringify(
+    { name: mcp.name, transport: mcp.transport, url: mcp.url, headers: mcp.headers ?? {} },
+    null,
+    2,
+  );
+  editError.value = '';
+};
+
+/** 退出编辑模式 */
+const closeEdit = (): void => {
+  editTarget.value = null;
+};
+
+/** 提交编辑（输入框模式） */
+const submitEditManual = (): void => {
+  if (!editTarget.value) return;
+  if (!editForm.name.trim() || !editForm.url.trim()) {
+    editError.value = '名称与 URL 为必填';
+    return;
+  }
+  let headers: Record<string, string> | null = null;
+  if (editForm.headersText.trim()) {
+    try {
+      const parsed: unknown = JSON.parse(editForm.headersText);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('not object');
+      headers = parsed as Record<string, string>;
+    } catch {
+      editError.value = '请求头不是合法的 JSON 对象';
+      return;
+    }
+  }
+  editError.value = '';
+  void store
+    .updateMcp(editTarget.value.id, {
+      name: editForm.name.trim(),
+      transport: editForm.transport,
+      url: editForm.url.trim(),
+      headers,
+    })
+    .then(() => resetMcpRuntime())
+    .then(() => {
+      editTarget.value = null;
+    })
+    .catch(() => {
+      editError.value = '保存失败，请重试';
+    });
+};
+
+/** 提交编辑（JSON 模式：只接受恰好一台服务器的配置） */
+const submitEditJson = (): void => {
+  if (!editTarget.value) return;
+  let result;
+  try {
+    result = parseMcpJsonText(editJsonText.value);
+  } catch (err) {
+    editError.value = err instanceof Error ? err.message : 'JSON 解析失败';
+    return;
+  }
+  if (result.servers.length === 0) {
+    editError.value = result.skipped[0] ?? '未解析出服务器';
+    return;
+  }
+  if (result.servers.length > 1) {
+    editError.value = '编辑模式仅支持单台服务器配置（解析到 ' + result.servers.length + ' 台）';
+    return;
+  }
+  editError.value = '';
+  void store
+    .updateMcp(editTarget.value.id, result.servers[0])
+    .then(() => resetMcpRuntime())
+    .then(() => {
+      editTarget.value = null;
+    })
+    .catch(() => {
+      editError.value = '保存失败，请重试';
+    });
+};
+
 /** 确认删除 */
 const confirmDelete = (): void => {
   if (deleteTarget.value) {
@@ -150,12 +308,98 @@ const confirmDelete = (): void => {
         />
         <button
           type="button"
+          class="rounded p-1.5 text-text-tertiary hover:bg-flat-weak hover:text-primary"
+          aria-label="编辑 MCP"
+          @click="openEdit(mcp)"
+        >
+          <MenuIcon name="pencil" :size="15" />
+        </button>
+        <button
+          type="button"
           class="rounded p-1.5 text-text-tertiary hover:bg-flat-weak hover:text-up"
           aria-label="删除 MCP"
           @click="openDelete(mcp)"
         >
           <MenuIcon name="trash" :size="15" />
         </button>
+      </div>
+
+      <!-- 编辑表单（远端 MCP）：输入框 / JSON 两种形式 -->
+      <div v-if="editTarget" class="space-y-2.5 rounded-xl border border-primary/40 p-3">
+        <p class="text-xs font-medium text-primary">编辑「{{ editTarget.name }}」</p>
+        <div class="flex gap-1.5">
+          <button
+            v-for="mode in [
+              { key: 'manual', label: '输入框填写' },
+              { key: 'json', label: '编辑 JSON' },
+            ]"
+            :key="mode.key"
+            type="button"
+            class="rounded-full border px-3 py-1 text-xs transition-colors"
+            :class="
+              editMode === mode.key
+                ? 'border-primary bg-primary-weak text-primary'
+                : 'border-flat-weak text-text-secondary hover:border-primary'
+            "
+            @click="editMode = mode.key as 'manual' | 'json'"
+          >
+            {{ mode.label }}
+          </button>
+        </div>
+
+        <template v-if="editMode === 'manual'">
+          <input
+            v-model="editForm.name"
+            type="text"
+            placeholder="名称"
+            class="w-full rounded-lg border border-flat-weak bg-transparent px-3 py-2 text-sm text-text outline-none focus:border-primary"
+          />
+          <div class="flex gap-1.5">
+            <button
+              v-for="(label, key) in TRANSPORT_LABEL"
+              :key="key"
+              type="button"
+              class="rounded-full border px-3 py-1 text-xs transition-colors"
+              :class="
+                editForm.transport === key
+                  ? 'border-primary bg-primary-weak text-primary'
+                  : 'border-flat-weak text-text-secondary hover:border-primary'
+              "
+              @click="editForm.transport = key"
+            >
+              {{ label }}
+            </button>
+          </div>
+          <input
+            v-model="editForm.url"
+            type="text"
+            placeholder="https://mcp.example.com/mcp"
+            class="w-full rounded-lg border border-flat-weak bg-transparent px-3 py-2 text-sm text-text outline-none focus:border-primary"
+          />
+          <textarea
+            v-model="editForm.headersText"
+            rows="2"
+            placeholder="请求头 JSON（可选），例如 Authorization 与 Bearer 令牌"
+            class="w-full resize-none rounded-lg border border-flat-weak bg-transparent px-3 py-2 font-mono text-xs text-text outline-none focus:border-primary"
+          />
+        </template>
+
+        <template v-else>
+          <textarea
+            v-model="editJsonText"
+            rows="8"
+            placeholder="单个服务器 JSON 对象，或 { &quot;mcpServers&quot;: { 单台 } }"
+            class="w-full resize-y rounded-lg border border-flat-weak bg-transparent px-3 py-2 font-mono text-xs text-text outline-none focus:border-primary"
+          />
+        </template>
+
+        <p v-if="editError" class="text-xs text-up">{{ editError }}</p>
+        <div class="flex justify-end gap-2">
+          <BaseButton variant="ghost" @click="closeEdit">取消</BaseButton>
+          <BaseButton variant="primary" @click="editMode === 'json' ? submitEditJson() : submitEditManual()">
+            保存
+          </BaseButton>
+        </div>
       </div>
 
       <p
@@ -166,50 +410,88 @@ const confirmDelete = (): void => {
       </p>
 
       <!-- 添加表单 -->
-      <div v-if="addOpen" class="space-y-2.5 rounded-xl border border-flat-weak p-3">
-        <input
-          v-model="form.name"
-          type="text"
-          placeholder="名称"
-          class="w-full rounded-lg border border-flat-weak bg-transparent px-3 py-2 text-sm text-text outline-none focus:border-primary"
-        />
+      <div v-if="addOpen && !editTarget" class="space-y-2.5 rounded-xl border border-flat-weak p-3">
+        <!-- 模式切换：手动填写 / 粘贴 JSON -->
         <div class="flex gap-1.5">
           <button
-            v-for="(label, key) in TRANSPORT_LABEL"
-            :key="key"
+            v-for="mode in [
+              { key: 'manual', label: '手动填写' },
+              { key: 'json', label: '粘贴 JSON' },
+            ]"
+            :key="mode.key"
             type="button"
             class="rounded-full border px-3 py-1 text-xs transition-colors"
             :class="
-              form.transport === key
+              addMode === mode.key
                 ? 'border-primary bg-primary-weak text-primary'
                 : 'border-flat-weak text-text-secondary hover:border-primary'
             "
-            @click="form.transport = key"
+            @click="addMode = mode.key as 'manual' | 'json'"
           >
-            {{ label }}
+            {{ mode.label }}
           </button>
         </div>
-        <input
-          v-model="form.url"
-          type="text"
-          placeholder="https://mcp.example.com/mcp"
-          class="w-full rounded-lg border border-flat-weak bg-transparent px-3 py-2 text-sm text-text outline-none focus:border-primary"
-        />
-        <textarea
-          v-model="form.headersText"
-          rows="2"
-          placeholder="请求头 JSON（可选），例如 Authorization 与 Bearer 令牌"
-          class="w-full resize-none rounded-lg border border-flat-weak bg-transparent px-3 py-2 font-mono text-xs text-text outline-none focus:border-primary"
-        />
+
+        <!-- 手动填写 -->
+        <template v-if="addMode === 'manual'">
+          <input
+            v-model="form.name"
+            type="text"
+            placeholder="名称"
+            class="w-full rounded-lg border border-flat-weak bg-transparent px-3 py-2 text-sm text-text outline-none focus:border-primary"
+          />
+          <div class="flex gap-1.5">
+            <button
+              v-for="(label, key) in TRANSPORT_LABEL"
+              :key="key"
+              type="button"
+              class="rounded-full border px-3 py-1 text-xs transition-colors"
+              :class="
+                form.transport === key
+                  ? 'border-primary bg-primary-weak text-primary'
+                  : 'border-flat-weak text-text-secondary hover:border-primary'
+              "
+              @click="form.transport = key"
+            >
+              {{ label }}
+            </button>
+          </div>
+          <input
+            v-model="form.url"
+            type="text"
+            placeholder="https://mcp.example.com/mcp"
+            class="w-full rounded-lg border border-flat-weak bg-transparent px-3 py-2 text-sm text-text outline-none focus:border-primary"
+          />
+          <textarea
+            v-model="form.headersText"
+            rows="2"
+            placeholder="请求头 JSON（可选），例如 Authorization 与 Bearer 令牌"
+            class="w-full resize-none rounded-lg border border-flat-weak bg-transparent px-3 py-2 font-mono text-xs text-text outline-none focus:border-primary"
+          />
+        </template>
+
+        <!-- 粘贴 JSON：mcpServers 标准格式 / 单服务器对象 -->
+        <template v-else>
+          <textarea
+            v-model="jsonText"
+            rows="7"
+            placeholder="{ &quot;mcpServers&quot;: { &quot;demo&quot;: { &quot;url&quot;: &quot;http://127.0.0.1:3117/mcp&quot;, &quot;transport&quot;: &quot;streamable-http&quot;, &quot;headers&quot;: {} } } }"
+            class="w-full resize-y rounded-lg border border-flat-weak bg-transparent px-3 py-2 font-mono text-xs text-text outline-none focus:border-primary"
+          />
+          <p v-if="jsonImported" class="text-xs text-text-secondary">{{ jsonImported }}</p>
+        </template>
+
         <p v-if="formError" class="text-xs text-up">{{ formError }}</p>
         <div class="flex justify-end gap-2">
           <BaseButton variant="ghost" @click="addOpen = false">取消</BaseButton>
-          <BaseButton variant="primary" @click="submitAdd">添加</BaseButton>
+          <BaseButton variant="primary" :disabled="importing" @click="addMode === 'json' ? submitJsonImport() : submitAdd()">
+            {{ addMode === 'json' ? '导入' : '添加' }}
+          </BaseButton>
         </div>
       </div>
 
       <button
-        v-else
+        v-else-if="!editTarget"
         type="button"
         class="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-flat-weak py-3 text-sm text-text-tertiary transition-colors hover:border-primary hover:text-primary"
         @click="openAdd"

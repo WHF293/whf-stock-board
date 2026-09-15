@@ -3,6 +3,7 @@ import { computed, reactive, ref, watch } from 'vue';
 import { useAgentStore } from '@/stores/agent';
 import { DEFAULT_AGENT_SYSTEM_PROMPT } from '@/constants/agent.constants';
 import type { AgentProfile, SubagentDef } from '@/types/agent.types';
+import { isBuiltinSubagent } from '@/constants/builtin-subagents';
 import BaseModal from '@/components/ui/BaseModal.vue';
 import BaseButton from '@/components/ui/BaseButton.vue';
 import BaseSwitch from '@/components/ui/BaseSwitch.vue';
@@ -224,25 +225,36 @@ watch(open, (isOpen) => {
           class="flex items-center gap-3 rounded-xl bg-flat-weak/60 px-4 py-2.5"
         >
           <div class="min-w-0 flex-1">
-            <p class="truncate font-mono text-xs text-text">{{ def.name }}</p>
+            <p class="flex items-center gap-2 truncate font-mono text-xs text-text">
+              {{ def.name }}
+              <span
+                v-if="isBuiltinSubagent(def.id)"
+                class="shrink-0 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-medium leading-none text-white"
+              >
+                内置
+              </span>
+            </p>
             <p class="mt-0.5 truncate text-xs text-text-tertiary">{{ def.description }}</p>
           </div>
-          <button
-            type="button"
-            class="rounded p-1.5 text-text-tertiary hover:bg-flat-weak hover:text-text"
-            aria-label="编辑 subagent"
-            @click="openEditSubagent(def)"
-          >
-            <MenuIcon name="pencil" :size="14" />
-          </button>
-          <button
-            type="button"
-            class="rounded p-1.5 text-text-tertiary hover:bg-flat-weak hover:text-up"
-            aria-label="删除 subagent"
-            @click="deleteTarget = { kind: 'subagent', id: def.id, name: def.name }; deleteModalOpen = true"
-          >
-            <MenuIcon name="trash" :size="14" />
-          </button>
+          <template v-if="!isBuiltinSubagent(def.id)">
+            <button
+              type="button"
+              class="rounded p-1.5 text-text-tertiary hover:bg-flat-weak hover:text-text"
+              aria-label="编辑 subagent"
+              @click="openEditSubagent(def)"
+            >
+              <MenuIcon name="pencil" :size="14" />
+            </button>
+            <button
+              type="button"
+              class="rounded p-1.5 text-text-tertiary hover:bg-flat-weak hover:text-up"
+              aria-label="删除 subagent"
+              @click="deleteTarget = { kind: 'subagent', id: def.id, name: def.name }; deleteModalOpen = true"
+            >
+              <MenuIcon name="trash" :size="14" />
+            </button>
+          </template>
+          <span v-else class="shrink-0 text-xs text-text-tertiary">常驻</span>
         </div>
         <button
           type="button"

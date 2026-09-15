@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue';
 import { useAgentStore } from '@/stores/agent';
 import { AGENT_MANAGER_ENTRIES } from '@/constants/agent.constants';
+import { BUILTIN_MCP_SERVERS } from '@/agent/mcp/registry';
 import type { AgentManagerKey } from '@/types/agent.types';
 import MenuIcon from '@/components/ui/MenuIcon.vue';
 import SessionTree from './SessionTree.vue';
@@ -23,12 +24,14 @@ const store = useAgentStore();
 /** SessionTree 实例（收起态直接唤起其新建分组弹窗） */
 const sessionTreeRef = ref<InstanceType<typeof SessionTree> | null>(null);
 
-/** 入口角标（已启用/配置数量） */
+/** 入口角标（已启用/配置数量，内置常驻项一并计入） */
 const BADGE_BY_KEY = computed<Record<AgentManagerKey, number>>(() => ({
   skills: store.counts.skills,
-  mcp: store.counts.mcps,
+  // 内置 MCP（应用接口 / stock-sdk）常驻，计入角标
+  mcp: store.counts.mcps + BUILTIN_MCP_SERVERS.length,
   model: store.counts.models,
-  agents: store.counts.profiles,
+  // Agents 弹窗同时管理 Agent 配置与 Subagent 库，角标 = 两者之和（含内置 subagent）
+  agents: store.counts.profiles + store.subagents.length,
 }));
 
 /** 新建对话（未分组，后续可拖入分组） */

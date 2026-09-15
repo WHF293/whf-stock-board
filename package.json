@@ -1,7 +1,7 @@
 {
   "name": "whf-stock-board",
   "private": true,
-  "version": "2.2.1",
+  "version": "2.3.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -24,6 +24,7 @@
     "dayjs": "^1.11.23",
     "deepagents": "~1.13.4",
     "echarts": "^6.1.0",
+    "fflate": "^0.8.3",
     "klinecharts": "^10.0.3",
     "langchain": "^1.5.11",
     "nprogress": "^0.2.0",

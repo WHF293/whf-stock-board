@@ -62,6 +62,8 @@ interface SettingsState {
   chartSubIndicators: string[];
   /** 系统日志 · 采集开关（关闭后不再记录报错与行为，仅保留系统类事件） */
   weblogEnabled: boolean;
+  /** Agent 分析 · 仅股票问答开关（开启时使用仅股票系统提示词；关闭后移除话题限制） */
+  agentStockOnly: boolean;
 }
 
 /**
@@ -86,6 +88,7 @@ export const useSettingsStore = defineStore('settings', {
     chartMainIndicators: [...CHART_MAIN_INDICATORS_DEFAULT],
     chartSubIndicators: [...CHART_SUB_INDICATORS_DEFAULT],
     weblogEnabled: WEBLOG_ENABLED_DEFAULT,
+    agentStockOnly: true,
   }),
 
   actions: {
@@ -232,6 +235,14 @@ export const useSettingsStore = defineStore('settings', {
      */
     setWeblogEnabled(enabled: boolean): void {
       this.weblogEnabled = enabled;
+    },
+
+    /**
+     * 设置 Agent 分析仅股票问答开关
+     * @param enabled true 仅股票问答（默认），false 移除话题限制
+     */
+    setAgentStockOnly(enabled: boolean): void {
+      this.agentStockOnly = enabled;
     },
   },
 
