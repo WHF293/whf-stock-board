@@ -17,6 +17,7 @@ import type {
   Skill,
   SubagentDef,
 } from '@/types/agent.types';
+import { withBuiltinSubagents } from '@/constants/builtin-subagents';
 
 export const useAgentStore = defineStore('agent', () => {
   /* --------------------------------- 状态 --------------------------------- */
@@ -109,7 +110,7 @@ export const useAgentStore = defineStore('agent', () => {
     skills.value = skillList;
     mcps.value = mcpList;
     profiles.value = profileList;
-    subagents.value = subagentList;
+    subagents.value = withBuiltinSubagents(subagentList);
     // 默认选中最近可用的首个会话
     if (currentSessionId.value === null && sessionList.length > 0) {
       currentSessionId.value = sessionList[0].id;
@@ -316,6 +317,17 @@ export const useAgentStore = defineStore('agent', () => {
   }
 
   /**
+   * 更新 MCP 服务器字段（不含启停状态）
+   * @param id MCP id
+   * @param input 服务器字段
+   */
+  async function updateMcp(id: number, input: db.McpCreateInput): Promise<void> {
+    await db.updateMcp(id, input);
+    mcps.value = await db.listMcps();
+    await refreshCounts();
+  }
+
+  /**
    * 启用 / 停用 MCP 服务器
    * @param id MCP id
    * @param enabled 是否启用
@@ -363,7 +375,7 @@ export const useAgentStore = defineStore('agent', () => {
    */
   async function upsertSubagent(input: db.SaveSubagentInput): Promise<void> {
     await db.saveSubagent(input);
-    subagents.value = await db.listSubagents();
+    subagents.value = withBuiltinSubagents(await db.listSubagents());
   }
 
   /**
@@ -410,6 +422,7 @@ export const useAgentStore = defineStore('agent', () => {
     toggleSkill,
     removeSkill,
     addMcp,
+    updateMcp,
     toggleMcp,
     removeMcp,
     upsertProfile,

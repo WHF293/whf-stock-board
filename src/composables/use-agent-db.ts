@@ -769,6 +769,19 @@ export async function setMcpEnabled(id: number, enabled: boolean): Promise<void>
 }
 
 /**
+ * 更新 MCP 服务器字段（不含启停状态）
+ * @param id MCP id
+ * @param input MCP 字段
+ */
+export async function updateMcp(id: number, input: McpCreateInput): Promise<void> {
+  const db = await getAgentDb();
+  await db.execute(
+    'UPDATE mcp_server SET name = $1, transport = $2, url = $3, headers = $4 WHERE id = $5',
+    [input.name, input.transport, input.url, input.headers ? JSON.stringify(input.headers) : null, id],
+  );
+}
+
+/**
  * 删除 MCP 服务器
  * @param id MCP id
  */

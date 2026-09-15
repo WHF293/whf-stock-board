@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue';
 import { useAgentStore } from '@/stores/agent';
+import { parseSkillZip, writeSkillFiles } from '@/utils/skill-zip';
+import { isTauri } from '@tauri-apps/api/core';
 import BaseModal from '@/components/ui/BaseModal.vue';
 import BaseButton from '@/components/ui/BaseButton.vue';
 import BaseSwitch from '@/components/ui/BaseSwitch.vue';
@@ -11,8 +13,8 @@ import MenuIcon from '@/components/ui/MenuIcon.vue';
  * Skills 管理弹窗
  *
  * - 列表：启用开关（角标计数）+ 删除；
- * - 添加：登记展示名 / 目录名 / 描述；目录扫描与 SKILL.md 解析（fs 后端）在 M4 接入，
- *   本期登记的 dirName 即 appData/agent-workspace 下的约定目录。
+ * - 添加：登记展示名 / 目录名 / 描述，或导入 zip 包（解压 SKILL.md 与附属文件到
+ *   appData/agent-workspace/<dirName>/，并自动读取 frontmatter 登记）。
  */
 const store = useAgentStore();
 
@@ -22,6 +24,11 @@ const open = defineModel<boolean>('open', { required: true });
 const addOpen = ref(false);
 const form = reactive({ name: '', dirName: '', description: '' });
 const formError = ref('');
+
+/** zip 导入：进度/错误提示 */
+const importing = ref(false);
+const importError = ref('');
+const fileInput = ref<HTMLInputElement | null>(null);
 
 /** 打开添加表单 */
 const openAdd = (): void => {
@@ -43,6 +50,42 @@ const submitAdd = (): void => {
     if (id < 0) formError.value = '目录名已存在';
     else addOpen.value = false;
   });
+};
+
+/** 触发 zip 文件选择 */
+const pickZip = (): void => {
+  importError.value = '';
+  if (!isTauri()) {
+    importError.value = 'Skill 导入仅支持桌面端';
+    return;
+  }
+  fileInput.value?.click();
+};
+
+/**
+ * 处理选中的 zip：解析 → 落盘 → 登记
+ * @param event input change 事件
+ */
+const onZipChange = (event: Event): void => {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = ''; // 允许重复选同一个文件
+  if (!file) return;
+  importing.value = true;
+  void file
+    .arrayBuffer()
+    .then((buffer) => parseSkillZip(buffer, file.name))
+    .then(async (parsed) => {
+      await writeSkillFiles(parsed);
+      const id = await store.addSkill(parsed.name, parsed.dirName, parsed.description);
+      if (id < 0) throw new Error('目录名 ' + parsed.dirName + ' 已登记，请先删除同名 Skill');
+    })
+    .catch((err: unknown) => {
+      importError.value = err instanceof Error ? err.message : '导入失败';
+    })
+    .finally(() => {
+      importing.value = false;
+    });
 };
 
 /** 删除确认 */
@@ -136,8 +179,29 @@ const confirmDelete = (): void => {
         添加 Skill
       </button>
 
+      <!-- zip 导入：与手动登记并列为两种添加方式 -->
+      <div v-if="!addOpen" class="flex items-center gap-2">
+        <input
+          ref="fileInput"
+          type="file"
+          accept=".zip"
+          class="hidden"
+          @change="onZipChange"
+        />
+        <button
+          type="button"
+          :disabled="importing"
+          class="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-dashed border-flat-weak py-3 text-sm text-text-tertiary transition-colors hover:border-primary hover:text-primary disabled:opacity-50"
+          @click="pickZip"
+        >
+          <MenuIcon name="folder" :size="14" />
+          {{ importing ? '导入中…' : '导入 zip 包' }}
+        </button>
+      </div>
+      <p v-if="importError" class="text-xs text-up">{{ importError }}</p>
+
       <p class="text-xs text-text-tertiary">
-        启用的 Skill 会注入 Agent 的系统提示词索引（目录内容加载在后续里程碑接入）
+        zip 根目录（或唯一顶层目录下）需包含 SKILL.md，frontmatter 的 name/description 会自动登记；附属文件一并解压到 appData/agent-workspace
       </p>
     </div>
   </BaseModal>

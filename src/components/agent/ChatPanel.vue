@@ -2,11 +2,14 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import type { StructuredToolInterface } from '@langchain/core/tools';
 import { useAgentStore } from '@/stores/agent';
+import { useSettingsStore } from '@/stores/settings';
 import {
   WELCOME_SCENES,
   DEFAULT_AGENT_SYSTEM_PROMPT,
+  GENERAL_AGENT_SYSTEM_PROMPT,
   CHAT_INPUT_MIN_ROWS,
   CHAT_INPUT_MAX_ROWS,
+  SESSION_DEFAULT_TITLE,
 } from '@/constants/agent.constants';
 import { listMessages, insertMessage, updateMessage } from '@/composables/use-agent-db';
 import { SmoothStreamer } from '@/agent/smooth-streamer';
@@ -17,6 +20,7 @@ import { resolveInputHeight } from '@/utils/chat-input-height';
 import type { ChatMessage, MessageStatus, ToolCallPart } from '@/types/agent.types';
 import type { AgentManagerKey } from '@/types/agent.types';
 import MenuIcon from '@/components/ui/MenuIcon.vue';
+import BaseSwitch from '@/components/ui/BaseSwitch.vue';
 import ToolCallCard from './ToolCallCard.vue';
 
 /**
@@ -28,6 +32,7 @@ import ToolCallCard from './ToolCallCard.vue';
  * - 思考中：消息 running 且尚无可见文本 → spinner + 耗时；停止按钮可中断。
  */
 const store = useAgentStore();
+const settings = useSettingsStore();
 
 const emit = defineEmits<{
   /** 请求打开管理弹窗（模型徽标点击等） */
@@ -287,6 +292,14 @@ const send = async (): Promise<void> => {
   };
   list.push(userMsg);
 
+  // 首条问句自动命名：标题仍是默认「新对话」时，取前 6 个字符
+  if (
+    list.filter((m) => m.role === 'user').length === 1 &&
+    store.sessions.find((s) => s.id === sessionId)?.title === SESSION_DEFAULT_TITLE
+  ) {
+    void store.renameSession(sessionId, text.slice(0, 6));
+  }
+
   // 助手消息占位（先落库拿真实 id，崩溃也不丢轮次）
   const assistantMsg: ChatMessage = {
     id: await insertMessage({ sessionId, role: 'assistant', content: '', status: 'running' }),
@@ -372,7 +385,8 @@ const send = async (): Promise<void> => {
     handle: startAgentRun(
       {
         model,
-        systemPrompt: profile?.systemPrompt ?? DEFAULT_AGENT_SYSTEM_PROMPT,
+        systemPrompt: profile?.systemPrompt
+          ?? (settings.agentStockOnly ? DEFAULT_AGENT_SYSTEM_PROMPT : GENERAL_AGENT_SYSTEM_PROMPT),
         history,
         message: userContent,
         subagents: (profile?.subagentIds ?? [])
@@ -635,13 +649,22 @@ const showWelcome = computed(() => messages.value.length === 0);
           <MenuIcon name="chevronRight" :size="16" />
         </button>
       </div>
-      <p class="mt-1.5 text-center text-xs text-text-tertiary">
-        {{
-          currentProfile
-            ? `当前 Agent 配置：${currentProfile.name}`
-            : '内容仅保存在本机 SQLite'
-        }}
-      </p>
+      <div class="mt-1.5 flex items-center justify-center gap-3 text-xs text-text-tertiary">
+        <span>
+          {{
+            currentProfile
+              ? `当前 Agent 配置：${currentProfile.name}`
+              : '内容仅保存在本机 SQLite'
+          }}
+        </span>
+        <label class="flex cursor-pointer items-center gap-1.5 select-none" title="开启后 agent 仅回答股票相关问题；关闭后可自由问答（含旅游规划等）">
+          仅股票问答
+          <BaseSwitch
+            :model-value="settings.agentStockOnly"
+            @update:model-value="(v: boolean) => settings.setAgentStockOnly(v)"
+          />
+        </label>
+      </div>
     </div>
   </div>
 </template>
