@@ -15,7 +15,8 @@ import BaseChart from './BaseChart.vue';
 
 /**
  * 沪深两市成交额趋势折线图：逐日 总 / 上证 / 深证 三条成交额（亿）曲线，近 N 个交易日走势；
- * 折线用主题色（运行时读 CSS 变量，切主题即时跟随），上证 / 深证用固定区分色
+ * 折线用主题色（运行时读 CSS 变量，切主题即时跟随），上证 / 深证用固定区分色；
+ * 曲线逐日带数据点标记（成交额按亿计量，折线量级差异大，无点则看不清单日突变）
  */
 const { days, height = 260 } = defineProps<{
   /** 成交额序列（日期升序，近 N 个交易日） */
@@ -94,7 +95,8 @@ const option = computed<EChartsCoreOption>(() => {
         type: 'line',
         data: days.map((day) => day.totalAmount),
         smooth: true,
-        showSymbol: false,
+        showSymbol: true,
+        symbolSize: 6,
         lineStyle: { width: 2, color: primary },
         itemStyle: { color: primary },
         areaStyle: { opacity: 0.08, color: primary },
@@ -104,7 +106,8 @@ const option = computed<EChartsCoreOption>(() => {
         type: 'line',
         data: days.map((day) => day.shanghaiAmount),
         smooth: true,
-        showSymbol: false,
+        showSymbol: true,
+        symbolSize: 4,
         lineStyle: { width: 1.5, color: SH_COLOR },
         itemStyle: { color: SH_COLOR },
       },
@@ -113,7 +116,8 @@ const option = computed<EChartsCoreOption>(() => {
         type: 'line',
         data: days.map((day) => day.shenzhenAmount),
         smooth: true,
-        showSymbol: false,
+        showSymbol: true,
+        symbolSize: 4,
         lineStyle: { width: 1.5, color: SZ_COLOR },
         itemStyle: { color: SZ_COLOR },
       },

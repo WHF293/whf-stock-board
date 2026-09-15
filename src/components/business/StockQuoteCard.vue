@@ -7,7 +7,7 @@ import {
 import { TREND_PILL_CLASS, TREND_TEXT_CLASS } from '../../constants/stock-colors.constants';
 import { formatPercent } from '../../utils/format-percent';
 import { formatPrice } from '../../utils/format-price';
-import type { FullQuote } from '../../types/stock-quote.types';
+import type { QuoteCardLike } from '../../types/stock-quote.types';
 
 /**
  * 报价卡片：名称 + 现价 + 涨跌幅胶囊
@@ -17,8 +17,8 @@ import type { FullQuote } from '../../types/stock-quote.types';
  */
 const props = withDefaults(
   defineProps<{
-    /** 完整报价（指数 / 个股通用） */
-    quote: FullQuote;
+    /** 报价（完整报价 / 全球指数等轻量报价通用，仅要求卡片展示字段） */
+    quote: QuoteCardLike;
     /** 是否可点击（点击时 emit click） */
     clickable?: boolean;
   }>(),
@@ -30,10 +30,10 @@ const emit = defineEmits<{
   click: [];
 }>();
 
-const trend = computed(() => getTrendByChangePercent(props.quote.changePercent));
+const trend = computed(() => getTrendByChangePercent(props.quote.changePercent ?? 0));
 
 /** 报价刷新触发闪烁动画的 key（时间戳缺失时退化为价格本身） */
-const flashKey = computed(() => props.quote.timestamp ?? props.quote.price);
+const flashKey = computed(() => props.quote.timestamp ?? props.quote.price ?? '--');
 
 /** 价格闪烁动画类名（平盘不闪） */
 const flashClass = computed(() => {

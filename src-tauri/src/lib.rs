@@ -125,7 +125,9 @@ fn agent_db_migrations() -> Vec<Migration> {
 /// → board_calendar_meta（采集台账）。
 ///
 /// 口径说明（勿改）：
-/// - 候选池固定为 31 个申万一级行业，故无 scope 列；
+/// - 板块池 = 31 个申万一级行业 + 追加的热门板块（见前端 constants/board-calendar.constants.ts），
+///   板块清单由前端常量决定，故无 scope 列；`board_constituent` 主键 (board_code, symbol)
+///   天然支持「一只票同时属于多个板块」（追加板块与一级行业会重叠）；
 /// - board_daily.score 一律按「净额口径」（涨停不重复计入上涨）落库；
 /// - data_level：1 = 当日完整快照（涨跌停 + 涨跌家数齐全），0 = 仅回补到涨跌停。
 const STOCK_BOARD_DB_V1: &str = "
@@ -295,6 +297,93 @@ CREATE INDEX IF NOT EXISTS idx_statement_record_account
   ON account_statement_record(account_id, trade_date);
 ";
 
+/// V5：已保存新闻（Agent「保存新闻」MCP 工具与热点新闻收藏共用）
+const STOCK_BOARD_DB_V5: &str = "
+CREATE TABLE IF NOT EXISTS news_saved (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  source       TEXT NOT NULL,
+  title        TEXT NOT NULL,
+  url          TEXT NOT NULL UNIQUE,
+  summary      TEXT,
+  published_at INTEGER,
+  saved_at     INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_news_saved_saved_at ON news_saved(saved_at);
+";
+
+/// weblog.db v1：系统日志（报错日志 + 行为日志）
+///
+/// 独立成库的理由：日志是高频写入 + 按保留期整段删除的「滚动数据」，
+/// 与业务库（stock-board.db）/ Agent 配置库（agent.db）的生命周期完全不同，
+/// 混在一起会让业务库被日志撑大且裁剪时锁表。
+///
+/// 口径（勿改）：
+/// - `time_text` 冗余存 `YYYY-MM-DD HH:mm:ss` 展示串，页面表格直接读，
+///   避免前端对每条记录再做一次格式化；
+/// - `occurred_at` 毫秒时间戳是唯一排序 / 裁剪依据（保留 3 天）；
+/// - 两表都带 `trace_id`（SkyWalking 语义的链路标识）与 `app_version` /
+///   `os_name` / `ua` 等运行环境快照，便于按版本、按机器归因报错。
+const WEBLOG_DB_V1: &str = "
+CREATE TABLE IF NOT EXISTS error_log (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  occurred_at INTEGER NOT NULL,
+  time_text   TEXT    NOT NULL,
+  level       TEXT    NOT NULL DEFAULT 'error',
+  kind        TEXT    NOT NULL,
+  message     TEXT    NOT NULL,
+  stack       TEXT,
+  page_path   TEXT    NOT NULL DEFAULT '',
+  page_title  TEXT,
+  api_url     TEXT,
+  api_status  INTEGER,
+  duration_ms INTEGER,
+  app_version TEXT    NOT NULL DEFAULT '',
+  runtime     TEXT    NOT NULL DEFAULT 'browser',
+  os_name     TEXT,
+  os_version  TEXT,
+  ua          TEXT,
+  webview     TEXT,
+  screen      TEXT,
+  trace_id    TEXT,
+  detail      TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_error_log_time ON error_log(occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_error_log_kind ON error_log(kind);
+
+CREATE TABLE IF NOT EXISTS action_log (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  occurred_at INTEGER NOT NULL,
+  time_text   TEXT    NOT NULL,
+  action      TEXT    NOT NULL,
+  category    TEXT    NOT NULL,
+  label       TEXT    NOT NULL DEFAULT '',
+  target      TEXT,
+  detail      TEXT,
+  page_path   TEXT    NOT NULL DEFAULT '',
+  page_title  TEXT,
+  duration_ms INTEGER,
+  status      TEXT,
+  app_version TEXT    NOT NULL DEFAULT '',
+  os_name     TEXT,
+  ua          TEXT,
+  session_id  TEXT,
+  trace_id    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_action_log_time     ON action_log(occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_action_log_action   ON action_log(action);
+CREATE INDEX IF NOT EXISTS idx_action_log_category ON action_log(category);
+";
+
+/// weblog.db 全部迁移（后续版本往后追加，勿改动已有版本）
+fn weblog_db_migrations() -> Vec<Migration> {
+  vec![Migration {
+    version: 1,
+    description: "create_weblog_tables",
+    sql: WEBLOG_DB_V1,
+    kind: MigrationKind::Up,
+  }]
+}
+
 /// stock-board.db 全部迁移（后续版本往后追加，勿改动已有版本）
 fn stock_board_db_migrations() -> Vec<Migration> {
   vec![
@@ -322,6 +411,12 @@ fn stock_board_db_migrations() -> Vec<Migration> {
       sql: STOCK_BOARD_DB_V4,
       kind: MigrationKind::Up,
     },
+    Migration {
+      version: 5,
+      description: "create_news_saved",
+      sql: STOCK_BOARD_DB_V5,
+      kind: MigrationKind::Up,
+    },
   ]
 }
 
@@ -334,6 +429,7 @@ pub fn run() {
       tauri_plugin_sql::Builder::default()
         .add_migrations("sqlite:agent.db", agent_db_migrations())
         .add_migrations("sqlite:stock-board.db", stock_board_db_migrations())
+        .add_migrations("sqlite:weblog.db", weblog_db_migrations())
         .build(),
     )
     .plugin(tauri_plugin_fs::init())

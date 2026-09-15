@@ -16,7 +16,7 @@ import { usePolling } from '../../composables/use-polling';
 import { POLLING_INTERVAL } from '../../constants/polling.constants';
 import type { KLineData } from 'klinecharts';
 import type { FullQuote } from '../../types/stock-quote.types';
-import { normalizeSymbol, toTencentSymbol } from 'stock-sdk';
+import { toFullSymbol } from '../../utils/to-full-symbol';
 import { useDataCacheStore } from '../../stores/data-cache';
 import { useWatchlistStore } from '../../stores/watchlist';
 import { DEFAULT_GROUP_ID } from '../../constants/watchlist.constants';
@@ -50,15 +50,7 @@ const showOrderBook = computed(() => dockPanel.width >= SIDEBAR_MIN_WIDTH_PX);
 /**
  * 归一化符号：600519 / SH600519 / sh600519 等形态统一为 sh600519
  */
-const symbol = computed<string>(() => {
-  const raw = String(props.symbol ?? '');
-  try {
-    return toTencentSymbol(normalizeSymbol(raw));
-  } catch {
-    // 非法符号兜底原样返回，交给后续请求失败降级
-    return raw;
-  }
-});
+const symbol = computed<string>(() => toFullSymbol(String(props.symbol ?? '')));
 
 // ---------- 加自选 / 删自选弹窗 ----------
 /** 弹窗类型：null 关闭 / add 加自选 / remove 删自选 */

@@ -4,7 +4,7 @@ import { VueDraggable } from 'vue-draggable-plus';
 import BaseButton from '../ui/BaseButton.vue';
 import BaseModal from '../ui/BaseModal.vue';
 import MenuIcon from '../ui/MenuIcon.vue';
-import { SW_LEVEL1_BOARDS } from '../../constants/board-calendar.constants';
+import { CALENDAR_BOARDS } from '../../constants/board-calendar.constants';
 import {
   BOARD_DEFAULT_ORDER,
   normalizeBoardHidden,
@@ -48,7 +48,7 @@ const draftHidden = ref<string[]>([]);
 
 /** 代码 → 板块（展示名称用） */
 const boardByCode = computed(
-  () => new Map(SW_LEVEL1_BOARDS.map((board) => [board.code, board])),
+  () => new Map(CALENDAR_BOARDS.map((board) => [board.code, board])),
 );
 
 /** 已勾选数量 */
@@ -105,7 +105,7 @@ const onSortByHeat = (): void => {
   );
 };
 
-/** 恢复默认（全部勾选 + 申万一级标准顺序 = 回到按热门口径自动排序） */
+/** 恢复默认（全部勾选 + 板块池标准顺序 = 回到按热门口径自动排序） */
 const onResetDefault = (): void => {
   draftOrder.value = [...BOARD_DEFAULT_ORDER];
   draftHidden.value = [];

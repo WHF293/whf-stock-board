@@ -14,6 +14,7 @@ import { TREND_THEME_DEFAULT } from '../constants/trend-theme.constants';
 import type { TrendTheme } from '../constants/trend-theme.constants';
 import { WATERMARK_ENABLED_DEFAULT } from '../constants/watermark.constants';
 import { SIDEBAR_COLLAPSED_DEFAULT } from '../constants/sidebar.constants';
+import { WEBLOG_ENABLED_DEFAULT } from '../constants/weblog.constants';
 import { MENU_DEFAULT_ORDER } from '../constants/router-meta.constants';
 import { PANORAMA_CN_VIEW_MODE_DEFAULT } from '../constants/panorama.constants';
 import {
@@ -59,6 +60,8 @@ interface SettingsState {
   chartMainIndicators: string[];
   /** 股票详情 · 蜡烛模式副图指标清单（如 ['VOL', 'MACD_KDJ']，每项独立面板） */
   chartSubIndicators: string[];
+  /** 系统日志 · 采集开关（关闭后不再记录报错与行为，仅保留系统类事件） */
+  weblogEnabled: boolean;
 }
 
 /**
@@ -82,6 +85,7 @@ export const useSettingsStore = defineStore('settings', {
     boardCalendarHidden: [],
     chartMainIndicators: [...CHART_MAIN_INDICATORS_DEFAULT],
     chartSubIndicators: [...CHART_SUB_INDICATORS_DEFAULT],
+    weblogEnabled: WEBLOG_ENABLED_DEFAULT,
   }),
 
   actions: {
@@ -217,6 +221,17 @@ export const useSettingsStore = defineStore('settings', {
     setChartIndicators(mainIndicators: string[], subIndicators: string[]): void {
       this.chartMainIndicators = [...mainIndicators];
       this.chartSubIndicators = [...subIndicators];
+    },
+
+    /**
+     * 设置系统日志采集开关
+     *
+     * 只改持久化状态；运行期的采集开关由 weblog 模块持有，
+     * 设置页在切换时同步调用 `setWeblogEnabled`（避免 store 反向依赖采集模块）。
+     * @param enabled true 开启采集
+     */
+    setWeblogEnabled(enabled: boolean): void {
+      this.weblogEnabled = enabled;
     },
   },
 

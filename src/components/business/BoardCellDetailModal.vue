@@ -43,6 +43,9 @@ const { openPage, toContextList } = useStockOpen();
  */
 const onLimitClick = (stock: BoardLimitStock): void => {
   openPage(stock.symbol, toContextList(limitStocks.value, (item) => item.symbol));
+  // 详情页整页跳转后本弹窗仍在（Teleport 到 body 不随页面卸载），必须显式关闭，
+  // 否则从详情页返回时弹窗会重新盖在页面上
+  open.value = false;
 };
 
 /**
@@ -51,6 +54,7 @@ const onLimitClick = (stock: BoardLimitStock): void => {
  */
 const onConstituentClick = (stock: BoardConstituentQuote): void => {
   openPage(stock.symbol, toContextList(constituents.value, (item) => item.symbol));
+  open.value = false;
 };
 
 /** 页签标识 */

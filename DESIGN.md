@@ -206,7 +206,10 @@ class 策略（`<html class="dark">`），`@custom-variant dark`。覆盖 canvas
 - 卡片内边距 16px；卡片头部与内容间距 12px
 - 控件 padding 6px × 12px；元素间距以 4px / 8px 为基准
 - 表格滚动容器三档：`table-scroll`（560px，整页宽表格）/ `table-scroll-sm`（400px，卡片内小表格）/ `table-scroll-xs`（360px，紧凑排行）；表头 `sticky top-0`，第一列 `sticky left-0`，左上角单元格双向固定 z-index 最高
+- 报价卡片栅格 `quote-card-grid`：**所有卡片等宽**、每行张数由可用宽度决定（`repeat(auto-fill, minmax(min(350px, max(200px, calc(25% - 0.75rem))), 1fr))`）——容器够宽按 350px 起排，不够 4 张 350px 时按 4 等分收缩，窄到 848px 以下才退回 200px 下限自然换行（指数卡片等多卡并列场景统一用它，不再写死 `grid-cols-4`；必须 auto-fill，auto-fit 会拉伸末行）
+- 指数卡片「首行裁剪」容器 `row-clamp` + `useRowClamp`：卡片**全部渲染**，收起态把容器高度实测固定为「首行高度」并 `overflow: clip` 裁掉其余行，展开态切到栅格总高，高度过渡 320ms（`prefers-reduced-motion` 下关闭）→ 一行显示几张完全由宽度决定，宽度只放得下 3 张时第 4 张自动被裁掉；窗口变宽首行能放下更多，一行放下全部时展开开关整个不渲染
 - 布局骨架：左侧图标导航（桌面固定、窄屏抽屉）+ 头部（页标题、交易时段徽标、明暗切换）+ 右侧可收起停靠面板
+- 主区内容上限 1600px（`MainLayout` 的 `max-w-[1600px]`）：为报价卡片栅格留出余量（上限内按列数公式排布）
 
 ## Elevation & Depth
 

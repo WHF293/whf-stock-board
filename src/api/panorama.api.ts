@@ -3,9 +3,10 @@ import { sdk } from './sdk';
 import {
   PANORAMA_CLIST_PAGE_SIZE,
   PANORAMA_GLOBAL_INDEX_FS,
+  PANORAMA_GLOBAL_INDEX_SECIDS,
   PANORAMA_US_SECIDS,
 } from '../constants/panorama.constants';
-import type { PanoramaItem } from '../types/panorama.types';
+import type { GlobalIndexQuote, PanoramaItem } from '../types/panorama.types';
 
 /**
  * 行情全景 api：东财 clist / ulist 直连（走同源代理）+ SDK 全球期货
@@ -26,10 +27,25 @@ const ULIST_URL_BASE = 'https://push2delay.eastmoney.com/api/qt/ulist.np/get';
 /** 行情取值字段：f12 代码 / f14 名称 / f3 涨跌幅（fltt=2 已归一为百分数数值） */
 const QUOTE_FIELDS = 'f12,f14,f3';
 
+/** 全球指数取值字段：f2 最新价 / f12 代码 / f14 名称 / f3 涨跌幅 */
+const GLOBAL_INDEX_FIELDS = 'f2,f12,f14,f3';
+
 /** 上游列表响应体（仅取本页所需字段） */
 interface EastmoneyListResponse {
   data: {
     diff: {
+      f12: string;
+      f14: string;
+      f3: number | string;
+    }[];
+  } | null;
+}
+
+/** 全球指数 ulist 响应体（比列表接口多 f2 最新价） */
+interface EastmoneyUlistResponse {
+  data: {
+    diff: {
+      f2: number | string;
       f12: string;
       f14: string;
       f3: number | string;
@@ -106,6 +122,33 @@ export const fetchUsSectorPanorama = async (): Promise<PanoramaItem[]> => {
  */
 export const fetchGlobalIndexPanorama = async (): Promise<PanoramaItem[]> =>
   fetchClist(PANORAMA_GLOBAL_INDEX_FS);
+
+/**
+ * 拉取全球指数轻量报价（东财 push2delay ulist 精确 secid 查询，带最新价）
+ *
+ * 市场总览「全球指数」展开区数据源；腾讯行情源不覆盖日经 225 / KOSPI，
+ * 故统一走东财（⚠️ 上游 200 ≠ 有数据，diff 缺失按空处理由上层展示空态）
+ * @returns 全球指数报价列表（顺序与 secids 配置一致）
+ */
+export const fetchGlobalIndexQuotes = async (): Promise<GlobalIndexQuote[]> => {
+  const query = [
+    'fltt=2',
+    `fields=${GLOBAL_INDEX_FIELDS}`,
+    `secids=${PANORAMA_GLOBAL_INDEX_SECIDS.join(',')}`,
+  ].join('&');
+  const response = await proxyFetch(`${ULIST_URL_BASE}?${query}`);
+  if (!response.ok) {
+    throw new Error(`ulist 请求失败：HTTP ${response.status}`);
+  }
+  const body = (await response.json()) as EastmoneyUlistResponse;
+  // ⚠️ 上游 200 ≠ 有数据：data/diff 缺失返回空数组而非抛错由卡片空态兜底
+  return (body.data?.diff ?? []).map((raw) => ({
+    name: raw.f14,
+    code: raw.f12,
+    price: typeof raw.f2 === 'number' ? raw.f2 : null,
+    changePercent: typeof raw.f3 === 'number' ? raw.f3 : null,
+  }));
+};
 
 /**
  * 拉取外盘商品全景（SDK 全球期货接口，futsseapi 源）

@@ -14,6 +14,7 @@ import StockAccountView from '../views/StockAccountView.vue';
 import AgentAnalysisView from '../views/AgentAnalysisView.vue';
 import MarketRankView from '../views/MarketRankView.vue';
 import StockDetailView from '../views/StockDetailView.vue';
+import SystemLogView from '../views/SystemLogView.vue';
 
 /** 路由切换顶部进度条：钩子在路由表定义后立即挂载 */
 NProgress.configure({ showSpinner: false, speed: 300, minimum: 0.2 });
@@ -85,17 +86,18 @@ const routes = [
       // 交割单导入已并入股票账户页（历史收藏 / 旧路径兼容）
       { path: '/trade-import', redirect: ROUTE_PATH.STOCK_ACCOUNT },
       {
-        path: ROUTE_PATH.AGENT_ANALYSIS,
-        component: AgentAnalysisView,
-        meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.AGENT_ANALYSIS] },
-      },
-      {
         path: ROUTE_PATH.MARKET_RANK,
         component: MarketRankView,
         meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.MARKET_RANK] },
       },
       // 设置已改为侧栏底部入口的右侧抽屉（历史收藏 / 旧路径兼容）
       { path: ROUTE_PATH.SETTINGS, redirect: ROUTE_PATH.DASHBOARD },
+      // 系统日志：由设置抽屉「查看系统日志」进入，不入左侧导航
+      {
+        path: ROUTE_PATH.SYSTEM_LOG,
+        component: SystemLogView,
+        meta: { title: '系统日志' },
+      },
       // 股票详情整页：全站双击个股进入；不入左侧导航
       {
         path: `${ROUTE_PATH.STOCK_DETAIL}/:symbol`,
@@ -104,8 +106,23 @@ const routes = [
       },
     ],
   },
+  // Agent 分析独立窗口路由：Tauri 下经独立 WebviewWindow 打开（standalone 布局占满 webview），
+  // 不在主窗口导航内使用；浏览器直开此路径也渲染 standalone 版本
+  {
+    path: ROUTE_PATH.AGENT_WINDOW,
+    component: AgentAnalysisView,
+    props: { standalone: true },
+    meta: { title: 'Agent 分析' },
+  },
   { path: '/:pathMatch(.*)*', redirect: ROUTE_PATH.DASHBOARD },
 ];
+
+// 独立窗口启动引导：WebviewWindow 用 `index.html?page=/agent-window` 打开（规避
+// Tauri 静态资源协议对 SPA 子路径回退的不确定性），这里把 page 参数还原成真实路径
+const bootPage = new URLSearchParams(window.location.search).get('page');
+if (bootPage && bootPage.startsWith('/') && !bootPage.startsWith('//')) {
+  window.history.replaceState(null, '', bootPage);
+}
 
 /** 全站路由实例（HTML5 History 模式） */
 export const router = createRouter({

@@ -46,7 +46,7 @@ export interface BoardProfile {
   code: string;
   /** 板块名称 */
   name: string;
-  /** 侧栏/行排序位（= SW_LEVEL1_BOARDS 声明顺序） */
+  /** 侧栏/行排序位（= CALENDAR_BOARDS 声明顺序） */
   sortOrder: number;
   /** 成分股数（f104 + f105 + f106） */
   consCount: number;
@@ -55,10 +55,13 @@ export interface BoardProfile {
 }
 
 /**
- * 个股 → 申万一级行业映射（board_constituent 行）
+ * 个股 → 板块映射（board_constituent 行）
+ *
+ * ⚠️ 一对多：追加的热门板块与申万一级行业重叠（半导体 ⊂ 电子），
+ * 同一只票会有多行（主键 (board_code, symbol)），读取侧必须按数组处理。
  */
 export interface BoardConstituent {
-  /** 所属一级行业板块代码 */
+  /** 所属板块代码 */
   boardCode: string;
   /** 6 位股票代码 */
   symbol: string;
@@ -112,7 +115,7 @@ export interface BoardDailyRow {
 export interface BoardLimitStock {
   /** 交易日 */
   tradeDate: string;
-  /** 归属的一级行业板块代码 */
+  /** 归属的板块代码（一只票可同时归属多个板块：一级行业 + 命中的热门板块） */
   boardCode: string;
   /** 6 位股票代码 */
   symbol: string;
@@ -311,7 +314,7 @@ export interface BoardCalendarMatrix {
  * 板块过滤器确认结果（板块列的勾选与顺序）
  */
 export interface BoardColumnSelection {
-  /** 完整列顺序（31 个板块代码的排列，决定行序） */
+  /** 完整列顺序（板块池全部代码的排列，决定行序） */
   order: string[];
   /** 未勾选的板块代码（不在表格中渲染） */
   hidden: string[];

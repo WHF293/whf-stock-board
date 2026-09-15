@@ -1,13 +1,23 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import type { StructuredToolInterface } from '@langchain/core/tools';
 import { useAgentStore } from '@/stores/agent';
-import { WELCOME_SCENES, DEFAULT_AGENT_SYSTEM_PROMPT } from '@/constants/agent.constants';
+import {
+  WELCOME_SCENES,
+  DEFAULT_AGENT_SYSTEM_PROMPT,
+  CHAT_INPUT_MIN_ROWS,
+  CHAT_INPUT_MAX_ROWS,
+} from '@/constants/agent.constants';
 import { listMessages, insertMessage, updateMessage } from '@/composables/use-agent-db';
 import { SmoothStreamer } from '@/agent/smooth-streamer';
 import { startAgentRun, type AgentRunHandle, type HistoryMessage } from '@/agent/create-agent';
-import type { ChatMessage, MessageStatus } from '@/types/agent.types';
+import { getMcpRuntime } from '@/agent/mcp/registry';
+import { MCP_UI_PAYLOAD_MAX_BYTES } from '@/agent/mcp/constants';
+import { resolveInputHeight } from '@/utils/chat-input-height';
+import type { ChatMessage, MessageStatus, ToolCallPart } from '@/types/agent.types';
 import type { AgentManagerKey } from '@/types/agent.types';
 import MenuIcon from '@/components/ui/MenuIcon.vue';
+import ToolCallCard from './ToolCallCard.vue';
 
 /**
  * Agent 聊天区（方案 §6.2 / §5.3.1）
@@ -60,18 +70,40 @@ const scrollRef = ref<HTMLElement | null>(null);
 /** 发送前置提示（未配置模型等） */
 const sendHint = ref('');
 
-/** 当前会话绑定的 Agent 配置 */
-const currentProfile = computed(() => {
-  const pid = store.activeSession?.agentProfileId;
-  return pid ? (store.profiles.find((p) => p.id === pid) ?? null) : null;
-});
+/** 当前会话绑定的 Agent 配置（store 计算属性为唯一事实源） */
+const currentProfile = computed(() => store.activeProfile);
 
-/** 当前生效模型：会话 > profile > 全局默认 */
-const currentModel = computed(() => {
-  const session = store.activeSession;
-  const modelId = session?.modelId ?? currentProfile.value?.modelId ?? null;
-  return store.models.find((m) => m.id === modelId) ?? store.defaultModel;
-});
+/**
+ * 当前生效模型：会话绑定 > Agent 配置 > 默认模型（同 store.effectiveModel）
+ *
+ * ⚠️ 与「模型管理」里的默认模型不是一回事：绑定了模型时默认模型不生效，
+ * 所以请求用的模型必须由 store 统一给出，避免两处口径不一致。
+ */
+const currentModel = computed(() => store.effectiveModel);
+
+/**
+ * 输入框高度自适应：2~5 行之间随内容长高，超出后框内滚动
+ *
+ * 单行 textarea 不会自动长高（原生行为是出滚动条），需要在每次内容变化后
+ * 先归零测 scrollHeight，再夹到 [min, max]，并按是否溢出切换 overflow。
+ */
+const syncInputHeight = (): void => {
+  const el = inputRef.value;
+  if (!el) return;
+  const lineHeight = Number.parseFloat(getComputedStyle(el).lineHeight) || 20;
+  el.style.height = 'auto';
+  const { height, scrollable } = resolveInputHeight({
+    lineHeight,
+    contentHeight: el.scrollHeight,
+    minRows: CHAT_INPUT_MIN_ROWS,
+    maxRows: CHAT_INPUT_MAX_ROWS,
+  });
+  el.style.height = `${height}px`;
+  el.style.overflowY = scrollable ? 'auto' : 'hidden';
+};
+
+watch(draft, () => void nextTick(syncInputHeight));
+onMounted(() => syncInputHeight());
 
 /**
  * 场景 chips 预填
@@ -90,6 +122,59 @@ const greeting = computed(() => {
   if (hour < 18) return '下午好';
   return '晚上好';
 });
+
+/* --------------------------------- 工具卡 -------------------------------- */
+
+/**
+ * 取消息里的工具卡块（消息 parts 中 type=tool_call 的部分）
+ * @param msg 消息
+ * @returns 工具卡列表（按发生顺序）
+ */
+const toolCards = (msg: ChatMessage): ToolCallPart[] =>
+  (msg.parts ?? []).filter((part): part is ToolCallPart => part.type === 'tool_call');
+
+/**
+ * 工具卡 upsert（流式提前信号与运行时事件共用，按 callId 配对）
+ * @param list 目标消息的 parts 数组
+ * @param patch 写入字段（callId + toolName 为必需，其余增量覆盖）
+ * @returns 该调用对应的卡片块
+ */
+const upsertToolPart = (
+  list: ToolCallPart[],
+  patch: Partial<ToolCallPart> & { callId: string; toolName: string },
+): ToolCallPart => {
+  const existing = list.find((part) => part.callId === patch.callId);
+  if (existing) {
+    Object.assign(existing, patch);
+    return existing;
+  }
+  const created: ToolCallPart = {
+    type: 'tool_call',
+    callId: patch.callId,
+    toolName: patch.toolName,
+    serverKey: patch.serverKey,
+    state: patch.state ?? 'running',
+    argsText: patch.argsText ?? '',
+    resultText: patch.resultText,
+    durationMs: patch.durationMs,
+    ui: patch.ui,
+  };
+  list.push(created);
+  return created;
+};
+
+/**
+ * UI 载荷体积守卫：超限时只保留资源地址（卡片退化为文本形态），避免消息表膨胀
+ * @param payload 工具结构化结果
+ * @returns 可持久化的载荷；超限或不可序列化返回 null
+ */
+const guardPayload = (payload: Record<string, unknown>): Record<string, unknown> | null => {
+  try {
+    return JSON.stringify(payload).length > MCP_UI_PAYLOAD_MAX_BYTES ? null : payload;
+  } catch {
+    return null;
+  }
+};
 
 /* --------------------------------- 运行注册表 ------------------------------- */
 
@@ -144,12 +229,22 @@ const finalizeRun = (run: ActiveRun): void => {
   if (msg) {
     msg.status = status;
     if (run.error) msg.error = run.error;
+    // 中断 / 出错时收尾悬挂的工具卡，避免留下「运行中」假状态（重新打开会话会一直转）
+    if (status !== 'done') {
+      for (const part of msg.parts ?? []) {
+        if (part.type === 'tool_call' && part.state === 'running') {
+          part.state = 'error';
+          part.resultText = run.error ?? '已停止';
+        }
+      }
+    }
     // 保证显示内容与落库一致（flush 已全量吐出）
   }
   void updateMessage(run.messageId, {
     content: msg?.content ?? '',
     status,
     error: run.error,
+    parts: msg?.parts ?? null,
   });
   activeRuns.value = activeRuns.value.filter((r) => r !== run);
 };
@@ -198,7 +293,7 @@ const send = async (): Promise<void> => {
     sessionId,
     role: 'assistant',
     content: '',
-    parts: null,
+    parts: [],
     status: 'running',
     error: null,
     createdAt: Date.now(),
@@ -218,6 +313,58 @@ const send = async (): Promise<void> => {
     assistantMsg.content += out;
   });
 
+  // 工具卡数据源：MCP 运行时事件（确定性）与流式提前信号（体验）共同写入消息 parts
+  const parts: ToolCallPart[] = [];
+  assistantMsg.parts = parts;
+  const sink = {
+    onStart: (event: {
+      id: string;
+      serverKey: string;
+      toolName: string;
+      argsText: string;
+    }): void => {
+      upsertToolPart(parts, {
+        callId: event.id,
+        toolName: event.toolName,
+        serverKey: event.serverKey,
+        argsText: event.argsText,
+        state: 'running',
+      });
+    },
+    onEnd: (event: {
+      id: string;
+      state: 'success' | 'error';
+      resultText: string;
+      durationMs: number;
+      ui?: { resourceUri: string; payload: Record<string, unknown> };
+    }): void => {
+      const existing = parts.find((part) => part.callId === event.id);
+      upsertToolPart(parts, {
+        callId: event.id,
+        // 事件里没带工具名（结束事件）时沿用卡片上已有的名字
+        toolName: existing?.toolName ?? 'tool',
+        state: event.state,
+        resultText: event.resultText,
+        durationMs: event.durationMs,
+        ...(event.ui
+          ? { ui: { resourceUri: event.ui.resourceUri, payload: guardPayload(event.ui.payload) ?? {} } }
+          : {}),
+      });
+    },
+  };
+
+  // MCP 工具集（内置 + 已启用远端）；装配失败不阻断对话，只是本次无工具
+  let tools: StructuredToolInterface[] = [];
+  try {
+    const runtime = await getMcpRuntime();
+    tools = runtime.createTools(sink) as StructuredToolInterface[];
+  } catch (error) {
+    console.warn(
+      '[agent] MCP 运行时装配失败，本次运行无工具：' +
+        (error instanceof Error ? error.message : String(error)),
+    );
+  }
+
   const run: ActiveRun = {
     sessionId,
     messageId: assistantMsg.id,
@@ -231,16 +378,28 @@ const send = async (): Promise<void> => {
         subagents: (profile?.subagentIds ?? [])
           .map((id) => store.subagents.find((s) => s.id === id))
           .filter((s) => s !== undefined),
+        // 内置 MCP（应用接口 + stock-sdk）+ 已启用的远端 MCP 统一装配为进程内工具
+        tools,
       },
       {
         onDelta: (delta) => streamer.push(delta),
+        // 模型刚发起调用即插卡（结果由 sink 回填），避免长工具链「静默等待」
+        onToolRequest: (event) =>
+          upsertToolPart(parts, {
+            callId: event.id,
+            toolName: event.name,
+            argsText: event.argsText,
+            state: 'running',
+          }),
         onDone: (full, stopped) => {
           run.finalText = full;
           run.stopped = stopped;
           streamer.end();
         },
         onError: (message) => {
-          run.error = message;
+          // 带上本次实际请求的模型：模型名写错、或配置改动没生效时，
+          // 用户能直接从报错里看出「请求用的到底是哪个 model」
+          run.error = `${message}（请求模型：${model.modelId}）`;
           streamer.end();
         },
       },
@@ -260,6 +419,24 @@ const stop = (): void => {
   for (const run of activeRuns.value) {
     if (run.sessionId === store.currentSessionId) run.handle.stop();
   }
+};
+
+/**
+ * MCP App 的 `ui/message`：把 App 里点出来的追问交给 Agent
+ *
+ * 运行中只预填（不打断当前运行），空闲则直接发送——与场景 chips 的交互一致。
+ *
+ * @param text App 发起的追问文本
+ */
+const onAppAsk = (text: string): void => {
+  const content = text.trim();
+  if (!content) return;
+  draft.value = content;
+  if (isRunning.value) {
+    void nextTick(() => inputRef.value?.focus());
+    return;
+  }
+  void send();
 };
 
 /* --------------------------------- 滚动与渲染 ------------------------------- */
@@ -314,11 +491,17 @@ const showWelcome = computed(() => messages.value.length === 0);
       <div class="min-w-0 flex-1" />
       <button
         type="button"
-        class="flex items-center gap-1.5 rounded-full border border-flat-weak px-2.5 py-1 text-xs text-text-secondary transition-colors hover:border-primary hover:text-primary"
+        class="flex max-w-[18rem] items-center gap-1.5 rounded-full border border-flat-weak px-2.5 py-1 text-xs text-text-secondary transition-colors hover:border-primary hover:text-primary"
+        :title="
+          currentModel
+            ? `请求参数 model：${currentModel.modelId}\n接口地址：${currentModel.baseUrl}`
+            : '未配置模型'
+        "
         @click="emit('open-manager', 'model')"
       >
-        <MenuIcon name="cpu" :size="13" />
-        {{ currentModel ? currentModel.name : '未配置模型' }}
+        <MenuIcon name="cpu" :size="13" class="shrink-0" />
+        <span class="truncate">{{ currentModel ? currentModel.name : '未配置模型' }}</span>
+        <span v-if="currentModel" class="shrink-0 text-text-tertiary">{{ currentModel.modelId }}</span>
       </button>
       <span
         class="h-2 w-2 rounded-full"
@@ -367,9 +550,19 @@ const showWelcome = computed(() => messages.value.length === 0);
 
           <!-- 助手消息：通栏 -->
           <div v-else class="rounded-2xl bg-surface px-4 py-3">
-            <!-- 思考中（尚无可见文本） -->
+            <!-- 工具调用卡（含 MCP Apps 沙箱渲染位），在正文上方按发生顺序排列 -->
+            <div v-if="toolCards(msg).length > 0" class="mb-3 space-y-2">
+              <p class="text-[11px] text-text-tertiary">工具调用 {{ toolCards(msg).length }} 次</p>
+              <ToolCallCard
+                v-for="card in toolCards(msg)"
+                :key="card.callId"
+                :part="card"
+                @ask="onAppAsk"
+              />
+            </div>
+            <!-- 思考中（尚无可见文本且无工具卡） -->
             <div
-              v-if="msg.status === 'running' && !msg.content"
+              v-if="msg.status === 'running' && !msg.content && toolCards(msg).length === 0"
               class="flex items-center gap-2 text-sm text-text-tertiary"
             >
               <span class="flex gap-1">
@@ -415,10 +608,11 @@ const showWelcome = computed(() => messages.value.length === 0);
         <textarea
           ref="inputRef"
           v-model="draft"
-          rows="1"
-          class="max-h-40 min-h-6 flex-1 resize-none bg-transparent text-sm text-text outline-none placeholder:text-text-tertiary"
+          :rows="CHAT_INPUT_MIN_ROWS"
+          class="flex-1 resize-none bg-transparent text-sm leading-5 text-text outline-none placeholder:text-text-tertiary"
           placeholder="输入问题，Enter 发送，Shift+Enter 换行"
           @keydown.enter.exact.prevent="void send()"
+          @input="syncInputHeight"
         />
         <!-- 运行中 → 停止按钮；否则发送 -->
         <button

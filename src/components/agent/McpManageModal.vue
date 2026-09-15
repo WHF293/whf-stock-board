@@ -2,6 +2,7 @@
 import { reactive, ref } from 'vue';
 import { useAgentStore } from '@/stores/agent';
 import type { McpTransport } from '@/types/agent.types';
+import { BUILTIN_MCP_SERVERS, resetMcpRuntime } from '@/agent/mcp/registry';
 import BaseModal from '@/components/ui/BaseModal.vue';
 import BaseButton from '@/components/ui/BaseButton.vue';
 import BaseSwitch from '@/components/ui/BaseSwitch.vue';
@@ -12,7 +13,10 @@ import MenuIcon from '@/components/ui/MenuIcon.vue';
  * MCP 服务器管理弹窗（一期仅 streamable HTTP / SSE 远端传输）
  *
  * - 列表：启用开关 + 删除；
- * - 添加：名称 / 传输方式 / URL / 请求头（JSON，可选）；连接测试与工具列举在 M4 接入。
+ * - 添加：名称 / 传输方式 / URL / 请求头（JSON，可选）；
+ * - 远端已接线：启用的服务器在下次 Agent 运行时连接并合入工具（连接失败跳过该服务器、
+ *   不影响其余工具），故增删改后调用 `resetMcpRuntime()` 让运行时不缓存旧连接；
+ * - 内置 MCP（应用接口 / stock-sdk）：进程内实现，不可删除、不可编辑，随应用常驻
  */
 const store = useAgentStore();
 
@@ -57,9 +61,20 @@ const submitAdd = (): void => {
   }
   void store
     .addMcp({ name: form.name.trim(), transport: form.transport, url: form.url.trim(), headers })
+    .then(() => resetMcpRuntime())
     .then(() => {
       addOpen.value = false;
     });
+};
+
+/**
+ * 启停远端 MCP（变更后失效运行时缓存，下次运行重连）
+ * @param id MCP id
+ * @param enabled 是否启用
+ * @returns 无
+ */
+const toggleRemote = (id: number, enabled: boolean): void => {
+  void store.toggleMcp(id, enabled).then(() => resetMcpRuntime());
 };
 
 /** 传输方式展示名 */
@@ -85,7 +100,9 @@ const openDelete = (mcp: { id: number; name: string }): void => {
 
 /** 确认删除 */
 const confirmDelete = (): void => {
-  if (deleteTarget.value) void store.removeMcp(deleteTarget.value.id);
+  if (deleteTarget.value) {
+    void store.removeMcp(deleteTarget.value.id).then(() => resetMcpRuntime());
+  }
   deleteModalOpen.value = false;
 };
 </script>
@@ -93,6 +110,29 @@ const confirmDelete = (): void => {
 <template>
   <BaseModal v-model:open="open" title="MCP 服务器管理" max-width-class="max-w-lg">
     <div class="space-y-2">
+      <!-- 内置 MCP：常驻不可删（应用接口 / stock-sdk） -->
+      <div
+        v-for="builtin in BUILTIN_MCP_SERVERS"
+        :key="builtin.key"
+        class="flex items-center gap-3 rounded-xl border border-primary/30 bg-primary-weak/40 px-4 py-3"
+      >
+        <div class="min-w-0 flex-1">
+          <p class="flex items-center gap-2 truncate text-sm font-medium text-text">
+            {{ builtin.name }}
+            <span
+              class="shrink-0 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-medium leading-none text-white"
+            >
+              内置
+            </span>
+          </p>
+          <p class="mt-0.5 truncate text-xs text-text-tertiary">{{ builtin.description }}</p>
+          <p class="mt-0.5 truncate text-xs text-text-secondary">
+            {{ builtin.tools.map((t) => t.definition.name).join(' / ') }}
+          </p>
+        </div>
+        <span class="shrink-0 text-xs text-text-tertiary">常驻</span>
+      </div>
+
       <div
         v-for="mcp in store.mcps"
         :key="mcp.id"
@@ -106,7 +146,7 @@ const confirmDelete = (): void => {
         </div>
         <BaseSwitch
           :model-value="mcp.enabled"
-          @update:model-value="(v: boolean) => void store.toggleMcp(mcp.id, v)"
+          @update:model-value="(v: boolean) => toggleRemote(mcp.id, v)"
         />
         <button
           type="button"
@@ -118,8 +158,11 @@ const confirmDelete = (): void => {
         </button>
       </div>
 
-      <p v-if="store.mcps.length === 0" class="py-6 text-center text-sm text-text-tertiary">
-        还没有 MCP 服务器，点击下方按钮添加
+      <p
+        v-if="store.mcps.length === 0"
+        class="py-4 text-center text-sm text-text-tertiary"
+      >
+        暂无远端 MCP 服务器，点击下方按钮添加
       </p>
 
       <!-- 添加表单 -->
@@ -176,7 +219,7 @@ const confirmDelete = (): void => {
       </button>
 
       <p class="text-xs text-text-tertiary">
-        仅支持远端传输（Streamable HTTP / SSE）；启用的服务器其工具会合入 Agent
+        内置 MCP（应用接口 / stock-sdk）常驻可用、不可删除；远端仅支持 Streamable HTTP / SSE，启用后其工具会合入 Agent（连接失败自动跳过该服务器）。声明了 ui:// 的工具，结果会在聊天区沙箱卡片内渲染
       </p>
     </div>
   </BaseModal>

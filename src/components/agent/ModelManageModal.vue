@@ -13,9 +13,11 @@ import MenuIcon from '@/components/ui/MenuIcon.vue';
 /**
  * 模型管理弹窗（方案 §6.3，对照参考截图）
  *
- * - 列表态：模型卡片（默认徽标 / 预设 / 模型名）+ 设默认 / 编辑 / 删除；
- * - 表单态：供应商预设 → 展示名 → 接口地址 → API Key（眼睛 + 测试连接）
- *   → 模型名称 → 高级配置折叠（能力开关 + 上下文档位）；
+ * - 列表态：模型卡片（默认 / 使用中徽标 + 预设 + 模型 ID）+ 设默认 / 编辑 / 删除；
+ * - 表单态：供应商预设 → 接口地址 → API Key（眼睛 + 测试连接）→ 模型 ID
+ *   → 展示名 → 高级配置折叠（能力开关 + 上下文档位）；
+ * - ⚠️ 「模型 ID」才是进请求的字段，「展示名」只用于本机显示——两者曾混淆过，
+ *   报 400 Unsupported model 时先核对模型 ID；
  * - 协议统一 OpenAI 兼容（ChatOpenAI），预设仅作表单预填。
  */
 const store = useAgentStore();
@@ -52,6 +54,10 @@ const showKey = ref(false);
 const advancedOpen = ref(false);
 /** 表单校验错误 */
 const formError = ref('');
+/** 保存中（防重复提交） */
+const saving = ref(false);
+/** 列表态错误提示（写库失败的兜底；不吞异常，避免「以为改了其实没改」） */
+const listError = ref('');
 
 /** 测试连接状态：idle / testing / ok / fail */
 const testState = ref<'idle' | 'testing' | 'ok' | 'fail'>('idle');
@@ -143,7 +149,7 @@ const resetTransient = (): void => {
 const testConnection = async (): Promise<void> => {
   if (!form.baseUrl || !form.apiKey || !form.modelId) {
     testState.value = 'fail';
-    testMessage.value = '请先填写接口地址、API Key 与模型名称';
+    testMessage.value = '请先填写接口地址、API Key 与模型 ID';
     return;
   }
   testState.value = 'testing';
@@ -162,11 +168,11 @@ const testConnection = async (): Promise<void> => {
     });
     if (response.ok) {
       testState.value = 'ok';
-      testMessage.value = '连接成功';
+      testMessage.value = `模型 ${form.modelId} 连通可用`;
     } else {
       const text = await response.text();
       testState.value = 'fail';
-      testMessage.value = `HTTP ${response.status}${text ? `：${text.slice(0, 120)}` : ''}`;
+      testMessage.value = `模型 ${form.modelId} 返回 HTTP ${response.status}${text ? `：${text.slice(0, 120)}` : ''}`;
     }
   } catch (error) {
     testState.value = 'fail';
@@ -176,54 +182,71 @@ const testConnection = async (): Promise<void> => {
 
 /**
  * 保存模型
+ *
+ * ⚠️ 必须 await + 捕获异常：写库失败若被 `void` 吞掉，界面会照常回到列表，
+ * 用户以为已生效、实际配置没落库（请求仍用旧值，报错也看不出所以然）。
  */
-const saveModel = (): void => {
+const saveModel = async (): Promise<void> => {
   if (!form.apiKey.trim()) {
     formError.value = 'API Key 不能为空';
     return;
   }
   if (!form.modelId.trim()) {
-    formError.value = '模型名称不能为空';
+    formError.value = '模型 ID 不能为空';
     return;
   }
-  void store.upsertModel({
-    id: editingId.value,
-    name: form.name.trim() || form.modelId.trim(),
-    presetKey: form.presetKey,
-    baseUrl: form.baseUrl.trim(),
-    apiKey: form.apiKey.trim(),
-    modelId: form.modelId.trim(),
-    supportsTools: form.supportsTools,
-    supportsImage: form.supportsImage,
-    supportsThinking: form.supportsThinking,
-    maxInputTokens: form.maxInputTokens,
-    maxOutputTokens: form.maxOutputTokens,
-    temperature: form.temperature,
-    isDefault: form.isDefault,
-  });
-  view.value = 'list';
+  formError.value = '';
+  saving.value = true;
+  try {
+    await store.upsertModel({
+      id: editingId.value,
+      name: form.name.trim() || form.modelId.trim(),
+      presetKey: form.presetKey,
+      baseUrl: form.baseUrl.trim(),
+      apiKey: form.apiKey.trim(),
+      modelId: form.modelId.trim(),
+      supportsTools: form.supportsTools,
+      supportsImage: form.supportsImage,
+      supportsThinking: form.supportsThinking,
+      maxInputTokens: form.maxInputTokens,
+      maxOutputTokens: form.maxOutputTokens,
+      temperature: form.temperature,
+      isDefault: form.isDefault,
+    });
+    listError.value = '';
+    view.value = 'list';
+  } catch (error) {
+    formError.value = `保存失败：${error instanceof Error ? error.message : String(error)}`;
+  } finally {
+    saving.value = false;
+  }
 };
 
 /**
  * 设为默认
  * @param model 模型配置
  */
-const setDefault = (model: ModelConfig): void => {
-  void store.upsertModel({
-    id: model.id,
-    name: model.name,
-    presetKey: model.presetKey,
-    baseUrl: model.baseUrl,
-    apiKey: model.apiKey,
-    modelId: model.modelId,
-    supportsTools: model.supportsTools,
-    supportsImage: model.supportsImage,
-    supportsThinking: model.supportsThinking,
-    maxInputTokens: model.maxInputTokens,
-    maxOutputTokens: model.maxOutputTokens,
-    temperature: model.temperature,
-    isDefault: true,
-  });
+const setDefault = async (model: ModelConfig): Promise<void> => {
+  try {
+    await store.upsertModel({
+      id: model.id,
+      name: model.name,
+      presetKey: model.presetKey,
+      baseUrl: model.baseUrl,
+      apiKey: model.apiKey,
+      modelId: model.modelId,
+      supportsTools: model.supportsTools,
+      supportsImage: model.supportsImage,
+      supportsThinking: model.supportsThinking,
+      maxInputTokens: model.maxInputTokens,
+      maxOutputTokens: model.maxOutputTokens,
+      temperature: model.temperature,
+      isDefault: true,
+    });
+    listError.value = '';
+  } catch (error) {
+    listError.value = `设为默认失败：${error instanceof Error ? error.message : String(error)}`;
+  }
 };
 
 /* --------------------------------- 删除确认 -------------------------------- */
@@ -241,9 +264,16 @@ const openDelete = (model: ModelConfig): void => {
 };
 
 /** 确认删除 */
-const confirmDelete = (): void => {
-  if (deleteTarget.value) void store.removeModel(deleteTarget.value.id);
+const confirmDelete = async (): Promise<void> => {
+  const target = deleteTarget.value;
   deleteModalOpen.value = false;
+  if (!target) return;
+  try {
+    await store.removeModel(target.id);
+    listError.value = '';
+  } catch (error) {
+    listError.value = `删除失败：${error instanceof Error ? error.message : String(error)}`;
+  }
 };
 
 /**
@@ -281,12 +311,19 @@ const modalTitle = computed(() => (view.value === 'list' ? '模型管理' : edit
             >
               默认
             </span>
+            <span
+              v-if="store.effectiveModel?.id === model.id"
+              class="shrink-0 rounded-full bg-primary px-2 py-0.5 text-xs text-white"
+              title="当前会话/配置实际使用的模型，对话请求发的就是这条"
+            >
+              使用中
+            </span>
           </div>
           <p class="mt-0.5 truncate text-xs text-text-tertiary">
             {{ PRESET_LABEL[model.presetKey ?? 'custom'] }} · {{ model.modelId }}
           </p>
         </div>
-        <BaseButton v-if="!model.isDefault" variant="ghost" size="sm" @click="setDefault(model)">
+        <BaseButton v-if="!model.isDefault" variant="ghost" size="sm" @click="void setDefault(model)">
           设为默认
         </BaseButton>
         <button
@@ -309,6 +346,19 @@ const modalTitle = computed(() => (view.value === 'list' ? '模型管理' : edit
 
       <p v-if="store.models.length === 0" class="py-8 text-center text-sm text-text-tertiary">
         还没有模型配置，点击下方按钮添加
+      </p>
+
+      <p v-else class="px-1 text-xs leading-relaxed text-text-tertiary">
+        对话实际使用的模型按「会话绑定 → Agent 配置 → 默认模型」逐级回落，
+        标「使用中」的那条才是当前发给接口的模型。
+      </p>
+
+      <p
+        v-if="listError"
+        class="rounded-lg bg-up-weak px-3 py-2 text-xs text-up"
+        role="alert"
+      >
+        {{ listError }}
       </p>
 
       <button
@@ -342,17 +392,6 @@ const modalTitle = computed(() => (view.value === 'list' ? '模型管理' : edit
             {{ preset.label }}
           </button>
         </div>
-      </div>
-
-      <!-- 展示名 -->
-      <div>
-        <p class="mb-1.5 text-sm text-text-secondary">展示名</p>
-        <input
-          v-model="form.name"
-          type="text"
-          placeholder="例如：DeepSeek-V3"
-          class="w-full rounded-lg border border-flat-weak bg-transparent px-3 py-2 text-sm text-text outline-none focus:border-primary"
-        />
       </div>
 
       <!-- 接口地址 -->
@@ -399,13 +438,37 @@ const modalTitle = computed(() => (view.value === 'list' ? '模型管理' : edit
         </p>
       </div>
 
-      <!-- 模型名称 -->
+      <!-- 模型 ID：真正进请求的字段 -->
       <div>
-        <p class="mb-1.5 text-sm text-text-secondary">模型名称</p>
+        <p class="mb-1.5 text-sm text-text-secondary">
+          模型 ID
+          <span class="ml-1 text-xs font-normal text-text-tertiary">
+            接口请求里的 model 参数，必须与提供方文档一致
+          </span>
+        </p>
         <input
           v-model="form.modelId"
           type="text"
           :placeholder="activePreset.suggestedModel || '例如 gpt-4o / deepseek-chat'"
+          class="w-full rounded-lg border border-flat-weak bg-transparent px-3 py-2 text-sm text-text outline-none focus:border-primary"
+        />
+        <p class="mt-1.5 text-xs text-text-tertiary">
+          报错 400 Unsupported model xxx 时，先核对这里是否等于接口文档的模型名
+        </p>
+      </div>
+
+      <!-- 展示名：仅本机显示 -->
+      <div>
+        <p class="mb-1.5 text-sm text-text-secondary">
+          展示名
+          <span class="ml-1 text-xs font-normal text-text-tertiary">
+            仅用于本机列表与徽标显示，不参与请求
+          </span>
+        </p>
+        <input
+          v-model="form.name"
+          type="text"
+          placeholder="例如：小米 MiMo v2.5"
           class="w-full rounded-lg border border-flat-weak bg-transparent px-3 py-2 text-sm text-text outline-none focus:border-primary"
         />
       </div>
@@ -496,7 +559,9 @@ const modalTitle = computed(() => (view.value === 'list' ? '模型管理' : edit
     <template #footer>
       <template v-if="view === 'form'">
         <BaseButton variant="ghost" @click="view = 'list'">取消</BaseButton>
-        <BaseButton variant="primary" @click="saveModel">保存</BaseButton>
+        <BaseButton variant="primary" :disabled="saving" @click="void saveModel()">
+          {{ saving ? '保存中…' : '保存' }}
+        </BaseButton>
       </template>
       <BaseButton v-else variant="primary" @click="open = false">完成</BaseButton>
     </template>

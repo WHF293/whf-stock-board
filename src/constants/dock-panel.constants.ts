@@ -5,7 +5,7 @@
 /**
  * 面板内容类型注册（渲染组件映射见 DockPanel.vue 的 CONTENT_COMPONENTS）
  *
- * 当前仅个股详情；后续扩展新内容在此追加 key + 组件映射即可
+ * 新增内容类型在此追加 key + 组件映射 + 内容参数（DockPanel 内 contentProps）即可
  */
 export const DOCK_PANEL_CONTENT = {
   /** 个股行情详情（K 线 / 分时 / 筹码 / 资金流） */

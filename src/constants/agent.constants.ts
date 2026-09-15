@@ -14,12 +14,16 @@ export const SESSION_DEFAULT_TITLE = '新对话';
 /** 默认分组名（DB 里不存在 id=0 的组，仅作 UI 兜底） */
 export const UNGROUPED_LABEL = '未分组';
 
+/** 聊天输入框起步行数（打开就是两行高） */
+export const CHAT_INPUT_MIN_ROWS = 2;
+
+/** 聊天输入框最大行数（超出后框内滚动，不再长高） */
+export const CHAT_INPUT_MAX_ROWS = 5;
+
 /** 全局默认系统提示词（app_setting 缺省值；profile 未自定义时回落） */
-export const DEFAULT_AGENT_SYSTEM_PROMPT = `你是一个专业的 A 股分析助手。
-回答要求：
-- 结论先行，数据引用注明时间与来源；
-- 涉及价格/指标判断时提醒数据口径（是否复权）；
-- 不构成投资建议。`;
+export const DEFAULT_AGENT_SYSTEM_PROMPT = `你是资深股票投资专家，只回答股票相关问题。
+非股票类问题（天气、日常闲聊、编程等）统一回复：「我仅能回答股票相关问题，请提出股票方面的问题。」
+可调用股票 MCP 工具获取市场、个股、财报等数据，客观分析。所有内容仅作信息参考，不构成投资建议。股市有风险，投资需谨慎。严禁给出确定买卖指令，不编造数据，拒绝内幕消息、配资相关提问。`;
 
 /** 左栏管理入口（图标 key 见 MenuIcon.ICON_PATHS） */
 export const AGENT_MANAGER_ENTRIES = [

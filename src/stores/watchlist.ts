@@ -1,8 +1,13 @@
 import { defineStore } from 'pinia';
 import { STORAGE_NS_WATCHLIST } from '../constants/storage-key.constants';
 import { appStorage } from '../utils/app-local-storage';
-import { DEFAULT_GROUP_ID, DEFAULT_GROUP_NAME } from '../constants/watchlist.constants';
-import { normalizeSymbol } from 'stock-sdk';
+import {
+  DEFAULT_GROUP_ID,
+  DEFAULT_GROUP_NAME,
+  WATCHLIST_SYMBOL_PATTERN,
+} from '../constants/watchlist.constants';
+import { toFullSymbol } from '../utils/to-full-symbol';
+import { repairWatchlistGroups } from '../utils/repair-watchlist-groups';
 import type { WatchlistGroup, WatchlistStock } from '../types/watchlist.types';
 
 /** 自选股 store 状态 */
@@ -40,8 +45,8 @@ export const useWatchlistStore = defineStore('watchlist', {
      * @returns 是否成功加入（false 表示已存在于任一分组）
      */
     addStock(stock: WatchlistStock, groupId: string = DEFAULT_GROUP_ID): boolean {
-      const symbol: string = String(normalizeSymbol(stock.symbol));
-      if (!symbol) {
+      const symbol = toFullSymbol(stock.symbol);
+      if (!WATCHLIST_SYMBOL_PATTERN.test(symbol)) {
         return false;
       }
       const exists = this.groups.some((group) =>
@@ -143,7 +148,7 @@ export const useWatchlistStore = defineStore('watchlist', {
      * @param symbol 待移除的股票符号
      */
     removeStockFromAllGroups(symbol: string): void {
-      const normalized: string = String(normalizeSymbol(symbol));
+      const normalized = toFullSymbol(symbol);
       for (const group of this.groups) {
         const before = group.stocks.length;
         group.stocks = group.stocks.filter((stock) => stock.symbol !== normalized);
@@ -152,6 +157,18 @@ export const useWatchlistStore = defineStore('watchlist', {
         }
       }
     },
+
+    /**
+     * 修复持久化数据里的历史脏条目（载入时自动执行，见 utils/repair-watchlist-groups）
+     * @returns 是否发生了修改（true 时需要回写持久化）
+     */
+    repairLoadedGroups(): boolean {
+      const { groups, changed } = repairWatchlistGroups(this.groups);
+      if (changed) {
+        this.groups = groups;
+      }
+      return changed;
+    },
   },
 
   persist: {
@@ -159,6 +176,17 @@ export const useWatchlistStore = defineStore('watchlist', {
     storage: appStorage,
     // 调试期开启，验证插件确实在读写；生产可移除
     debug: import.meta.env.DEV,
+    /**
+     * 水合后清理历史脏数据（签名由 pinia-plugin-persistedstate 提供：
+     * 钩子早于 store 实例被业务代码消费，动作通过 $persist 回写）
+     * @param context 持久化上下文（含当前 store 实例）
+     */
+    afterHydrate: (context) => {
+      const store = context.store as unknown as { repairLoadedGroups: () => boolean };
+      if (store.repairLoadedGroups()) {
+        context.store.$persist();
+      }
+    },
   },
 });
 

@@ -124,7 +124,7 @@ const cellTitle = (
         class="sticky left-0 top-0 z-30 flex shrink-0 items-center border-r border-flat-weak bg-surface px-3 text-xs font-medium text-text-secondary"
         :style="{ width: `${BOARD_CALENDAR_NAME_COL_WIDTH}px` }"
       >
-        板块（一级行业 · {{ matrix.rows.length }}）
+        板块（{{ matrix.rows.length }}）
       </div>
       <div class="shrink-0" :style="{ width: `${offsetX}px` }" />
       <div
@@ -139,7 +139,7 @@ const cellTitle = (
       <div class="shrink-0" :style="{ width: `${tailWidth}px` }" />
     </div>
 
-    <!-- 数据行：行高固定，不需要纵向虚拟化（31 行 × ~25 可视列 ≈ 775 节点） -->
+    <!-- 数据行：行高固定，不需要纵向虚拟化（36 行 × ~25 可视列 ≈ 900 节点） -->
     <div
       v-for="row in matrix.rows"
       :key="row.code"

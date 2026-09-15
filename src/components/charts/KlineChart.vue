@@ -21,6 +21,11 @@ import {
 import { readTrendColors } from '../../utils/trend-colors';
 import { useSettingsStore } from '../../stores/settings';
 import { isIndexSymbol } from '../../utils/normalize-a-share-code';
+import type { TradeMark } from '../../utils/trade-marks';
+import {
+  TRADE_POINT_OVERLAY,
+  type TradePointExtend,
+} from './overlay-trade-point';
 import '../charts/indicators/custom-indicators';
 
 /**
@@ -55,6 +60,8 @@ const props = defineProps<{
    * 指数（sh000xxx / sz399xxx）无均价概念，不绘制；不传默认绘制
    */
   symbol?: string;
+  /** 成交 BS/T 标注点（时间升序）；数据或标注变化时吸附最近 bar 重建覆盖物 */
+  tradeMarks?: TradeMark[];
 }>();
 
 const emit = defineEmits<{
@@ -297,6 +304,117 @@ const applyAxisOptions = (chart: Chart): void => {
 };
 
 /**
+ * 二分吸附：返回 |timestamp 差| 最小的 bar 下标
+ * @param bars K 线序列（时间升序）
+ * @param timestamp 目标时间戳
+ * @returns 最近 bar 下标
+ */
+const snapBarIndex = (bars: KLineData[], timestamp: number): number => {
+  let lo = 0;
+  let hi = bars.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if ((bars[mid].timestamp ?? 0) < timestamp) {
+      lo = mid + 1;
+    } else {
+      hi = mid;
+    }
+  }
+  if (
+    lo > 0 &&
+    Math.abs((bars[lo - 1].timestamp ?? 0) - timestamp) <=
+      Math.abs((bars[lo].timestamp ?? 0) - timestamp)
+  ) {
+    return lo - 1;
+  }
+  return lo;
+};
+
+/**
+ * 当日开盘价（原始价格，用于「成交价 vs 开盘价」判定标注延伸方向）
+ *
+ * 蜡烛模式直接取 bar.open；timeline 模式的 open/high/low 仍是原始价格
+ * （仅 close/avgPrice 已转涨跌幅），取同一交易日内首根 bar 的 open
+ * （缺失时回退其原始收盘 price 字段）
+ * @param bars 展示 bar 序列（时间升序）
+ * @param index 标注吸附的 bar 下标
+ * @param isTimeline 是否分时 / 五日模式
+ * @returns 当日开盘价（取不到返回 0）
+ */
+const dayOpenPrice = (bars: KLineData[], index: number, isTimeline: boolean): number => {
+  const bar = bars[index];
+  if (!bar) return 0;
+  if (!isTimeline) return bar.open ?? 0;
+  const day = new Date(bar.timestamp ?? 0).toDateString();
+  let first = index;
+  while (
+    first > 0 &&
+    new Date(bars[first - 1]?.timestamp ?? 0).toDateString() === day
+  ) {
+    first -= 1;
+  }
+  const firstBar = bars[first] as (KLineData & { price?: number }) | undefined;
+  return firstBar?.open || firstBar?.price || 0;
+};
+
+/**
+ * 解析标注徽标延伸方向：成交价高于开盘价画在下面、低于画在上面
+ * （开盘价或成交价缺失 / 恰好相等时按类型兜底：B 向下、S/T 向上）
+ * @param mark 标注点
+ * @param open 当日开盘价
+ * @returns 延伸方向
+ */
+const resolveMarkSide = (mark: TradeMark, open: number): TradePointExtend['side'] => {
+  if (open > 0 && mark.price > 0 && mark.price !== open) {
+    return mark.price > open ? 'below' : 'above';
+  }
+  return mark.type === 'B' ? 'below' : 'above';
+};
+
+/**
+ * 重建成交 BS/T 标注覆盖物
+ *
+ * 每个标注吸附到最近 bar（超出容差视为不在可视范围，如五日图外的历史成交）；
+ * 延伸方向按「成交价 vs 当日开盘价」判定（高于开盘 → 徽标画在下方、低于 → 上方）；
+ * 锚点 value：分时/五日用当分钟涨跌幅（displayBars 已换算的 close），
+ * 蜡烛模式向下锚 bar.low / 向上锚 bar.high；
+ * 圆点 + 连接线 + 圆角徽标的绘制在覆盖物 createPointFigures 里做（像素级）。
+ */
+const rebuildTradeOverlays = (): void => {
+  const chart = chartRef.value;
+  if (!chart) return;
+  chart.removeOverlay({ name: TRADE_POINT_OVERLAY });
+  const marks = props.tradeMarks ?? [];
+  const bars = displayBars.value;
+  if (marks.length === 0 || bars.length === 0) return;
+  const isTimeline = props.mode === 'timeline';
+  const interval =
+    bars.length > 1 ? (bars[1].timestamp ?? 0) - (bars[0].timestamp ?? 0) : 0;
+  // 分时/五日 1 分钟 bar：容差 3 分钟；蜡烛（日K）容差取 0.9 根 bar（跨周末也能吸附）
+  const tolerance = isTimeline ? 3 * 60_000 : Math.max(interval * 0.9, 3 * 3600_000);
+  const creates: {
+    name: string;
+    points: { timestamp?: number; value?: number }[];
+    extendData: TradePointExtend;
+  }[] = [];
+  for (const mark of marks) {
+    const index = snapBarIndex(bars, mark.timestamp);
+    const bar = bars[index];
+    if (!bar || Math.abs((bar.timestamp ?? 0) - mark.timestamp) > tolerance) continue;
+    const side = resolveMarkSide(mark, dayOpenPrice(bars, index, isTimeline));
+    const value = isTimeline ? bar.close : side === 'below' ? bar.low : bar.high;
+    creates.push({
+      name: TRADE_POINT_OVERLAY,
+      points: [{ timestamp: bar.timestamp, value }],
+      extendData: { type: mark.type, side },
+    });
+  }
+  if (creates.length > 0) {
+    chart.createOverlay(creates);
+  }
+};
+
+/**
  * 注入数据：重设 loader 并以新 ticker 触发 init 加载（v10 数据只能经 loader 通道进入）
  */
 const applyData = (): void => {
@@ -324,6 +442,7 @@ const applyData = (): void => {
     volumePrecision: 0,
   });
   chart.setPeriod({ type: 'day', span: 1 });
+  rebuildTradeOverlays();
 };
 
 /**
@@ -466,6 +585,14 @@ watch(
       chart.setFormatter({ formatDate: (timestamp) => formatDateByMode(timestamp) });
     }
     applyData();
+  },
+);
+
+// 成交标注变化（切股重拉 / 账户筛选后）：只重建标注覆盖物，不动数据
+watch(
+  () => props.tradeMarks,
+  () => {
+    rebuildTradeOverlays();
   },
 );
 

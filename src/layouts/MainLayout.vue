@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useIntervalFn, watchImmediate } from "@vueuse/core";
+import { useIntervalFn } from "@vueuse/core";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import MarketStatusBadge from "../components/business/MarketStatusBadge.vue";
@@ -11,10 +11,12 @@ import BaseTooltip from "../components/ui/BaseTooltip.vue";
 import MenuIcon from "../components/ui/MenuIcon.vue";
 import { useTheme } from "../composables/use-theme";
 import { MARKET_STATUS_REFRESH_INTERVAL_MS } from "../constants/polling.constants";
-import { MENU_ITEMS } from "../constants/router-meta.constants";
+import { MENU_ITEMS, ROUTE_PATH } from "../constants/router-meta.constants";
+import { openAgentAnalysisWindow } from "../utils/agent-window";
 import { useStockOpen } from "../composables/use-stock-open";
 import { useMarketStatusStore } from "../stores/market-status";
 import { useSettingsStore } from "../stores/settings";
+import { trackAction } from "../weblog/weblogActions";
 import type { SearchResult } from "../types/stock-quote.types";
 
 /**
@@ -31,21 +33,19 @@ const marketStatusStore = useMarketStatusStore();
 const settingsStore = useSettingsStore();
 const { openSidebar, toContextList } = useStockOpen();
 
-// 主题色写入 <html data-theme>（CSS 变量按属性覆盖，全站自动跟随）
-watchImmediate(
-  () => settingsStore.themeColor,
-  (color) => {
-    document.documentElement.dataset.theme = color;
-  },
-);
+/**
+ * 打开 Agent 分析：Tauri 开独立 WebviewWindow（已开则聚焦），
+ * 浏览器回退为站内 standalone 路由（/agent-window）
+ */
+const openAgentAnalysis = (): void => {
+  void openAgentAnalysisWindow().then((opened) => {
+    if (!opened) void router.push(ROUTE_PATH.AGENT_WINDOW);
+  });
+};
 
-// 涨跌配色主题写入 <html data-trend>（文本类跟随变量，图表组件读变量重绘）
-watchImmediate(
-  () => settingsStore.trendTheme,
-  (theme) => {
-    document.documentElement.dataset.trend = theme;
-  },
-);
+// 暗色 class / data-theme / data-trend 的落 <html> 已上提到 App.vue 的
+// useDocumentThemeSync（独立 WebviewWindow 不经过本布局，须全局生效）；
+// 这里 useTheme 仅供顶栏明暗切换按钮使用
 
 /** 头部页面标题（路由 meta.title） */
 const pageTitle = computed(() => route.meta.title ?? "");
@@ -161,6 +161,7 @@ const onGlobalKeydown = (event: KeyboardEvent): void => {
   ) {
     event.preventDefault();
     toggleSidebar();
+    trackAction('NAV_SHORTCUT', { detail: 'Ctrl+Shift+B 侧栏开关' });
     return;
   }
   if (
@@ -174,6 +175,7 @@ const onGlobalKeydown = (event: KeyboardEvent): void => {
     const order = menuOrderPaths.value;
     if (order.length === 0) return;
     routeOrderIndex.value = (routeOrderIndex.value + 1) % order.length;
+    trackAction('NAV_SHORTCUT', { detail: `Shift+Tab → ${order[routeOrderIndex.value]}` });
     void router.push(order[routeOrderIndex.value]);
   }
 };
@@ -238,6 +240,7 @@ void marketStatusStore.refresh();
           type="button"
           class="pressable flex shrink-0 items-center justify-center rounded-md p-1 text-text-tertiary hover:bg-flat-weak hover:text-text active:scale-90"
           :aria-label="effectiveCollapsed ? '展开侧栏' : '收起侧栏'"
+          data-track="NAV_SIDEBAR_TOGGLE"
           @click="toggleSidebar"
         >
           <MenuIcon :name="effectiveCollapsed ? 'chevronRight' : 'chevronLeft'" :size="16" />
@@ -249,6 +252,8 @@ void marketStatusStore.refresh();
           v-for="item in menuItems"
           :key="item.path"
           :to="item.path"
+          data-track="NAV_MENU_CLICK"
+          :data-track-detail="item.title"
           class="group relative pressable flex items-center gap-3 rounded-lg py-2 text-sm active:scale-[0.98]"
           :class="[
             effectiveCollapsed ? 'justify-center px-2' : 'px-3',
@@ -269,6 +274,7 @@ void marketStatusStore.refresh();
           class="group relative pressable flex items-center gap-2 rounded-lg py-1 text-xs active:scale-[0.98] text-text-secondary hover:text-text"
           :class="effectiveCollapsed ? 'justify-center px-1' : 'px-1'"
           aria-label="打开设置"
+          data-track="NAV_SETTINGS_OPEN"
           @click="settingsOpen = true"
         >
           <MenuIcon name="settings" :size="14" />
@@ -292,25 +298,41 @@ void marketStatusStore.refresh();
           <MarketStatusBadge />
           <button
             type="button"
-            class="pressable rounded-lg p-2 text-text-secondary hover:bg-flat-weak active:scale-90"
+            class="group relative pressable rounded-lg p-2 text-text-secondary hover:bg-flat-weak active:scale-90"
             :aria-label="isDark ? '切换为亮色模式' : '切换为暗色模式'"
+            data-track="NAV_THEME_TOGGLE"
             @click="toggleDark()"
           >
             <MenuIcon :name="isDark ? 'sun' : 'moon'" :size="16" />
+            <BaseTooltip :text="isDark ? '切换为亮色模式' : '切换为暗色模式'" placement="bottom" />
           </button>
           <!-- 搜索：点击打开弹窗 -->
           <button
             type="button"
-            class="pressable rounded-lg p-2 text-text-secondary hover:bg-flat-weak active:scale-90"
+            class="group relative pressable rounded-lg p-2 text-text-secondary hover:bg-flat-weak active:scale-90"
             aria-label="搜索个股"
+            data-track="NAV_SEARCH_OPEN"
             @click="searchModalOpen = true"
           >
             <MenuIcon name="search" :size="16" />
+            <BaseTooltip text="搜索个股" placement="bottom" />
+          </button>
+          <!-- Agent 分析：Tauri 开独立窗口，浏览器回退站内 standalone 路由 -->
+          <button
+            type="button"
+            class="group relative pressable rounded-lg p-2 text-text-secondary hover:bg-flat-weak active:scale-90"
+            aria-label="Agent 分析"
+            data-track="NAV_AGENT_OPEN"
+            @click="openAgentAnalysis"
+          >
+            <MenuIcon name="agent" :size="16" />
+            <BaseTooltip text="Agent 分析" placement="bottom" />
           </button>
         </div>
       </header>
       <main class="flex-1 overflow-y-auto">
-        <div class="mx-auto w-full max-w-[1440px] p-6">
+        <!-- 内容上限 1600px：报价卡片栅格（quote-card-grid）在上限内按列宽公式排布 -->
+        <div class="mx-auto w-full max-w-[1600px] p-6">
           <!-- 页面切换：KeepAlive 缓存页面状态；进入动画由 pageAnim 类名驱动（无离场状态机） -->
           <RouterView v-slot="{ Component, route: routeRecord }">
             <KeepAlive>
@@ -337,7 +359,7 @@ void marketStatusStore.refresh();
 
     <!-- 设置抽屉（右侧滑入，宽 2/3 视口） -->
     <BaseDrawer v-model:open="settingsOpen" title="设置">
-      <SettingsView />
+      <SettingsView @close="settingsOpen = false" />
     </BaseDrawer>
   </div>
 </template>

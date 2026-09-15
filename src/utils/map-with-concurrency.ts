@@ -13,11 +13,14 @@ interface MapWithConcurrencyOptions {
 }
 
 /**
- * 按并发上限逐项异步映射（保持入参顺序返回）
+ * 按并发上限逐项异步映射
+ *
+ * ⚠️ 返回**完成顺序**（不是入参顺序）：worker 池谁先跑完谁先进结果数组。
+ * 需要入参顺序时由调用方自行按 id 归位（翻页 / 按 key 取回同理）。
  * @param items 输入列表
  * @param mapper 异步映射函数
  * @param options 并发 / 中断 / 进度选项
- * @returns 映射结果（与 items 同序）
+ * @returns 映射结果（**完成顺序**）
  * @throws Error 映射过程中被 abort 时抛出「分析已取消」
  */
 export const mapWithConcurrency = async <T, R>(
