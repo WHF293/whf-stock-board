@@ -16,6 +16,7 @@ import {
   fetchAllMarketQuotes,
   fetchFullQuotes,
 } from '../api/quotes.api';
+import { fetchGlobalIndexQuotes } from '../api/panorama.api';
 import { fetchIndustryBoards } from '../api/board.api';
 import { fetchMarketFundFlow } from '../api/flow.api';
 import { fetchMarketTurnover } from '../api/turnover.api';
@@ -35,9 +36,12 @@ import {
   type TurnoverRange,
 } from '../constants/turnover.constants';
 import { POLLING_INTERVAL } from '../constants/polling.constants';
+import { PANORAMA_GLOBAL_INDEX_SECIDS } from '../constants/panorama.constants';
 import { useHeatmapDrill } from '../composables/use-heatmap-drill';
+import { useRowClamp } from '../composables/use-row-clamp';
 import { useStockOpen } from '../composables/use-stock-open';
 import type { DistributionCount } from '../types/distribution.types';
+import type { GlobalIndexQuote } from '../types/panorama.types';
 import type {
   HeatmapBoard,
   IndustryBoard,
@@ -84,13 +88,14 @@ const distributionViewMode = ref<typeof VIEW_MODE[keyof typeof VIEW_MODE]>(VIEW_
 const marketViewMode = ref<typeof VIEW_MODE[keyof typeof VIEW_MODE]>(VIEW_MODE.CHART);
 
 /**
- * 市场总览：指数卡片（轮询，点击跳 K 线详情）+ 涨跌分布 / 资金速览 +
- * 板块热力（轮询，支持热力图 / 列表两种展示形式，下钻状态两视图共享；
- * 点击下钻成分股 → 点击个股跳详情）
+ * 市场总览：指数卡片（轮询，点击跳 K 线详情）+ 全部指数一次渲染、收起只看首行（见 useRowClamp）+
+ * 涨跌分布 / 资金速览 + 板块热力（轮询，支持热力图 / 列表两种展示形式，
+ * 下钻状态两视图共享；点击下钻成分股 → 点击个股跳详情）
  *
  * 数据先取内存快照秒出 UI，接口成功后写回快照并刷新显示
  *
- * 注：北向净买额已从资金速览移除——上游实时与历史口径均已停止披露（NET_DEAL_AMT 恒 null）
+ * 注：北向净买额已从资金速览移除——上游实时与历史口径均已停止披露（NET_DEAL_AMT 恒 null）；
+ * 板块名称不再点击打开右侧停靠面板（看成分股统一走行展开）
  */
 const { openSidebar, openPage, toContextList } = useStockOpen();
 const settingsStore = useSettingsStore();
@@ -147,6 +152,49 @@ const fetchIndexQuotes = async (): Promise<void> => {
   indexQuotes.value = await fetchFullQuotes(INDEX_SYMBOLS);
   dataCache.set(DATA_CACHE_KEY.DASHBOARD_INDEX_QUOTES, indexQuotes.value);
 };
+
+// ---------- 全球指数（恒生 / 道琼斯 / 纳斯达克 / 标普500 / 日经225 / KOSPI） ----------
+
+/**
+ * 全球指数与主指数同处一个栅格，且**始终全部渲染**：收起态不是「不渲染」，
+ * 而是由容器裁掉首行以外的部分（见 `useRowClamp`）。
+ *
+ * 这样做的好处：「一行显示几张」纯由可用宽度决定，窄屏被裁掉的卡片点一下
+ * 展开开关即出现；若按展开与否增删卡片，栅格列数会在切换瞬间跳变（卡片换行）。
+ *
+ * 数据走东财全球指数 ulist（腾讯源不覆盖日经 225 / KOSPI）；
+ * 属轻量行情，挂载即拉取并跟随轮询，不再等「首次展开」。
+ */
+
+/** 全球指数轻量报价 */
+const globalIndexQuotes = ref<GlobalIndexQuote[]>([]);
+
+/** 尚未返回的卡片占位骨架数（与真实卡片同规格，保持栅格列宽 / 行高稳定） */
+const indexSkeletonCount = computed<number>(
+  () =>
+    Math.max(0, INDEX_SYMBOLS.length - indexQuotes.value.length) +
+    Math.max(0, PANORAMA_GLOBAL_INDEX_SECIDS.length - globalIndexQuotes.value.length),
+);
+
+/** 刷新全球指数报价 */
+const refreshGlobalIndexQuotes = async (): Promise<void> => {
+  globalIndexQuotes.value = await fetchGlobalIndexQuotes();
+};
+
+usePolling({
+  task: refreshGlobalIndexQuotes,
+  intervalMs: POLLING_INTERVAL.QUOTES_INTRADAY,
+});
+
+// ---------- 顶部指数卡片：收起只看首行，展开看全部（高度过渡动画） ----------
+
+const {
+  setGridRef: setIndexGridRef,
+  isExpanded: isIndexExpanded,
+  hasOverflow: hasIndexOverflow,
+  clampStyle,
+  toggle: toggleIndexExpanded,
+} = useRowClamp();
 
 /** 市场宽度首载是否失败（且无快照）——供资金流卡片空态展示 */
 const isBreadthError = ref(false);
@@ -392,19 +440,62 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
 
 <template>
   <div class="space-y-6">
-    <!-- 指数卡片：点击跳 K 线详情 -->
-    <div v-if="indexQuotes.length > 0" class="grid grid-cols-4 gap-4">
-      <StockQuoteCard
-        v-for="(quote, index) in indexQuotes"
-        :key="quote.code"
-        :quote="quote"
-        clickable
-        @click="onOpenIndexDetail(index)"
-        @dblclick="onOpenIndexDblclick(index)"
-      />
+    <!--
+      顶部指数卡片：主指数 + 全球指数共处**同一个栅格**，且一次性全部渲染（DOM 始终完整），
+      收起态由 .row-clamp 把容器裁到「首行高度」——所以「一行显示几张」完全由可用宽度决定：
+      容器只放得下 3 张时，第 4 张（科创50）就被裁掉，只有点 chevron 展开才可见；
+      容器够宽（大屏 / 侧栏折叠）时首行能放下更多，甚至 10 张全部露出来。
+      主区已开 @container，侧栏与右侧停靠面板的宽度变化同样实时响应。
+    -->
+    <div class="row-clamp" :style="clampStyle">
+      <div :ref="setIndexGridRef" class="quote-card-grid">
+        <StockQuoteCard
+          v-for="(quote, index) in indexQuotes"
+          :key="quote.code"
+          :quote="quote"
+          clickable
+          @click="onOpenIndexDetail(index)"
+          @dblclick="onOpenIndexDblclick(index)"
+        />
+        <StockQuoteCard
+          v-for="quote in globalIndexQuotes"
+          :key="quote.code"
+          :quote="quote"
+        />
+        <BaseCard v-for="i in indexSkeletonCount" :key="'index-skeleton-' + i">
+          <BaseSkeleton />
+        </BaseCard>
+      </div>
     </div>
-    <div v-else class="grid grid-cols-4 gap-4">
-      <BaseCard v-for="i in 4" :key="i"><BaseSkeleton /></BaseCard>
+
+    <!--
+      展开 / 收起开关：只在首行之外**确实还有卡片**时出现
+      （容器够宽、一行放下全部 → 无需展开，开关整个不渲染）。
+
+      上下各留 12px（= 父级 `space-y-6` 的 24px 减半）：
+      - 上：`-mt-3` 抵消一半间距；
+      - 下：`mb-3!` —— 必须带 `!`，因为 `space-y-6` 的间距来自
+        `.space-y-6 > :not(:last-child)`（特异性 0,2,0），普通 `mb-3` 压不过它。
+
+      ⚠️ 别用 `-my-3`：负的 bottom margin 会让按钮盒下沿**压进**「成交额」卡片 12px，
+      视觉上间距反而变成负的。下收只能靠把 24px 改小，不能靠负边距抵消。
+    -->
+    <div v-if="hasIndexOverflow" class="-mt-3 mb-3! flex justify-center">
+      <button
+        type="button"
+        class="pressable rounded-full p-1.5 text-text-tertiary hover:bg-flat-weak hover:text-text active:scale-90"
+        :aria-expanded="isIndexExpanded"
+        aria-label="全部指数"
+        :title="isIndexExpanded ? '收起指数' : '展开全部指数'"
+        @click="toggleIndexExpanded"
+      >
+        <MenuIcon
+          name="chevronDown"
+          :size="16"
+          class="transition-transform"
+          :class="isIndexExpanded ? 'rotate-180' : ''"
+        />
+      </button>
     </div>
 
     <!-- 成交额（资金速览 + 成交额变化合并为一张卡：两者本质同属市场成交维度） -->

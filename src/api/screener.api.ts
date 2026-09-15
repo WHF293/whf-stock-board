@@ -1,5 +1,5 @@
 import dayjs from 'dayjs';
-import { backtest, calcMA, normalizeSymbol, screen } from 'stock-sdk';
+import { backtest, calcMA, screen } from 'stock-sdk';
 import type { BacktestReport } from '../types/screener.types';
 import type { FullQuote } from '../types/stock-quote.types';
 import {
@@ -9,6 +9,7 @@ import {
 } from '../constants/screener.constants';
 import { fetchAllMarketQuotes } from './quotes.api';
 import { fetchSinaKline } from './sina-kline.api';
+import { toFullSymbol } from '../utils/to-full-symbol';
 
 /**
  * 选股条件（区间为闭区间；字段缺省表示不过滤）
@@ -127,8 +128,9 @@ export interface BacktestResult {
  * @returns 回测报告与权益曲线
  */
 export const runMaCrossBacktest = async (rawSymbol: string): Promise<BacktestResult> => {
-  // normalizeSymbol 返回品牌化的 NormalizedSymbol（sh600519 形态），新浪源前缀一致
-  const symbol = String(normalizeSymbol(rawSymbol.trim()));
+  // ⚠️ 必须用 toFullSymbol：normalizeSymbol 返回 NormalizedSymbol 对象，
+  // String() 会得到 "[object Object]"，新浪取数恒空（回测曾因此全部失败）
+  const symbol = toFullSymbol(rawSymbol);
   // 新浪按根数取数（daily 固定 400 根 ≈ 1.6 年），本地截取近一年窗口
   const allBars = await fetchSinaKline(symbol, 'daily');
   const startTs = dayjs().subtract(BACKTEST_RANGE_DAYS, 'day').startOf('day').valueOf();

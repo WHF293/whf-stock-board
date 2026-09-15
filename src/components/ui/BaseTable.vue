@@ -13,6 +13,9 @@ import type { TableColumn } from '../../types/table.types';
  *   排序作用于传入的 rows（懒加载场景即当前已展示行）
  * - 外层滚动容器（table-scroll / table-scroll-sm）由 scrollClass 决定，
  *   吸顶表头 / 首列吸左样式由 theme.css 的容器类提供
+ * - 单元格一律 `whitespace-nowrap`：本项目表格全是短数值 / 短文本，
+ *   换行只会把「2024-10-10」「成交数量」拆成两行（曾出现在交割单表），
+ *   内容超宽交给容器横向滚动
  */
 const props = defineProps<{
   /** 列配置（数组顺序即列顺序） */
@@ -186,7 +189,7 @@ const alignClass = (col: TableColumn<T>, isHead: boolean): string => {
           <th
             v-for="col in columns"
             :key="col.key"
-            class="py-2 pr-2 font-medium last:pr-0"
+            class="whitespace-nowrap py-2 pr-2 font-medium last:pr-0"
             :class="[alignClass(col, true), col.sortable ? 'cursor-pointer select-none hover:text-text' : '']"
             @click="toggleSort(col)"
           >
@@ -220,7 +223,7 @@ const alignClass = (col: TableColumn<T>, isHead: boolean): string => {
             <td
               v-for="col in columns"
               :key="col.key"
-              class="py-2 pr-2 last:pr-0"
+              class="whitespace-nowrap py-2 pr-2 last:pr-0"
               :class="alignClass(col, false)"
             >
               <slot :name="col.key" :row="row">{{ cellValue(row, col.key) }}</slot>

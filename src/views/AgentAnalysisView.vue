@@ -15,8 +15,14 @@ import AgentProfileManageModal from '@/components/agent/AgentProfileManageModal.
  *
  * - 浏览器端整页降级提示（Agent 运行时依赖 Tauri：SQLite / http fetch / fs）；
  * - 左栏 AgentSidebar（新建对话 + 管理入口 + 会话树）+ 右侧 ChatPanel；
- * - 四个管理弹窗（Skills / MCP / Model / Agents）均为真 CRUD 落库。
+ * - 四个管理弹窗（Skills / MCP / Model / Agents）均为真 CRUD 落库；
+ * - standalone（独立 WebviewWindow）：占满整个 webview（h-dvh、无圆角卡片边距）
  */
+defineProps<{
+  /** 独立窗口模式（/agent-window 路由注入）：高度撑满 webview、去卡片圆角 */
+  standalone?: boolean;
+}>();
+
 const store = useAgentStore();
 
 /** 当前 Tauri 环境（模块级判定即可，运行中不会切换） */
@@ -44,7 +50,8 @@ onMounted(() => {
   <!-- 浏览器端降级提示 -->
   <div
     v-if="!tauriAvailable"
-    class="flex h-[calc(100dvh-6.5rem)] items-center justify-center rounded-2xl border border-flat-weak bg-surface"
+    class="flex items-center justify-center border border-flat-weak bg-surface"
+    :class="standalone ? 'h-dvh' : 'h-[calc(100dvh-6.5rem)] rounded-2xl'"
   >
     <div class="max-w-sm text-center">
       <p class="text-base font-medium text-text">Agent 分析仅 Tauri 桌面端可用</p>
@@ -54,10 +61,11 @@ onMounted(() => {
     </div>
   </div>
 
-  <!-- 桌面端：页面级双栏（定高卡片：撑满可视区，输入框始终贴底） -->
+  <!-- 桌面端：页面级双栏（定高卡片：撑满可视区，输入框始终贴底）；standalone 占满 webview -->
   <div
     v-else
-    class="flex h-[calc(100dvh-6.5rem)] min-h-0 overflow-hidden rounded-2xl border border-flat-weak bg-surface shadow-sm"
+    class="flex min-h-0 overflow-hidden border border-flat-weak bg-surface shadow-sm"
+    :class="standalone ? 'h-dvh' : 'h-[calc(100dvh-6.5rem)] rounded-2xl'"
   >
     <AgentSidebar @open-manager="openManager = $event" />
     <ChatPanel @open-manager="openManager = $event" />

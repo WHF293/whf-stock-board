@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { useRouter } from "vue-router";
 import { VueDraggable } from "vue-draggable-plus";
 import BaseButton from "../components/ui/BaseButton.vue";
 import BaseCard from "../components/ui/BaseCard.vue";
@@ -9,27 +10,42 @@ import MenuIcon from "../components/ui/MenuIcon.vue";
 import NoticeBar from "../components/ui/NoticeBar.vue";
 import BaseTag from "../components/ui/BaseTag.vue";
 import { sdk } from "../api/sdk";
-import { MENU_ITEMS } from "../constants/router-meta.constants";
+import { MENU_ITEMS, ROUTE_PATH } from "../constants/router-meta.constants";
 import { STOCK_PROXY_PATH } from "../constants/proxy.constants";
 import { REFRESH_INTERVAL_OPTIONS } from "../constants/polling.constants";
 import { THEME_COLOR_OPTIONS } from "../constants/theme-color.constants";
 import { TREND_THEME_OPTIONS } from "../constants/trend-theme.constants";
+import { WEBLOG_RETENTION_DAYS } from "../constants/weblog.constants";
 import {
   APP_VERSION,
   CHECK_UPDATE_TIMEOUT_MS,
   RELEASES_LATEST_API,
   RELEASES_URL,
+  REPO_URL,
 } from "../constants/app-info.constants";
 import { useSettingsStore } from "../stores/settings";
+import { setWeblogEnabled, trackAction } from "../weblog";
 import {
   DATA_SOURCE_LABEL,
   DATA_SOURCE_URL,
 } from "@/constants/data-source.constants";
 
 /**
- * 设置页：轮询规则公告 + 数据来源 + 代理自检 + 轮询总开关 + 刷新间隔 + 主题配置 + 缓存管理
+ * 设置页：轮询规则公告 + 数据来源 + 代理自检 + 轮询总开关 + 刷新间隔 + 主题配置 + 系统日志 + 缓存管理
  * （偏好 localStorage 持久化）
  */
+
+/**
+ * 页面事件
+ * - close：请求关闭所在抽屉（设置页嵌在 MainLayout 的右侧抽屉里，
+ *   跳转到系统日志等独立页面时需先收起抽屉）
+ */
+const emit = defineEmits<{
+  close: [];
+}>();
+
+/** 路由（设置抽屉内跳转独立页面用） */
+const router = useRouter();
 
 /** 轮询规则公告文案（与 use-polling 交易窗口治理逻辑一致） */
 const POLLING_RULE_NOTICE =
@@ -205,6 +221,14 @@ const onGoDownload = (): void => {
   window.open(RELEASES_URL, "_blank", "noopener");
 };
 
+/** 仓库地址展示文案（去掉协议头，短一些不挤行） */
+const repoDisplayUrl = computed(() => REPO_URL.replace(/^https?:\/\//, ""));
+
+/** 「打开」仓库：与「前往下载」同口径开新窗口（不再用裸 <a>，按钮风格与同卡片其他按钮统一） */
+const onOpenRepo = (): void => {
+  window.open(REPO_URL, "_blank", "noopener");
+};
+
 /** 自检探测地址：腾讯指数轻量行情（与真实数据链路一致，走同源代理） */
 const PROBE_TARGET_URL = "https://qt.gtimg.cn/q=sh000001";
 
@@ -235,6 +259,29 @@ const probeResultText = computed(() => {
   }
   return "";
 });
+
+// ---------- 系统日志 ----------
+
+/** 日志保留天数文案（与 WEBLOG_RETENTION_DAYS 同源，改常量即同步） */
+const weblogRetentionText = `本地保留最近 ${WEBLOG_RETENTION_DAYS} 天，超期自动清理`;
+
+/**
+ * 切换日志采集开关：写持久化 + 同步运行期采集开关 + 记一条系统事件
+ * （系统类事件不受开关影响，关掉也能看到「谁关的」）
+ * @param enabled 是否开启采集
+ */
+const onToggleWeblog = (enabled: boolean): void => {
+  settingsStore.setWeblogEnabled(enabled);
+  setWeblogEnabled(enabled);
+  trackAction("LOG_ENABLED_TOGGLE", { target: enabled ? "开启" : "关闭" });
+};
+
+/** 进入系统日志页：先收起设置抽屉再跳转，避免抽屉盖住页面 */
+const onOpenSystemLog = (): void => {
+  trackAction("NAV_SYSTEM_LOG_OPEN", { target: ROUTE_PATH.SYSTEM_LOG });
+  emit("close");
+  void router.push(ROUTE_PATH.SYSTEM_LOG);
+};
 
 /**
  * 代理连通性自检：经同源 /stock-proxy 请求一次轻量行情，
@@ -285,6 +332,7 @@ const onProbeProxy = async (): Promise<void> => {
         <BaseButton
           variant="ghost"
           :disabled="probeStatus === 'running'"
+          data-track="PROXY_PROBE"
           @click="onProbeProxy"
         >
           {{ probeButtonText }}
@@ -300,7 +348,7 @@ const onProbeProxy = async (): Promise<void> => {
         <p class="text-xs text-text-tertiary">
           清空代码表 / 交易日历 / 板块映射等实例级缓存
         </p>
-        <BaseButton variant="ghost" @click="onClearCaches">
+        <BaseButton variant="ghost" data-track="SDK_CACHE_CLEAR" @click="onClearCaches">
           清空 SDK 缓存
         </BaseButton>
       </div>
@@ -315,6 +363,7 @@ const onProbeProxy = async (): Promise<void> => {
         </div>
         <BaseSwitch
           :model-value="settingsStore.pollingEnabled"
+          data-track="POLLING_TOGGLE"
           @update:model-value="settingsStore.setPollingEnabled"
         />
       </div>
@@ -345,6 +394,8 @@ const onProbeProxy = async (): Promise<void> => {
             type="button"
             role="radio"
             :aria-checked="settingsStore.refreshIntervalMs === option.value"
+            data-track="REFRESH_INTERVAL_CHANGE"
+            :data-track-detail="option.label"
             class="pressable rounded-lg px-2.5 py-1 text-xs font-medium active:scale-90"
             :class="
               settingsStore.refreshIntervalMs === option.value
@@ -373,6 +424,8 @@ const onProbeProxy = async (): Promise<void> => {
           type="button"
           role="radio"
           :aria-checked="settingsStore.themeColor === option.value"
+          data-track="THEME_COLOR_CHANGE"
+          :data-track-detail="option.label"
           class="pressable flex items-center gap-2 rounded-full py-1 pl-1 pr-3 text-xs font-medium active:scale-95"
           :class="
             settingsStore.themeColor === option.value
@@ -400,6 +453,8 @@ const onProbeProxy = async (): Promise<void> => {
           type="button"
           role="radio"
           :aria-checked="settingsStore.trendTheme === option.value"
+          data-track="TREND_THEME_CHANGE"
+          :data-track-detail="option.label"
           class="pressable flex items-center gap-2 rounded-full py-1 pl-1 pr-3 text-xs font-medium active:scale-95"
           :class="
             settingsStore.trendTheme === option.value
@@ -440,6 +495,7 @@ const onProbeProxy = async (): Promise<void> => {
           </div>
           <BaseSwitch
             :model-value="settingsStore.watermarkEnabled"
+            data-track="WATERMARK_TOGGLE"
             @update:model-value="settingsStore.setWatermarkEnabled"
           />
         </div>
@@ -448,7 +504,7 @@ const onProbeProxy = async (): Promise<void> => {
             <p class="text-sm text-text">快捷键说明</p>
             <p class="mt-0.5 text-xs text-text-tertiary">查看当前软件支持的快捷操作</p>
           </div>
-          <BaseButton variant="ghost" @click="shortcutsModalOpen = true">查看</BaseButton>
+          <BaseButton variant="ghost" data-track="SHORTCUTS_VIEW" @click="shortcutsModalOpen = true">查看</BaseButton>
         </div>
       </div>
     </BaseCard>
@@ -461,7 +517,7 @@ const onProbeProxy = async (): Promise<void> => {
             拖拽调整左侧导航各页面的排列顺序，确认后立即生效并记住
           </p>
         </div>
-        <BaseButton variant="ghost" @click="openMenuOrderModal">编排</BaseButton>
+        <BaseButton variant="ghost" data-track="MENU_ORDER_EDIT" @click="openMenuOrderModal">编排</BaseButton>
       </div>
       <div class="mt-4 flex items-center justify-between gap-4 border-t border-flat-weak pt-4">
         <div>
@@ -480,6 +536,35 @@ const onProbeProxy = async (): Promise<void> => {
       </div>
     </BaseCard>
 
+    <!-- 系统日志：采集开关 + 进入日志页（报错 / 行为两页签表格） -->
+    <BaseCard title="系统日志">
+      <div class="flex items-center justify-between">
+        <div>
+          <p class="text-sm text-text">日志采集</p>
+          <p class="mt-0.5 text-xs text-text-tertiary">
+            记录报错与操作行为（页面显示、按钮点击、接口请求），{{ weblogRetentionText }}
+          </p>
+        </div>
+        <!-- 埋点由 onToggleWeblog 显式上报（带开启/关闭详情），此处不再标 data-track 以免重复 -->
+        <BaseSwitch
+          :model-value="settingsStore.weblogEnabled"
+          @update:model-value="onToggleWeblog"
+        />
+      </div>
+      <div class="mt-4 flex items-center justify-between gap-4 border-t border-flat-weak pt-4">
+        <div>
+          <p class="text-sm text-text">查看系统日志</p>
+          <p class="mt-0.5 text-xs text-text-tertiary">
+            报错日志 / 行为日志两个页签，支持按时间、分类、关键字筛选与导出
+          </p>
+        </div>
+        <!-- 埋点由 onOpenSystemLog 显式上报（需先关抽屉再跳转），此处不再标 data-track -->
+        <BaseButton variant="ghost" @click="onOpenSystemLog">
+          查看
+        </BaseButton>
+      </div>
+    </BaseCard>
+
     <BaseCard title="系统">
       <div class="mb-4 flex items-center justify-between gap-4">
         <div class="text-sm text-text">作者</div>
@@ -489,17 +574,16 @@ const onProbeProxy = async (): Promise<void> => {
         <div class="min-w-0">
           <p class="text-sm text-text">GitHub 仓库</p>
           <p class="mt-0.5 truncate text-xs text-text-tertiary">
-            github.com/WHF293/whf-stock-board
+            {{ repoDisplayUrl }}
           </p>
         </div>
-        <a
-          href="https://github.com/WHF293/whf-stock-board"
-          target="_blank"
-          rel="noreferrer"
-          class="pressable shrink-0 rounded-lg border border-flat-weak px-2 py-1 text-xs text-text-secondary hover:bg-flat-weak hover:text-text active:scale-95"
+        <BaseButton
+          variant="ghost"
+          data-track="REPO_OPEN"
+          @click="onOpenRepo"
         >
           打开
-        </a>
+        </BaseButton>
       </div>
       <div class="flex items-center justify-between gap-4">
         <div class="min-w-0">
@@ -520,6 +604,7 @@ const onProbeProxy = async (): Promise<void> => {
         <BaseButton
           variant="ghost"
           :disabled="updateStatus === 'checking'"
+          data-track="CHECK_UPDATE"
           @click="onCheckUpdate"
         >
           {{ updateButtonText }}

@@ -16,6 +16,7 @@ import {
 } from '../../utils/export-excel';
 import type { AccountTradeRecord, ImportKind } from '../../types/account.types';
 import type { TableColumn } from '../../types/table.types';
+import { useStockOpen } from '../../composables/use-stock-open';
 
 /**
  * 账户成交流水面板（交割单 / 对账单）
@@ -159,6 +160,53 @@ const onToggleGroup = (key: string): void => {
   expandedGroupKey.value = expandedGroupKey.value === key ? null : key;
 };
 
+// ---------- 按股票汇总：股票名称单击开抽屉 / 双击开详情页（全站统一交互） ----------
+const { openSidebar, openPage, toContextList } = useStockOpen();
+
+/**
+ * 按股票分组的上下文列表（供详情页左侧列表一键切换同批股票）
+ * @returns 上下文股票列表
+ */
+const stockContextList = () =>
+  toContextList(
+    stockGroups.value.map((group) => ({ symbol: group.key, name: group.summary.name })),
+    (row) => row.symbol,
+  );
+
+/** 股票名称单击挂起的定时器（沿用 BaseTable enableDblclickNav 的合并口径） */
+let pendingNameClick: number | null = null;
+
+/** 单击/双击合并窗口（毫秒；与 BaseTable 同款） */
+const NAME_CLICK_MERGE_MS = 250;
+
+/**
+ * 股票名称单击：延迟开抽屉，窗口内收到双击则取消
+ * @param key 分组 key（按股票汇总 = 6 位纯代码）
+ */
+const onNameClick = (key: string): void => {
+  if (viewMode.value !== VIEW_MODE.BY_STOCK) return;
+  if (pendingNameClick !== null) {
+    window.clearTimeout(pendingNameClick);
+  }
+  pendingNameClick = window.setTimeout(() => {
+    pendingNameClick = null;
+    openSidebar(key, stockContextList());
+  }, NAME_CLICK_MERGE_MS);
+};
+
+/**
+ * 股票名称双击：取消未派发的单击，直接跳股票详情整页
+ * @param key 分组 key（按股票汇总 = 6 位纯代码）
+ */
+const onNameDblclick = (key: string): void => {
+  if (viewMode.value !== VIEW_MODE.BY_STOCK) return;
+  if (pendingNameClick !== null) {
+    window.clearTimeout(pendingNameClick);
+    pendingNameClick = null;
+  }
+  openPage(key, stockContextList());
+};
+
 /**
  * 导出明细行
  * @param rows 明细行
@@ -222,7 +270,7 @@ const onExportSummary = (): void => {
           :columns="detailColumns"
           :rows="records"
           :row-key="recordKey"
-          min-width="980px"
+          min-width="1200px"
           scroll-class="table-scroll"
         >
           <template #quantity="{ row }">
@@ -234,67 +282,82 @@ const onExportSummary = (): void => {
       </div>
     </template>
 
-    <!-- 汇总视图：汇总头行（点击行 / chevron 展开）+ 组内明细表 -->
+    <!-- 汇总视图：单卡片紧凑列表（分组头行 + 展开的组内明细表），行距比普通表格略高 -->
     <template v-else>
-      <div class="space-y-2">
-        <BaseCard
-          v-for="group in activeGroups"
-          :key="group.key"
-          class="p-0"
-        >
-          <!-- 分组头：汇总行（整行可点） -->
-          <button
-            type="button"
-            class="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-flat-weak/50"
-            @click="onToggleGroup(group.key)"
-          >
-            <MenuIcon
-              :name="expandedGroupKey === group.key ? 'chevronDown' : 'chevronRight'"
-              :size="14"
-              class="shrink-0 text-text-tertiary"
-            />
-            <span class="truncate text-sm font-medium text-text">{{ group.summary.name }}</span>
-            <span class="shrink-0 text-xs text-text-tertiary">{{ group.summary.count }} 笔</span>
-            <span class="shrink-0 text-xs tabular-nums text-text-secondary">
-              买 {{ group.summary.buyAmount.toFixed(0) }} / 卖 {{ group.summary.sellAmount.toFixed(0) }}
-            </span>
-            <span
-              class="ml-auto shrink-0 text-xs tabular-nums"
-              :class="group.summary.netAmount >= 0 ? 'text-up' : 'text-down'"
+      <BaseCard class="p-0">
+        <div class="divide-y divide-flat-weak">
+          <div v-for="group in activeGroups" :key="group.key">
+            <!-- 分组头：汇总行（整行可点） -->
+            <button
+              type="button"
+              class="flex w-full items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-flat-weak/50"
+              @click="onToggleGroup(group.key)"
             >
-              净 {{ group.summary.netAmount >= 0 ? '+' : '' }}{{ group.summary.netAmount.toFixed(2) }}
-            </span>
-          </button>
+              <MenuIcon
+                :name="expandedGroupKey === group.key ? 'chevronDown' : 'chevronRight'"
+                :size="14"
+                class="shrink-0 text-text-tertiary"
+              />
+              <!-- 股票名称：按股票汇总时可单击开抽屉 / 双击开详情页（阻止冒泡，不触发行展开） -->
+              <span
+                class="truncate text-sm font-medium text-text"
+                :class="
+                  viewMode === VIEW_MODE.BY_STOCK
+                    ? 'cursor-pointer hover:text-primary'
+                    : ''
+                "
+                :title="
+                  viewMode === VIEW_MODE.BY_STOCK
+                    ? '单击查看详情抽屉 / 双击打开详情页'
+                    : undefined
+                "
+                @click.stop="onNameClick(group.key)"
+                @dblclick.stop="onNameDblclick(group.key)"
+              >
+                {{ group.summary.name }}
+              </span>
+              <span class="shrink-0 text-xs text-text-tertiary">{{ group.summary.count }} 笔</span>
+              <span class="shrink-0 text-xs tabular-nums text-text-secondary">
+                买 {{ group.summary.buyAmount.toFixed(0) }} / 卖 {{ group.summary.sellAmount.toFixed(0) }}
+              </span>
+              <span
+                class="ml-auto shrink-0 text-xs tabular-nums"
+                :class="group.summary.netAmount >= 0 ? 'text-up' : 'text-down'"
+              >
+                净 {{ group.summary.netAmount >= 0 ? '+' : '' }}{{ group.summary.netAmount.toFixed(2) }}
+              </span>
+            </button>
 
-          <!-- 组内明细表（含独立的导出按钮） -->
-          <div v-if="expandedGroupKey === group.key" class="border-t border-flat-weak px-4 py-3">
-            <div class="mb-2 flex justify-end">
-              <BaseButton
-                variant="ghost"
-                @click="onExportDetail(group.records, group.summary.name)"
-              >
-                <MenuIcon name="tradeImport" :size="14" />
-                导出excel
-              </BaseButton>
-            </div>
-            <div class="table-scroll" style="max-height: 40vh">
-              <BaseTable
-                :columns="detailColumns"
-                :rows="group.records"
-                :row-key="recordKey"
-                min-width="980px"
-                scroll-class="table-scroll"
-              >
-                <template #quantity="{ row }">
-                  <span :class="row.quantity >= 0 ? 'text-up' : 'text-down'">
-                    {{ row.quantity }}
-                  </span>
-                </template>
-              </BaseTable>
+            <!-- 组内明细表（含独立的导出按钮） -->
+            <div v-if="expandedGroupKey === group.key" class="border-t border-flat-weak px-4 py-3">
+              <div class="mb-2 flex justify-end">
+                <BaseButton
+                  variant="ghost"
+                  @click="onExportDetail(group.records, group.summary.name)"
+                >
+                  <MenuIcon name="tradeImport" :size="14" />
+                  导出excel
+                </BaseButton>
+              </div>
+              <div class="table-scroll" style="max-height: 40vh">
+                <BaseTable
+                  :columns="detailColumns"
+                  :rows="group.records"
+                  :row-key="recordKey"
+                  min-width="1200px"
+                  scroll-class="table-scroll"
+                >
+                  <template #quantity="{ row }">
+                    <span :class="row.quantity >= 0 ? 'text-up' : 'text-down'">
+                      {{ row.quantity }}
+                    </span>
+                  </template>
+                </BaseTable>
+              </div>
             </div>
           </div>
-        </BaseCard>
-      </div>
+        </div>
+      </BaseCard>
     </template>
   </div>
 </template>

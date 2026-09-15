@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "stock-board",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "identifier": "cn.whf.stockboard",
   "build": {
     "frontendDist": "../dist",
@@ -13,12 +13,12 @@
     "windows": [
       {
         "title": "股票看板",
-        "width": 1440,
-        "height": 900,
+        "width": 1000,
+        "height": 700,
         "resizable": true,
         "fullscreen": false,
-        "minWidth": 1024,
-        "minHeight": 640
+        "minWidth": 900,
+        "minHeight": 600
       }
     ],
     "security": {

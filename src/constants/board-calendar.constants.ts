@@ -16,7 +16,7 @@
 export const BOARD_CALENDAR_URL = {
   /** 板块列表（行业 496 / 概念 504），单页硬上限 100，需 pn 翻页 */
   BOARD_LIST: 'https://push2delay.eastmoney.com/api/qt/clist/get',
-  /** 板块批量快照（`secids` 一次查 31 个一级行业，含涨跌家数） */
+  /** 板块批量快照（`secids` 一次查整个板块池，含涨跌家数） */
   BOARD_QUOTE: 'https://push2delay.eastmoney.com/api/qt/ulist.np/get',
   /** 涨停池（date 参数可回溯约 14 个交易日） */
   LIMIT_UP_POOL: 'https://push2ex.eastmoney.com/getTopicZTPool',
@@ -44,7 +44,7 @@ export const BOARD_LIST_PAGE_SIZE = 100;
 /**
  * 板块 secid 前缀（东财「板块」市场号为 90）
  *
- * 用于 `ulist.np/get?secids=90.BKxxxx` 一次批量查询全部一级行业板块。
+ * 用于 `ulist.np/get?secids=90.BKxxxx` 一次批量查询整个板块池（行业与概念板块同接口）。
  */
 export const BOARD_SECID_PREFIX = '90';
 
@@ -123,8 +123,52 @@ export const SW_LEVEL1_BOARDS: ReadonlyArray<{ code: string; name: string }> = [
   { code: 'BK0437', name: '煤炭' },
 ];
 
-/** 候选池板块数（采集后校验筛出条数用） */
-export const SW_LEVEL1_COUNT = SW_LEVEL1_BOARDS.length;
+/* ------------------------------ 追加板块（热门题材） ------------------------------ */
+
+/**
+ * 追加板块：热门题材 / 细分行业（东财板块口径，**不是**申万一级）
+ *
+ * 2026-09-15 实测（`ulist.np/get` 单请求批量可查，且 f104/f105/f106 涨跌平家数对
+ * 行业板块与概念板块**都返回**，故与一级行业同一套采集口径）：
+ *
+ * | 代码 | 名称 | 类型 | 成分股 |
+ * |---|---|---|---|
+ * | BK1036 | 半导体 | 行业板块 | 186 |
+ * | BK0480 | 航天航空 | 概念板块 | 58 |
+ * | BK1408 | 机器人 | 行业板块 | 22 |
+ * | BK1031 | 光伏设备 | 行业板块 | 69 |
+ * | BK0493 | 新能源 | 概念板块 | 219 |
+ *
+ * 名称取自上游 `f14` 原文（本文件的名称是展示与落库用，不做匹配依据）：
+ * - 上游没有叫「航空航天」的板块，最接近的是概念板块「航天航空」BK0480；
+ * - 上游没有叫「光伏」的板块，「光伏设备」BK1031 是唯一对应的细分行业
+ *   （另有概念板块「光伏概念」BK0588，447 只，口径更宽）。
+ *
+ * ⚠️ 与申万一级**必然重叠**（半导体 ⊂ 电子、光伏设备 ⊂ 电力设备、机器人 ⊂ 机械设备…），
+ * 故成分股映射必须按「一对多」处理（见 `listConstituentBoardMap`）：
+ * 同一只票同时计入它的一级行业与命中的追加板块，两边互不排斥。
+ */
+export const EXTRA_BOARDS: ReadonlyArray<{ code: string; name: string }> = [
+  { code: 'BK1036', name: '半导体' },
+  { code: 'BK0480', name: '航天航空' },
+  { code: 'BK1408', name: '机器人' },
+  { code: 'BK1031', name: '光伏设备' },
+  { code: 'BK0493', name: '新能源' },
+];
+
+/**
+ * 板块日历完整板块池（31 个申万一级 + 追加板块）
+ *
+ * 数组顺序 = 默认行序（申万一级在前，追加板块在后）；
+ * 采集、快照批量查询、成分股映射、行序归一化全部以本常量为唯一来源。
+ */
+export const CALENDAR_BOARDS: ReadonlyArray<{ code: string; name: string }> = [
+  ...SW_LEVEL1_BOARDS,
+  ...EXTRA_BOARDS,
+];
+
+/** 板块池板块数（采集校验 / 页面计数用） */
+export const CALENDAR_BOARD_COUNT = CALENDAR_BOARDS.length;
 
 /* --------------------------------- 拼接口径 --------------------------------- */
 
@@ -185,6 +229,7 @@ export const BOARD_SCORE_BUCKET = {
  *
  * 依据 2026-09-14 实测 31 个一级行业得分率分布 -4.12 ~ +3.93（中位 0.13）标定；
  * 原始分极差过大（5 ~ 1915）必须先归一化，否则大板块永远满色。
+ * （2026-09-15 追加的热门板块未单独重标定：得分率口径不变，档位继续沿用。）
  */
 export const BOARD_SCORE_LEVEL = {
   STRONG: 3,
@@ -375,6 +420,13 @@ export const BOARD_SYNC_STATE_KEY = {
   TRADE_DATES: 'trade_dates',
   /** 涨跌停池可回溯边界（≤ 该日期的历史已探明不可达，不再重试） */
   POOL_BOUNDARY_DATE: 'pool_boundary_date',
+  /**
+   * 板块池签名（板块代码按默认行序拼接）
+   *
+   * 板块池变化（如新增热门板块）时，库内历史行缺少新板块 → 需要重跑一次回补窗口；
+   * 签名一致则完全不受影响（「入库之后只做增量」的前提）。
+   */
+  BOARD_POOL: 'board_pool',
 } as const;
 
 /**

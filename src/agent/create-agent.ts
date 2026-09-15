@@ -9,6 +9,7 @@
  */
 import { ChatOpenAI } from '@langchain/openai';
 import { AIMessage, HumanMessage, type BaseMessage } from '@langchain/core/messages';
+import type { StructuredToolInterface } from '@langchain/core/tools';
 import { createDeepAgent } from 'deepagents';
 import type { SubAgent } from 'deepagents';
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
@@ -27,6 +28,14 @@ export interface HistoryMessage {
 export interface AgentRunHandlers {
   /** 文本增量（未平滑的原始速率，调用方负责缓冲） */
   onDelta: (text: string) => void;
+  /**
+   * 模型发起工具调用（工具卡「运行中」态的提前信号；实际执行结果由 MCP sink 回填）
+   * @param event 工具调用事件
+   * @param event.id 模型给出的调用 id（缺失时为 index 兜底 id）
+   * @param event.name 工具名
+   * @param event.argsText 累计入参文本（tool_call_chunks 分片归并结果）
+   */
+  onToolRequest?: (event: { id: string; name: string; argsText: string }) => void;
   /** 正常结束或被停止；full 为运行时累计的完整文本 */
   onDone: (full: string, stopped: boolean) => void;
   /** 运行出错 */
@@ -84,6 +93,8 @@ export interface StartAgentRunParams {
   message: string;
   /** 编排的 subagent 定义 */
   subagents: SubagentDef[];
+  /** 工具集（内置 MCP 装配；空数组 / 缺省 = 无工具） */
+  tools?: StructuredToolInterface[];
 }
 
 /**
@@ -99,6 +110,7 @@ export function startAgentRun(params: StartAgentRunParams, handlers: AgentRunHan
     model: buildChatModel(params.model),
     systemPrompt: params.systemPrompt,
     subagents: toSubAgents(params.subagents, params.model),
+    tools: params.tools ?? [],
   });
 
   const messages: BaseMessage[] = [
@@ -110,6 +122,8 @@ export function startAgentRun(params: StartAgentRunParams, handlers: AgentRunHan
 
   void (async () => {
     let full = '';
+    /** 流式工具调用累计（按 chunk 的 index 归并 args 分片，name/id 出现在首个分片） */
+    const pendingCalls = new Map<number, { id: string; name: string; argsText: string }>();
     try {
       const stream = await agent.stream(
         { messages },
@@ -118,6 +132,9 @@ export function startAgentRun(params: StartAgentRunParams, handlers: AgentRunHan
       for await (const item of stream) {
         // 'messages' 模式产出 [chunk, metadata] 元组
         const chunk = Array.isArray(item) ? item[0] : item;
+        for (const call of extractToolRequests(chunk, pendingCalls)) {
+          handlers.onToolRequest?.(call);
+        }
         const text = extractAiText(chunk);
         if (text) {
           full += text;
@@ -135,6 +152,46 @@ export function startAgentRun(params: StartAgentRunParams, handlers: AgentRunHan
   })();
 
   return { stop: () => controller.abort() };
+}
+
+/**
+ * 从 AI 消息块中提取工具调用（含分片 args 累计）
+ *
+ * LangChain 的 tool_call_chunks 是**增量**的：每个分片只带 args 的一小段，
+ * name / id 通常只在首个分片出现 → 必须按 index 归并，否则拿到半截 JSON。
+ * 这里只用于让卡片「提前出现」，权威结果由 MCP 运行时的事件 sink 回填。
+ *
+ * @param chunk 消息块
+ * @param pending 累计表（跨 chunk 复用，按 index 归并）
+ * @returns 本次新增/更新的调用列表
+ */
+function extractToolRequests(
+  chunk: unknown,
+  pending: Map<number, { id: string; name: string; argsText: string }>,
+): Array<{ id: string; name: string; argsText: string }> {
+  if (!chunk || typeof chunk !== 'object') return [];
+  const message = chunk as {
+    getType?: () => string;
+    tool_call_chunks?: Array<{ id?: string | null; name?: string | null; args?: string | null; index?: number }>;
+  };
+  if (message.getType?.() !== 'ai' || !Array.isArray(message.tool_call_chunks)) return [];
+  const updates: Array<{ id: string; name: string; argsText: string }> = [];
+  for (const [position, piece] of message.tool_call_chunks.entries()) {
+    const index = typeof piece.index === 'number' ? piece.index : position;
+    const current = pending.get(index) ?? { id: '', name: '', argsText: '' };
+    if (typeof piece.id === 'string' && piece.id) current.id = piece.id;
+    if (typeof piece.name === 'string' && piece.name) current.name = piece.name;
+    if (typeof piece.args === 'string') current.argsText += piece.args;
+    pending.set(index, current);
+    if (current.name) {
+      updates.push({
+        id: current.id || 'call-' + String(index),
+        name: current.name,
+        argsText: current.argsText,
+      });
+    }
+  }
+  return updates;
 }
 
 /**

@@ -57,6 +57,24 @@ export const useAgentStore = defineStore('agent', () => {
     () => sessions.value.find((s) => s.id === currentSessionId.value) ?? null,
   );
 
+  /** 当前会话绑定的 Agent 配置（未绑定 = null） */
+  const activeProfile = computed<AgentProfile | null>(() => {
+    const pid = activeSession.value?.agentProfileId;
+    return pid ? (profiles.value.find((p) => p.id === pid) ?? null) : null;
+  });
+
+  /**
+   * 当前实际生效的模型：会话绑定 > Agent 配置 > 默认模型
+   *
+   * ⚠️ 这是「请求真正发出去的模型」的唯一事实源。`defaultModel` 只是三级回落的
+   * 兜底，会话 / 配置里绑了别的模型时就轮不到它——UI 必须据此标注「使用中」，
+   * 否则用户改了默认模型却发现请求用的还是另一个会无从判断。
+   */
+  const effectiveModel = computed<ModelConfig | null>(() => {
+    const modelId = activeSession.value?.modelId ?? activeProfile.value?.modelId ?? null;
+    return models.value.find((m) => m.id === modelId) ?? defaultModel.value;
+  });
+
   /**
    * 某分组（含未分组 null）下的会话列表
    * @param groupId 分组 id，null = 未分组
@@ -371,6 +389,8 @@ export const useAgentStore = defineStore('agent', () => {
     subagents,
     defaultModel,
     activeSession,
+    activeProfile,
+    effectiveModel,
     sessionsOfGroup,
     init,
     refreshCounts,

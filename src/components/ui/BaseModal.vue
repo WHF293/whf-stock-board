@@ -12,6 +12,8 @@ import MenuIcon from './MenuIcon.vue';
  * - v-model:open 控制显隐
  * - 居中卡片 + 半透明遮罩 + 点击遮罩关闭 + ESC 关闭 + 右上 × 关闭
  * - 打开时锁定 body 滚动，关闭后恢复
+ * - 插槽：#filters 为固定筛选栏（不随正文滚动，适合放切换控件/搜索框），
+ *   默认插槽为可滚动正文，#footer 为固定操作栏
  */
 withDefaults(
   defineProps<{
@@ -19,9 +21,16 @@ withDefaults(
     title: string;
     /** 卡片最大宽度（Tailwind 类，如 'max-w-md' 'max-w-lg'） */
     maxWidthClass?: string;
+    /**
+     * 卡片固定高度（Tailwind 高度类，如 'h-[70dvh]'）。
+     * 不传时卡片高度随内容自适应；内容高度会随 tab 切换变化的弹窗
+     * 建议传固定值，避免不同 tab 间弹窗高度跳变
+     */
+    heightClass?: string;
   }>(),
   {
     maxWidthClass: 'max-w-lg',
+    heightClass: '',
   },
 );
 
@@ -84,7 +93,7 @@ onBeforeUnmount(() => {
         <!-- 卡片 -->
         <div
           class="relative z-10 flex max-h-[85dvh] w-full flex-col rounded-lg bg-surface shadow-2xl"
-          :class="maxWidthClass"
+          :class="[maxWidthClass, heightClass]"
           @click.stop
         >
           <!-- 标题栏 -->
@@ -102,6 +111,13 @@ onBeforeUnmount(() => {
             >
               <MenuIcon name="close" :size="16" />
             </button>
+          </div>
+          <!-- 筛选栏（可选，调用方定制）：位于标题栏下方、正文之上，不随正文滚动 -->
+          <div
+            v-if="$slots.filters"
+            class="shrink-0 border-b border-flat-weak px-5 py-3"
+          >
+            <slot name="filters" />
           </div>
           <!-- 正文（调用方定制） -->
           <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4">

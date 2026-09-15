@@ -1,17 +1,17 @@
-import { SW_LEVEL1_BOARDS } from '../constants/board-calendar.constants';
+import { CALENDAR_BOARDS } from '../constants/board-calendar.constants';
 
 /**
  * 板块日历 · 板块列（行）顺序工具
  *
  * 设计要点：
- * - **顺序与勾选分开存**：`order` 是 31 个代码的完整排列（决定行序），
+ * - **顺序与勾选分开存**：`order` 是板块池代码的完整排列（决定行序），
  *   `hidden` 是未勾选的代码。若把两者合成「已勾选数组」，就无法区分
  *   「用户主动取消勾选」与「新版本新增了板块」——前者不该被自动补回来。
  * - `order` 等于默认序时表示**用户没有自定义行序**，此时表格按热门口径自动排序。
  */
 
-/** 默认列顺序（= SW_LEVEL1_BOARDS 声明顺序，即申万一级行业标准顺序） */
-export const BOARD_DEFAULT_ORDER: readonly string[] = SW_LEVEL1_BOARDS.map(
+/** 默认列顺序（= 板块池声明顺序：31 个申万一级 + 追加的热门板块） */
+export const BOARD_DEFAULT_ORDER: readonly string[] = CALENDAR_BOARDS.map(
   (board) => board.code,
 );
 
@@ -21,7 +21,7 @@ export const BOARD_DEFAULT_ORDER: readonly string[] = SW_LEVEL1_BOARDS.map(
  * 补齐而不是丢弃，是为了让**新版本新增的板块默认可见**（不会被历史设置挡住）；
  * 而「用户主动取消勾选」由 `hidden` 表达，不会被这里补回来。
  * @param order 待归一化的顺序（可能来自 localStorage，内容不可信）
- * @returns 31 个代码的完整排列
+ * @returns 板块池代码的完整排列
  */
 export const normalizeBoardOrder = (order: readonly string[]): string[] => {
   const known = new Set(BOARD_DEFAULT_ORDER);

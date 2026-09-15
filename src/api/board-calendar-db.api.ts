@@ -208,7 +208,7 @@ const toMeta = (r: Row): BoardCalendarMeta => ({
 
 /**
  * 批量写入板块档案（含成分股数与行序）
- * @param profiles 板块档案（31 条）
+ * @param profiles 板块档案（板块池全部板块）
  */
 export const upsertBoardProfiles = async (profiles: BoardProfile[]): Promise<void> => {
   const db = await getBoardDb();
@@ -245,6 +245,8 @@ export const listBoardProfiles = async (): Promise<BoardProfile[]> => {
  * 重建成分股映射（按板块先删后插）
  *
  * 实测 31 个一级行业合计 5621 条，按 INSERT_CHUNK_ROWS 分块写。
+ * 追加的热门板块与一级行业重叠时，同一 symbol 会有多行（主键含 board_code），
+ * 故 `INSERT OR REPLACE` 只会覆盖「同板块同股票」那一条，不会互相顶掉。
  * @param boardCode 板块代码
  * @param items 该板块成分股（symbol / name / market）
  */
@@ -268,16 +270,48 @@ export const replaceConstituents = async (
 };
 
 /**
- * 读取「个股 → 一级行业」映射（涨停 / 跌停归组用）
- * @returns symbol → boardCode 映射
+ * 读取「个股 → 板块」映射（涨停 / 跌停归组用）
+ *
+ * ⚠️ **一对多**：板块池含追加的热门板块（半导体 / 航天航空 / 机器人 / 光伏设备 / 新能源），
+ * 一只票同时属于其一级行业与命中的追加板块（`board_constituent` 主键为
+ * (board_code, symbol)），故这里必须返回数组——
+ * 退化成单个字符串会让两只板块互相覆盖（后写入的赢），涨停家数随机偏到某一边。
+ * @returns symbol → boardCode 列表（顺序不定）
  */
-export const listConstituentBoardMap = async (): Promise<Map<string, string>> => {
+export const listConstituentBoardMap = async (): Promise<Map<string, string[]>> => {
   const db = await getBoardDb();
   if (!db) return new Map();
   const rows = await db.select<Row[]>('SELECT symbol, board_code FROM board_constituent');
-  const map = new Map<string, string>();
+  const map = new Map<string, string[]>();
   for (const row of rows) {
-    map.set(str(row.symbol), str(row.board_code));
+    const symbol = str(row.symbol);
+    const code = str(row.board_code);
+    const list = map.get(symbol);
+    if (list) {
+      list.push(code);
+    } else {
+      map.set(symbol, [code]);
+    }
+  }
+  return map;
+};
+
+/**
+ * 统计各板块的成分股条数（按板块分组）
+ *
+ * 用途：板块池新增板块后，7 天新鲜度窗口内的「整表重建」会被跳过，
+ * 新板块的成分股映射就会一直缺到下一个窗口——采集侧据此只补「条数为 0」的板块。
+ * @returns boardCode → 条数（无记录的板块不在 Map 中）
+ */
+export const countConstituentsByBoard = async (): Promise<Map<string, number>> => {
+  const db = await getBoardDb();
+  if (!db) return new Map();
+  const rows = await db.select<Row[]>(
+    'SELECT board_code, COUNT(*) AS total FROM board_constituent GROUP BY board_code',
+  );
+  const map = new Map<string, number>();
+  for (const row of rows) {
+    map.set(str(row.board_code), num(row.total));
   }
   return map;
 };
@@ -309,7 +343,7 @@ export const getConstituentSyncedAt = async (): Promise<number> => {
 /* -------------------------------- 板块日聚合 -------------------------------- */
 
 /**
- * 批量 upsert 板块日聚合（当日 31 条 / 回补日 31 条）
+ * 批量 upsert 板块日聚合（当日 / 回补日各一整轮板块池）
  * @param rows 板块日聚合行
  */
 export const upsertBoardDaily = async (rows: BoardDailyRow[]): Promise<void> => {
@@ -378,6 +412,26 @@ export const listBoardDailyDates = async (): Promise<string[]> => {
   if (!db) return [];
   const rows = await db.select<Row[]>(
     'SELECT DISTINCT trade_date FROM board_daily ORDER BY trade_date DESC',
+  );
+  return rows.map((row) => str(row.trade_date));
+};
+
+/**
+ * 读取「已达指定数据级别」的交易日（倒序）
+ *
+ * 用途：板块池变更（新增 / 移除板块）后要重跑历史回补窗口，而
+ * **完整快照日（data_level = 1）绝不能被回补行（data_level = 0）覆盖**——
+ * 回补只有涨跌停、没有涨跌家数，重写会把这些日子的涨跌家数抹成 0。
+ * 故此时用本函数把「完整快照日」当作已有数据处理（跳过），只重跑仅回补过的那些天。
+ * @param dataLevel 数据级别（BOARD_DATA_LEVEL.FULL / PARTIAL）
+ * @returns 交易日数组（`YYYY-MM-DD`）
+ */
+export const listBoardDailyDatesByDataLevel = async (dataLevel: number): Promise<string[]> => {
+  const db = await getBoardDb();
+  if (!db) return [];
+  const rows = await db.select<Row[]>(
+    'SELECT DISTINCT trade_date FROM board_daily WHERE data_level = $1 ORDER BY trade_date DESC',
+    [dataLevel],
   );
   return rows.map((row) => str(row.trade_date));
 };
@@ -573,4 +627,21 @@ export const readPoolBoundaryDate = async (): Promise<string | null> => {
 export const writePoolBoundaryDate = async (date: string): Promise<void> => {
   if (!isValidDate(date)) return;
   await writeSyncState(BOARD_SYNC_STATE_KEY.POOL_BOUNDARY_DATE, date);
+};
+
+/**
+ * 读取板块池签名（板块代码按默认行序拼接）
+ * @returns 签名；从未写过时为 null
+ */
+export const readBoardPoolSignature = async (): Promise<string | null> => {
+  const record = await readSyncState(BOARD_SYNC_STATE_KEY.BOARD_POOL);
+  return record === null ? null : record.value;
+};
+
+/**
+ * 写入板块池签名
+ * @param signature 板块代码按默认行序拼接的签名
+ */
+export const writeBoardPoolSignature = async (signature: string): Promise<void> => {
+  await writeSyncState(BOARD_SYNC_STATE_KEY.BOARD_POOL, signature);
 };

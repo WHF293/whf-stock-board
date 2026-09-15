@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import type { KLineData } from 'klinecharts';
-import { toTencentSymbol, normalizeSymbol } from 'stock-sdk';
+import { toFullSymbol } from '../utils/to-full-symbol';
 import type { FullQuote } from '../types/stock-quote.types';
 import BaseButton from '../components/ui/BaseButton.vue';
 import BaseCard from '../components/ui/BaseCard.vue';
@@ -21,11 +21,19 @@ import StockQuoteHeader from '../components/business/StockQuoteHeader.vue';
 import StockOrderBook from '../components/business/StockOrderBook.vue';
 import { fetchFullQuotes } from '../api/quotes.api';
 import { fetchSinaKline } from '../api/sina-kline.api';
+import { listTradeRecordsBySymbol } from '../api/account-records-db.api';
+import type { AccountTradeRecord } from '../types/account.types';
+import {
+  buildDailyTradeMarks,
+  buildIntradayTradeMarks,
+  type TradeMark,
+} from '../utils/trade-marks';
 import { usePolling } from '../composables/use-polling';
 import { POLLING_INTERVAL } from '../constants/polling.constants';
 import { CHART_PERIOD_OPTIONS, type ChartPeriod } from '../constants/stock-detail.constants';
 import { useDataCacheStore } from '../stores/data-cache';
 import { useWatchlistStore } from '../stores/watchlist';
+import { useStockAccountStore } from '../stores/stock-account';
 import { DATA_CACHE_KEY } from '../constants/data-cache.constants';
 import { DEFAULT_GROUP_ID } from '../constants/watchlist.constants';
 import { getTrendByChangePercent } from '../constants/trend.constants';
@@ -51,15 +59,7 @@ const stockContext = useStockContextStore();
 /**
  * 归一化符号：600519 / SH600519 / sh600519 等形态统一为 sh600519
  */
-const symbol = computed<string>(() => {
-  const raw = String(route.params.symbol ?? '');
-  try {
-    return toTencentSymbol(normalizeSymbol(raw));
-  } catch {
-    // 非法符号兜底原样返回，交给后续请求失败降级
-    return raw;
-  }
-});
+const symbol = computed<string>(() => toFullSymbol(String(route.params.symbol ?? '')));
 
 /** 当前股票是否已加入自选（任一分组） */
 const isInWatchlist = computed(() => watchlistStore.allSymbols.includes(symbol.value));
@@ -128,12 +128,91 @@ const loadKline = async (): Promise<void> => {
   }
 };
 
+// ---------- 交易记录（本地交割单 / 对账单库，按股票） ----------
+/** 该股成交记录（跨账户；来源为账户管理导入的同花顺文件） */
+const tradeRecords = ref<AccountTradeRecord[]>([]);
+/** 成交记录加载中 */
+const isTradeRecordsLoading = ref(false);
+
+/** 拉取该股全部成交记录（本地 SQLite 直读，非网络请求，失败即空列表） */
+const loadTradeRecords = async (): Promise<void> => {
+  isTradeRecordsLoading.value = true;
+  try {
+    tradeRecords.value = await listTradeRecordsBySymbol(symbol.value);
+  } catch (error) {
+    console.error('[stock-detail-page] trade-records', error);
+    tradeRecords.value = [];
+  } finally {
+    isTradeRecordsLoading.value = false;
+  }
+};
+
+/**
+ * 成交数量展示（买入为正、卖出为负，正数补 + 号）
+ * @param quantity 成交数量（股；负数表示卖出）
+ * @returns 带符号的数量文案
+ */
+const formatTradeQuantity = (quantity: number): string =>
+  `${quantity > 0 ? '+' : ''}${quantity}`;
+
+// ---------- 交易记录的账户切换（多账户可能买过同一只股票） ----------
+const accountStore = useStockAccountStore();
+
+/** 账户筛选值：'' = 全部账户，否则为账户 id */
+const tradeAccountFilter = ref('');
+
+/** 该股成交记录里出现过的账户（id → 账户名；已删除的账户兜底显示 id 前 8 位） */
+const tradeAccountOptions = computed(() => {
+  const ids = [...new Set(tradeRecords.value.map((record) => record.accountId))];
+  const nameById = new Map(accountStore.accounts.map((account) => [account.id, account.name]));
+  return ids.map((id) => ({ id, name: nameById.get(id) ?? `账户 ${id.slice(0, 8)}` }));
+});
+
+/** 账户筛选后的交易记录（'' = 不过滤） */
+const visibleTradeRecords = computed(() =>
+  tradeAccountFilter.value === ''
+    ? tradeRecords.value
+    : tradeRecords.value.filter((record) => record.accountId === tradeAccountFilter.value),
+);
+
+// 账户被筛掉后当前选中可能失效（如切股后新列表无此账户），回退全部
+watch(tradeAccountOptions, (options) => {
+  if (
+    tradeAccountFilter.value !== '' &&
+    !options.some((option) => option.id === tradeAccountFilter.value)
+  ) {
+    tradeAccountFilter.value = '';
+  }
+});
+
+/**
+ * 成交操作文案（按数量的正负判定：买入 / 卖出）
+ * @param record 交易记录
+ * @returns 操作文案
+ */
+const tradeActionLabel = (record: AccountTradeRecord): string =>
+  record.quantity >= 0 ? '买入' : '卖出';
+
+// ---------- K 线图 BS/T 标注（交易记录映射为覆盖物） ----------
+/** 分时 / 五日：每笔成交一个点（同分钟买卖合并 T） */
+const intradayTradeMarks = computed<TradeMark[]>(() =>
+  buildIntradayTradeMarks(tradeRecords.value),
+);
+/** 日K等蜡烛图：按成交日聚合（B / S / T） */
+const dailyTradeMarks = computed<TradeMark[]>(() => buildDailyTradeMarks(tradeRecords.value));
+/** 当前图表模式对应的标注集（两套粒度不能混用：分钟点吸附日K会全部错位重叠） */
+const chartTradeMarks = computed<TradeMark[]>(() =>
+  chartMode.value === 'timeline' ? intradayTradeMarks.value : dailyTradeMarks.value,
+);
+
 // 符号变化全量重拉（KeepAlive 缓存后再次进入也触发）；周期变化只刷 K 线
+// ⚠️ 依赖的加载函数必须都在本 watch 之前声明（immediate 会在 setup 阶段同步执行）
 watch(
   symbol,
   () => {
     void loadKline();
     void fetchQuote();
+    void loadTradeRecords();
   },
   { immediate: true },
 );
@@ -230,9 +309,6 @@ const confirmRemove = (): void => {
 
 /**
  * 列表涨跌幅趋势色
-
-/**
- * 列表涨跌幅趋势色
  * @param value 涨跌幅（可能为 null）
  * @returns 趋势色类名
  */
@@ -241,7 +317,12 @@ const pctClass = (value: number | null): string =>
 </script>
 
 <template>
-  <div class="flex h-[calc(100dvh-6.5rem)] min-h-0 flex-col gap-3 overflow-hidden">
+  <!--
+    页面整体高 = 主区（K 线行）+ 交易记录行，超出视口由 MainLayout 的 main 滚动；
+    两行各自定高 calc(100dvh - 11rem)：6.5rem 为 MainLayout 顶栏 + p-6，
+    4.5rem 为本页顶栏卡与行间距——交易记录因此与 K 线卡片等高（需求口径）
+  -->
+  <div class="flex min-h-0 flex-col gap-3">
     <!-- 顶栏：返回 + 标的报价摘要 + 周期按钮组（参考 pro period-bar 横条） -->
     <BaseCard class="shrink-0">
       <div class="flex flex-wrap items-center justify-between gap-3">
@@ -286,7 +367,7 @@ const pctClass = (value: number | null): string =>
             >
               <path d="M12 5v14M5 12h14" />
             </svg>
-            {{ isInWatchlist ? '删自选' : '+ 加自选' }}
+            {{ isInWatchlist ? '删自选' : '加自选' }}
           </button>
         </div>
         <!-- 周期按钮组（胶囊高亮当前周期）+ 指标配置按钮 -->
@@ -299,7 +380,7 @@ const pctClass = (value: number | null): string =>
               class="rounded-lg px-3 py-1 text-xs transition-colors"
               :class="
                 chartPeriod === option.value
-                  ? 'bg-surface font-semibold text-text shadow-sm'
+                  ? 'bg-primary font-semibold text-white'
                   : 'text-text-secondary hover:text-text'
               "
               :aria-pressed="chartPeriod === option.value"
@@ -314,7 +395,7 @@ const pctClass = (value: number | null): string =>
     </BaseCard>
 
     <!-- 主区：左（来源列表）/ 中（K 线占满整列）/ 右（报价头 + 五档盘口） -->
-    <div class="flex min-h-0 flex-1 gap-3">
+    <div class="flex h-[calc(100dvh-11rem)] min-h-0 shrink-0 gap-3">
       <!-- 左侧来源股票列表：跳转入口写入上下文后展示；为空（如直链进入）不渲染。
            支持展开/收起：收起时仅显示股票名称窄条 -->
       <BaseCard
@@ -395,6 +476,7 @@ const pctClass = (value: number | null): string =>
             :main-indicators="settingsStore.chartMainIndicators"
             :sub-indicators="settingsStore.chartSubIndicators"
             :symbol="symbol"
+            :trade-marks="chartTradeMarks"
             auto-height
           />
           <BaseSkeleton v-else />
@@ -411,6 +493,72 @@ const pctClass = (value: number | null): string =>
         </BaseCard>
       </div>
     </div>
+
+    <!-- 交易记录：本地交割单 / 对账单库中该股的全部成交（时间 / 操作 / 数量 / 价格），
+         与上方 K 线卡片等高，行数超出时列表内部滚动；多账户买入同股时按账户筛选 -->
+    <BaseCard
+      class="flex h-[calc(100dvh-11rem)] min-h-0 shrink-0 flex-col"
+      :title="
+        visibleTradeRecords.length > 0
+          ? `交易记录（${visibleTradeRecords.length} 笔）`
+          : '交易记录'
+      "
+    >
+      <template #extra>
+        <div class="flex items-center gap-2">
+          <!-- 账户切换：仅该股成交记录涉及 ≥2 个账户时显示 -->
+          <select
+            v-if="tradeAccountOptions.length > 1"
+            v-model="tradeAccountFilter"
+            class="rounded-lg border border-flat-weak bg-surface px-2 py-1 text-xs text-text"
+            aria-label="按账户筛选交易记录"
+          >
+            <option value="">全部账户</option>
+            <option v-for="option in tradeAccountOptions" :key="option.id" :value="option.id">
+              {{ option.name }}
+            </option>
+          </select>
+          <span class="text-xs text-text-tertiary">来源：账户管理导入的同花顺交割单 / 对账单</span>
+        </div>
+      </template>
+      <BaseSkeleton v-if="isTradeRecordsLoading" />
+      <BaseEmpty
+        v-else-if="visibleTradeRecords.length === 0"
+        text="暂无该股成交记录：在「账户管理」导入同花顺交割单后即可在此查看"
+      />
+      <div v-else class="min-h-0 flex-1 overflow-y-auto">
+        <div
+          class="sticky top-0 z-[1] flex items-center gap-3 border-b border-flat-weak bg-surface px-2 pb-1.5 text-xs text-text-tertiary"
+        >
+          <span class="flex-1">时间</span>
+          <span class="w-10 text-right">操作</span>
+          <span class="w-20 text-right">数量</span>
+          <span class="w-20 text-right">价格</span>
+        </div>
+        <div
+          v-for="record in visibleTradeRecords"
+          :key="record.id"
+          class="flex items-center gap-3 border-b border-flat-weak/50 px-2 py-1.5 text-sm tabular-nums last:border-0 hover:bg-flat-weak/40"
+        >
+          <span class="flex-1 whitespace-nowrap text-text-secondary">
+            {{ record.tradeDate }} {{ record.tradeTime }}
+          </span>
+          <span
+            class="w-10 text-right"
+            :class="record.quantity >= 0 ? 'text-up' : 'text-down'"
+          >
+            {{ tradeActionLabel(record) }}
+          </span>
+          <span
+            class="w-20 text-right font-medium"
+            :class="record.quantity >= 0 ? 'text-up' : 'text-down'"
+          >
+            {{ formatTradeQuantity(record.quantity) }}
+          </span>
+          <span class="w-20 text-right text-text">{{ formatPrice(record.price) }}</span>
+        </div>
+      </div>
+    </BaseCard>
 
     <!-- 加自选弹窗：分组多选 + 新建分组 -->
     <BaseConfirmModal

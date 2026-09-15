@@ -9,12 +9,15 @@ import {
 } from '../api/board-calendar.api';
 import {
   countConstituents,
+  countConstituentsByBoard,
   getBoardDb,
   getCalendarMeta,
   getConstituentSyncedAt,
   isBoardDbAvailable,
   listBoardDailyDates,
+  listBoardDailyDatesByDataLevel,
   listConstituentBoardMap,
+  readBoardPoolSignature,
   readPoolBoundaryDate,
   readTradingDatesCache,
   replaceConstituents,
@@ -22,6 +25,7 @@ import {
   upsertBoardDaily,
   upsertBoardProfiles,
   upsertCalendarMeta,
+  writeBoardPoolSignature,
   writePoolBoundaryDate,
   writeTradingDatesCache,
 } from '../api/board-calendar-db.api';
@@ -37,10 +41,10 @@ import {
   BOARD_SNAPSHOT_REFRESH_END_MINUTE,
   BOARD_SNAPSHOT_THROTTLE_MS,
   BOARD_SYNC_START_DELAY_MS,
+  CALENDAR_BOARD_COUNT,
+  CALENDAR_BOARDS,
   CONSTITUENT_SYNC_CONCURRENCY,
   CONSTITUENT_SYNC_INTERVAL_MS,
-  SW_LEVEL1_BOARDS,
-  SW_LEVEL1_COUNT,
   TRADE_AXIS_CONFIRM_MINUTE,
   TRADE_AXIS_RETRY_MS,
   ZT_BACKFILL_DAYS,
@@ -65,9 +69,9 @@ import { mapWithConcurrency } from '../utils/map-with-concurrency';
  *
  * | 数据 | 变化频率 | 增量策略 |
  * |---|---|---|
- * | 成分股映射 | 极慢 | 7 天才重建一次（76 页 ≈ 16s） |
+ * | 成分股映射 | 极慢 | 7 天才整表重建一次（36 个板块 ≈ 82 页 ≈ 17s）；未到窗口只为「库里没有」的新板块补采 |
  * | 交易日轴 | 每个交易日 1 条 | 库内缓存；当天确认过后 0 请求 |
- * | 历史回补 | 每个交易日 1 天 | 只补库内缺失且尚未探明不可达的日期 |
+ * | 历史回补 | 每个交易日 1 天 | 只补库内缺失且尚未探明不可达的日期；板块池变更时重跑一次窗口 |
  * | 当日快照 | 盘中持续变化 | 定稿前按 10 分钟节流；定稿后 0 请求 |
  *
  * 稳态下的实际开销：
@@ -76,6 +80,8 @@ import { mapWithConcurrency } from '../utils/map-with-concurrency';
  *
  * ⚠️ 涨停池只有个股代码，`f100` / `f127` 给的是**东财叶子行业名**（如「化学制药」），
  * 无法直接归到申万一级（「医药生物」），故必须依赖 board_constituent 映射表。
+ * 映射表按**一对多**使用：板块池含追加的热门板块（半导体 / 航天航空 / 机器人 /
+ * 光伏设备 / 新能源），与一级行业必然重叠，同一只票同时计入两边。
  *
  * 失败策略：对外只返回 BoardSyncResult（含 error 文案），**不向 UI 抛异常**。
  */
@@ -141,28 +147,34 @@ const isSameLocalDay = (timestamp: number, now: Date): boolean =>
   toLocalDateString(new Date(timestamp)) === toLocalDateString(now);
 
 /**
- * 按映射表把涨跌停个股归组到一级行业
+ * 按映射表把涨跌停个股归组到板块
+ *
+ * ⚠️ **一对多**：板块池含追加的热门板块，一只票可同时属于「电子」与「半导体」，
+ * 故它会被计入每一个命中的板块——板块间重叠是设计如此（看待角度不同），
+ * 不是重复计数错误（同一板块内部的净额口径不变）。
  * @param stocks 涨跌停个股
- * @param constituentMap symbol → boardCode 映射
+ * @param constituentMap symbol → boardCode 列表映射
  * @returns 归组结果与未命中计数
  */
 const groupByBoard = (
   stocks: LimitPoolStock[],
-  constituentMap: Map<string, string>,
+  constituentMap: Map<string, string[]>,
 ): BoardGroup => {
   const groups = new Map<string, LimitPoolStock[]>();
   let unmapped = 0;
   for (const stock of stocks) {
-    const boardCode = constituentMap.get(stock.symbol);
-    if (!boardCode) {
+    const boardCodes = constituentMap.get(stock.symbol);
+    if (!boardCodes || boardCodes.length === 0) {
       unmapped += 1;
       continue;
     }
-    const list = groups.get(boardCode);
-    if (list) {
-      list.push(stock);
-    } else {
-      groups.set(boardCode, [stock]);
+    for (const boardCode of boardCodes) {
+      const list = groups.get(boardCode);
+      if (list) {
+        list.push(stock);
+      } else {
+        groups.set(boardCode, [stock]);
+      }
     }
   }
   return { groups, unmapped };
@@ -302,21 +314,29 @@ export const getTradingDates = async (force = false): Promise<string[]> => {
 /* -------------------------------- 成分股映射 -------------------------------- */
 
 /**
- * 成分股映射同步（距上次同步超过 7 天或首次 / force 时重建）
+ * 成分股映射同步（距上次同步超过 7 天或首次 / force 时整表重建；否则只补缺失板块）
  *
  * 逐板块并发拉取（板块内部串行翻页），单板块拉空则保留该板块旧数据不删。
+ * 「只补缺失板块」是为板块池新增板块（如新增热门题材）准备的：旧库对新板块一无所知，
+ * 若等足 7 天，新板块的涨停家数会一直是 0（快照有涨跌家数，但涨跌停归组归不上）。
  * @param force 是否强制重建（忽略 7 天新鲜度）
  * @returns 本次是否重建 + 映射总条数
  */
 const syncConstituents = async (force: boolean): Promise<{ synced: boolean; count: number }> => {
   const syncedAt = await getConstituentSyncedAt();
   const isStale = Date.now() - syncedAt > CONSTITUENT_SYNC_INTERVAL_MS;
-  if (!force && syncedAt > 0 && !isStale) {
+  const rebuildAll = force || syncedAt === 0 || isStale;
+
+  const existing = await countConstituentsByBoard();
+  const targets = rebuildAll
+    ? CALENDAR_BOARDS
+    : CALENDAR_BOARDS.filter((board) => (existing.get(board.code) ?? 0) === 0);
+  if (targets.length === 0) {
     return { synced: false, count: await countConstituents() };
   }
 
   const results = await mapWithConcurrency(
-    SW_LEVEL1_BOARDS,
+    targets,
     async (board) => ({ board, items: await fetchBoardConstituents(board.code) }),
     { concurrency: CONSTITUENT_SYNC_CONCURRENCY },
   );
@@ -335,7 +355,7 @@ const syncConstituents = async (force: boolean): Promise<{ synced: boolean; coun
     await delay(BOARD_REQUEST_GAP_MS);
   }
   if (emptyBoards > 0) {
-    console.warn(`[board-calendar] ${emptyBoards} 个一级行业成分股拉取为空，已保留旧映射`);
+    console.warn(`[board-calendar] ${emptyBoards} 个板块成分股拉取为空，已保留旧映射`);
   }
   return { synced: true, count: await countConstituents() };
 };
@@ -345,14 +365,14 @@ const syncConstituents = async (force: boolean): Promise<{ synced: boolean; coun
 /**
  * 采集「今日完整快照」并落库（涨跌停 + 涨跌家数齐全）
  *
- * 请求数固定为 3：板块快照 1（一次批量查 31 个一级行业）+ 涨停池 1 + 跌停池 1。
+ * 请求数固定为 3：板块快照 1（一次批量查板块池全部板块）+ 涨停池 1 + 跌停池 1。
  * @param tradeDate 交易日（`YYYY-MM-DD`）
- * @param constituentMap symbol → boardCode 映射
+ * @param constituentMap symbol → boardCode 列表映射
  * @returns 全市场涨停 / 跌停家数
  */
 const collectDailySnapshot = async (
   tradeDate: string,
-  constituentMap: Map<string, string>,
+  constituentMap: Map<string, string[]>,
 ): Promise<{ limitUpCnt: number; limitDownCnt: number }> => {
   const snapshot = await fetchBoardSnapshot();
   const poolDate = toPoolDateParam(tradeDate);
@@ -360,14 +380,14 @@ const collectDailySnapshot = async (
   await delay(BOARD_REQUEST_GAP_MS);
   const limitDown = await fetchLimitPool(-1, poolDate);
 
-  const missing = SW_LEVEL1_BOARDS.filter((board) => !snapshot.has(board.code));
-  if (missing.length >= SW_LEVEL1_COUNT / 2) {
+  const missing = CALENDAR_BOARDS.filter((board) => !snapshot.has(board.code));
+  if (missing.length >= CALENDAR_BOARD_COUNT / 2) {
     // 大半板块缺失 → 判上游异常，拒绝写库（避免污染历史）
-    throw new Error(`一级行业板块缺失 ${missing.length} 个，疑似上游异常`);
+    throw new Error(`板块快照缺失 ${missing.length} 个，疑似上游异常`);
   }
   if (missing.length > 0) {
     console.warn(
-      `[board-calendar] 以下一级行业在板块快照中缺失：${missing.map((b) => b.name).join('、')}`,
+      `[board-calendar] 以下板块在板块快照中缺失：${missing.map((b) => b.name).join('、')}`,
     );
   }
 
@@ -375,7 +395,7 @@ const collectDailySnapshot = async (
   const downGroup = groupByBoard(limitDown, constituentMap);
   if (upGroup.unmapped > 0 || downGroup.unmapped > 0) {
     console.warn(
-      `[board-calendar] 涨跌停个股未命中一级行业映射：涨停 ${upGroup.unmapped} 只 / 跌停 ${downGroup.unmapped} 只`,
+      `[board-calendar] 涨跌停个股未命中任何板块映射：涨停 ${upGroup.unmapped} 只 / 跌停 ${downGroup.unmapped} 只`,
     );
   }
 
@@ -385,7 +405,7 @@ const collectDailySnapshot = async (
   const limitRows: BoardLimitStock[] = [];
   const profiles: BoardProfile[] = [];
 
-  SW_LEVEL1_BOARDS.forEach((board, index) => {
+  CALENDAR_BOARDS.forEach((board, index) => {
     const item = snapshot.get(board.code);
     if (!item) return;
     const ups = upGroup.groups.get(board.code) ?? [];
@@ -543,12 +563,12 @@ const probeLimitPool = async (tradeDate: string): Promise<BackfillProbe> => {
  * 代价：回溯窗口比 `ZT_BACKFILL_DAYS` 短时会多探几天（每次至多 20 天 × 2 请求），
  * 这些请求在串行版里同样会发出，实际增量可忽略；收益是边界判定与并发彻底解耦。
  * @param candidates 待回补交易日（降序）
- * @param constituentMap symbol → boardCode 映射
+ * @param constituentMap symbol → boardCode 列表映射
  * @returns 成功回补的交易日与本次探明到的边界
  */
 const backfillHistory = async (
   candidates: string[],
-  constituentMap: Map<string, string>,
+  constituentMap: Map<string, string[]>,
 ): Promise<BackfillOutcome> => {
   const probes = await mapWithConcurrency(candidates, probeLimitPool, {
     concurrency: BACKFILL_CONCURRENCY,
@@ -580,7 +600,7 @@ const backfillHistory = async (
     const rows: BoardDailyRow[] = [];
     const limitRows: BoardLimitStock[] = [];
 
-    SW_LEVEL1_BOARDS.forEach((board) => {
+    CALENDAR_BOARDS.forEach((board) => {
       const ups = upGroup.groups.get(board.code) ?? [];
       const downs = downGroup.groups.get(board.code) ?? [];
       // 该日无涨跌家数：up/down 置 0，得分退化为「仅涨跌停」口径（不参与色阶）
@@ -670,15 +690,28 @@ const runBoardSync = async (force: boolean): Promise<BoardSyncResult> => {
     }
     const today = getLocalDateString();
 
-    // 成分股映射惰性读取：5621 行只在「确实要回补或要采当日快照」时才读
-    let constituentMap: Map<string, string> | null = null;
-    const requireMap = async (): Promise<Map<string, string>> => {
+    // 成分股映射惰性读取：6200+ 行只在「确实要回补或要采当日快照」时才读
+    let constituentMap: Map<string, string[]> | null = null;
+    const requireMap = async (): Promise<Map<string, string[]>> => {
       constituentMap ??= await listConstituentBoardMap();
       return constituentMap;
     };
 
+    // 板块池变更（新增 / 移除板块）→ 库内历史行缺少新板块，需重跑一次回补窗口。
+    // 但**完整快照日绝不能被回补行覆盖**（回补没有涨跌家数），故此时只把完整快照日
+    // 当作已有数据：其余日子（仅回补过的、或还没有数据的）重跑一次。
+    const poolSignature = CALENDAR_BOARDS.map((board) => board.code).join(',');
+    const poolChanged = (await readBoardPoolSignature()) !== poolSignature;
+    if (poolChanged) {
+      await writeBoardPoolSignature(poolSignature);
+    }
+
     // 历史回补（增量：只补库内缺失、且未越过已探明边界的交易日）
-    const existingDates = new Set(await listBoardDailyDates());
+    const existingDates = new Set(
+      poolChanged
+        ? await listBoardDailyDatesByDataLevel(BOARD_DATA_LEVEL.FULL)
+        : await listBoardDailyDates(),
+    );
     const backfillDates = pickBackfillDates(
       tradingDates,
       today,
@@ -688,7 +721,7 @@ const runBoardSync = async (force: boolean): Promise<BoardSyncResult> => {
     if (backfillDates.length > 0) {
       const map = await requireMap();
       if (map.size === 0) {
-        result.error = '一级行业成分股映射为空，本次跳过采集';
+        result.error = '成分股映射为空，本次跳过采集';
         return result;
       }
       const outcome = await backfillHistory(backfillDates, map);
@@ -703,7 +736,7 @@ const runBoardSync = async (force: boolean): Promise<BoardSyncResult> => {
     if (await shouldCollectSnapshot(today, isTodayTradingDay, force)) {
       const map = await requireMap();
       if (map.size === 0) {
-        result.error = '一级行业成分股映射为空，本次跳过采集';
+        result.error = '成分股映射为空，本次跳过采集';
         return result;
       }
       await collectDailySnapshot(today, map);

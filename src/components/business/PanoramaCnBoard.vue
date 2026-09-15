@@ -56,7 +56,7 @@ const dataCache = useDataCacheStore();
 
 /**
  * A股全景 · 板块排行（原板块行情页整合）：行业 / 概念按钮组 + 涨跌统计与筛选 +
- * 点击板块查看成分股（跳详情）
+ * 点击板块行展开成分股（行内表格，点击成分股跳详情）
  */
 
 const { openSidebar, openPage, toContextList } = useStockOpen();
@@ -310,7 +310,7 @@ const openDetail = (code: string): void => {
       <div v-else-if="isBoardsLoading && boards.length === 0">
         <BaseSkeleton />
       </div>
-      <!-- 平铺网格（与美股全景一致：板块名 + 涨跌幅；高度同列表，点击查看成分股） -->
+      <!-- 平铺网格（与美股全景一致：板块名 + 涨跌幅；高度同列表，名称不可点击） -->
       <div
         v-else-if="isTileMode && sortedBoardsFull.length > 0"
         class="table-scroll"
@@ -321,7 +321,9 @@ const openDetail = (code: string): void => {
             :key="board.code"
             class="flex items-center justify-between gap-2 rounded-lg bg-flat-weak px-3 py-2.5"
           >
-            <span class="truncate text-sm text-text">{{ board.name }}</span>
+            <span class="truncate text-sm text-text" :title="board.name">
+              {{ board.name }}
+            </span>
             <span
               class="shrink-0 text-sm font-semibold tabular-nums"
               :class="
@@ -350,6 +352,11 @@ const openDetail = (code: string): void => {
           @toggle-expand="onBoardToggle"
           @scroll="onBoardsScroll"
         >
+          <template #name="{ row }">
+            <span class="block max-w-full truncate font-medium text-text" :title="row.name">
+              {{ row.name }}
+            </span>
+          </template>
           <template #price="{ row }">
             <span class="text-text-secondary">{{
               formatPrice(row.price)

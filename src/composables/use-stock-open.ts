@@ -3,6 +3,7 @@ import { useDockPanelStore } from '../stores/dock-panel';
 import { useStockContextStore, type ContextStock } from '../stores/stock-context';
 import { ROUTE_PATH } from '../constants/router-meta.constants';
 import { normalizeAShareCode } from '../utils/normalize-a-share-code';
+import { trackAction } from '../weblog/weblogActions';
 
 /**
  * 全站统一的个股打开交互：
@@ -29,6 +30,7 @@ export const useStockOpen = () => {
     if (list && list.length > 0) {
       stockContext.setContext(list);
     }
+    trackAction('STOCK_OPEN_SIDEBAR', { target: symbol });
     dockPanel.openStock(symbol);
   };
 
@@ -41,6 +43,7 @@ export const useStockOpen = () => {
     stockContext.setContext(
       list && list.length > 0 ? list : [{ symbol: normalizeAShareCode(symbol), name: '', price: null, changePercent: null }],
     );
+    trackAction('STOCK_OPEN_PAGE', { target: symbol });
     dockPanel.close();
     void router.push(`${ROUTE_PATH.STOCK_DETAIL}/${symbol}`);
   };

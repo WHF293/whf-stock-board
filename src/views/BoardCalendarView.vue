@@ -25,8 +25,8 @@ import {
   BOARD_DATA_LEVEL,
   BOARD_SCORE_BUCKET,
   BOARD_SCORE_LEGEND,
+  CALENDAR_BOARDS,
   HEAT_STREAK_WINDOW,
-  SW_LEVEL1_BOARDS,
 } from '../constants/board-calendar.constants';
 import { DATA_CACHE_KEY } from '../constants/data-cache.constants';
 import { POLLING_INTERVAL } from '../constants/polling.constants';
@@ -57,8 +57,10 @@ import { handleSdkError } from '../utils/handle-sdk-error';
 /**
  * 板块日历（板块热点 · 赚钱效应）
  *
- * 行为：31 个申万一级行业为行（按热门口径降序）× 交易日为列（降序，最近在左）；
+ * 行为：板块池为行（31 个申万一级行业 + 追加的热门板块，按热门口径降序）×
+ * 交易日为列（降序，最近在左）；
  * 单元格显示涨停 / 跌停家数，背景按「得分率」取 7 档涨跌语义色（与板块热力图同款）。
+ * 注意：追加板块与一级行业会重叠（半导体 ⊂ 电子），同一只票同时计入两边，属设计口径。
  * 数据来自本地库 sqlite:stock-board.db（由启动钩子与页内轮询逐日累积）。
  *
  * 口径见 .ai/开发方案/2026-09-14-板块日历与赚钱效应开发方案.md §3。
@@ -165,7 +167,7 @@ const hasCustomOrder = computed<boolean>(
 /** 需要在表格中渲染的板块（已剔除未勾选项，顺序 = 用户保存的顺序） */
 const visibleBoards = computed<Array<{ code: string; name: string }>>(() => {
   const hidden = new Set(normalizeBoardHidden(settingsStore.boardCalendarHidden));
-  const byCode = new Map(SW_LEVEL1_BOARDS.map((board) => [board.code, board]));
+  const byCode = new Map(CALENDAR_BOARDS.map((board) => [board.code, board]));
   const boards: Array<{ code: string; name: string }> = [];
   for (const code of normalizeBoardOrder(settingsStore.boardCalendarOrder)) {
     const board = byCode.get(code);
@@ -186,7 +188,7 @@ const heatStatsByCode = computed<Map<string, { heatLimitUp: number; latestAmount
     const streakDates = [...tradingDates.value].reverse().slice(0, HEAT_STREAK_WINDOW);
     const latest = selectedDates.value[0] ?? '';
     const stats = new Map<string, { heatLimitUp: number; latestAmount: number }>();
-    for (const board of SW_LEVEL1_BOARDS) {
+    for (const board of CALENDAR_BOARDS) {
       let heatLimitUp = 0;
       for (const date of streakDates) {
         heatLimitUp += byKey.get(`${date}|${board.code}`)?.limitUp ?? 0;
@@ -476,7 +478,7 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
           <MenuIcon name="filter" :size="12" />
           板块过滤器
           <span class="tabular-nums text-text-tertiary">
-            {{ matrix.rows.length }}/{{ SW_LEVEL1_BOARDS.length }}
+            {{ matrix.rows.length }}/{{ CALENDAR_BOARDS.length }}
           </span>
         </button>
         <button
@@ -526,7 +528,7 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
     <p v-if="errorText" class="text-xs text-down" role="alert">{{ errorText }}</p>
 
     <BaseCard
-      :title="`板块日历 · 申万一级行业 ${matrix.rows.length}/${SW_LEVEL1_BOARDS.length} 个 · 覆盖 ${coveredDateCount} 个交易日`"
+      :title="`板块日历 · 板块 ${matrix.rows.length}/${CALENDAR_BOARDS.length} 个 · 覆盖 ${coveredDateCount} 个交易日`"
     >
       <!-- 图例 -->
       <template #extra>

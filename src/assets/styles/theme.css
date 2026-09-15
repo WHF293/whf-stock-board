@@ -190,8 +190,52 @@ body {
 }
 
 /*
+ * 报价卡片栅格（指数卡片等）
+ *
+ * 目标：**所有卡片等宽**、**每行张数由可用宽度决定**（不是固定几个），
+ * 且主指数在常见窗口下始终占满一行。列数由宽度推得：
+ * - 容器 ≥1448px（4 × 350 + 3 × 16）→ 单卡 350px 起，能排几张排几张，大屏可一行显示全部；
+ * - 容器不足 4 张 350px → 按 4 等分收缩（`calc(25% - 0.75rem)`），仍是 4 列、卡片等宽、主指数一行；
+ * - 容器窄到连 4 × 200px 都放不下（<848px）→ 退回 200px 下限，自然换行（不再保证一行）。
+ *
+ * ⚠️ 必须用 auto-fill（不是 auto-fit）：auto-fit 会把**末行**剩余的卡片拉伸填满，
+ * 导致换行后的卡片与首行不等宽（正是要避免的问题）。
+ * ⚠️ `0.75rem` = 3 个 gap ÷ 4（gap 为 1rem）；gap 与本式的系数必须同步改。
+ * 主区已开 @container，右侧停靠面板展开收窄时同样按此规则重排列数。
+ */
+.quote-card-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns:
+    repeat(auto-fill, minmax(min(350px, max(200px, calc(25% - 0.75rem))), 1fr));
+}
+
+/*
+ * 指数卡片「首行裁剪」容器（配合 useRowClamp）
+ *
+ * 收起态 = 容器高度 = **首行高度**（内联 style 实测写入），其余行被裁掉；
+ * 展开态高度切到栅格总高。高度在这里必须加过渡，收起/展开才是动画而不是瞬移
+ * （过渡 height 而不是 max-height：收起态没有可用的上限值，只有实测的首行高）。
+ *
+ * ⚠️ `overflow: clip`（而不是 hidden）：裁剪区里的卡片虽然被裁掉但仍可被 Tab 聚焦，
+ * overflow:hidden 的容器会被浏览器滚动以「把焦点元素露出来」，一滚首行就跟着跑了；
+ * clip 不产生滚动容器，裁剪就是纯粹的裁剪。`overflow: hidden` 作为老浏览器兜底。
+ */
+.row-clamp {
+  overflow: hidden;
+  overflow: clip;
+  transition: height 320ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row-clamp {
+    transition: none;
+  }
+}
+
+/*
  * 板块日历矩阵（31 行 × N 列，div 网格非 table）：
- * 比常规表格更高——常规 560px 只露约 9 行，31 个一级行业需要更多可视行数
+ * 比常规表格更高——常规 560px 只露约 9 行，板块池（申万一级 + 热门板块）行数更多
  */
 .board-calendar-scroll {
   max-height: 760px;

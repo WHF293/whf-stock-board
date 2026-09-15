@@ -28,6 +28,8 @@ import type { TableColumn } from "../../types/table.types";
  * 点击行首 chevron（或点击行）展开扩展行，扩展行内渲染该板块的成分股表格，
  * 成分股行点击 emit stock-click 跳个股详情；
  * 成分股数据由父级 useHeatmapDrill 拉取（board-click 事件触发），与热力图视图共享
+ *
+ * 注：板块名称为纯文本（不再点击打开右侧停靠面板查看成分股）
  */
 defineProps<{
   /** 板块列表（Top N，完整行情字段） */
@@ -144,6 +146,11 @@ const onStockRowDblclick = (stock: IndustryBoardConstituent): void => {
       :expanded-keys="expandedCodes"
       @toggle-expand="onBoardToggle"
     >
+      <template #name="{ row }">
+        <span class="block max-w-full truncate font-medium text-text" :title="row.name">
+          {{ row.name }}
+        </span>
+      </template>
       <template #price="{ row }">
         {{ formatPrice(row.price) }}
       </template>

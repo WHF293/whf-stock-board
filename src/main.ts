@@ -7,6 +7,8 @@ import piniaPluginPersistedstate from 'pinia-plugin-persistedstate';
 import App from './App.vue';
 import { router } from './router';
 import { disableDevtools } from './utils/disable-devtools';
+import { initWeblog } from './weblog';
+import { useSettingsStore } from './stores/settings';
 import './assets/styles/main.css';
 
 // 线上禁用开发者工具常见入口（F12 / Ctrl+Shift+I|J|C / 右键菜单）
@@ -21,5 +23,14 @@ const pinia = createPinia();
 pinia.use(piniaPluginPersistedstate);
 
 app.use(pinia);
+
+// 系统日志：必须在 app.use(router) 之前挂载 —— 页面显示埋点靠 router.afterEach，
+// 首个导航在 router 安装时就会触发，晚一步会漏掉首屏那一条
+initWeblog({
+  app,
+  router,
+  enabled: useSettingsStore(pinia).weblogEnabled,
+});
+
 app.use(router);
 app.mount('#app');

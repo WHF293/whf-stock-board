@@ -66,6 +66,39 @@ server/           # vite 中间件：/stock-proxy（仅浏览器 dev 使用）
 - 新增数据域名：浏览器侧改 `constants/proxy.constants.ts` 白名单，Tauri 侧改 capabilities scope
 - **接口与数据源完整清单见根目录 `SERVER_API.md`**（每个页面调了什么接口 / 什么 stock-sdk 方法、上游 host、本机封禁与频率红线），新增或排查取数问题时先查此文件
 
+## 内置 MCP 同步规范（硬性，勿漏）
+
+Agent 的内置 MCP 工具定义在 `src/agent/mcp/`（`app-tools.ts`「app-api」与 `stocksdk-tools.ts`「stock-sdk」，条目展示见 `components/agent/McpManageModal.vue`）。以下变更**必须同步更新对应 MCP 工具**，否则 Agent 能力与实际接口/库表脱节：
+
+- **新增接口 / API**：同步新增 MCP 工具或扩展现有工具（`app-tools.ts` / `stocksdk-tools.ts`），zod schema 为单一事实源（`inputSchema` 由 `z.toJSONSchema` 推导）
+- **接口变更**（入参/返回结构/语义变化）：同步修改对应工具的 zod schema、description 与返回摘要
+- **接口删除**：同步删除对应 MCP 工具
+- **数据库变更**（Rust 迁移新增表/字段、删表、改表）：同步更新 `app-tools.ts` 中 `db_query` / `db_execute` 与 CRUD 工具涉及的表说明（如 `news_saved` 等）
+
+自检口径：改完跑 `pnpm lint` + `pnpm build`；问自己一句「Agent 现在调用这些接口/表的方式还和代码一致吗？」
+
+## MCP Apps 渲染约定（工具结果可视化，硬性）
+
+内置 MCP 工具可声明「调用后渲染成卡片」：工具加 `_meta.ui.resourceUri`（`ui://<server>/<app>`），
+`execute` 返回 **双通道** 结果 —— `content[0].text` 给模型（精简 JSON 控 token）、
+`structuredContent` 给 UI（不进模型上下文）。新增/修改带 UI 的工具按此约定：
+
+- UI 应用写在 `src/agent/mcp/ui-apps.ts`：单文件 HTML、零外部依赖（不引 CDN/字体/图片），
+  源码内**不能出现反引号与 `${`**（整个文件是 TS 模板字符串）；主题/涨跌配色由宿主经
+  `hostContext` 下发（`data-theme` / `data-trend`），App 不读 localStorage；
+- 渲染数据必须先在 `ui-payload.ts` 归一化为「series 声明 + 行数据」，**不要把 stock-sdk
+  的字段名（ma5/dif/rsi6…）直接漏进 App**——SDK 换版本只改这一处；
+- `uiCallable` 只对**只读**工具开 `true`（App 可反向 `tools/call`）；写操作与任意 SQL
+  一律 `false`（`app-tools.ts` 全部 false，勿放开）；
+- 宿主协议实现见 `components/agent/McpAppHost.vue`：iframe `sandbox="allow-scripts"`，
+  **严禁加 `allow-same-origin`**（加了 sandbox 就等于失效），消息必须校验
+  `event.source === iframe.contentWindow`；
+- 改完必须跑 `.ai/tmp/mcp-apps-smoke.cjs`（协议链路 + 渲染 + 白名单 + 主题跟随，44 项断言）。
+
+远端 MCP 工具由 `src/agent/mcp/remote.ts` 直连 `@modelcontextprotocol/sdk`（不走
+`@langchain/mcp-adapters`：那层会丢掉 `_meta.ui` / `structuredContent`，且无法注入
+tauri fetch 绕 webview CORS）。
+
 ## 请求频率红线（踩过坑）
 
 东财系接口高频请求会封 IP（全域名 TCP RST 数十分钟）：

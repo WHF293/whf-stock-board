@@ -13,7 +13,8 @@ export const ROUTE_PATH = {
   HOT_NEWS: "/hot-news",
   MARKET_RANK: "/market-rank",
   STOCK_ACCOUNT: "/stock-account",
-  AGENT_ANALYSIS: "/agent-analysis",
+  AGENT_WINDOW: "/agent-window", // Agent 分析独立 WebviewWindow（standalone 布局，不入菜单）
+  SYSTEM_LOG: "/system-log", // 系统日志页（设置页入口进入，不入菜单）
   SETTINGS: "/settings",
   STOCK_DETAIL: "/stock-detail", // 股票详情整页（+/:symbol，不入菜单）
 } as const;
@@ -35,6 +36,7 @@ export const MENU_ICON = {
   ACCOUNT: "account",
   AGENT: "agent",
   SETTINGS: "settings",
+  LOG: "log",
 } as const;
 
 /**
@@ -52,9 +54,7 @@ export const MENU_ITEMS = [
   { path: ROUTE_PATH.WATCHLIST, title: "自选股", icon: MENU_ICON.STAR },
   { path: ROUTE_PATH.SCREENER, title: "选股器", icon: MENU_ICON.FILTER },
   { path: ROUTE_PATH.HOT_NEWS, title: "热点新闻", icon: MENU_ICON.NEWS },
-  // 账户（含交割单导入入口）是「本地 Agent 分析」的数据输入，排在 Agent 分析之前
   { path: ROUTE_PATH.STOCK_ACCOUNT, title: "账户管理", icon: MENU_ICON.ACCOUNT },
-  { path: ROUTE_PATH.AGENT_ANALYSIS, title: "Agent 分析", icon: MENU_ICON.AGENT },
 ] as const;
 
 /**

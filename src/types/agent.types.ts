@@ -139,9 +139,11 @@ export interface ChatSession {
 /** 消息里的结构化块：工具调用卡 */
 export interface ToolCallPart {
   type: 'tool_call';
-  /** 工具调用 id（配对开始/结束） */
+  /** 工具调用 id（配对开始/结束；优先取模型的 tool_call id） */
   callId: string;
   toolName: string;
+  /** 所属 MCP server key（卡片徽标：app-api / stock-sdk / remote:<id>） */
+  serverKey?: string;
   /** 状态：running / success / error */
   state: 'running' | 'success' | 'error';
   /** 参数（JSON 字符串） */
@@ -152,6 +154,16 @@ export interface ToolCallPart {
   durationMs?: number;
   /** subagent 派发（task 卡）时的子 agent 名 */
   subagentName?: string;
+  /**
+   * MCP Apps 渲染数据：工具声明了 `_meta.ui.resourceUri` 且调用成功时写入，
+   * 聊天区据此在卡片内承载沙箱 iframe（载荷只服务 UI，不回灌模型上下文）
+   */
+  ui?: {
+    /** ui://<server>/<app> */
+    resourceUri: string;
+    /** 工具结果的结构化数据（体积超限时丢弃，仅保留 resourceUri） */
+    payload: Record<string, unknown>;
+  };
 }
 
 /** 消息里的结构化块：todo 计划卡 */

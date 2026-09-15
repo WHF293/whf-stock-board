@@ -3,12 +3,14 @@
   "identifier": "default",
   "description": "enables the default permissions",
   "windows": [
-    "main"
+    "main",
+    "agent-analysis"
   ],
   "permissions": [
     "core:default",
     "opener:default",
     "core:window:allow-create",
+    "core:window:allow-set-focus",
     "core:webview:allow-create-webview-window",
     "sql:default",
     "sql:allow-execute",

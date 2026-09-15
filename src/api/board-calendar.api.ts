@@ -4,12 +4,12 @@ import {
   BOARD_REQUEST_GAP_MS,
   BOARD_SECID_PREFIX,
   BOARD_SNAPSHOT_FIELDS,
+  CALENDAR_BOARDS,
   EASTMONEY_USER_AGENT,
   LIMIT_DOWN_POOL_SORT,
   LIMIT_POOL_PAGE_SIZE,
   LIMIT_POOL_TOKEN,
   LIMIT_UP_POOL_SORT,
-  SW_LEVEL1_BOARDS,
   TENCENT_REFERER,
   TRADING_KLINE_LIMIT,
 } from '../constants/board-calendar.constants';
@@ -159,16 +159,18 @@ const toSnapshotItem = (row: Record<string, unknown>): BoardSnapshotItem => ({
 });
 
 /**
- * 拉取全部一级行业板块快照（31 条，**单请求**）
+ * 拉取板块池全部板块快照（31 个申万一级 + 追加板块，**单请求**）
  *
  * 2026-09-14 实测：`ulist.np/get?secids=90.BKxxxx,...` 一次即可返回全部 31 个板块
  * 与其涨跌家数（`f104/f105/f106`），与「clist 翻 5 页取 496 条再筛 31」结果一致，
  * 但把每次采集的 5 个请求压成 1 个，且不再依赖 496 条的条数阈值。
+ * 2026-09-15 追加 5 个板块后仍为单请求（实测 10 个 secid 一次查全）；
+ * 概念板块同样返回涨跌平家数，故口径不变。
  * @returns 板块代码 → 快照（未命中的板块不在 Map 中，由调用方判定缺失）
  * @throws Error 上游返回空数据（限频 / 异常）时抛出
  */
 export const fetchBoardSnapshot = async (): Promise<Map<string, BoardSnapshotItem>> => {
-  const secids = SW_LEVEL1_BOARDS.map((board) => `${BOARD_SECID_PREFIX}.${board.code}`).join(',');
+  const secids = CALENDAR_BOARDS.map((board) => `${BOARD_SECID_PREFIX}.${board.code}`).join(',');
   const params = new URLSearchParams({
     fltt: '2',
     invt: '2',
@@ -280,9 +282,11 @@ export const fetchLimitPool = async (
 /* -------------------------------- 成分股 -------------------------------- */
 
 /**
- * 拉取一级行业全部成分股（构建「个股 → 一级行业」映射表用）
+ * 拉取某板块全部成分股（构建「个股 → 板块」映射表用）
  *
- * 实测 31 个板块合计 5621 只 / 76 页 / 约 16s；跨板块重复为 0。
+ * 实测 31 个一级行业合计 5621 只 / 76 页 / 约 16s；跨一级行业重复为 0。
+ * 追加板块与一级行业**会有重叠**（同一只票可同时属于电子与半导体），
+ * 映射表按一对多落库（`board_constituent` 主键是 (board_code, symbol)）。
  * @param boardCode 板块代码（BKxxxx）
  * @returns 成分股列表
  */
@@ -302,7 +306,7 @@ export const fetchBoardConstituents = async (boardCode: string): Promise<Constit
 };
 
 /**
- * 拉取某一级行业成分股的实时行情（弹窗「全部成分股」页签，仅当日可用）
+ * 拉取某板块成分股的实时行情（弹窗「全部成分股」页签，仅当日可用）
  * @param boardCode 板块代码（BKxxxx）
  * @returns 成分股行情列表
  */

@@ -9,6 +9,22 @@ export const PANORAMA_CLIST_PAGE_SIZE = 100;
 export const PANORAMA_GLOBAL_INDEX_FS = 'm:100';
 
 /**
+ * 全球指数 ulist secid（市场码 100 = 全球指数），顺序即市场总览展开区卡片顺序：
+ * 恒生指数 / 道琼斯 / 纳斯达克 / 标普500 / 日经225 / 韩国KOSPI
+ *
+ * 注：腾讯行情源（qt.gtimg.cn）不覆盖日经 225 与 KOSPI，
+ * 故全球指数统一走东财 push2delay ulist 精确 secid 查询（可带最新价）
+ */
+export const PANORAMA_GLOBAL_INDEX_SECIDS = [
+  '100.HSI',
+  '100.DJIA',
+  '100.NDX',
+  '100.SPX',
+  '100.N225',
+  '100.KS11',
+] as const;
+
+/**
  * 全球宏观分组展示配置：label 为分组标题，keywords 逐项在上游数据源内
  * 按名称包含匹配（优先精确命中 / 主力连续合约，未命中的条目自动隐藏）
  *

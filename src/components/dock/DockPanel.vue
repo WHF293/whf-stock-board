@@ -29,29 +29,9 @@ const openDetailPage = (): void => {
   void router.push(`${ROUTE_PATH.STOCK_DETAIL}/${symbol}`);
 };
 
-/** 面板标题映射（新增内容类型在此补标题） */
-const TITLE_BY_CONTENT: Record<string, string> = {
-  [DOCK_PANEL_CONTENT.STOCK]: '个股详情',
-};
-
-/** 面板内容组件映射（可配置分发：新增内容类型在此注册组件） */
-const CONTENT_COMPONENTS = {
-  [DOCK_PANEL_CONTENT.STOCK]: StockDetailPanel,
-} as const;
-
-/** 当前内容组件（未注册类型不渲染） */
-const contentComponent = computed(() =>
-  dockPanel.content ? CONTENT_COMPONENTS[dockPanel.content] ?? null : null,
-);
-
-/** 面板头部标题 */
+/** 面板头部标题（个股详情用固定文案） */
 const panelTitle = computed(() =>
-  dockPanel.content ? TITLE_BY_CONTENT[dockPanel.content] ?? '详情' : '',
-);
-
-/** 当前内容参数（个股为符号；其他类型后续扩展时改联合） */
-const contentSymbol = computed(() =>
-  dockPanel.content === DOCK_PANEL_CONTENT.STOCK ? dockPanel.symbol : '',
+  dockPanel.content === DOCK_PANEL_CONTENT.STOCK ? '个股详情' : '',
 );
 
 /**
@@ -104,9 +84,12 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
-    <!-- 内容区（独立滚动） -->
+    <!-- 内容区（独立滚动）：按 content 分发 -->
     <div class="min-h-0 flex-1 overflow-y-auto p-3">
-      <component :is="contentComponent" v-if="contentComponent" :symbol="contentSymbol" />
+      <StockDetailPanel
+        v-if="dockPanel.content === DOCK_PANEL_CONTENT.STOCK"
+        :symbol="dockPanel.symbol"
+      />
     </div>
   </aside>
 </template>
