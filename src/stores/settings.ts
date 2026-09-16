@@ -40,8 +40,10 @@ interface SettingsState {
   panoramaCnViewMode: PanoramaCnViewMode;
   /** 左侧导航栏是否收起 */
   sidebarCollapsed: boolean;
-  /** 左侧导航顺序（存路由 path 数组；默认按 MENU_ITEMS 声明顺序） */
+  /** 左侧导航顺序（存路由 path 数组；默认按 MENU_ITEMS 声明顺序，插件菜单追加末尾） */
   menuOrder: string[];
+  /** 左侧导航中被隐藏的页面 path（编排弹窗里关掉开关的项；侧栏不渲染但路由仍可达） */
+  hiddenMenus: string[];
   /** 主题色（清新绿 / 淡雅蓝 / 淡雅粉 / 极光紫） */
   themeColor: ThemeColor;
   /** 涨跌配色主题（红涨绿跌 / 红跌绿涨 / 红涨蓝跌） */
@@ -78,6 +80,7 @@ export const useSettingsStore = defineStore('settings', {
     panoramaCnViewMode: PANORAMA_CN_VIEW_MODE_DEFAULT,
     sidebarCollapsed: SIDEBAR_COLLAPSED_DEFAULT,
     menuOrder: [...MENU_DEFAULT_ORDER],
+    hiddenMenus: [],
     themeColor: THEME_COLOR_DEFAULT,
     trendTheme: TREND_THEME_DEFAULT,
     watermarkEnabled: WATERMARK_ENABLED_DEFAULT,
@@ -177,9 +180,18 @@ export const useSettingsStore = defineStore('settings', {
       this.menuOrder = [...order];
     },
 
-    /** 重置左侧导航顺序为默认（MENU_ITEMS 声明顺序） */
+    /**
+     * 设置左侧导航隐藏页集合（编排弹窗的显隐开关；持久化）
+     * @param paths 被隐藏的页面 path 数组
+     */
+    setHiddenMenus(paths: string[]): void {
+      this.hiddenMenus = [...paths];
+    },
+
+    /** 重置左侧导航：顺序恢复默认、全部页面重新显示 */
     resetMenuOrder(): void {
       this.menuOrder = [...MENU_DEFAULT_ORDER];
+      this.hiddenMenus = [];
     },
 
     /**

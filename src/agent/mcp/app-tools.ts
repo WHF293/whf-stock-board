@@ -129,7 +129,7 @@ export const APP_MCP_SERVER: BuiltinMcpServer = {
     ),
     entry(
       'db_query',
-      '本地 SQLite 只读查询（agent.db：模型/Agent 配置/会话/技能/MCP；stock-board.db：板块/账户交割单/自选等业务表；weblog.db：error_log 报错日志 / action_log 行为日志，保留最近 3 天）。仅允许 SELECT / WITH 开头的单条语句',
+      '本地 SQLite 只读查询（agent.db：模型/Agent 配置/会话/技能/MCP；stock-board.db：板块/账户交割单/已保存新闻 + watchlist_group/watchlist_stock 自选镜像 + plugin_storage 插件存储镜像 + plugin_<插件id>_<表名> 插件动态表；weblog.db：error_log 报错日志 / action_log 行为日志，保留最近 3 天）。仅允许 SELECT / WITH 开头的单条语句',
       z.object({
         database: z.enum(['agent', 'stock-board', 'weblog']).describe('目标库名'),
         sql: z.string().describe('单条 SELECT 语句（建议显式 LIMIT）'),
@@ -150,7 +150,7 @@ export const APP_MCP_SERVER: BuiltinMcpServer = {
     ),
     entry(
       'db_execute',
-      '本地 SQLite 写操作（INSERT / UPDATE / DELETE 单条语句，仅 agent.db / stock-board.db；日志库 weblog.db 只读，不开放写入与删除）。DDL（CREATE / DROP / ALTER）与 PRAGMA、ATTACH 一律拒绝',
+      '本地 SQLite 写操作（INSERT / UPDATE / DELETE 单条语句，仅 agent.db / stock-board.db；日志库 weblog.db 只读，不开放写入与删除。DDL（CREATE / DROP / ALTER）与 PRAGMA、ATTACH 一律拒绝；plugin_* 插件表的数据归插件与用户管，除非用户明确要求否则不要改动）',
       z.object({
         database: z.enum(['agent', 'stock-board']).describe('目标库名'),
         sql: z.string().describe('单条写语句'),
