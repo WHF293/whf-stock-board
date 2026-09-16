@@ -36,8 +36,10 @@ src/
   composables/    # use-polling（轮询引擎）/ use-theme / use-lazy-rows…
   constants/      # 全部魔法值集中于此（禁止散落字面量）
   layouts/        # MainLayout（侧栏 + 主区 + 右侧停靠面板）
+  plugin/         # 插件内核（一切皆插件：内核只做加载/卸载/依赖，能力由插件贡献）
+  plugins/        # 内置插件（每个插件一个目录，自带 plugin.ts / 组件 / constants）
   router/         # 路由（懒加载分包）
-  stores/         # Pinia（watchlist/settings/dock-panel/market-status/data-cache）
+  stores/         # Pinia（watchlist/settings/dock-panel/market-status/data-cache/plugin）
   types/          # 全部类型（多为 stock-sdk re-export）
   utils/          # 原子函数（一函数一文件）
   views/          # 页面
@@ -66,6 +68,120 @@ server/           # vite 中间件：/stock-proxy（仅浏览器 dev 使用）
 - 新增数据域名：浏览器侧改 `constants/proxy.constants.ts` 白名单，Tauri 侧改 capabilities scope
 - **接口与数据源完整清单见根目录 `SERVER_API.md`**（每个页面调了什么接口 / 什么 stock-sdk 方法、上游 host、本机封禁与频率红线），新增或排查取数问题时先查此文件
 
+## 插件体系（一切皆插件，硬性架构）
+
+内核 `src/plugin/`（`kernel.ts` 为状态机核心）**只负责**三件事：加载 / 卸载 / 依赖收敛。
+**一切能力都由插件贡献**——侧栏面板、菜单、路由、停靠面板、命令、Agent MCP 服务器。
+宿主不硬编码任何具体插件，新增能力应当写成插件而不是改宿主（`MainLayout.vue` 里只保留面板承载与命令转发）。
+
+### 内核 API
+
+```ts
+import { pluginKernel } from '@/plugin';
+pluginKernel.use(plugin, config?)  // 注册并挂载（返回 Disposable）
+pluginKernel.unuse(id)             // 彻底移除
+pluginKernel.setEnabled(id, bool)  // 运行期启停（贡献点即撤销/恢复）
+pluginKernel.retry(id)             // 失败插件显式重试
+pluginKernel.list()                // PluginRuntimeInfo[]（status/contributions/error）
+pluginKernel.revision              // ref<number>：宿主响应式依赖它感知变化
+```
+
+插件形态：`{ id, name, version, description?, inject?, apply(ctx) }`（见 `types/plugin.types.ts`）。
+`apply` 可同步可异步；抛错 → 状态 `failed` + **已产生的贡献点全量回滚** + 记 `error`，不自动重试。
+
+### 三条硬性约定
+
+1. **可逆副作用**：`ctx.sidebar/menu/router/dock/command/agent` 的每次 `add` 都由内核登记撤销句柄，
+   插件卸载 = 撤销全部贡献。**插件里禁止直接改宿主状态**（如往 pinia 塞数据），必须走贡献点或服务。
+2. **依赖靠服务名，不靠 import 顺序**：`inject: ['note:repo']` 声明依赖 → 依赖未就绪时状态为 `pending`
+   （不报错、不阻塞其它插件）；就绪后自动挂载。依赖被禁用 → 依赖方级联回到 `pending`，恢复后自动重挂。
+   环形依赖双方停在 `pending`，**不死循环**。协作走后端 `ctx.provide('note:repo', impl)` + `ctx.consume('note:repo')`
+   （同名后注册者覆盖，卸载后恢复前者）。
+3. **类型化事件**：`ctx.on('note:saved', h)` / `ctx.emit`，订阅返回 Disposable 且随插件卸载自动退订。
+   新增事件须在 `plugin.types.ts` 的 `AppEventMap` / `AppServiceMap` 里扩展（**插件通过 `declare module` 自行扩展**，
+   见 `src/plugins/quick-note/service.ts`）。
+
+### 贡献点速查
+
+| 贡献点 | API | 说明 |
+| --- | --- | --- |
+| 侧栏面板 | `ctx.sidebar.add({ id, title, component, mode, position, order, visibleWhenCollapsed })` | `mode: 'inline' \| 'drawer'`（默认 inline）；`position: 'nav' \| 'footer'`；`order` 越大越靠下，宿主内置项在前 |
+| 菜单 | `ctx.menu.add({ path, title, icon, component, order? })` | **带 `component` 会自动注册路由**（挂在主布局之下），无需再手动 `router.add` |
+| 路由 | `ctx.router.add({ path, component, underLayout? })` | 无菜单入口的隐藏页用这个；`underLayout` 默认 `true` |
+| 停靠面板 | `ctx.dock.add(key, component, title)` | 右侧面板（`openPluginPanel(key)` 打开） |
+| 命令 | `ctx.command.add({ id, title, keys?, run })` | `keys: 'Ctrl+Alt+N'` 自动接管全局快捷键（`command-keys.ts` 解析） |
+| Agent 工具 | `ctx.agent.addServer({ key, name, description, tools })` | 并入 `listBuiltinMcpServers()`，与内置 MCP 同权 |
+
+### 新增一个左侧栏面板插件（最小流程）
+
+1. 建目录 `src/plugins/<your-plugin>/`：`plugin.ts`（导出 `PluginDefinition`）+ 面板 `xxx.vue` + `constants.ts`（文案/阈值入常量）
+2. `plugin.ts` 里 `apply: (ctx) => ctx.sidebar.add({ id, title, component, mode: 'inline', position: 'nav', order })`
+3. 注册到 `src/plugins/index.ts` 的 `BUILTIN_PLUGINS`（宿主按此列表挂载，黑名单见 `stores/plugin.ts`；**改前先按下方「备份与恢复」规范备份**）
+4. 面板内既可用 `pluginLab` 这类宿主导出的公共数据，也可自己 `ctx.provide` 服务给别的插件
+5. 启停无需改宿主：设置页「插件」卡片（`PluginManageModal.vue`）已按 `pluginKernel.list()` 自动渲染
+
+### 宿主接线（别绕开）
+
+- `main.ts` 在 `app.use(router)` **之前**调 `installPlugins(pinia)`（`plugin/setup.ts`）：
+  先 provide 宿主服务（`app:version` / `kernel:runtime` / `app:navigate` / `panel:open`），再挂插件，
+  再 `attachPluginRoutes(router)`（订阅路由注册表版本号），随后**异步挂载用户插件**，最后 `router.afterEach` 广播 `route:changed`
+- 侧栏面板渲染：`components/plugin/SidebarPanelHost.vue`（inline，折叠时不挂载）+ `SidebarPanelEntry.vue`（drawer 入口按钮）+ `PluginPanelDrawer.vue`（抽屉承载）
+- 插件存储：`ctx.storage` 落在 `whf:app` 整包的 `plugin:<pluginId>` 命名空间下，**插件之间天然隔离**
+- 插件通用数据库 `ctx.db`（见下节）；面板组件通过 `usePluginPanelHost()`（`plugin/panel-host.ts`）拿到 `{ mode, visibleWhenCollapsed }` 等宿主上下文
+
+### 插件通用数据层（ctx.db / ctx.storage，硬性：插件永不直接访问 SQL）
+
+插件数据持久化统一走宿主 API，**插件侧不存在任何 SQL / tauri-plugin-sql 依赖**：
+
+- **`ctx.storage`**（KV，小体量偏好数据）：localStorage 即时写（`plugin:<id>` 命名空间），
+  Tauri 端异步镜像进 `plugin_storage` 表，启动时以库覆盖水合（`api/plugin-storage-db.api.ts`）
+- **`ctx.db`**（结构化记录，`types/plugin.types.ts` 的 `PluginDatabase`）：每插件独立表，
+  物理表名 `plugin_<插件id>_<表名>`（`utils/plugin-db-sql.ts` 纯函数做标识符白名单校验，
+  是防注入边界）。声明式建表（`ensureTable` 幂等）+ CRUD（insert/select/update/remove/count/clear，
+  等值过滤参数化，`json` 列自动 stringify/parse）。Tauri 端落 stock-board.db 动态表，
+  浏览器端降级为 appStorage JSON 表仿真，两端语义一致（`api/plugin-db.api.ts`）
+- **表登记与卸载**：`ensureTable` 自动登记到 `plugin-db-tables`（appStorage）；卸载用户插件时
+  若有登记表，弹窗挂起「保留数据 / 一并删除」待办（`use-user-plugins.ts` 的
+  `pendingDbCleanup` + `resolveDbCleanup`），删表走 `dropPluginTables`（DROP + 清降级数据 + 清登记）
+- **内置插件的示范实现**：dsh-quick-note 的速记就落在自己的表上（含 ctx.storage 旧数据一次性迁移）
+- **MCP 同步**：新增表 / 改表结构后同步 `app-tools.ts` 的 `db_query` / `db_execute` 描述；
+  Agent 对 `plugin_*` 表默认只看不改
+
+### 应用内插件安装（用户插件，对标 dsh 的看板内安装）
+
+除源码级插件外，应用支持**运行时安装**：设置页「插件」→「安装插件」（`PluginInstallModal.vue`）。
+
+- **插件格式**：预构建 ESM JS，`export default { …PluginDefinition }`（或 `export const plugin`）。
+  面板组件用渲染函数 `h()` 写——生产构建不含 Vue 运行时模板编译器，`<template>` 字符串不可用
+- **加载链**：`plugin/user-plugin-loader.ts` 把代码包成 Blob URL 动态 `import()`（CSP 无限制：浏览器侧无
+  CSP meta、Tauri `csp: null`）→ `validateUserPluginDefinition` 结构校验（id 规则 / 必填字段 / 占用检查，
+  **纯函数**可被烟雾测试直跑）→ `pluginKernel.use(def, { origin: 'user' })`
+- **持久化**：代码原文存 `stores/user-plugins.ts`（命名空间 `plugin.user`，上限 50 条 / 单份 512KB）；
+  启动时 `setup.ts` 异步重挂，并按启动路径快照还原「直刷插件路由被 404 兜底带走」的场景
+- **管理**：启停与内置插件同一套黑名单语义；管理弹窗里用户插件有「卸载」（两段确认）——内核 `unuse`
+  + 删持久化，**插件运行时数据保留**（重装恢复）
+- **信任级别**：插件代码与应用同权限执行（无沙箱），安装弹窗有固定风险提示；写操作类插件需自行确认来源
+
+### 源码级安装 / 卸载的备份与恢复（硬性）
+
+运行时启停（设置页开关）不碰源文件、天然可逆，无需备份；**改源文件才算「安装」，删除才算「卸载」，这两步必须走备份流程**：
+
+1. **安装前备份**：把所有将被改动的宿主文件（至少 `src/plugins/index.ts`，若还涉及 constants / MCP registry / 路由等一并算上）按原相对路径备份到 `.ai/plugin-backups/<pluginId>/`，并在该目录写 `manifest.json`：`{ pluginId, files: [相对路径...], backupAt, note }`
+2. **卸载时恢复**：先删插件目录 `src/plugins/<pluginId>/`，再把备份文件按 `manifest.json` 清单逐一写回原路径，恢复后跑 `pnpm lint` + `pnpm build` 验证
+3. **git 是第二道保险，不替代本流程**：`.ai/` 不入库，备份只在本机有效；git 干净时 `git checkout -- <file>` 也可用，但 manifest 备份是硬性兜底
+4. 插件自己的运行时数据（`whf:app` 整包里 `plugin:<pluginId>` 命名空间）卸载插件时**不清理**，重装后数据仍在——要彻底清数据需用户在设置页确认
+
+### 自检口径
+
+改完内核或新增插件，除 `pnpm lint` + `pnpm build` 外**必须跑内核烟雾测试**：
+
+```bash
+node .ai/tmp/plugin-kernel-smoke.mjs   # 71 项断言：挂载/卸载/贡献点可逆/order 排序/依赖收敛/环形依赖/失败回滚/服务覆盖恢复/事件退订/清理逆序/菜单自动路由/存储隔离/快捷键解析/Agent 贡献点/revision/ctx.db 降级通道全链路
+node "C:/Users/ChenYj/.workbuddy/skills/ts-smoke-harness/scripts/run-ts-smoke.mjs" --test .ai/tmp/plugin-db-smoke.mjs   # 26 项：ctx.db 纯函数层（表名校验/DDL/序列化）
+```
+
+问自己一句：「这个能力是插件贡献的，还是我又改宿主硬编码了？插件卸载后它真的消失了吗？」
+
 ## 内置 MCP 同步规范（硬性，勿漏）
 
 Agent 的内置 MCP 工具定义在 `src/agent/mcp/`（`app-tools.ts`「app-api」与 `stocksdk-tools.ts`「stock-sdk」，条目展示见 `components/agent/McpManageModal.vue`）。以下变更**必须同步更新对应 MCP 工具**，否则 Agent 能力与实际接口/库表脱节：
@@ -74,6 +190,9 @@ Agent 的内置 MCP 工具定义在 `src/agent/mcp/`（`app-tools.ts`「app-api�
 - **接口变更**（入参/返回结构/语义变化）：同步修改对应工具的 zod schema、description 与返回摘要
 - **接口删除**：同步删除对应 MCP 工具
 - **数据库变更**（Rust 迁移新增表/字段、删表、改表）：同步更新 `app-tools.ts` 中 `db_query` / `db_execute` 与 CRUD 工具涉及的表说明（如 `news_saved` 等）
+- **插件贡献的 MCP 服务器**：插件经 `ctx.agent.addServer()` 注册的服务器会并入 `listBuiltinMcpServers()`
+  （`agent/mcp/registry.ts`），在 `McpManageModal.vue` 里按归属插件展示；插件工具的 schema / description
+  同样适用上述口径，改完确认启停插件时它随之出现与消失
 
 自检口径：改完跑 `pnpm lint` + `pnpm build`；问自己一句「Agent 现在调用这些接口/表的方式还和代码一致吗？」
 
