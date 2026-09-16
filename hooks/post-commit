@@ -1,0 +1,7 @@
+#!/bin/sh
+# 防止 AI 代理身份（如 ZCode <zcode@users.noreply.github.com>）被写入提交作者。
+# 若刚创建的提交带代理署名，且本机已配置 git 身份，则自动改回本机配置的真实身份。
+# 启用方式（每个克隆执行一次）：git config core.hooksPath hooks
+if git log -1 --format='%ae' | grep -qi 'zcode@users\.noreply\.github\.com' && [ -n "$(git config user.email)" ]; then
+  git commit --amend --reset-author --no-edit --quiet
+fi
