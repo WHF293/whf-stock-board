@@ -10,6 +10,8 @@
 export const DOCK_PANEL_CONTENT = {
   /** 个股行情详情（K 线 / 分时 / 筹码 / 资金流） */
   STOCK: 'stock',
+  /** 插件贡献的停靠面板（具体渲染哪个由 store 的 pluginPanelKey 决定） */
+  PLUGIN: 'plugin',
 } as const;
 
 /** 面板内容类型 */

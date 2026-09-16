@@ -19,6 +19,8 @@ interface DockPanelState {
   content: DockPanelContentType | null;
   /** 内容参数（个股详情为完整符号 sh600519 形态） */
   symbol: string;
+  /** 插件停靠面板的全局键（`<pluginId>#<panelId>`；content = plugin 时生效） */
+  pluginPanelKey: string;
   /** 面板宽度（像素，localStorage 持久化） */
   width: number;
   /** 面板内右侧栏（五档 / 筹码）是否显示（默认不显示，localStorage 持久化） */
@@ -36,6 +38,7 @@ export const useDockPanelStore = defineStore('dock-panel', {
     open: false,
     content: null,
     symbol: '',
+    pluginPanelKey: '',
     width: DOCK_PANEL_WIDTH_DEFAULT,
     showSidePanel: false,
   }),
@@ -48,6 +51,16 @@ export const useDockPanelStore = defineStore('dock-panel', {
     openStock(symbol: string): void {
       this.content = DOCK_PANEL_CONTENT.STOCK;
       this.symbol = normalizeAShareCode(symbol);
+      this.open = true;
+    },
+
+    /**
+     * 打开插件贡献的停靠面板
+     * @param panelKey 面板全局键（`<pluginId>#<panelId>`，见插件内核注册表）
+     */
+    openPluginPanel(panelKey: string): void {
+      this.content = DOCK_PANEL_CONTENT.PLUGIN;
+      this.pluginPanelKey = panelKey;
       this.open = true;
     },
 
