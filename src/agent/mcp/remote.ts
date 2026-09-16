@@ -118,11 +118,19 @@ const readUiResourceUri = (meta: unknown): string | null => {
  * 不可能知道这个 id。于是在入口把服务器声明的地址重写为
  * `ui://remote:<id>/<原authority>/<原path>`，出口（readUiResource）再换回
  * 服务器认识的原始地址——对外协议不变，内部路由可控。
+ * @param uri 服务器声明的 `ui://` 地址
+ * @param key 服务器在宿主内的 key（`remote:<id>`）
+ * @returns 宿主内部地址；非 `ui://` 前缀时返回 null
  */
 const toInternalUiUri = (uri: string, key: string): string | null =>
   uri.startsWith('ui://') ? 'ui://' + key + '/' + uri.slice('ui://'.length) : null;
 
-/** 宿主内部地址 → 服务器声明的原始地址；前缀不符（非本服务器资源）返回 null */
+/**
+ * 宿主内部地址 → 服务器声明的原始地址
+ * @param uri 宿主内部 `ui://` 地址
+ * @param key 服务器在宿主内的 key（`remote:<id>`）
+ * @returns 服务器认识的原始地址；前缀不符（非本服务器资源）返回 null
+ */
 const toOriginalUiUri = (uri: string, key: string): string | null => {
   const prefix = 'ui://' + key + '/';
   return uri.startsWith(prefix) ? 'ui://' + uri.slice(prefix.length) : null;
