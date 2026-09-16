@@ -2,7 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router';
 import NProgress from 'nprogress';
 import 'nprogress/nprogress.css';
 import MainLayout from '../layouts/MainLayout.vue';
-import { ROUTE_PATH, MENU_ITEMS } from '../constants/router-meta.constants';
+import { LAYOUT_ROUTE_NAME, ROUTE_PATH, MENU_ITEMS } from '../constants/router-meta.constants';
 import DashboardView from '../views/DashboardView.vue';
 import WatchlistView from '../views/WatchlistView.vue';
 import PanoramaView from '../views/PanoramaView.vue';
@@ -36,6 +36,8 @@ const ROUTE_TITLE_BY_PATH: Record<string, string> = {
 const routes = [
   {
     path: '/',
+    // 具名：插件路由经 `router.addRoute(LAYOUT_ROUTE_NAME, ...)` 挂为其子路由
+    name: LAYOUT_ROUTE_NAME,
     component: MainLayout,
     children: [
       { path: '', redirect: ROUTE_PATH.DASHBOARD },

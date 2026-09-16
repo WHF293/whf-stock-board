@@ -9,6 +9,11 @@ import SettingsView from "../views/SettingsView.vue";
 import DockPanel from "../components/dock/DockPanel.vue";
 import BaseTooltip from "../components/ui/BaseTooltip.vue";
 import MenuIcon from "../components/ui/MenuIcon.vue";
+import SidebarPanelHost from "../components/plugin/SidebarPanelHost.vue";
+import SidebarPanelEntry from "../components/plugin/SidebarPanelEntry.vue";
+import PluginPanelDrawer from "../components/plugin/PluginPanelDrawer.vue";
+import { pluginKernel } from "../plugin";
+import { matchesCommandKeys, parseCommandKeys } from "../plugin/command-keys";
 import { useTheme } from "../composables/use-theme";
 import { MARKET_STATUS_REFRESH_INTERVAL_MS } from "../constants/polling.constants";
 import { MENU_ITEMS, ROUTE_PATH } from "../constants/router-meta.constants";
@@ -18,6 +23,8 @@ import { useMarketStatusStore } from "../stores/market-status";
 import { useSettingsStore } from "../stores/settings";
 import { trackAction } from "../weblog/weblogActions";
 import type { SearchResult } from "../types/stock-quote.types";
+import type { ParsedCommandKeys } from "../plugin/command-keys";
+import type { RegisteredCommand, RegisteredSidebarPanel } from "../types/plugin.types";
 
 /**
  * 主布局：左侧导航（桌面固定 / 窄屏抽屉）+ 右侧路由内容区 + 右侧停靠面板（默认收起）
@@ -25,6 +32,9 @@ import type { SearchResult } from "../types/stock-quote.types";
  * 侧栏底部为设置入口（数据来源链接在设置页「数据获取」卡片内）；
  * 头部展示页面标题、交易时段徽标与明暗切换；
  * 挂载后刷新市场状态并每 10 分钟同步，供全部轮询消费
+ *
+ * 插件体系：左侧栏的面板与菜单项均由插件内核贡献（见 `src/plugin/`），
+ * 本布局只负责渲染注册表 + 分发插件命令快捷键，不关心具体是哪个插件。
  */
 const route = useRoute();
 const router = useRouter();
@@ -62,17 +72,45 @@ const pageTitle = computed(() => route.meta.title ?? "");
 
 // ---------- 侧栏顺序（用户可在设置页编排，持久化在 settings.menuOrder） ----------
 
+/** 侧栏菜单项的渲染形态（宿主菜单与插件菜单合并后的统一形状） */
+interface SidebarMenuItem {
+  /** 路由路径 */
+  path: string;
+  /** 菜单标题 */
+  title: string;
+  /** 图标 key（MenuIcon 渲染） */
+  icon: string;
+}
+
+/** 宿主内置菜单（声明顺序即默认顺序） */
+const HOST_MENU_ITEMS: readonly SidebarMenuItem[] = MENU_ITEMS;
+
+/** 插件贡献的菜单项（内核注册表；插件注册即出现，卸载即消失） */
+const pluginMenuItems = computed<SidebarMenuItem[]>(() => {
+  void pluginKernel.revision.value;
+  return pluginKernel.contributions.menu.items.map((item) => ({
+    path: item.path,
+    title: item.title,
+    icon: item.icon,
+  }));
+});
+
 /**
  * 按用户编排顺序渲染的菜单项：
- * 以 `settings.menuOrder` 为准；持久化里没有的新页面（版本升级新增）追加到末尾，
- * 保证升级后新入口不丢失
+ * 以 `settings.menuOrder` 为准；持久化里没有的页面（版本升级新增页面、
+ * 插件贡献的菜单）追加到末尾，保证升级 / 装卸插件后入口不丢失；
+ * `settings.hiddenMenus` 里编排时被关掉的页面不渲染（路由仍可达，Shift+Tab 也不循环到）
  */
-const menuItems = computed(() => {
-  const byPath = new Map<string, (typeof MENU_ITEMS)[number]>();
-  for (const item of MENU_ITEMS) {
-    byPath.set(item.path, item);
+const menuItems = computed<SidebarMenuItem[]>(() => {
+  const all: SidebarMenuItem[] = [...HOST_MENU_ITEMS, ...pluginMenuItems.value];
+  const hidden = new Set(settingsStore.hiddenMenus);
+  const byPath = new Map<string, SidebarMenuItem>();
+  for (const item of all) {
+    if (!hidden.has(item.path)) {
+      byPath.set(item.path, item);
+    }
   }
-  const ordered: (typeof MENU_ITEMS)[number][] = [];
+  const ordered: SidebarMenuItem[] = [];
   for (const path of settingsStore.menuOrder) {
     const item = byPath.get(path);
     if (item) {
@@ -80,7 +118,7 @@ const menuItems = computed(() => {
       byPath.delete(path);
     }
   }
-  for (const item of MENU_ITEMS) {
+  for (const item of all) {
     if (byPath.has(item.path)) ordered.push(item);
   }
   return ordered;
@@ -133,6 +171,54 @@ const sidebarWidthClass = computed(() =>
   effectiveCollapsed.value ? 'w-16' : 'w-56',
 );
 
+// ---------- 插件贡献点消费（侧栏面板 / 命令快捷键） ----------
+
+/** 全部插件侧栏面板（内核注册表，随插件装卸实时变化） */
+const sidebarPanels = computed(() => {
+  void pluginKernel.revision.value;
+  return [...pluginKernel.contributions.sidebar.panels];
+});
+
+/**
+ * 取指定位置、指定形态的插件面板
+ * @param position 面板位置（nav 导航区 / footer 侧栏底部）
+ * @param mode 展示形态（inline 内联 / drawer 抽屉入口）
+ * @returns 面板列表
+ */
+const pickPanels = (position: 'nav' | 'footer', mode: 'inline' | 'drawer') =>
+  sidebarPanels.value.filter((panel) => panel.position === position && panel.mode === mode);
+
+/**
+ * 是否渲染内联面板：侧栏收起为图标栏（64px）时按面板自身声明决定
+ * @param panel 面板
+ * @returns 是否渲染
+ */
+const shouldRenderInline = (panel: RegisteredSidebarPanel): boolean =>
+  !effectiveCollapsed.value || panel.visibleWhenCollapsed;
+
+/** 导航区 / 侧栏底部的内联面板与抽屉入口面板 */
+const navInlinePanels = computed(() => pickPanels('nav', 'inline').filter(shouldRenderInline));
+const navDrawerPanels = computed(() => pickPanels('nav', 'drawer'));
+const footerInlinePanels = computed(() => pickPanels('footer', 'inline').filter(shouldRenderInline));
+const footerDrawerPanels = computed(() => pickPanels('footer', 'drawer'));
+
+/**
+ * 插件命令的快捷键表
+ *
+ * 描述串在注册表变化时解析一次并缓存，键盘事件里只做比对 ——
+ * capture 阶段每个按键都会走到这里，不适合每次都做字符串切分。
+ */
+const parsedCommands = computed<{ command: RegisteredCommand; parsed: ParsedCommandKeys }[]>(() => {
+  void pluginKernel.revision.value;
+  const result: { command: RegisteredCommand; parsed: ParsedCommandKeys }[] = [];
+  for (const command of pluginKernel.contributions.commands.commands) {
+    if (!command.keys) continue;
+    const parsed = parseCommandKeys(command.keys);
+    if (parsed) result.push({ command, parsed });
+  }
+  return result;
+});
+
 /** 头部搜索弹窗开关 */
 const searchModalOpen = ref(false);
 
@@ -156,11 +242,27 @@ const routeOrderIndex = ref(0);
 
 /**
  * 全局键盘快捷键：
+ * - 插件命令：命中任一已注册快捷键即执行（插件自己不用挂 keydown）
  * - Ctrl+Shift+B：切换左侧导航栏收起 / 展开（仅桌面端可见效果）
  * - Shift+Tab：按侧栏顺序切到下一个页面（到尾回第一个）
  * @param event 键盘事件
  */
 const onGlobalKeydown = (event: KeyboardEvent): void => {
+  // 插件命令优先：允许插件用 Ctrl+Alt+X 这类不与宿主冲突的组合
+  for (const { command, parsed } of parsedCommands.value) {
+    if (!matchesCommandKeys(event, parsed)) continue;
+    event.preventDefault();
+    trackAction('PLUGIN_COMMAND_RUN', {
+      target: command.key,
+      detail: command.title,
+    });
+    try {
+      command.run();
+    } catch (error) {
+      console.error(`[plugin] 命令 ${command.key} 执行失败`, error);
+    }
+    return;
+  }
   // Ctrl+Shift+B：展开则收起，反之展开
   if (
     event.ctrlKey &&
@@ -276,9 +378,33 @@ void marketStatusStore.refresh();
           <span v-if="!effectiveCollapsed" class="truncate">{{ item.title }}</span>
           <BaseTooltip v-if="effectiveCollapsed" :text="item.title" />
         </RouterLink>
+
+        <!-- 插件贡献：导航区面板（inline 直接渲染 / drawer 只放入口） -->
+        <SidebarPanelHost
+          v-for="panel in navInlinePanels"
+          :key="panel.key"
+          :panel="panel"
+        />
+        <SidebarPanelEntry
+          v-for="panel in navDrawerPanels"
+          :key="panel.key"
+          :panel="panel"
+          :collapsed="effectiveCollapsed"
+        />
       </nav>
-      <!-- 侧栏底部：设置入口（收起时仅显示图标） -->
+      <!-- 侧栏底部：插件面板（footer 区）+ 设置入口（收起时仅显示图标） -->
       <div class="space-y-2 border-t border-flat-weak py-3" :class="effectiveCollapsed ? 'px-2' : 'px-4'">
+        <SidebarPanelHost
+          v-for="panel in footerInlinePanels"
+          :key="panel.key"
+          :panel="panel"
+        />
+        <SidebarPanelEntry
+          v-for="panel in footerDrawerPanels"
+          :key="panel.key"
+          :panel="panel"
+          :collapsed="effectiveCollapsed"
+        />
         <button
           type="button"
           class="group relative pressable flex items-center gap-2 rounded-lg py-1 text-xs active:scale-[0.98] text-text-secondary hover:text-text"
@@ -382,5 +508,8 @@ void marketStatusStore.refresh();
     <BaseDrawer v-model:open="settingsOpen" title="设置">
       <SettingsView @close="settingsOpen = false" />
     </BaseDrawer>
+
+    <!-- 插件面板抽屉（承载 mode: 'drawer' 的插件面板） -->
+    <PluginPanelDrawer />
   </div>
 </template>

@@ -1,0 +1,666 @@
+/**
+ * 插件系统类型契约（内核 ↔ 插件 ↔ 宿主 三方唯一事实源）
+ *
+ * 设计对标 DeepSeek Harness（dsh）的 Cordis 内核，三条主线：
+ * - **服务（Service）**：插件经 `ctx.provide` 贡献能力、经 `ctx.consume` 注入依赖，
+ *   依赖由服务名决定而非文件里的 import 顺序；
+ * - **事件（Typed Events）**：`AppEventMap` 为内置事件表，插件可用 `declare module`
+ *   扩展，也可发任意字符串事件（走宽松分支）；
+ * - **可逆副作用（Reversible Effects）**：一切注册（面板 / 菜单 / 路由 / 命令 / 服务 /
+ *   事件订阅 / 定时器）都返回 `Disposable`，插件卸载时由内核统一撤销。
+ *
+ * 因此「卸载插件」等价于「把它的所有贡献抹掉」，不需要为插件写专门的反向逻辑。
+ */
+import type { Component } from 'vue';
+import type { BuiltinMcpServer } from '../agent/mcp/types';
+import type { PLUGIN_ORIGIN, PLUGIN_STATUS } from '../constants/plugin.constants';
+
+/** 可逆副作用句柄：调用 `dispose()` 撤销一次注册（幂等） */
+export interface Disposable {
+  /** 撤销副作用（重复调用无副作用） */
+  dispose: () => void;
+}
+
+/** 侧栏面板渲染位置：`nav` 导航菜单区（默认）/ `footer` 侧栏底部（设置入口之上） */
+export type SidebarPanelPosition = 'nav' | 'footer';
+
+/** 侧栏面板展示形态：`inline` 直接渲染在侧栏内 / `drawer` 侧栏内只放入口按钮，内容走右侧抽屉 */
+export type SidebarPanelMode = 'inline' | 'drawer';
+
+/**
+ * 左侧栏面板贡献（插件在左侧栏新增面板的唯一入口）
+ *
+ * `mode: 'inline'` 时面板组件直接渲染在侧栏内（适合盯盘清单、指标概览等常驻信息）；
+ * `mode: 'drawer'` 时侧栏内只渲染一个入口按钮，点击后内容在右侧抽屉里展开
+ * （适合编辑器、配置面板等需要宽度的内容）。
+ */
+export interface SidebarPanelContribution {
+  /** 面板 id（插件内唯一，内核会拼成 `<pluginId>#<id>` 全局键） */
+  id: string;
+  /** 面板标题（侧栏区块标题 / 抽屉标题 / 折叠态 tooltip） */
+  title: string;
+  /** 图标 key（MenuIcon 渲染；缺省时不显示图标） */
+  icon?: string;
+  /** 展示形态，默认 `inline` */
+  mode?: SidebarPanelMode;
+  /** 渲染位置，默认 `nav` */
+  position?: SidebarPanelPosition;
+  /** 排序权重，越小越靠前（默认 100） */
+  order?: number;
+  /** 面板组件（宿主用 `<component :is>` 渲染） */
+  component: Component;
+  /** 传给面板组件的 props */
+  props?: Record<string, unknown>;
+  /** 侧栏收起为图标栏时是否仍渲染（仅 inline 有意义，默认 false） */
+  visibleWhenCollapsed?: boolean;
+}
+
+/** 已注册的侧栏面板（内核补全默认值 + 归属插件后的形态） */
+export interface RegisteredSidebarPanel {
+  /** 全局唯一键：`<pluginId>#<id>` */
+  key: string;
+  /** 归属插件 id */
+  pluginId: string;
+  /** 面板 id（插件内声明值） */
+  id: string;
+  /** 面板标题 */
+  title: string;
+  /** 图标 key（已补默认值：缺省为空串） */
+  icon: string;
+  /** 展示形态（已补默认值） */
+  mode: SidebarPanelMode;
+  /** 渲染位置（已补默认值） */
+  position: SidebarPanelPosition;
+  /** 排序权重（已补默认值） */
+  order: number;
+  /** 面板组件 */
+  component: Component;
+  /** 传给面板组件的 props */
+  props: Record<string, unknown>;
+  /** 侧栏收起时是否仍渲染（已补默认值） */
+  visibleWhenCollapsed: boolean;
+}
+
+/**
+ * 左侧导航菜单项贡献
+ *
+ * 声明 `component` 时内核会**同时**注册该 path 的布局子路由（最常用场景）；
+ * 只做菜单入口、路由另有来源时不传 `component`。
+ */
+export interface MenuItemContribution {
+  /** 路由路径（须以 `/` 开头，且不得与宿主菜单冲突） */
+  path: string;
+  /** 菜单标题 */
+  title: string;
+  /** 图标 key（MenuIcon 渲染） */
+  icon: string;
+  /** 页面组件（传了则自动注册该路径的布局子路由） */
+  component?: Component;
+  /** 传给页面组件的 props */
+  props?: Record<string, unknown>;
+  /** 排序权重，越小越靠前（默认 500，即排在宿主菜单之后） */
+  order?: number;
+}
+
+/** 已注册的插件菜单项（内核补全默认值 + 归属插件后的形态） */
+export interface RegisteredMenuItem extends MenuItemContribution {
+  /** 全局唯一键：`<pluginId>#<path>` */
+  key: string;
+  /** 归属插件 id */
+  pluginId: string;
+  /** 图标 key（已补默认值：缺省为 `menu`） */
+  icon: string;
+  /** 排序权重（已补默认值） */
+  order: number;
+}
+
+/** 路由贡献（不进菜单的隐藏页面，如详情子页、独立窗口页） */
+export interface RouteContribution {
+  /** 路由路径 */
+  path: string;
+  /** 路由名（可选，供 `router.push({ name })` 使用） */
+  name?: string;
+  /** 页面组件 */
+  component: Component;
+  /** 传给页面组件的 props */
+  props?: Record<string, unknown>;
+  /** 路由 meta（title 会用于顶栏标题与浏览器标题） */
+  meta?: Record<string, unknown>;
+  /**
+   * 是否挂在主布局（`/` 路由）之下，默认 true。
+   * 独立窗口页（不经过 MainLayout）传 false，会注册为顶层路由。
+   */
+  underLayout?: boolean;
+}
+
+/** 已注册的插件路由（内核补全默认值 + 归属插件后的形态） */
+export interface RegisteredRoute extends RouteContribution {
+  /** 全局唯一键：`<pluginId>#<path>` */
+  key: string;
+  /** 归属插件 id */
+  pluginId: string;
+  /** 是否挂在主布局之下（已补默认值） */
+  underLayout: boolean;
+}
+
+/**
+ * 右侧停靠面板贡献
+ *
+ * 宿主侧栏（个股详情）之外的插件内容容器；插件需自行调用
+ * `useDockPanelStore().openPluginPanel(panelKey)` 打开。
+ */
+export interface DockPanelContribution {
+  /** 面板 id（插件内唯一） */
+  id: string;
+  /** 面板标题（停靠面板头部展示） */
+  title: string;
+  /** 面板组件 */
+  component: Component;
+  /** 传给面板组件的 props */
+  props?: Record<string, unknown>;
+}
+
+/** 已注册的停靠面板 */
+export interface RegisteredDockPanel extends Required<DockPanelContribution> {
+  /** 全局唯一键：`<pluginId>#<id>` */
+  key: string;
+  /** 归属插件 id */
+  pluginId: string;
+}
+
+/**
+ * 命令贡献（可挂全局快捷键的可执行动作）
+ *
+ * 快捷键用形如 `Ctrl+Alt+N` / `Shift+Tab` 的描述串，宿主在 capture 阶段统一匹配，
+ * 插件不需要自己挂 `keydown`（避免多个插件抢事件、以及卸载后监听泄漏）。
+ */
+export interface CommandContribution {
+  /** 命令 id（插件内唯一） */
+  id: string;
+  /** 命令标题（命令面板 / 插件详情展示） */
+  title: string;
+  /** 快捷键描述串（如 `Ctrl+Alt+N`；可空 = 只可编程调用） */
+  keys?: string;
+  /** 执行体 */
+  run: () => void;
+}
+
+/** 已注册的命令 */
+export interface RegisteredCommand extends CommandContribution {
+  /** 全局唯一键：`<pluginId>#<id>` */
+  key: string;
+  /** 归属插件 id */
+  pluginId: string;
+}
+
+/** 插件日志器（内核统一加 `[plugin:<id>]` 前缀，便于日志页筛选） */
+export interface PluginLogger {
+  /**
+   * 记录一条普通信息
+   * @param message 日志内容
+   * @param args 附加参数
+   */
+  info: (message: string, ...args: unknown[]) => void;
+  /**
+   * 记录一条告警
+   * @param message 日志内容
+   * @param args 附加参数
+   */
+  warn: (message: string, ...args: unknown[]) => void;
+  /**
+   * 记录一条错误
+   * @param message 日志内容
+   * @param args 附加参数
+   */
+  error: (message: string, ...args: unknown[]) => void;
+}
+
+/** 插件自有持久化（按 `plugin:<id>` 命名空间隔离，互不串数据） */
+export interface PluginStorage {
+  /**
+   * 读取一个键（不存在或反序列化失败时返回默认值）
+   * @param key 键名
+   * @param fallback 默认值
+   * @returns 反序列化后的值或默认值
+   */
+  get: <T>(key: string, fallback: T) => T;
+  /**
+   * 写入一个键（JSON 序列化后落 localStorage）
+   * @param key 键名
+   * @param value 任意可序列化值
+   */
+  set: (key: string, value: unknown) => void;
+  /**
+   * 删除一个键
+   * @param key 键名
+   */
+  remove: (key: string) => void;
+}
+
+/** 插件数据库列类型（`json` 物理存 TEXT，写入 stringify / 读出 parse，承载任意可序列化值） */
+export type PluginDbColumnType = 'text' | 'integer' | 'real' | 'json';
+
+/** 插件数据库列声明（`ctx.db.ensureTable` 用） */
+export interface PluginDbColumn {
+  /** 列名（snake_case，宿主校验合法性，非法直接抛错） */
+  name: string;
+  /** 存储类型 */
+  type: PluginDbColumnType;
+  /** 是否建索引（等值 / 排序查询频繁的列开 true） */
+  indexed?: boolean;
+}
+
+/** 插件数据库查询条件（等值过滤，宿主参数化，插件拼不进任何 SQL） */
+export interface PluginDbQuery {
+  /** 等值过滤：列名 → 值（仅声明过的列可参与） */
+  where?: Record<string, string | number | boolean>;
+  /** 排序 */
+  orderBy?: {
+    /** 排序列 */
+    column: string;
+    /** 是否降序（默认升序） */
+    desc?: boolean;
+  };
+  /** 返回条数上限 */
+  limit?: number;
+  /** 跳过条数（配合 limit 分页） */
+  offset?: number;
+}
+
+/** 读出的一行（宿主自动附加 id 与时间戳三列） */
+export type PluginDbRow<T extends Record<string, unknown>> = T & {
+  /** 行主键（宿主生成，update / remove 的定位键） */
+  id: number;
+  /** 创建时间（毫秒时间戳，宿主维护） */
+  createdAt: number;
+  /** 更新时间（毫秒时间戳，宿主维护） */
+  updatedAt: number;
+};
+
+/**
+ * 插件通用数据库（每插件独立表：`plugin_<插件id>_<表名>`）
+ *
+ * 插件只做「声明式建表 + CRUD」，**永不写 SQL**：Tauri 端落 SQLite 动态表，
+ * 浏览器端无 SQLite 自动降级为本地 JSON 表仿真，两端语义一致。
+ * 建表幂等（可重复调用）；未 ensureTable 就读写会抛错，约束插件先声明结构。
+ */
+export interface PluginDatabase {
+  /**
+   * 声明一张本插件的数据表（幂等：已存在时只补齐列元信息，不动数据）
+   * @param table 表名（snake_case，插件内唯一）
+   * @param columns 列声明（至少一列；重复列名抛错）
+   */
+  ensureTable: (table: string, columns: readonly PluginDbColumn[]) => Promise<void>;
+  /**
+   * 插入一行
+   * @param table 表名（须先 ensureTable）
+   * @param row 行数据（键必须都是声明过的列；返回宿主生成的主键）
+   * @returns 新行主键 id
+   */
+  insert: (table: string, row: Record<string, unknown>) => Promise<number>;
+  /**
+   * 查询行（按声明列反序列化，自动附带 id / createdAt / updatedAt）
+   * @param table 表名
+   * @param query 过滤 / 排序 / 分页条件（缺省取全部，默认按 id 升序）
+   * @returns 行数组
+   */
+  select: <T extends Record<string, unknown>>(
+    table: string,
+    query?: PluginDbQuery,
+  ) => Promise<PluginDbRow<T>[]>;
+  /**
+   * 按主键更新一行（patch 只含要改的列，宿主自动刷新 updatedAt）
+   * @param table 表名
+   * @param id 行主键
+   * @param patch 待更新列（键必须都是声明过的列）
+   */
+  update: (table: string, id: number, patch: Record<string, unknown>) => Promise<void>;
+  /**
+   * 按主键删除一行
+   * @param table 表名
+   * @param id 行主键
+   */
+  remove: (table: string, id: number) => Promise<void>;
+  /**
+   * 统计行数（可带等值过滤）
+   * @param table 表名
+   * @param where 等值过滤（缺省统计全表）
+   * @returns 行数
+   */
+  count: (table: string, where?: PluginDbQuery['where']) => Promise<number>;
+  /**
+   * 清空一张表（不删表，结构保留）
+   * @param table 表名
+   */
+  clear: (table: string) => Promise<void>;
+}
+
+/** 左侧栏面板贡献点 */
+export interface SidebarContributor {
+  /**
+   * 注册一个左侧栏面板
+   * @param panel 面板声明
+   * @returns 撤销句柄（插件卸载时内核自动调用）
+   */
+  add: (panel: SidebarPanelContribution) => Disposable;
+}
+
+/** 左侧导航菜单贡献点 */
+export interface MenuContributor {
+  /**
+   * 注册一个左侧导航菜单项（带 `component` 时同时注册页面路由）
+   * @param item 菜单声明
+   * @returns 撤销句柄
+   */
+  add: (item: MenuItemContribution) => Disposable;
+}
+
+/** 路由贡献点 */
+export interface RouterContributor {
+  /**
+   * 注册一条路由（不进左侧导航）
+   * @param route 路由声明
+   * @returns 撤销句柄
+   */
+  add: (route: RouteContribution) => Disposable;
+}
+
+/** 右侧停靠面板贡献点 */
+export interface DockContributor {
+  /**
+   * 注册一个右侧停靠面板
+   * @param panel 面板声明
+   * @returns 撤销句柄
+   */
+  add: (panel: DockPanelContribution) => Disposable;
+}
+
+/** 命令贡献点 */
+export interface CommandContributor {
+  /**
+   * 注册一个命令（可带全局快捷键）
+   * @param command 命令声明
+   * @returns 撤销句柄
+   */
+  add: (command: CommandContribution) => Disposable;
+}
+
+/** Agent 工具贡献点（把插件能力暴露给内置 MCP，Agent 即可调用） */
+export interface AgentContributor {
+  /**
+   * 注册一台内置 MCP 服务器（工具随插件挂载生效、卸载失效）
+   * @param server 内置 MCP 服务器声明
+   * @returns 撤销句柄
+   */
+  addServer: (server: BuiltinMcpServer) => Disposable;
+}
+
+/**
+ * 应用内置事件表
+ *
+ * 插件可通过模块扩展追加自定义事件：
+ * ```ts
+ * declare module '../types/plugin.types' {
+ *   interface AppEventMap { 'note:saved': [id: string] }
+ * }
+ * ```
+ */
+export interface AppEventMap {
+  /** 某插件挂载完成（贡献点已全部生效） */
+  'plugin:mounted': [info: PluginRuntimeInfo];
+  /** 某插件卸载完成（贡献点已全部撤销） */
+  'plugin:unmounted': [info: PluginRuntimeInfo];
+  /** 某插件挂载失败 */
+  'plugin:failed': [info: PluginRuntimeInfo, error: unknown];
+  /** 左侧栏面板注册表变化 */
+  'sidebar:changed': [panels: readonly RegisteredSidebarPanel[]];
+  /** 路由切换（宿主在 router.afterEach 中广播） */
+  'route:changed': [to: string, from: string];
+}
+
+/**
+ * 应用服务契约表
+ *
+ * 插件用模块扩展声明自己的服务即可获得类型安全的 provide / consume：
+ * ```ts
+ * declare module '../types/plugin.types' {
+ *   interface AppServiceMap { 'note:repo': NoteRepo }
+ * }
+ * ```
+ */
+export interface AppServiceMap {
+  /** 应用版本号（内核挂载时自动提供，来源 APP_VERSION） */
+  'app:version': string;
+  /** 内核运行时自省只读句柄（插件工坊等观测型插件消费） */
+  'kernel:runtime': PluginRuntimeReader;
+  /** 宿主路由跳转（插件不直接依赖 router 实例，改走此服务） */
+  'app:navigate': (path: string) => void;
+  /**
+   * 打开一个插件面板
+   *
+   * inline 面板：展开并滚动到可视区；drawer 面板：打开右侧抽屉。
+   * 插件「注册面板」与「打开面板」因此可以分开：命令、事件回调都能唤醒面板。
+   */
+  'panel:open': (panelKey: string) => void;
+}
+
+/** 内核运行时只读视图（供插件自省，不暴露挂载 / 卸载能力） */
+export interface PluginRuntimeReader {
+  /**
+   * 取全部插件运行时信息
+   * @returns 运行时信息列表（按 id 升序）
+   */
+  list: () => readonly PluginRuntimeInfo[];
+  /**
+   * 取某个插件的运行时信息
+   * @param id 插件 id
+   * @returns 运行时信息；不存在返回 null
+   */
+  get: (id: string) => PluginRuntimeInfo | null;
+  /**
+   * 取当前生效的服务名列表
+   * @returns 服务名数组
+   */
+  listServices: () => readonly string[];
+  /**
+   * 取最近 N 条内核事件记录（用于排障 / 观测页面）
+   * @returns 由新到旧的事件记录
+   */
+  recentEvents: () => readonly PluginEventRecord[];
+}
+
+/** 内核事件记录（环形缓冲，仅供观测） */
+export interface PluginEventRecord {
+  /** 事件名 */
+  name: string;
+  /** 触发时间戳（毫秒） */
+  at: number;
+  /** 触发来源插件 id（宿主广播为空串） */
+  source: string;
+}
+
+/** 插件运行时状态（取值见 constants/plugin.constants.ts 的 PLUGIN_STATUS） */
+export type PluginStatus = (typeof PLUGIN_STATUS)[keyof typeof PLUGIN_STATUS];
+
+/** 插件来源：`builtin` 随应用分发（不可删除）/ `user` 应用内安装（可卸载） */
+export type PluginOrigin = (typeof PLUGIN_ORIGIN)[keyof typeof PLUGIN_ORIGIN];
+
+/**
+ * 用户插件持久化记录（应用内安装的插件，代码原文落 localStorage）
+ *
+ * 存**代码字符串**而不是求值结果：刷新后由加载器重新 import，
+ * 与内置插件的「每次启动从源码挂载」保持同一生命周期模型。
+ */
+export interface UserPluginRecord {
+  /** 插件 id（与定义内 id 一致，卸载 / 启停的键） */
+  id: string;
+  /** 展示名（安装时从定义解析冗余一份，弹窗不用先执行代码也能列表） */
+  name: string;
+  /** 语义化版本 */
+  version: string;
+  /** 一句话说明 */
+  description: string;
+  /** 作者（定义里没写时空串，展示层补「用户安装」） */
+  author: string;
+  /** 插件代码原文（预构建 ESM JS，`export default { …PluginDefinition }`） */
+  code: string;
+  /** 安装时间（ISO 8601） */
+  installedAt: string;
+}
+
+/** 插件运行时信息（插件管理弹窗 / 插件工坊展示） */
+export interface PluginRuntimeInfo {
+  /** 插件 id */
+  id: string;
+  /** 展示名 */
+  name: string;
+  /** 语义化版本 */
+  version: string;
+  /** 一句话说明 */
+  description: string;
+  /** 作者 */
+  author: string;
+  /** 是否内置插件（随应用分发，不可删除） */
+  builtin: boolean;
+  /** 插件来源 */
+  origin: PluginOrigin;
+  /** 当前运行时状态 */
+  status: PluginStatus;
+  /** 依赖的插件 id 列表 */
+  inject: readonly string[];
+  /** 挂载失败原因（status = failed 时才有） */
+  error: string;
+  /** 该插件当前生效的贡献点计数（按贡献点分类） */
+  contributions: PluginContributionCount;
+  /** 已撤销（卸载）的副作用数量 */
+  disposedEffects: number;
+}
+
+/** 单个插件的贡献点计数 */
+export interface PluginContributionCount {
+  /** 左侧栏面板数 */
+  sidebarPanels: number;
+  /** 左侧导航菜单项数 */
+  menuItems: number;
+  /** 路由数 */
+  routes: number;
+  /** 右侧停靠面板数 */
+  dockPanels: number;
+  /** 命令数 */
+  commands: number;
+  /** 内置 MCP 服务器数 */
+  agentServers: number;
+}
+
+/** 插件配置：随插件定义一起下发的只读参数（对标 dsh 的配置层） */
+export type PluginConfig = Record<string, unknown>;
+
+/**
+ * 插件定义（插件包的唯一出口）
+ *
+ * 插件 = 「一份声明（元信息 + 依赖）」+「一个 apply 入口（贡献点注册）」。
+ * 元信息里的 `inject` 让内核按依赖拓扑决定挂载顺序与等待关系，
+ * 因此插件之间的协作不依赖 import 顺序。
+ */
+export interface PluginDefinition {
+  /** 全局唯一 id（kebab-case，内置插件约定 `dsh-` 前缀） */
+  id: string;
+  /** 展示名（中文） */
+  name: string;
+  /** 语义化版本 */
+  version: string;
+  /** 一句话说明（插件管理弹窗展示） */
+  description: string;
+  /** 作者（缺省「内置」） */
+  author?: string;
+  /** 依赖的插件 id：任一未挂载则本插件停在「等待依赖」状态 */
+  inject?: readonly string[];
+  /** 插件配置（等价 dsh 的配置层：不改源码即可换实现 / 调参数） */
+  config?: PluginConfig;
+  /**
+   * 挂载入口：所有贡献点都在这里经 `ctx` 声明
+   *
+   * 内核在调用前自动清理该插件的副作用作用域，因此 apply 抛错不会留下半挂载状态。
+   * @param ctx 插件上下文
+   */
+  apply: (ctx: PluginContext) => void | Promise<void>;
+}
+
+/**
+ * 插件上下文（插件与内核之间的唯一接口）
+ *
+ * 一切以 `ctx.` 开头的注册都会在插件卸载时自动撤销，插件**不需要**写反向逻辑。
+ */
+export interface PluginContext {
+  /** 当前插件 id */
+  readonly pluginId: string;
+  /** 当前插件配置（只读） */
+  readonly config: PluginConfig;
+  /** 插件日志器 */
+  readonly logger: PluginLogger;
+  /** 插件自有持久化（命名空间隔离） */
+  readonly storage: PluginStorage;
+  /** 插件通用数据库（每插件独立表，见 PluginDatabase） */
+  readonly db: PluginDatabase;
+
+  /** 左侧栏面板贡献点 */
+  readonly sidebar: SidebarContributor;
+  /** 左侧导航菜单贡献点 */
+  readonly menu: MenuContributor;
+  /** 路由贡献点 */
+  readonly router: RouterContributor;
+  /** 右侧停靠面板贡献点 */
+  readonly dock: DockContributor;
+  /** 命令贡献点 */
+  readonly command: CommandContributor;
+  /** Agent 工具贡献点 */
+  readonly agent: AgentContributor;
+
+  /**
+   * 执行一次带清理的副作用（立即执行，插件卸载时回调清理函数）
+   * @param effect 副作用函数，可返回清理函数
+   * @returns 撤销句柄（手动撤销后，卸载时不再重复清理）
+   */
+  effect: (effect: () => void | (() => void)) => Disposable;
+
+  /**
+   * 注册「插件卸载时执行」的回调（不立即执行，与 effect 的区别）
+   * @param listener 卸载回调
+   */
+  onDispose: (listener: () => void) => void;
+
+  /**
+   * 贡献一个服务
+   * @param name 服务名（见 AppServiceMap）
+   * @param impl 服务实现
+   */
+  provide: <K extends keyof AppServiceMap>(name: K, impl: AppServiceMap[K]) => void;
+
+  /**
+   * 注入一个服务（依赖缺失时返回 undefined，插件应自行降级）
+   * @param name 服务名
+   * @returns 服务实现；未提供时 undefined
+   */
+  consume: <K extends keyof AppServiceMap>(name: K) => AppServiceMap[K] | undefined;
+
+  /**
+   * 订阅事件（内置事件名走 `AppEventMap` 强类型分支，插件自定义事件名走宽松分支）
+   * @param name 事件名
+   * @param handler 处理函数
+   * @returns 取消订阅句柄（插件卸载时内核自动取消）
+   */
+  on: {
+    <K extends keyof AppEventMap>(
+      name: K,
+      handler: (...args: AppEventMap[K]) => void,
+    ): Disposable;
+    (name: string, handler: (...args: unknown[]) => void): Disposable;
+  };
+
+  /**
+   * 广播一个事件（插件自定义事件名走宽松分支）
+   * @param name 事件名
+   * @param args 事件参数
+   */
+  emit: (name: string, ...args: unknown[]) => void;
+}

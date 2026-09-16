@@ -29,3 +29,9 @@ export const STORAGE_NS_HOT_NEWS_FILTER = 'hotNews.filter';
 
 /** 页面 tabs 配置命名空间（各页面 tab 显隐 + 顺序，按页面 key 分桶） */
 export const STORAGE_NS_TAB_CONFIG = 'tabConfig';
+
+/** 插件系统命名空间（禁用黑名单 + 侧栏面板折叠态） */
+export const STORAGE_NS_PLUGIN = 'plugin';
+
+/** 用户安装插件命名空间（应用内安装的插件代码持久化） */
+export const STORAGE_NS_USER_PLUGINS = 'plugin.user';

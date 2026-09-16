@@ -41,9 +41,15 @@ export const MENU_ICON = {
 } as const;
 
 /**
+ * 主布局路由的 name（插件路由经 `router.addRoute(LAYOUT_ROUTE_NAME, ...)` 挂为其子路由）
+ */
+export const LAYOUT_ROUTE_NAME = 'root';
+
+/**
  * 左侧导航菜单配置（驱动 MainLayout 渲染，数组顺序即展示顺序）
  *
- * 板块行情已并入行情全景的 A 股全景模块；设置不入主导航（固定为侧栏底部入口）
+ * 板块行情已并入行情全景的 A 股全景模块；设置不入主导航（固定为侧栏底部入口）；
+ * 插件贡献的菜单项由内核注册表提供，本数组只声明宿主自带的菜单。
  */
 export const MENU_ITEMS = [
   { path: ROUTE_PATH.DASHBOARD, title: "市场总览", icon: MENU_ICON.DASHBOARD },

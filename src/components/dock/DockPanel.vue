@@ -2,7 +2,9 @@
 import { computed, onBeforeUnmount, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import MenuIcon from '../ui/MenuIcon.vue';
+import BaseEmpty from '../ui/BaseEmpty.vue';
 import StockDetailPanel from './StockDetailPanel.vue';
+import { pluginKernel } from '../../plugin';
 import {
   DOCK_PANEL_WIDTH_MAX_RATIO,
   DOCK_PANEL_CONTENT,
@@ -15,9 +17,23 @@ import { useDockPanelStore } from '../../stores/dock-panel';
  *
  * 面板宽度 375px ~ 60vw（store 内 clamp），宽度经 pinia persist 持久化；
  * 拖拽手柄与贯穿竖线由 StockDetailPanel 在主区左缘渲染（更贴近主区、避免遮挡内容）
+ *
+ * 内容分两类：宿主的个股详情，以及插件贡献的停靠面板
+ * （插件经 `ctx.dock.add()` 注册，store 里只存面板全局键）。
  */
 const dockPanel = useDockPanelStore();
 const router = useRouter();
+
+/** 当前插件停靠面板（面板被卸载 / 插件被禁用时自动失效，降级为空态） */
+const pluginPanel = computed(() => {
+  void pluginKernel.revision.value;
+  if (dockPanel.content !== DOCK_PANEL_CONTENT.PLUGIN) return null;
+  return (
+    pluginKernel.contributions.dock.panels.find(
+      (panel) => panel.key === dockPanel.pluginPanelKey,
+    ) ?? null
+  );
+});
 
 /**
  * 跳转股票详情整页：关闭面板后路由跳转（全站双击同款行为）
@@ -29,10 +45,12 @@ const openDetailPage = (): void => {
   void router.push(`${ROUTE_PATH.STOCK_DETAIL}/${symbol}`);
 };
 
-/** 面板头部标题（个股详情用固定文案） */
-const panelTitle = computed(() =>
-  dockPanel.content === DOCK_PANEL_CONTENT.STOCK ? '个股详情' : '',
-);
+/** 面板头部标题（个股详情用固定文案；插件面板用其声明标题） */
+const panelTitle = computed(() => {
+  if (dockPanel.content === DOCK_PANEL_CONTENT.STOCK) return '个股详情';
+  if (dockPanel.content === DOCK_PANEL_CONTENT.PLUGIN) return pluginPanel.value?.title ?? '插件面板';
+  return '';
+});
 
 /**
  * Esc 关闭面板
@@ -89,6 +107,16 @@ onBeforeUnmount(() => {
       <StockDetailPanel
         v-if="dockPanel.content === DOCK_PANEL_CONTENT.STOCK"
         :symbol="dockPanel.symbol"
+      />
+      <!-- 插件停靠面板：面板被卸载（插件禁用）时降级为空态，不留白屏 -->
+      <component
+        v-else-if="pluginPanel"
+        :is="pluginPanel.component"
+        v-bind="pluginPanel.props"
+      />
+      <BaseEmpty
+        v-else-if="dockPanel.content === DOCK_PANEL_CONTENT.PLUGIN"
+        text="面板已不可用（所属插件可能已被禁用）"
       />
     </div>
   </aside>
