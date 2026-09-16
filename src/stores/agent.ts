@@ -12,12 +12,14 @@ import type {
   AgentProfile,
   ChatGroup,
   ChatSession,
+  GrantResourceKind,
   McpServer,
   ModelConfig,
   Skill,
   SubagentDef,
 } from '@/types/agent.types';
 import { withBuiltinSubagents } from '@/constants/builtin-subagents';
+import { resourceKey } from '@/utils/resource-access';
 
 export const useAgentStore = defineStore('agent', () => {
   /* --------------------------------- 状态 --------------------------------- */
@@ -45,6 +47,17 @@ export const useAgentStore = defineStore('agent', () => {
   const profiles = ref<AgentProfile[]>([]);
   /** subagent 定义列表 */
   const subagents = ref<SubagentDef[]>([]);
+
+  /**
+   * 内置资源（mcp / skill / subagent，负数 id）的启用状态
+   *
+   * 内置资源是源码常量、库里没有自己的行，启停只能落在 `resource_scope.enabled`。
+   * 这里缓存一份，免得列表里每个开关都去查库。键见 `resourceKey`（形如 `mcp:-3`）。
+   *
+   * ⚠️ 用户资源的启用状态**不在这里**：它们读各自实体的 `enabled` 字段
+   * （skill.enabled / mcp_server.enabled / subagent.enabled），两轨不要混。
+   */
+  const builtinEnabled = ref<Record<string, boolean>>({});
 
   /* --------------------------------- 计算属性 -------------------------------- */
 
@@ -92,17 +105,28 @@ export const useAgentStore = defineStore('agent', () => {
   async function init(): Promise<void> {
     if (initialized.value) return;
     initialized.value = true;
-    const [groupList, sessionList, countResult, modelList, skillList, mcpList, profileList, subagentList] =
-      await Promise.all([
-        db.listGroups(),
-        db.listSessions(),
-        db.getAgentCounts(),
-        db.listModels(),
-        db.listSkills(),
-        db.listMcps(),
-        db.listProfiles(),
-        db.listSubagents(),
-      ]);
+    const [
+      groupList,
+      sessionList,
+      countResult,
+      modelList,
+      skillList,
+      mcpList,
+      profileList,
+      subagentList,
+      scopeList,
+    ] = await Promise.all([
+      db.listGroups(),
+      db.listSessions(),
+      db.getAgentCounts(),
+      db.listModels(),
+      db.listSkills(),
+      db.listMcps(),
+      db.listProfiles(),
+      db.listSubagents(),
+      // 内置资源的启停落在 resource_scope（见 builtinEnabled 注释）
+      db.listResourceScopes(),
+    ]);
     groups.value = groupList;
     sessions.value = sessionList;
     counts.value = countResult;
@@ -110,7 +134,12 @@ export const useAgentStore = defineStore('agent', () => {
     skills.value = skillList;
     mcps.value = mcpList;
     profiles.value = profileList;
-    subagents.value = withBuiltinSubagents(subagentList);
+    builtinEnabled.value = Object.fromEntries(
+      scopeList.map((row) => [resourceKey(row.resourceKind, row.resourceId), row.enabled]),
+    );
+    subagents.value = withBuiltinSubagents(subagentList, (id) =>
+      isBuiltinEnabled('subagent', id),
+    );
     // 默认选中最近可用的首个会话
     if (currentSessionId.value === null && sessionList.length > 0) {
       currentSessionId.value = sessionList[0].id;
@@ -281,15 +310,76 @@ export const useAgentStore = defineStore('agent', () => {
   }
 
   /**
+   * 内置资源是否启用（无记录 = 启用）
+   * @param kind 资源类型
+   * @param id 内置资源 id（负数）
+   * @returns 是否启用
+   */
+  function isBuiltinEnabled(kind: GrantResourceKind, id: number): boolean {
+    return builtinEnabled.value[resourceKey(kind, id)] ?? true;
+  }
+
+  /**
+   * 切换内置资源的启用状态
+   *
+   * 只写 `resource_scope.enabled`，**不碰访问范围与勾选**（那是设置弹窗的事），
+   * 这样列表开关与「访问设置」弹窗改的是同一行的不同字段，互不覆盖。
+   *
+   * @param kind 资源类型
+   * @param id 内置资源 id（负数）
+   * @param enabled 是否启用
+   */
+  async function toggleBuiltin(
+    kind: GrantResourceKind,
+    id: number,
+    enabled: boolean,
+  ): Promise<void> {
+    await db.setResourceEnabled(kind, id, enabled);
+    builtinEnabled.value = { ...builtinEnabled.value, [resourceKey(kind, id)]: enabled };
+    if (kind === 'subagent') {
+      // 内置 subagent 的 enabled 直接读列表项，同步一份让 UI 立即反映
+      const target = subagents.value.find((s) => s.id === id);
+      if (target) target.enabled = enabled;
+    }
+  }
+
+  /**
    * 启用 / 停用 Skill
+   *
+   * 分两轨：内置 skill（负数 id）没有自己的表，启停写 `resource_scope`；
+   * 用户 skill 写自身表的 `enabled`。
+   *
    * @param id Skill id
    * @param enabled 是否启用
    */
   async function toggleSkill(id: number, enabled: boolean): Promise<void> {
+    if (id < 0) {
+      await toggleBuiltin('skill', id, enabled);
+      return;
+    }
     await db.setSkillEnabled(id, enabled);
     const target = skills.value.find((s) => s.id === id);
     if (target) target.enabled = enabled;
     await refreshCounts();
+  }
+
+  /**
+   * 启用 / 停用 subagent
+   *
+   * 内置 subagent 是源码常量（库里无行）→ 写 `resource_scope`；
+   * 用户 subagent → 写自身表的 `enabled`。
+   *
+   * @param id subagent id
+   * @param enabled 是否启用
+   */
+  async function toggleSubagent(id: number, enabled: boolean): Promise<void> {
+    if (id < 0) {
+      await toggleBuiltin('subagent', id, enabled);
+      return;
+    }
+    await db.setSubagentEnabled(id, enabled);
+    const target = subagents.value.find((s) => s.id === id);
+    if (target) target.enabled = enabled;
   }
 
   /**
@@ -329,10 +419,18 @@ export const useAgentStore = defineStore('agent', () => {
 
   /**
    * 启用 / 停用 MCP 服务器
+   *
+   * 分两轨：内置 MCP（负数 id）写 `resource_scope.enabled` —— 它的工具分组
+   * 由运行时按授权过滤，停用后下次运行即不再装载；远端 MCP 写自身表并需重连。
+   *
    * @param id MCP id
    * @param enabled 是否启用
    */
   async function toggleMcp(id: number, enabled: boolean): Promise<void> {
+    if (id < 0) {
+      await toggleBuiltin('mcp', id, enabled);
+      return;
+    }
     await db.setMcpEnabled(id, enabled);
     const target = mcps.value.find((m) => m.id === id);
     if (target) target.enabled = enabled;
@@ -375,7 +473,10 @@ export const useAgentStore = defineStore('agent', () => {
    */
   async function upsertSubagent(input: db.SaveSubagentInput): Promise<void> {
     await db.saveSubagent(input);
-    subagents.value = withBuiltinSubagents(await db.listSubagents());
+    // ⚠️ 必须带上内置项的启用状态查询，否则刷新列表会把内置 subagent 的启停重置为「启用」
+    subagents.value = withBuiltinSubagents(await db.listSubagents(), (id) =>
+      isBuiltinEnabled('subagent', id),
+    );
   }
 
   /**
@@ -399,6 +500,7 @@ export const useAgentStore = defineStore('agent', () => {
     mcps,
     profiles,
     subagents,
+    builtinEnabled,
     defaultModel,
     activeSession,
     activeProfile,
@@ -429,5 +531,8 @@ export const useAgentStore = defineStore('agent', () => {
     removeProfile,
     upsertSubagent,
     removeSubagent,
+    isBuiltinEnabled,
+    toggleBuiltin,
+    toggleSubagent,
   };
 });

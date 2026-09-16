@@ -313,7 +313,7 @@ const modalTitle = computed(() => (view.value === 'list' ? '模型管理' : edit
             </span>
             <span
               v-if="store.effectiveModel?.id === model.id"
-              class="shrink-0 rounded-full bg-primary px-2 py-0.5 text-xs text-white"
+              class="shrink-0 rounded-full bg-primary px-2 py-0.5 text-xs text-on-primary"
               title="当前会话/配置实际使用的模型，对话请求发的就是这条"
             >
               使用中

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import type { EChartsCoreOption } from 'echarts/core';
+import BaseEmpty from '../ui/BaseEmpty.vue';
 import BaseSkeleton from '../ui/BaseSkeleton.vue';
 import MenuIcon from '../ui/MenuIcon.vue';
 import { CHART_GAP_COLOR, CHART_LABEL_ON_TREND_COLOR } from '../../constants/chart.constants';
@@ -20,15 +21,19 @@ import BaseChart from './BaseChart.vue';
  * 点击链路两层防御，修复切层后点击错位（点个股误触发下钻"切换 Top"）：
  * 1. 关闭动画：杜绝过渡期被移除的旧 cell 延迟销毁但仍可点击
  * 2. 层级成员校验：仅接受当前层数据列表内的点击，错位数据直接忽略
+ *
+ * ⚠️ isDrillLoading / drillError 只作用于「本图所在层」：
+ * 板块层实例必须传 false / null，否则拉取成分股时板块热力图会被骨架屏顶掉，
+ * 数据返回后与成分股图同时冒出（整块闪没再闪出）
  */
 const props = defineProps<{
   /** 板块热力数据 */
   boards: HeatmapBoard[];
   /** 下钻视图状态（null 表示板块总览层），由父级 useHeatmapDrill 提供 */
   drillView: HeatmapDrillView | null;
-  /** 成分股拉取中 */
+  /** 本图所在层的成分股拉取中（板块层实例恒传 false，只由成分股层实例接真实值） */
   isDrillLoading: boolean;
-  /** 成分股拉取失败的板块名 */
+  /** 本图所在层的成分股拉取失败板块名（板块层实例恒传 null） */
   drillError: string | null;
   /** 是否渲染内部「返回板块」状态条（父级已有返回入口时传 false） */
   showBackBar?: boolean;
@@ -98,6 +103,9 @@ const onChartClick = (params: unknown): void => {
   }
 };
 
+/** 是否存在可渲染成员（treemap 空数据会渲染成一块空白画布，用空态替代） */
+const hasCells = computed<boolean>(() => cells.value.length > 0);
+
 const option = computed<EChartsCoreOption>(() => {
   // 依赖 trendTheme：切换涨跌配色后本 computed 重新求值
   void settingsStore.trendTheme;
@@ -155,18 +163,20 @@ const option = computed<EChartsCoreOption>(() => {
         成分股 Top{{ drillView.constituents.length }}（按成交额）
       </span>
     </div>
+    <!-- 骨架只顶替「本图所在层」：拉取成分股不得让板块层图表消失 -->
     <div v-if="isDrillLoading" class="flex items-center justify-center py-24">
       <BaseSkeleton />
     </div>
     <!-- 增量合并 + 关动画：动画关闭后无残留可点击元素，校验兜底错位数据 -->
     <BaseChart
-      v-else
+      v-else-if="hasCells"
       :options="option"
       :style="{ height: `${CHART_HEIGHT_PX}px` }"
       @chart-click="onChartClick"
     />
-    <p v-if="drillError" class="mt-2 text-xs text-down">
+    <p v-else-if="drillError" class="py-2 text-xs text-down">
       {{ drillError }} 成分股加载失败，请稍后重试
     </p>
+    <BaseEmpty v-else text="暂无板块数据" />
   </div>
 </template>

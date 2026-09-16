@@ -105,14 +105,93 @@ CREATE TABLE app_setting (
 );
 ";
 
+/// agent.db v2：资源授权（MCP / Skill 的 agent 级访问控制）
+///
+/// 背景：MCP / Skill 的授权有两个入口——资源侧（「谁能用我」，MCP/Skill 设置弹窗）
+/// 与 agent 侧（「我能用什么」，profile / 子 agent 配置弹窗）。两者是**同一份关系的两个视图**，
+/// 必须共用唯一事实源，否则必然冲突（一处勾上、另一处不同步 → 到底能不能用无从判断）。
+///
+/// 为什么 scope 单独建表而不是给 mcp_server / skill 加列：
+/// **内置 MCP 服务器不在表里**（它们是 src/agent/mcp 下的常量），无法在自己的表上加列；
+/// 用独立表可让内置（负数 id）与用户资源（自增正数 id）走同一套授权逻辑。
+///
+/// 判定规则（唯一权威）：
+/// - 启用：`resource_scope.enabled = 0` → 该资源整体不装配（对任何 agent 都不可用）；
+/// - 无该资源行 → 视作 enabled = 1 且 scope = 'all'；
+/// - scope = 'all' → 全部 agent 可访问（grant 行被忽略但保留）；
+/// - scope = 'custom' → 仅 resource_grant 中列出的 agent 可访问。
+///   ⚠️ custom 且无任何 grant 行 = 含主 agent 在内谁都不可用（UI 必须警示，否则资源被静默锁死）。
+///
+/// 为什么 `enabled` 也放这张表：**内置 MCP / 内置子 agent 都没有自己的表**，
+/// 无法在资源表上加启用列；用户资源（mcp_server / skill）虽有自己的 enabled 列，
+/// 但为了「设置弹窗」一处读写、不与原管理弹窗打架，这里约定：
+/// 内置资源以本表 enabled 为准；用户资源以自身表的 enabled 列为准（本表 enabled 仅作兜底）。
+///
+/// agent 标识：主 agent 用 ('main', 0)；子 agent 用 ('subagent', subagent.id)。
+/// 内置 id 均为负数（子 agent 见 constants/builtin-subagents.ts，MCP 见 agent/mcp/constants.ts），
+/// 与用户自增的正数 id 天然不冲突。
+///
+/// `subagent.skill_names`：子 agent 专属 skill 白名单（名称数组）。
+/// 子 agent 默认**不继承**主 agent 的 skills（deepagents 语义），必须显式声明。
+const AGENT_DB_V2: &str = "
+ALTER TABLE subagent ADD COLUMN skill_names TEXT NOT NULL DEFAULT '[]';
+
+CREATE TABLE resource_scope (
+  resource_kind TEXT    NOT NULL,
+  resource_id   INTEGER NOT NULL,
+  scope         TEXT    NOT NULL DEFAULT 'all',
+  enabled       INTEGER NOT NULL DEFAULT 1,
+  PRIMARY KEY (resource_kind, resource_id)
+);
+
+CREATE TABLE resource_grant (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  resource_kind TEXT    NOT NULL,
+  resource_id   INTEGER NOT NULL,
+  agent_kind    TEXT    NOT NULL,
+  agent_id      INTEGER NOT NULL,
+  created_at    INTEGER NOT NULL,
+  UNIQUE (resource_kind, resource_id, agent_kind, agent_id)
+);
+CREATE INDEX idx_grant_agent ON resource_grant (agent_kind, agent_id, resource_kind);
+CREATE INDEX idx_grant_res   ON resource_grant (resource_kind, resource_id);
+";
+
+/// agent.db v3：用户 subagent 启停 + 内置 subagent 启停落脚点
+///
+/// 内置 subagent（7 个金融分析师）是**纯常量**、库里没有 subagent 行，因此它们的
+/// 启停无法写在自身表上 —— 统一走 v2 建的 `resource_scope`，以
+/// `resource_kind='subagent', resource_id=<负数 id>` 记录 `enabled`。
+/// 本版本只补用户 subagent 自己的 enabled 列，读写两轨由 store 的 toggleSubagent 分流。
+///
+/// ⚠️ `resource_scope` 表无需改动：它的 resource_kind 是自由 TEXT，
+///    'subagent' 直接可用（`resource_grant` 对 subagent 不写入，无「精确授权」语义）。
+const AGENT_DB_V3: &str = "
+ALTER TABLE subagent ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1;
+";
+
 /// agent.db 全部迁移（后续版本往后追加，勿改动已有版本）
 fn agent_db_migrations() -> Vec<Migration> {
-  vec![Migration {
-    version: 1,
-    description: "create_agent_tables",
-    sql: AGENT_DB_V1,
-    kind: MigrationKind::Up,
-  }]
+  vec![
+    Migration {
+      version: 1,
+      description: "create_agent_tables",
+      sql: AGENT_DB_V1,
+      kind: MigrationKind::Up,
+    },
+    Migration {
+      version: 2,
+      description: "add_resource_grant",
+      sql: AGENT_DB_V2,
+      kind: MigrationKind::Up,
+    },
+    Migration {
+      version: 3,
+      description: "add_subagent_enabled",
+      sql: AGENT_DB_V3,
+      kind: MigrationKind::Up,
+    },
+  ]
 }
 
 /// stock-board.db v1：板块日历（板块热点 · 赚钱效应）全部表

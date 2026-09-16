@@ -13,8 +13,8 @@ import { unzipSync, strFromU8 } from 'fflate';
 import { mkdir, writeFile, BaseDirectory } from '@tauri-apps/plugin-fs';
 import { isTauri } from '@tauri-apps/api/core';
 
-/** agent-workspace 相对 appData 的路径 */
-const WORKSPACE_DIR = 'agent-workspace';
+/** agent-workspace 相对 appData 的路径（运行时装载 SKILL.md 也用它，故导出） */
+export const SKILL_WORKSPACE_DIR = 'agent-workspace';
 
 /** 导入结果 */
 export interface SkillZipParseResult {
@@ -112,7 +112,7 @@ export const parseSkillZip = (buffer: ArrayBuffer, zipFileName: string): SkillZi
  */
 export const writeSkillFiles = async (parsed: SkillZipParseResult): Promise<void> => {
   if (!isTauri()) throw new Error('Skill 导入仅支持桌面端');
-  const base = WORKSPACE_DIR + '/' + parsed.dirName;
+  const base = SKILL_WORKSPACE_DIR + '/' + parsed.dirName;
   await mkdir(base, { baseDir: BaseDirectory.AppData, recursive: true });
   for (const [path, data] of parsed.files) {
     const slash = path.lastIndexOf('/');

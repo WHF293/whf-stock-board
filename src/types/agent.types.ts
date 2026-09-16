@@ -84,12 +84,96 @@ export interface SubagentDef {
   modelId: number | null;
   /** 工具白名单（空数组 = 继承全部） */
   toolNames: string[];
+  /**
+   * 子 agent 专属 skill 白名单（skill 名称，空数组 = 无 skill）
+   *
+   * ⚠️ deepagents 语义：custom subagent **默认不继承**主 agent 的 skills，
+   * 必须在此显式声明才会装配（见 create-agent.ts 的 toSubAgents）。
+   */
+  skillNames: string[];
+  /**
+   * 是否启用（停用后不参与编排：不进主 agent 的派发清单，也不出现在配置勾选里）
+   *
+   * ⚠️ 存储分两轨（与 skill / mcp 一致）：
+   * - 用户 subagent（id > 0）→ `subagent.enabled` 列；
+   * - 内置 subagent（id < 0，纯常量、库里无行）→ `resource_scope.enabled`。
+   * 列表里读到的是合并结果，写回由 store 的 toggleSubagent 按 id 分流。
+   */
+  enabled: boolean;
   createdAt: number;
   updatedAt: number;
 }
 
 /** MCP 传输方式（一期仅远端） */
 export type McpTransport = 'streamable-http' | 'sse';
+
+/** 资源访问范围：all = 全部 agent 可用；custom = 仅 resource_grant 列出的 agent 可用 */
+export type AccessScope = 'all' | 'custom';
+
+/** 授权对象类型：主 agent（单例）/ 子 agent */
+export type GrantAgentKind = 'main' | 'subagent';
+
+/**
+ * 受控资源类型
+ *
+ * ⚠️ `subagent` **只用 `resource_scope.enabled`**（内置子 agent 的启停），
+ * 不参与 `resource_grant` 的「精确授权」—— 子 agent 是被主 agent 调用的角色，
+ * 再叠加一层「哪些 agent 能用它」没有语义。故 UI 对它只给开关，不给访问范围。
+ */
+export type GrantResourceKind = 'mcp' | 'skill' | 'subagent';
+
+/**
+ * 资源授权行（resource_grant 表）——**授权的唯一事实源**
+ *
+ * 「资源设置弹窗勾 agent」与「agent 编辑弹窗勾资源」是同一份关系的两个视图，
+ * 读写都落在这张表上，因此天然一致、无需同步逻辑。
+ */
+export interface ResourceGrant {
+  id: number;
+  resourceKind: GrantResourceKind;
+  /** mcp_server.id 或 skill.id */
+  resourceId: number;
+  agentKind: GrantAgentKind;
+  /** main 恒为 MAIN_AGENT_ID(0)；subagent 为 subagent.id（内置子 agent 为负数） */
+  agentId: number;
+  createdAt: number;
+}
+
+/** 授权面板中的可选 agent 项 */
+export interface GrantTarget {
+  kind: GrantAgentKind;
+  /** 主 agent 为 MAIN_AGENT_ID(0) */
+  id: number;
+  name: string;
+  /** 是否内置子 agent（内置不可编辑） */
+  builtin: boolean;
+}
+
+/** 资源访问范围行（resource_scope 表）—— 内置资源用负数 id */
+export interface ResourceScope {
+  resourceKind: GrantResourceKind;
+  /** mcp_server.id / skill.id，内置资源为负数常量 id */
+  resourceId: number;
+  scope: AccessScope;
+  /**
+   * 该资源是否启用（关闭则整体不装配，对任何 agent 都不可用）
+   *
+   * ⚠️ 仅对**内置资源**有权威性（内置没有自己的表）。用户资源（mcp_server / skill）
+   * 的启用状态仍以自身表的 `enabled` 列为准 —— 设置弹窗对用户资源会转写到该列，
+   * 保证同一资源只有一个写入者。
+   */
+  enabled: boolean;
+}
+
+/** 单个资源的授权状态（范围 + 启用 + 被授权的对象集合） */
+export interface ResourceGrantState {
+  /** all = 全部 agent 可用（targets 被忽略）；custom = 仅 targets 列出的可用 */
+  scope: AccessScope;
+  /** 是否启用（用户资源的启用状态由其自身表承载，本字段仅内置资源有意义） */
+  enabled: boolean;
+  /** 被授权的 agent 集合（scope='custom' 时生效） */
+  targets: Array<{ agentKind: GrantAgentKind; agentId: number }>;
+}
 
 /** Skill（skill 表） */
 export interface Skill {
@@ -102,7 +186,7 @@ export interface Skill {
   createdAt: number;
 }
 
-/** MCP 服务器（mcp_server 表） */
+/** MCP 服务器（mcp_server 表，仅用户添加的远端服务器；内置服务器见 agent/mcp/constants.ts） */
 export interface McpServer {
   id: number;
   name: string;

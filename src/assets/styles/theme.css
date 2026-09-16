@@ -17,6 +17,9 @@
   /* 主色：湖青（中性偏冷，不与涨跌语义色冲突） */
   --color-primary: #0e9488;
   --color-primary-weak: #e6f5f3;
+  /* 主色底上的前景色：默认白色（bg-primary text-on-primary）。
+     仅黑金主题需要改成深墨色 —— 金底明度高，白字对比度不足 */
+  --color-on-primary: #ffffff;
 
   /* A 股语义色（默认红涨绿跌）：四档色阶供文本类与图表双轨消费 */
   --color-up-strong: #c51616;
@@ -103,6 +106,25 @@
   --color-primary-weak: #f1ecfe;
 }
 
+/* 活力橙：暖色主色，配更暖的浅底（避免橙字落在冷灰底上发闷） */
+[data-theme='orange'] {
+  --color-primary: #f97316;
+  --color-primary-weak: #fff2e8;
+}
+
+/*
+ * 黑金：参考 klinecharts.com 的品牌金（亮暗共用一套：#e6ac00 / #ebbc33 / #f0cd66）
+ * ⚠️ 关键在**饱和度**：金要「贵」必须高饱和（90%+），低饱和高明度只会读成香槟米黄。
+ * 亮色模式把参考金压暗一档（#e6ac00 → #c8920b）—— 同色相、同饱和度，
+ * 但压低明度才能让 text-primary 压在白底上还有 2.8:1（#e6ac00 只有 2.05:1）
+ * 金底配深墨字（#221a06）：既解决白字压金底对比度不足，也是金箔压墨的经典配色
+ */
+[data-theme='gold'] {
+  --color-primary: #c8920b;
+  --color-primary-weak: #fdf4d9;
+  --color-on-primary: #221a06;
+}
+
 .dark[data-theme='blue'] {
   --color-primary-weak: #1e3a5f;
 }
@@ -113,6 +135,33 @@
 
 .dark[data-theme='purple'] {
   --color-primary-weak: #37245e;
+}
+
+.dark[data-theme='orange'] {
+  --color-primary-weak: #4a2410;
+}
+
+/*
+ * 黑金暗色：特异性 (0,2,0) 高于 .dark (0,1,0)，故能覆盖上面的暗色底/面
+ * 主色直接采用参考站品牌金本体 #e6ac00 —— 压在近黑底上对比度 9.6:1，浓而不暗
+ * 底色取参考站的 --dark-c-bg:#09090b，越接近纯黑，金越有金属光泽
+ * 卡片面比底色抬一档以保持分层（纯黑 + 纯黑会让看板失去卡片边界）
+ */
+.dark[data-theme='gold'] {
+  --color-primary: #e6ac00;
+  --color-primary-weak: #2e2508;
+  --color-bg: #09090b;
+  --color-surface: #15161a;
+  --color-flat-weak: #212226;
+}
+
+/*
+ * 黑金氛围：顶部一层极淡的暖金雾（参考站 hero 的黑金光晕）
+ * 只叠 background-image，不动 --color-bg，避免影响任何读该变量的组件
+ */
+.dark[data-theme='gold'] body {
+  background-image: radial-gradient(ellipse 90% 45% at 50% 0%, rgb(230 172 0 / 0.08), transparent 70%);
+  background-attachment: fixed;
 }
 
 /* 全局基础样式：底色 / 文本色 / 字体平滑 */

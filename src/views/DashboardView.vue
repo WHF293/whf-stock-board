@@ -54,6 +54,7 @@ import type { FullQuote } from '../types/stock-quote.types';
 import { formatPercent } from '../utils/format-percent';
 import { formatAmount } from '../utils/format-amount';
 import { formatYuanWithSign } from '../utils/format-yuan';
+import { formatTurnoverChange } from '../utils/format-turnover-change';
 import { countDistribution } from '../utils/count-distribution';
 import { delay } from '../utils/delay';
 import { useSettingsStore } from '../stores/settings';
@@ -102,7 +103,8 @@ const settingsStore = useSettingsStore();
 const dataCache = useDataCacheStore();
 
 // 板块下钻状态机：热力图 / 列表两视图共享，切换展示形式不丢下钻位置
-const { drillView, isDrillLoading, drillError, drillInto, backToBoards } = useHeatmapDrill();
+const { drillView, drillTarget, isDrillLoading, drillError, drillInto, backToBoards } =
+  useHeatmapDrill();
 
 /** Top 数量按钮组 v-model 适配：BaseTabs 要求字符串 value，设置项存 number */
 const heatmapTopNModel = computed<string>({
@@ -291,25 +293,30 @@ const turnoverRows = computed(() =>
   turnoverHistory.value.slice(-turnoverRange.value),
 );
 
-/** 当前窗口内的成交额表格行（升序算较上日变化率，再倒序展示 + 亿元换算） */
+/** 当前窗口内的成交额表格行（升序算较上日变化，再倒序展示 + 亿元换算） */
 const turnoverTableRows = computed<TurnoverTableRow[]>(() => {
   const asc = turnoverRows.value;
   const rows = asc.map((day, i) => {
     const prev = i > 0 ? asc[i - 1].totalAmount : null;
-    const changePct =
-      prev !== null && prev !== 0 ? ((day.totalAmount - prev) / prev) * 100 : null;
+    let changeAmount: number | null = null;
+    let changePct: number | null = null;
+    if (prev !== null) {
+      changeAmount = day.totalAmount - prev;
+      changePct = prev !== 0 ? (changeAmount / prev) * 100 : null;
+    }
     return {
       ...day,
       totalAmountYi: (day.totalAmount / YUAN_PER_YI).toFixed(2),
       shanghaiAmountYi: (day.shanghaiAmount / YUAN_PER_YI).toFixed(2),
       shenzhenAmountYi: (day.shenzhenAmount / YUAN_PER_YI).toFixed(2),
       changePct,
+      changeText: formatTurnoverChange(changeAmount, changePct),
     };
   });
   return rows.reverse();
 });
 
-/** 成交额列配置（排序用原始元值，展示用亿元字段；较上日用同名插槽渲染涨跌色） */
+/** 成交额列配置（排序用原始元值，展示用亿元字段；较上日按变化率排序、用同名插槽渲染放量/缩量文案） */
 const turnoverColumns: TableColumn<TurnoverTableRow>[] = [
   { key: 'date', label: '日期' },
   {
@@ -358,6 +365,23 @@ const heatmapBoards = computed<HeatmapBoard[]>(() =>
     changePercent: board.changePercent ?? 0,
     weight: board.totalMarketCap ?? 0,
   })),
+);
+
+/**
+ * 成分股热力图区块展示条件（热力图形式）
+ *
+ * 下钻中 / 已有成分股数据 / 拉取失败，三者任一即渲染该区块，
+ * 使点击板块那一刻就有反馈（标题 + 骨架），而不是等数据回来才整块冒出
+ */
+const showConstituentSection = computed<boolean>(
+  () =>
+    settingsStore.heatmapViewMode === HEATMAP_VIEW_MODE.HEATMAP &&
+    (isDrillLoading.value || drillView.value !== null || drillError.value !== null),
+);
+
+/** 成分股区块标题的板块名：拉取中用请求目标名兜底，避免加载中标题空白 */
+const constituentBoardName = computed<string>(
+  () => drillView.value?.board.name ?? drillTarget.value?.name ?? '',
 );
 
 /**
@@ -546,9 +570,11 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
         scroll-class="table-scroll-chart"
       >
         <template #changePct="{ row }">
+          <!-- 量能方向 + 变化额 + 变化率：文案整段不折行，颜色沿用涨红跌绿 -->
           <span
+            class="whitespace-nowrap"
             :class="row.changePct === null ? 'text-text-tertiary' : row.changePct >= 0 ? 'text-up' : 'text-down'"
-          >{{ row.changePct === null ? '--' : (row.changePct >= 0 ? '+' : '') + row.changePct.toFixed(2) + '%' }}</span>
+          >{{ row.changeText ?? '--' }}</span>
         </template>
       </BaseTable>
     </BaseCard>
@@ -661,16 +687,17 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
       </template>
       <template v-if="topBoards.length > 0">
         <!-- 热力图形式：点击板块不下钻替换，而是在下方追加成分股热力图 -->
+        <!-- ⚠️ 板块层恒传 false / null：成分股拉取不得顶掉本图，否则点击瞬间整块闪没、数据回来又和图一起冒出 -->
         <HeatmapChart
           v-if="settingsStore.heatmapViewMode === HEATMAP_VIEW_MODE.HEATMAP"
           :boards="heatmapBoards"
           :drill-view="null"
-          :is-drill-loading="isDrillLoading"
-          :drill-error="drillError"
+          :is-drill-loading="false"
+          :drill-error="null"
           @board-click="drillInto"
         />
-        <!-- 成分股热力图（点击上方板块后出现；返回后隐藏） -->
-        <template v-if="settingsStore.heatmapViewMode === HEATMAP_VIEW_MODE.HEATMAP && drillView">
+        <!-- 成分股热力图（点击上方板块即出现并带骨架；返回后隐藏） -->
+        <template v-if="showConstituentSection">
           <div class="mt-4 flex items-center gap-2 text-sm">
             <button
               type="button"
@@ -680,8 +707,14 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
               <MenuIcon name="arrowLeft" :size="14" />
               返回板块
             </button>
-            <span class="font-medium text-text">{{ drillView.board.name }}</span>
-            <span class="text-xs text-text-tertiary">成分股热力（面积 = 成交额）· 点击个股查看详情</span>
+            <span class="font-medium text-text">{{ constituentBoardName }}</span>
+            <span class="text-xs text-text-tertiary">
+              {{
+                isDrillLoading
+                  ? '成分股拉取中…'
+                  : '成分股热力（面积 = 成交额）· 点击个股查看详情'
+              }}
+            </span>
           </div>
           <HeatmapChart
             :boards="[]"

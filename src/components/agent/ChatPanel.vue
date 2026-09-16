@@ -5,22 +5,22 @@ import { useAgentStore } from '@/stores/agent';
 import { useSettingsStore } from '@/stores/settings';
 import {
   WELCOME_SCENES,
-  DEFAULT_AGENT_SYSTEM_PROMPT,
-  GENERAL_AGENT_SYSTEM_PROMPT,
+  AGENT_MODES,
   CHAT_INPUT_MIN_ROWS,
   CHAT_INPUT_MAX_ROWS,
   SESSION_DEFAULT_TITLE,
 } from '@/constants/agent.constants';
 import { listMessages, insertMessage, updateMessage } from '@/composables/use-agent-db';
+import { resolveAgentSystemPrompt } from '@/utils/agent-prompt';
 import { SmoothStreamer } from '@/agent/smooth-streamer';
 import { startAgentRun, type AgentRunHandle, type HistoryMessage } from '@/agent/create-agent';
+import { buildRunContext, type RunContext } from '@/agent/run-context';
 import { getMcpRuntime } from '@/agent/mcp/registry';
 import { MCP_UI_PAYLOAD_MAX_BYTES } from '@/agent/mcp/constants';
 import { resolveInputHeight } from '@/utils/chat-input-height';
-import type { ChatMessage, MessageStatus, ToolCallPart } from '@/types/agent.types';
+import type { ChatMessage, MessageStatus, SubagentDef, ToolCallPart } from '@/types/agent.types';
 import type { AgentManagerKey } from '@/types/agent.types';
 import MenuIcon from '@/components/ui/MenuIcon.vue';
-import BaseSwitch from '@/components/ui/BaseSwitch.vue';
 import ToolCallCard from './ToolCallCard.vue';
 
 /**
@@ -85,6 +85,22 @@ const currentProfile = computed(() => store.activeProfile);
  * 所以请求用的模型必须由 store 统一给出，避免两处口径不一致。
  */
 const currentModel = computed(() => store.effectiveModel);
+
+/** 是否专业模式（仅金融领域；对应设置项 agentStockOnly） */
+const stockOnly = computed(() => settings.agentStockOnly);
+
+/** 当前模式定义（分段控件高亮 + 右侧说明文案的数据源） */
+const activeMode = computed(
+  () => AGENT_MODES.find((mode) => mode.stockOnly === stockOnly.value) ?? AGENT_MODES[0],
+);
+
+/**
+ * 当前 Agent 配置是否自定义了系统提示词
+ *
+ * 有值时内置提示词会被整体替换，模式开关只剩「追加金融边界」这一层作用，
+ * UI 必须显式说明，否则用户会以为开关失灵（这正是改造前的老问题）。
+ */
+const hasCustomPrompt = computed(() => Boolean(currentProfile.value?.systemPrompt?.trim()));
 
 /**
  * 输入框高度自适应：2~5 行之间随内容长高，超出后框内滚动
@@ -366,14 +382,27 @@ const send = async (): Promise<void> => {
     },
   };
 
-  // MCP 工具集（内置 + 已启用远端）；装配失败不阻断对话，只是本次无工具
-  let tools: StructuredToolInterface[] = [];
+  // 本次参与编排的子 agent（profile.subagentIds 有序；内置 + 用户，失效 id 容错忽略）
+  const subagents = (profile?.subagentIds ?? [])
+    .map((id) => store.subagents.find((s) => s.id === id))
+    .filter((s): s is SubagentDef => s !== undefined);
+
+  // 资源装配：授权（resource_scope × resource_grant）× MCP 工具分组 × skill 虚拟文件
+  // 装配失败不阻断对话：退化为「无工具、无 skill」比整个会话报错更有用
+  let runContext: RunContext = {
+    tools: [],
+    subagentTools: new Map<number, StructuredToolInterface[]>(),
+    subagents,
+    skills: [],
+    skillPathByName: new Map<string, string>(),
+    skillFiles: {},
+  };
   try {
     const runtime = await getMcpRuntime();
-    tools = runtime.createTools(sink) as StructuredToolInterface[];
+    runContext = await buildRunContext({ runtime, sink, subagents, userSkills: store.skills });
   } catch (error) {
     console.warn(
-      '[agent] MCP 运行时装配失败，本次运行无工具：' +
+      '[agent] 运行上下文装配失败，本次无工具与 skill：' +
         (error instanceof Error ? error.message : String(error)),
     );
   }
@@ -385,15 +414,18 @@ const send = async (): Promise<void> => {
     handle: startAgentRun(
       {
         model,
-        systemPrompt: profile?.systemPrompt
-          ?? (settings.agentStockOnly ? DEFAULT_AGENT_SYSTEM_PROMPT : GENERAL_AGENT_SYSTEM_PROMPT),
+        // 模式开关是硬边界：Agent 配置自定义了提示词时，专业模式下强制追加金融边界，
+        // 不允许自定义提示词把「仅金融」这条约束顶掉（详见 utils/agent-prompt.ts）
+        systemPrompt: resolveAgentSystemPrompt(profile?.systemPrompt, stockOnly.value),
         history,
         message: userContent,
-        subagents: (profile?.subagentIds ?? [])
-          .map((id) => store.subagents.find((s) => s.id === id))
-          .filter((s) => s !== undefined),
-        // 内置 MCP（应用接口 + stock-sdk）+ 已启用的远端 MCP 统一装配为进程内工具
-        tools,
+        subagents: runContext.subagents,
+        // 主 agent 工具 + 子 agent 工具子集 + skill 声明（均由授权收敛，见 agent/run-context.ts）
+        tools: runContext.tools,
+        subagentTools: runContext.subagentTools,
+        skills: runContext.skills,
+        skillPathByName: runContext.skillPathByName,
+        skillFiles: runContext.skillFiles,
       },
       {
         onDelta: (delta) => streamer.push(delta),
@@ -557,7 +589,7 @@ const showWelcome = computed(() => messages.value.length === 0);
         <div v-for="msg in messages" :key="msg.id">
           <!-- 用户消息：右侧气泡 -->
           <div v-if="msg.role === 'user'" class="flex justify-end">
-            <div class="max-w-[85%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm text-white">
+            <div class="max-w-[85%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm text-on-primary">
               <p class="whitespace-pre-wrap break-words">{{ msg.content }}</p>
             </div>
           </div>
@@ -614,6 +646,34 @@ const showWelcome = computed(() => messages.value.length === 0);
       </p>
     </div>
 
+    <!-- 模式切换：专业模式（仅金融）/ 日常模式（不限话题）——决定系统提示词与问答边界 -->
+    <div class="mx-auto flex w-full max-w-3xl shrink-0 flex-wrap items-center gap-x-2.5 gap-y-1 px-6">
+      <div class="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-flat-weak p-0.5">
+        <button
+          v-for="mode in AGENT_MODES"
+          :key="mode.label"
+          type="button"
+          class="rounded-full px-3 py-1 text-xs font-medium transition-colors"
+          :class="
+            stockOnly === mode.stockOnly
+              ? 'bg-surface text-primary shadow-sm'
+              : 'text-text-tertiary hover:text-text'
+          "
+          :aria-pressed="stockOnly === mode.stockOnly"
+          @click="settings.setAgentStockOnly(mode.stockOnly)"
+        >
+          {{ mode.label }}
+        </button>
+      </div>
+      <span class="min-w-0 flex-1 truncate text-xs text-text-tertiary">
+        {{ activeMode.hint }}
+        <template v-if="hasCustomPrompt">
+          · 当前配置「{{ currentProfile?.name }}」自带提示词
+          <template v-if="stockOnly">（已自动叠加金融边界）</template>
+        </template>
+      </span>
+    </div>
+
     <!-- 输入区（胶囊，悬浮于底部） -->
     <div class="mx-auto w-full max-w-3xl shrink-0 px-6 pb-4 pt-2">
       <div
@@ -641,7 +701,7 @@ const showWelcome = computed(() => messages.value.length === 0);
         <button
           v-else
           type="button"
-          class="rounded-full bg-primary p-2 text-white transition-opacity disabled:opacity-40"
+          class="rounded-full bg-primary p-2 text-on-primary transition-opacity disabled:opacity-40"
           :disabled="!draft.trim()"
           aria-label="发送"
           @click="void send()"
@@ -649,21 +709,12 @@ const showWelcome = computed(() => messages.value.length === 0);
           <MenuIcon name="chevronRight" :size="16" />
         </button>
       </div>
-      <div class="mt-1.5 flex items-center justify-center gap-3 text-xs text-text-tertiary">
-        <span>
-          {{
-            currentProfile
-              ? `当前 Agent 配置：${currentProfile.name}`
-              : '内容仅保存在本机 SQLite'
-          }}
-        </span>
-        <label class="flex cursor-pointer items-center gap-1.5 select-none" title="开启后 agent 仅回答股票相关问题；关闭后可自由问答（含旅游规划等）">
-          仅股票问答
-          <BaseSwitch
-            :model-value="settings.agentStockOnly"
-            @update:model-value="(v: boolean) => settings.setAgentStockOnly(v)"
-          />
-        </label>
+      <div class="mt-1.5 text-center text-xs text-text-tertiary">
+        {{
+          currentProfile
+            ? `当前 Agent 配置：${currentProfile.name}`
+            : '内容仅保存在本机 SQLite'
+        }}
       </div>
     </div>
   </div>

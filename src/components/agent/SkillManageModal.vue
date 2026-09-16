@@ -2,23 +2,61 @@
 import { reactive, ref } from 'vue';
 import { useAgentStore } from '@/stores/agent';
 import { parseSkillZip, writeSkillFiles } from '@/utils/skill-zip';
+import { BUILTIN_SKILLS } from '@/constants/builtin-skills';
 import { isTauri } from '@tauri-apps/api/core';
 import BaseModal from '@/components/ui/BaseModal.vue';
 import BaseButton from '@/components/ui/BaseButton.vue';
 import BaseSwitch from '@/components/ui/BaseSwitch.vue';
+import BaseTextTip from '@/components/ui/BaseTextTip.vue';
 import BaseConfirmModal from '@/components/ui/BaseConfirmModal.vue';
 import MenuIcon from '@/components/ui/MenuIcon.vue';
+import ResourceAccessModal from './ResourceAccessModal.vue';
+import type { GrantResourceKind } from '@/types/agent.types';
 
 /**
  * Skills 管理弹窗
  *
- * - 列表：启用开关（角标计数）+ 删除；
- * - 添加：登记展示名 / 目录名 / 描述，或导入 zip 包（解压 SKILL.md 与附属文件到
- *   appData/agent-workspace/<dirName>/，并自动读取 frontmatter 登记）。
+ * - 内置 skill：随应用发货的方法论（不可删、不可编辑），但**可以关掉或指定只给某些 agent 用**；
+ * - 用户 skill：启用开关（角标计数）+ 删除；添加可登记展示名 / 目录名 / 描述，
+ *   或导入 zip 包（解压 SKILL.md 与附属文件到 appData/agent-workspace/<dirName>/，
+ *   并自动读取 frontmatter 登记）；
+ * - 每个 skill 都有「访问设置」（gear）：启用 + 全部 agent / 精确指定。
  */
 const store = useAgentStore();
 
 const open = defineModel<boolean>('open', { required: true });
+
+/* --------------------------------- 访问设置 -------------------------------- */
+
+/** 访问设置弹窗的受控资源（null = 未打开） */
+const accessTarget = ref<null | {
+  resourceId: number;
+  resourceName: string;
+  builtin: boolean;
+  enabled?: boolean;
+}>(null);
+const accessOpen = ref(false);
+
+/**
+ * 打开访问设置弹窗
+ * @param target 目标资源描述
+ * @param target.resourceId 资源 id（内置为负数）
+ * @param target.resourceName 展示名
+ * @param target.builtin 是否内置
+ * @param target.enabled 用户资源自身的启用状态（内置忽略）
+ */
+const openAccess = (target: {
+  resourceId: number;
+  resourceName: string;
+  builtin: boolean;
+  enabled?: boolean;
+}): void => {
+  accessTarget.value = target;
+  accessOpen.value = true;
+};
+
+/** kind 常量（模板里引用需要具名） */
+const ACCESS_KIND: GrantResourceKind = 'skill';
 
 /** 添加表单显隐 */
 const addOpen = ref(false);
@@ -111,8 +149,49 @@ const confirmDelete = (): void => {
 </script>
 
 <template>
-  <BaseModal v-model:open="open" title="Skills 管理" max-width-class="max-w-lg">
-    <div class="space-y-2">
+  <BaseModal v-model:open="open" title="Skills 管理" max-width-class="max-w-3xl">
+    <!-- 双列网格：内置与自装 skill 卡片自然接续；表单/按钮/提示等整宽项加 col-span-2 -->
+    <div class="grid grid-cols-2 gap-2">
+      <!-- 内置 Skill：随应用发货的方法论，不可删但可直接停用 / 限定 agent -->
+      <div
+        v-for="builtin in BUILTIN_SKILLS"
+        :key="builtin.id"
+        class="flex items-center gap-3 rounded-xl border border-primary/30 bg-primary-weak/40 px-4 py-3"
+      >
+        <div class="min-w-0 flex-1">
+          <p class="flex items-center gap-2 truncate text-sm font-medium text-text">
+            {{ builtin.name }}
+            <span
+              class="shrink-0 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-medium leading-none text-on-primary"
+            >
+              内置
+            </span>
+          </p>
+          <!-- hover 弹完整描述：列表里是单行截断，气泡不受正文滚动容器裁剪 -->
+          <BaseTextTip
+            as="p"
+            class="mt-0.5 truncate text-xs text-text-tertiary"
+            :text="builtin.description"
+          >
+            {{ builtin.description }}
+          </BaseTextTip>
+        </div>
+        <!-- 列表内直接启停：内置走 resource_scope.enabled，用户走自身表 -->
+        <BaseSwitch
+          :model-value="store.isBuiltinEnabled('skill', builtin.id)"
+          @update:model-value="(v: boolean) => void store.toggleSkill(builtin.id, v)"
+        />
+        <button
+          type="button"
+          class="rounded p-1.5 text-text-tertiary hover:bg-flat-weak hover:text-primary"
+          aria-label="访问设置"
+          title="访问设置（允许哪些 Agent 使用）"
+          @click="openAccess({ resourceId: builtin.id, resourceName: builtin.name, builtin: true })"
+        >
+          <MenuIcon name="sliders" :size="15" />
+        </button>
+      </div>
+
       <div
         v-for="skill in store.skills"
         :key="skill.id"
@@ -120,14 +199,27 @@ const confirmDelete = (): void => {
       >
         <div class="min-w-0 flex-1">
           <p class="truncate text-sm font-medium text-text">{{ skill.name }}</p>
-          <p class="mt-0.5 truncate text-xs text-text-tertiary">
+          <BaseTextTip
+            as="p"
+            class="mt-0.5 truncate text-xs text-text-tertiary"
+            :text="skill.description || skill.dirName"
+          >
             {{ skill.description || skill.dirName }}
-          </p>
+          </BaseTextTip>
         </div>
         <BaseSwitch
           :model-value="skill.enabled"
           @update:model-value="(v: boolean) => void store.toggleSkill(skill.id, v)"
         />
+        <button
+          type="button"
+          class="rounded p-1.5 text-text-tertiary hover:bg-flat-weak hover:text-primary"
+          aria-label="访问设置"
+          title="访问设置（允许哪些 Agent 使用）"
+          @click="openAccess({ resourceId: skill.id, resourceName: skill.name, builtin: false, enabled: skill.enabled })"
+        >
+          <MenuIcon name="sliders" :size="15" />
+        </button>
         <button
           type="button"
           class="rounded p-1.5 text-text-tertiary hover:bg-flat-weak hover:text-up"
@@ -138,12 +230,12 @@ const confirmDelete = (): void => {
         </button>
       </div>
 
-      <p v-if="store.skills.length === 0" class="py-6 text-center text-sm text-text-tertiary">
-        还没有 Skill，点击下方按钮登记
+      <p v-if="store.skills.length === 0" class="col-span-2 py-6 text-center text-sm text-text-tertiary">
+        还没有自装 Skill，点击下方按钮登记
       </p>
 
       <!-- 添加表单 -->
-      <div v-if="addOpen" class="space-y-2.5 rounded-xl border border-flat-weak p-3">
+      <div v-if="addOpen" class="col-span-2 space-y-2.5 rounded-xl border border-flat-weak p-3">
         <input
           v-model="form.name"
           type="text"
@@ -172,7 +264,7 @@ const confirmDelete = (): void => {
       <button
         v-else
         type="button"
-        class="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-flat-weak py-3 text-sm text-text-tertiary transition-colors hover:border-primary hover:text-primary"
+        class="col-span-2 flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-flat-weak py-3 text-sm text-text-tertiary transition-colors hover:border-primary hover:text-primary"
         @click="openAdd"
       >
         <MenuIcon name="plus" :size="14" />
@@ -180,7 +272,7 @@ const confirmDelete = (): void => {
       </button>
 
       <!-- zip 导入：与手动登记并列为两种添加方式 -->
-      <div v-if="!addOpen" class="flex items-center gap-2">
+      <div v-if="!addOpen" class="col-span-2 flex items-center gap-2">
         <input
           ref="fileInput"
           type="file"
@@ -198,13 +290,23 @@ const confirmDelete = (): void => {
           {{ importing ? '导入中…' : '导入 zip 包' }}
         </button>
       </div>
-      <p v-if="importError" class="text-xs text-up">{{ importError }}</p>
+      <p v-if="importError" class="col-span-2 text-xs text-up">{{ importError }}</p>
 
-      <p class="text-xs text-text-tertiary">
-        zip 根目录（或唯一顶层目录下）需包含 SKILL.md，frontmatter 的 name/description 会自动登记；附属文件一并解压到 appData/agent-workspace
+      <p class="col-span-2 text-xs text-text-tertiary">
+        zip 根目录（或唯一顶层目录下）需包含 SKILL.md，frontmatter 的 name/description 会自动登记；附属文件一并解压到 appData/agent-workspace。内置 Skill 可直接开关，也可用右侧设置限定只给部分 Agent 使用
       </p>
     </div>
   </BaseModal>
+
+  <ResourceAccessModal
+    v-if="accessTarget"
+    v-model:open="accessOpen"
+    :kind="ACCESS_KIND"
+    :resource-id="accessTarget.resourceId"
+    :resource-name="accessTarget.resourceName"
+    :builtin="accessTarget.builtin"
+    :enabled="accessTarget.enabled"
+  />
 
   <BaseConfirmModal
     v-model:open="deleteModalOpen"

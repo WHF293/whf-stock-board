@@ -399,7 +399,7 @@ const onProbeProxy = async (): Promise<void> => {
             class="pressable rounded-lg px-2.5 py-1 text-xs font-medium active:scale-90"
             :class="
               settingsStore.refreshIntervalMs === option.value
-                ? 'bg-primary text-white'
+                ? 'bg-primary text-on-primary'
                 : 'bg-flat-weak text-text-secondary hover:text-text'
             "
             @click="settingsStore.setRefreshIntervalMs(option.value)"
