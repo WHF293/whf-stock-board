@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue';
+import { computed, reactive, ref } from 'vue';
 import { useAgentStore } from '@/stores/agent';
 import type { McpTransport } from '@/types/agent.types';
-import { BUILTIN_MCP_SERVERS, resetMcpRuntime } from '@/agent/mcp/registry';
+import { listBuiltinMcpServers, resetMcpRuntime } from '@/agent/mcp/registry';
+import { pluginKernel } from '@/plugin';
 import { parseMcpJsonText } from '@/utils/mcp-json';
 import BaseModal from '@/components/ui/BaseModal.vue';
 import BaseButton from '@/components/ui/BaseButton.vue';
@@ -263,6 +264,17 @@ const confirmDelete = (): void => {
   }
   deleteModalOpen.value = false;
 };
+
+/**
+ * 内置 MCP 服务器（宿主自带 + 插件贡献）
+ *
+ * 插件经 `ctx.agent.addServer()` 注册的服务器同样常驻不可删：
+ * 它的生命周期由插件启停控制，而不是在管理弹窗里增删。
+ */
+const builtinServers = computed(() => {
+  void pluginKernel.revision.value;
+  return listBuiltinMcpServers();
+});
 </script>
 
 <template>
@@ -270,7 +282,7 @@ const confirmDelete = (): void => {
     <div class="space-y-2">
       <!-- 内置 MCP：常驻不可删（应用接口 / stock-sdk） -->
       <div
-        v-for="builtin in BUILTIN_MCP_SERVERS"
+        v-for="builtin in builtinServers"
         :key="builtin.key"
         class="flex items-center gap-3 rounded-xl border border-primary/30 bg-primary-weak/40 px-4 py-3"
       >
