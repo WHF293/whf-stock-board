@@ -1,0 +1,2 @@
+# post-commit 钩子必须保持 LF，否则 Windows 检出为 CRLF 会导致钩子无法执行
+hooks/post-commit text eol=lf
