@@ -8,6 +8,7 @@ import App from './App.vue';
 import { router } from './router';
 import { disableDevtools } from './utils/disable-devtools';
 import { initWeblog } from './weblog';
+import { installPlugins } from './plugin/setup';
 import { useSettingsStore } from './stores/settings';
 import './assets/styles/main.css';
 
@@ -31,6 +32,10 @@ initWeblog({
   router,
   enabled: useSettingsStore(pinia).weblogEnabled,
 });
+
+// 插件体系：必须在 app.use(router) 之前装配 —— 插件贡献的路由要在首个导航就绪，
+// 否则直接进入插件页面会被 404 兜底重定向回市场总览（详见 plugin/setup.ts）
+installPlugins(pinia);
 
 app.use(router);
 app.mount('#app');
