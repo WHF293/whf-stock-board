@@ -43,6 +43,16 @@ const openAgentAnalysis = (): void => {
   });
 };
 
+/**
+ * 打开软件白皮书（站内文档页）
+ *
+ * 已在该页时不重复导航，避免 vue-router 抛重复导航告警
+ */
+const openWhitepaper = (): void => {
+  if (route.path === ROUTE_PATH.WHITEPAPER) return;
+  void router.push(ROUTE_PATH.WHITEPAPER);
+};
+
 // 暗色 class / data-theme / data-trend 的落 <html> 已上提到 App.vue 的
 // useDocumentThemeSync（独立 WebviewWindow 不经过本布局，须全局生效）；
 // 这里 useTheme 仅供顶栏明暗切换按钮使用
@@ -327,6 +337,17 @@ void marketStatusStore.refresh();
           >
             <MenuIcon name="agent" :size="16" />
             <BaseTooltip text="Agent 分析" placement="bottom" />
+          </button>
+          <!-- 软件白皮书：站内文档页，hover 提示用途 -->
+          <button
+            type="button"
+            class="group relative pressable rounded-lg p-2 text-text-secondary hover:bg-flat-weak active:scale-90"
+            aria-label="软件白皮书"
+            data-track="NAV_WHITEPAPER_OPEN"
+            @click="openWhitepaper"
+          >
+            <MenuIcon name="whitepaper" :size="16" />
+            <BaseTooltip text="软件白皮书" placement="bottom" />
           </button>
         </div>
       </header>

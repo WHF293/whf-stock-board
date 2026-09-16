@@ -15,6 +15,7 @@ import AgentAnalysisView from '../views/AgentAnalysisView.vue';
 import MarketRankView from '../views/MarketRankView.vue';
 import StockDetailView from '../views/StockDetailView.vue';
 import SystemLogView from '../views/SystemLogView.vue';
+import WhitepaperView from '../views/WhitepaperView.vue';
 
 /** 路由切换顶部进度条：钩子在路由表定义后立即挂载 */
 NProgress.configure({ showSpinner: false, speed: 300, minimum: 0.2 });
@@ -97,6 +98,12 @@ const routes = [
         path: ROUTE_PATH.SYSTEM_LOG,
         component: SystemLogView,
         meta: { title: '系统日志' },
+      },
+      // 软件白皮书：由顶栏「软件白皮书」入口进入，不入左侧导航
+      {
+        path: ROUTE_PATH.WHITEPAPER,
+        component: WhitepaperView,
+        meta: { title: '软件白皮书' },
       },
       // 股票详情整页：全站双击个股进入；不入左侧导航
       {

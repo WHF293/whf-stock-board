@@ -11,11 +11,8 @@
 import { isTauri } from '@tauri-apps/api/core';
 import Database from '@tauri-apps/plugin-sql';
 import { z } from 'zod';
-import {
-  deleteSavedNews,
-  listSavedNews,
-  saveNews,
-} from '../../api/news-db.api';
+import { deleteSavedNews, listSavedNews, saveNews } from '../../api/news-db.api';
+import { BUILTIN_MCP_IDS } from './constants';
 import type { BuiltinMcpServer, McpCallToolResult, McpToolEntry } from './types';
 
 /** 本地库名 → 连接串 */
@@ -92,6 +89,7 @@ const entry = (
 
 /** 内置「应用接口」MCP 服务器 */
 export const APP_MCP_SERVER: BuiltinMcpServer = {
+  id: BUILTIN_MCP_IDS.appApi,
   key: 'app-api',
   name: '应用接口（内置）',
   description:

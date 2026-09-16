@@ -67,20 +67,51 @@ export function buildChatModel(model: ModelConfig): ChatOpenAI {
 
 /**
  * subagent 定义 → deepagents SubAgent 规格
- * @param defs 用户定义的 subagent 列表（有序）
- * @param fallbackModel 主模型配置（子 agent 未指定独立模型时继承）
+ *
+ * 两处按 agent 级授权收口：
+ * - `tools`：用 `subagentTools` 传入的子集装配，未指定子集的子 agent 回落主 agent 全量；
+ * - `skills`：⚠️ deepagents 语义下 custom subagent **不继承**主 agent 的 skills，
+ *   必须由 `def.skillNames` 经 `skillPathByName` 显式映射为路径才会装配。
+ *
+ * model 一律不传：由 deepagents 回落到主 agent 模型（子 agent 独立模型待 ModelRegistry 接入）。
+ *
+ * @param defs 编排的 subagent 列表（有序）
+ * @param fallbackTools 主 agent 全量工具（子 agent 未指定子集时继承）
+ * @param subagentTools subagent id → 该子 agent 可用工具子集
+ * @param skillPathByName skill 名 → 虚拟目录路径（如 `/skills/technical-analysis/`）
  * @returns deepagents subagent 数组
  */
-function toSubAgents(defs: SubagentDef[], fallbackModel: ModelConfig): SubAgent[] {
-  return defs.map((def) => ({
-    name: def.name,
-    description: def.description,
-    systemPrompt: def.prompt || undefined,
-    model:
-      def.modelId !== null && def.modelId !== fallbackModel.id
-        ? undefined // 独立模型在 M4 接 ModelRegistry 后生效；先统一继承主模型
-        : undefined,
-  }));
+function toSubAgents(
+  defs: SubagentDef[],
+  fallbackTools: StructuredToolInterface[],
+  subagentTools: Map<number, StructuredToolInterface[]> | undefined,
+  skillPathByName: Map<string, string>,
+): SubAgent[] {
+  return defs.map((def) => {
+    const scopedTools = subagentTools?.get(def.id) ?? fallbackTools;
+    const skillPaths = def.skillNames
+      .map((name) => skillPathByName.get(name))
+      .filter((path): path is string => typeof path === 'string');
+    return {
+      name: def.name,
+      description: def.description,
+      systemPrompt: def.prompt || undefined,
+      tools: scopedTools as SubAgent['tools'],
+      ...(skillPaths.length > 0 ? { skills: skillPaths } : {}),
+    };
+  });
+}
+
+/** 虚拟文件（注入 LangGraph state.files，供 SkillsMiddleware 从 StateBackend 读取） */
+export interface VirtualFileData {
+  /** 文件内容（纯文本） */
+  content: string;
+  /** MIME 类型（文本固定 text/plain） */
+  mimeType: string;
+  /** 创建时间（ISO 字符串） */
+  created_at: string;
+  /** 修改时间（ISO 字符串） */
+  modified_at: string;
 }
 
 /** 运行入参 */
@@ -95,22 +126,43 @@ export interface StartAgentRunParams {
   subagents: SubagentDef[];
   /** 工具集（内置 MCP 装配；空数组 / 缺省 = 无工具） */
   tools?: StructuredToolInterface[];
+  /**
+   * 主 agent 可见的 skill 目录路径（如 `['/skills/a/', '/skills/b/']`）
+   *
+   * 路径基于虚拟根 `/skills/`，由 `skillFiles` 提供实际内容。
+   */
+  skills?: string[];
+  /** skill 名 → 虚拟目录路径（子 agent 按 `skillNames` 映射用） */
+  skillPathByName?: Map<string, string>;
+  /** 虚拟 skill 文件（key 为绝对路径，如 `/skills/a/SKILL.md`） */
+  skillFiles?: Record<string, VirtualFileData>;
+  /** 子 agent 级工具子集（key = subagent id；缺省的子 agent 继承全量 tools） */
+  subagentTools?: Map<number, StructuredToolInterface[]>;
 }
 
 /**
  * 启动一次 agent 运行（流式）
  *
- * @param params 模型 / 提示词 / 历史 / 输入 / subagents
+ * @param params 模型 / 提示词 / 历史 / 输入 / subagents / 工具与 skill 授权
  * @param handlers 事件回调
  * @returns 运行句柄（AbortController 封装）
  */
 export function startAgentRun(params: StartAgentRunParams, handlers: AgentRunHandlers): AgentRunHandle {
   const controller = new AbortController();
+  const allTools = params.tools ?? [];
+  const skillFiles = params.skillFiles ?? {};
   const agent = createDeepAgent({
     model: buildChatModel(params.model),
     systemPrompt: params.systemPrompt,
-    subagents: toSubAgents(params.subagents, params.model),
-    tools: params.tools ?? [],
+    subagents: toSubAgents(
+      params.subagents,
+      allTools,
+      params.subagentTools,
+      params.skillPathByName ?? new Map<string, string>(),
+    ),
+    tools: allTools,
+    // 空数组不传：SkillsMiddleware 只在 skills 非空时装配，传空数组没有意义
+    ...(params.skills && params.skills.length > 0 ? { skills: params.skills } : {}),
   });
 
   const messages: BaseMessage[] = [
@@ -126,7 +178,10 @@ export function startAgentRun(params: StartAgentRunParams, handlers: AgentRunHan
     const pendingCalls = new Map<number, { id: string; name: string; argsText: string }>();
     try {
       const stream = await agent.stream(
-        { messages },
+        {
+          messages,
+          ...(Object.keys(skillFiles).length > 0 ? { files: skillFiles } : {}),
+        },
         { streamMode: 'messages', signal: controller.signal },
       );
       for await (const item of stream) {

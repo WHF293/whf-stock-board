@@ -45,4 +45,9 @@ export interface TurnoverTableRow extends TurnoverDayItem {
   shenzhenAmountYi: string;
   /** 总成交额较上一交易日变化率（%）；首日 / 无前值为 null */
   changePct: number | null;
+  /**
+   * 「较上日」展示文案（放量 / 缩量 / 持平 + 变化额 + 变化率）
+   * 形如 `放量 1234.56亿（14.10%）` / `缩量 567.89亿（-1.10%）`；首日 / 无前值为 null
+   */
+  changeText: string | null;
 }

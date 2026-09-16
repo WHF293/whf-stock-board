@@ -15,6 +15,7 @@ export const ROUTE_PATH = {
   STOCK_ACCOUNT: "/stock-account",
   AGENT_WINDOW: "/agent-window", // Agent 分析独立 WebviewWindow（standalone 布局，不入菜单）
   SYSTEM_LOG: "/system-log", // 系统日志页（设置页入口进入，不入菜单）
+  WHITEPAPER: "/whitepaper", // 软件白皮书（顶栏入口进入，不入菜单）
   SETTINGS: "/settings",
   STOCK_DETAIL: "/stock-detail", // 股票详情整页（+/:symbol，不入菜单）
 } as const;

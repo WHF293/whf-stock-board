@@ -7,6 +7,7 @@ import { isBuiltinSubagent } from '@/constants/builtin-subagents';
 import BaseModal from '@/components/ui/BaseModal.vue';
 import BaseButton from '@/components/ui/BaseButton.vue';
 import BaseSwitch from '@/components/ui/BaseSwitch.vue';
+import BaseTextTip from '@/components/ui/BaseTextTip.vue';
 import BaseConfirmModal from '@/components/ui/BaseConfirmModal.vue';
 import SubagentEditModal from './SubagentEditModal.vue';
 import MenuIcon from '@/components/ui/MenuIcon.vue';
@@ -155,6 +156,15 @@ const orderedSubagents = computed(() =>
 /** 弹窗标题 */
 const modalTitle = computed(() => (view.value === 'list' ? 'Agent 配置' : editingId.value ? '编辑 Agent 配置' : '新建 Agent 配置'));
 
+/**
+ * Agent 配置副标题（描述 · subagent 数量）
+ * 列表里单行截断，hover 气泡显示同一份文本（见 BaseTextTip）
+ * @param profile Agent 配置
+ * @returns 形如 `稳健型配置 · subagent 3` 的副标题
+ */
+const profileSubtitle = (profile: AgentProfile): string =>
+  `${profile.description || '无描述'} · subagent ${profile.subagentIds.length}`;
+
 // 每次打开回到列表态
 watch(open, (isOpen) => {
   if (isOpen) view.value = 'list';
@@ -162,11 +172,11 @@ watch(open, (isOpen) => {
 </script>
 
 <template>
-  <BaseModal v-model:open="open" :title="modalTitle" max-width-class="max-w-2xl">
+  <BaseModal v-model:open="open" :title="modalTitle" max-width-class="max-w-3xl">
     <!-- 列表态 -->
     <div v-if="view === 'list'" class="space-y-5">
-      <!-- Agent 配置列表 -->
-      <div class="space-y-2">
+      <!-- Agent 配置列表（双列） -->
+      <div class="grid grid-cols-2 gap-2">
         <div
           v-for="profile in store.profiles"
           :key="profile.id"
@@ -182,9 +192,14 @@ watch(open, (isOpen) => {
                 默认
               </span>
             </div>
-            <p class="mt-0.5 truncate text-xs text-text-tertiary">
-              {{ profile.description || '无描述' }} · subagent {{ profile.subagentIds.length }}
-            </p>
+            <!-- hover 弹完整描述：列表里单行截断，气泡不受正文滚动容器裁剪 -->
+            <BaseTextTip
+              as="p"
+              class="mt-0.5 truncate text-xs text-text-tertiary"
+              :text="profileSubtitle(profile)"
+            >
+              {{ profileSubtitle(profile) }}
+            </BaseTextTip>
           </div>
           <button
             type="button"
@@ -203,12 +218,12 @@ watch(open, (isOpen) => {
             <MenuIcon name="trash" :size="15" />
           </button>
         </div>
-        <p v-if="store.profiles.length === 0" class="py-4 text-center text-sm text-text-tertiary">
+        <p v-if="store.profiles.length === 0" class="col-span-2 py-4 text-center text-sm text-text-tertiary">
           还没有 Agent 配置，会话将使用全局默认提示词
         </p>
         <button
           type="button"
-          class="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-flat-weak py-3 text-sm text-text-tertiary transition-colors hover:border-primary hover:text-primary"
+          class="col-span-2 flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-flat-weak py-3 text-sm text-text-tertiary transition-colors hover:border-primary hover:text-primary"
           @click="openCreateProfile"
         >
           <MenuIcon name="plus" :size="14" />
@@ -216,9 +231,9 @@ watch(open, (isOpen) => {
         </button>
       </div>
 
-      <!-- Subagent 库 -->
-      <div class="space-y-2 border-t border-flat-weak pt-4">
-        <p class="text-sm font-medium text-text">Subagent 库</p>
+      <!-- Subagent 库（双列） -->
+      <div class="grid grid-cols-2 gap-2 border-t border-flat-weak pt-4">
+        <p class="col-span-2 text-sm font-medium text-text">Subagent 库</p>
         <div
           v-for="def in store.subagents"
           :key="def.id"
@@ -229,12 +244,18 @@ watch(open, (isOpen) => {
               {{ def.name }}
               <span
                 v-if="isBuiltinSubagent(def.id)"
-                class="shrink-0 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-medium leading-none text-white"
+                class="shrink-0 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-medium leading-none text-on-primary"
               >
                 内置
               </span>
             </p>
-            <p class="mt-0.5 truncate text-xs text-text-tertiary">{{ def.description }}</p>
+            <BaseTextTip
+              as="p"
+              class="mt-0.5 truncate text-xs text-text-tertiary"
+              :text="def.description"
+            >
+              {{ def.description }}
+            </BaseTextTip>
           </div>
           <template v-if="!isBuiltinSubagent(def.id)">
             <button
@@ -254,11 +275,15 @@ watch(open, (isOpen) => {
               <MenuIcon name="trash" :size="14" />
             </button>
           </template>
-          <span v-else class="shrink-0 text-xs text-text-tertiary">常驻</span>
+          <!-- 列表内直接启停：内置写 resource_scope，用户写 subagent 表（store 内按 id 分流） -->
+          <BaseSwitch
+            :model-value="def.enabled"
+            @update:model-value="(v: boolean) => void store.toggleSubagent(def.id, v)"
+          />
         </div>
         <button
           type="button"
-          class="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-flat-weak py-2.5 text-sm text-text-tertiary transition-colors hover:border-primary hover:text-primary"
+          class="col-span-2 flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-flat-weak py-2.5 text-sm text-text-tertiary transition-colors hover:border-primary hover:text-primary"
           @click="openCreateSubagent"
         >
           <MenuIcon name="plus" :size="14" />
