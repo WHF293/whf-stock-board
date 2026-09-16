@@ -311,6 +311,40 @@ CREATE TABLE IF NOT EXISTS news_saved (
 CREATE INDEX IF NOT EXISTS idx_news_saved_saved_at ON news_saved(saved_at);
 ";
 
+/// V6：自选股入库 + 插件存储镜像
+///
+/// - watchlist_group / watchlist_stock：自选股分组与个股（watchlist store 的 Tauri 端落地，
+///   全量镜像模式：store 每次变更后整包重写，浏览器端无 SQLite 自动降级 localStorage）；
+/// - plugin_storage：插件存储（`ctx.storage`）的 Tauri 端镜像 —— 插件永远不直接访问 SQL，
+///   只用宿主的 storage API，localStorage 即时写 + 本表异步镜像，启动时以本表覆盖水合
+const STOCK_BOARD_DB_V6: &str = "
+CREATE TABLE IF NOT EXISTS watchlist_group (
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS watchlist_stock (
+  group_id   TEXT NOT NULL,
+  symbol     TEXT NOT NULL,
+  name       TEXT NOT NULL,
+  added_at   INTEGER NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (group_id, symbol)
+);
+CREATE INDEX IF NOT EXISTS idx_watchlist_stock_group
+  ON watchlist_stock(group_id, sort_order);
+
+CREATE TABLE IF NOT EXISTS plugin_storage (
+  plugin_id  TEXT NOT NULL,
+  key        TEXT NOT NULL,
+  value      TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (plugin_id, key)
+);
+";
+
 /// weblog.db v1：系统日志（报错日志 + 行为日志）
 ///
 /// 独立成库的理由：日志是高频写入 + 按保留期整段删除的「滚动数据」，
@@ -415,6 +449,12 @@ fn stock_board_db_migrations() -> Vec<Migration> {
       version: 5,
       description: "create_news_saved",
       sql: STOCK_BOARD_DB_V5,
+      kind: MigrationKind::Up,
+    },
+    Migration {
+      version: 6,
+      description: "create_watchlist_and_plugin_storage",
+      sql: STOCK_BOARD_DB_V6,
       kind: MigrationKind::Up,
     },
   ]
