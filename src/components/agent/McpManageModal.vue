@@ -1,28 +1,63 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue';
+import { computed, reactive, ref } from 'vue';
 import { useAgentStore } from '@/stores/agent';
-import type { McpTransport } from '@/types/agent.types';
-import { BUILTIN_MCP_SERVERS, resetMcpRuntime } from '@/agent/mcp/registry';
+import type { BuiltinMcpServer } from '@/agent/mcp/types';
+import type { GrantResourceKind, McpTransport } from '@/types/agent.types';
+import { listBuiltinMcpServers, resetMcpRuntime } from '@/agent/mcp/registry';
+import { pluginKernel } from '@/plugin';
 import { parseMcpJsonText } from '@/utils/mcp-json';
 import BaseModal from '@/components/ui/BaseModal.vue';
 import BaseButton from '@/components/ui/BaseButton.vue';
 import BaseSwitch from '@/components/ui/BaseSwitch.vue';
+import BaseTextTip from '@/components/ui/BaseTextTip.vue';
 import BaseConfirmModal from '@/components/ui/BaseConfirmModal.vue';
 import MenuIcon from '@/components/ui/MenuIcon.vue';
+import ResourceAccessModal from './ResourceAccessModal.vue';
 
 /**
  * MCP 服务器管理弹窗（一期仅 streamable HTTP / SSE 远端传输）
  *
- * - 列表：启用开关 + 删除；
+ * - 列表：启用开关 + 访问设置（gear）+ 删除；
  * - 添加：两种模式 —— 手动填写（名称 / 传输方式 / URL / 请求头），或粘贴 JSON
  *   （支持 { "mcpServers": {...} } 标准格式与单服务器对象，批量导入）；
  * - 远端已接线：启用的服务器在下次 Agent 运行时连接并合入工具（连接失败跳过该服务器、
  *   不影响其余工具），故增删改后调用 `resetMcpRuntime()` 让运行时不缓存旧连接；
- * - 内置 MCP（应用接口 / stock-sdk）：进程内实现，不可删除、不可编辑，随应用常驻
+ * - 内置 MCP（应用接口 / stock-sdk / market-data）：进程内实现，不可删除、不可编辑，
+ *   但**可以关掉或指定只给某些 agent 用**（访问设置弹窗 → resource_scope / resource_grant）。
  */
 const store = useAgentStore();
 
 const open = defineModel<boolean>('open', { required: true });
+
+/* --------------------------------- 访问设置 -------------------------------- */
+
+/** 访问设置弹窗的受控资源（null = 未打开） */
+const accessTarget = ref<null | {
+  kind: GrantResourceKind;
+  resourceId: number;
+  resourceName: string;
+  builtin: boolean;
+  enabled?: boolean;
+}>(null);
+const accessOpen = ref(false);
+
+/**
+ * 打开访问设置弹窗
+ * @param target 目标资源描述
+ * @param target.resourceId 资源 id（内置为负数）
+ * @param target.resourceName 展示名
+ * @param target.builtin 是否内置
+ * @param target.enabled 用户资源自身的启用状态（内置忽略）
+ */
+const openAccess = (target: {
+  resourceId: number;
+  resourceName: string;
+  builtin: boolean;
+  enabled?: boolean;
+}): void => {
+  accessTarget.value = { kind: 'mcp', ...target };
+  accessOpen.value = true;
+};
 
 /** 添加表单显隐 */
 const addOpen = ref(false);
@@ -115,7 +150,12 @@ const submitAdd = (): void => {
 };
 
 /**
- * 启停远端 MCP（变更后失效运行时缓存，下次运行重连）
+ * 列表内启停 MCP（内置与远端共用）
+ *
+ * store.toggleMcp 内部按 id 分流：内置（负数 id）写 `resource_scope.enabled`，
+ * 远端写自身表。两者都要失效运行时缓存 —— 远端要断开旧连接，内置要让下一次
+ * 装配重新读授权（否则本次进程内仍按旧状态挂工具）。
+ *
  * @param id MCP id
  * @param enabled 是否启用
  * @returns 无
@@ -129,6 +169,24 @@ const TRANSPORT_LABEL: Record<McpTransport, string> = {
   'streamable-http': 'Streamable HTTP',
   sse: 'SSE',
 };
+
+/**
+ * 内置 MCP 的工具名串（列表第三行 + hover 气泡共用同一份文本）
+ * @param server 内置 MCP 定义
+ * @returns 形如 `a / b / c` 的工具名串
+ */
+const builtinToolNames = (server: BuiltinMcpServer): string =>
+  server.tools.map((t) => t.definition.name).join(' / ');
+
+/**
+ * 远端 MCP 副标题（传输方式 · URL）
+ * @param mcp 远端 MCP 定义
+ * @param mcp.transport 传输方式
+ * @param mcp.url 服务地址
+ * @returns 形如 `SSE · https://…` 的副标题
+ */
+const mcpSubtitle = (mcp: { transport: McpTransport; url: string }): string =>
+  `${TRANSPORT_LABEL[mcp.transport]} · ${mcp.url}`;
 
 /** 删除确认 */
 const deleteTarget = ref<{ id: number; name: string } | null>(null);
@@ -263,14 +321,26 @@ const confirmDelete = (): void => {
   }
   deleteModalOpen.value = false;
 };
+
+/**
+ * 内置 MCP 服务器（宿主自带 + 插件贡献）
+ *
+ * 插件经 `ctx.agent.addServer()` 注册的服务器同样常驻不可删：
+ * 它的生命周期由插件启停控制，而不是在管理弹窗里增删。
+ */
+const builtinServers = computed(() => {
+  void pluginKernel.revision.value;
+  return listBuiltinMcpServers();
+});
 </script>
 
 <template>
-  <BaseModal v-model:open="open" title="MCP 服务器管理" max-width-class="max-w-lg">
-    <div class="space-y-2">
-      <!-- 内置 MCP：常驻不可删（应用接口 / stock-sdk） -->
+  <BaseModal v-model:open="open" title="MCP 服务器管理" max-width-class="max-w-3xl">
+    <!-- 双列网格：内置与远端卡片自然接续排列；表单/按钮/提示等整宽项加 col-span-2 -->
+    <div class="grid grid-cols-2 gap-2">
+      <!-- 内置 MCP：进程内实现，不可删除、不可编辑，但可直接停用或限定给部分 agent -->
       <div
-        v-for="builtin in BUILTIN_MCP_SERVERS"
+        v-for="builtin in builtinServers"
         :key="builtin.key"
         class="flex items-center gap-3 rounded-xl border border-primary/30 bg-primary-weak/40 px-4 py-3"
       >
@@ -278,17 +348,41 @@ const confirmDelete = (): void => {
           <p class="flex items-center gap-2 truncate text-sm font-medium text-text">
             {{ builtin.name }}
             <span
-              class="shrink-0 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-medium leading-none text-white"
+              class="shrink-0 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-medium leading-none text-on-primary"
             >
               内置
             </span>
           </p>
-          <p class="mt-0.5 truncate text-xs text-text-tertiary">{{ builtin.description }}</p>
-          <p class="mt-0.5 truncate text-xs text-text-secondary">
-            {{ builtin.tools.map((t) => t.definition.name).join(' / ') }}
-          </p>
+          <!-- hover 弹完整文本：列表里单行截断（描述 / 工具清单），气泡不受正文滚动容器裁剪 -->
+          <BaseTextTip
+            as="p"
+            class="mt-0.5 truncate text-xs text-text-tertiary"
+            :text="builtin.description"
+          >
+            {{ builtin.description }}
+          </BaseTextTip>
+          <BaseTextTip
+            as="p"
+            class="mt-0.5 truncate text-xs text-text-secondary"
+            :text="builtinToolNames(builtin)"
+          >
+            {{ builtinToolNames(builtin) }}
+          </BaseTextTip>
         </div>
-        <span class="shrink-0 text-xs text-text-tertiary">常驻</span>
+        <!-- 列表内直接启停：内置走 resource_scope.enabled，远端走自身表并重连 -->
+        <BaseSwitch
+          :model-value="store.isBuiltinEnabled('mcp', builtin.id)"
+          @update:model-value="(v: boolean) => toggleRemote(builtin.id, v)"
+        />
+        <button
+          type="button"
+          class="rounded p-1.5 text-text-tertiary hover:bg-flat-weak hover:text-primary"
+          aria-label="访问设置"
+          title="访问设置（允许哪些 Agent 使用）"
+          @click="openAccess({ resourceId: builtin.id, resourceName: builtin.name, builtin: true })"
+        >
+          <MenuIcon name="sliders" :size="15" />
+        </button>
       </div>
 
       <div
@@ -298,14 +392,27 @@ const confirmDelete = (): void => {
       >
         <div class="min-w-0 flex-1">
           <p class="truncate text-sm font-medium text-text">{{ mcp.name }}</p>
-          <p class="mt-0.5 truncate text-xs text-text-tertiary">
-            {{ TRANSPORT_LABEL[mcp.transport] }} · {{ mcp.url }}
-          </p>
+          <BaseTextTip
+            as="p"
+            class="mt-0.5 truncate text-xs text-text-tertiary"
+            :text="mcpSubtitle(mcp)"
+          >
+            {{ mcpSubtitle(mcp) }}
+          </BaseTextTip>
         </div>
         <BaseSwitch
           :model-value="mcp.enabled"
           @update:model-value="(v: boolean) => toggleRemote(mcp.id, v)"
         />
+        <button
+          type="button"
+          class="rounded p-1.5 text-text-tertiary hover:bg-flat-weak hover:text-primary"
+          aria-label="访问设置"
+          title="访问设置（允许哪些 Agent 使用）"
+          @click="openAccess({ resourceId: mcp.id, resourceName: mcp.name, builtin: false, enabled: mcp.enabled })"
+        >
+          <MenuIcon name="sliders" :size="15" />
+        </button>
         <button
           type="button"
           class="rounded p-1.5 text-text-tertiary hover:bg-flat-weak hover:text-primary"
@@ -325,7 +432,7 @@ const confirmDelete = (): void => {
       </div>
 
       <!-- 编辑表单（远端 MCP）：输入框 / JSON 两种形式 -->
-      <div v-if="editTarget" class="space-y-2.5 rounded-xl border border-primary/40 p-3">
+      <div v-if="editTarget" class="col-span-2 space-y-2.5 rounded-xl border border-primary/40 p-3">
         <p class="text-xs font-medium text-primary">编辑「{{ editTarget.name }}」</p>
         <div class="flex gap-1.5">
           <button
@@ -404,13 +511,13 @@ const confirmDelete = (): void => {
 
       <p
         v-if="store.mcps.length === 0"
-        class="py-4 text-center text-sm text-text-tertiary"
+        class="col-span-2 py-4 text-center text-sm text-text-tertiary"
       >
         暂无远端 MCP 服务器，点击下方按钮添加
       </p>
 
       <!-- 添加表单 -->
-      <div v-if="addOpen && !editTarget" class="space-y-2.5 rounded-xl border border-flat-weak p-3">
+      <div v-if="addOpen && !editTarget" class="col-span-2 space-y-2.5 rounded-xl border border-flat-weak p-3">
         <!-- 模式切换：手动填写 / 粘贴 JSON -->
         <div class="flex gap-1.5">
           <button
@@ -493,18 +600,29 @@ const confirmDelete = (): void => {
       <button
         v-else-if="!editTarget"
         type="button"
-        class="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-flat-weak py-3 text-sm text-text-tertiary transition-colors hover:border-primary hover:text-primary"
+        class="col-span-2 flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-flat-weak py-3 text-sm text-text-tertiary transition-colors hover:border-primary hover:text-primary"
         @click="openAdd"
       >
         <MenuIcon name="plus" :size="14" />
         添加 MCP 服务器
       </button>
 
-      <p class="text-xs text-text-tertiary">
-        内置 MCP（应用接口 / stock-sdk）常驻可用、不可删除；远端仅支持 Streamable HTTP / SSE，启用后其工具会合入 Agent（连接失败自动跳过该服务器）。声明了 ui:// 的工具，结果会在聊天区沙箱卡片内渲染
+      <p class="col-span-2 text-xs text-text-tertiary">
+        内置 MCP（应用接口 / stock-sdk / 市场数据）可直接开关，也可用右侧设置限定只给部分 Agent 使用；远端仅支持 Streamable HTTP / SSE，启用后其工具会合入 Agent（连接失败自动跳过该服务器）。声明了 ui:// 的工具，结果会在聊天区沙箱卡片内渲染
       </p>
     </div>
   </BaseModal>
+
+  <ResourceAccessModal
+    v-if="accessTarget"
+    v-model:open="accessOpen"
+    :kind="accessTarget.kind"
+    :resource-id="accessTarget.resourceId"
+    :resource-name="accessTarget.resourceName"
+    :builtin="accessTarget.builtin"
+    :enabled="accessTarget.enabled"
+    @changed="resetMcpRuntime()"
+  />
 
   <BaseConfirmModal
     v-model:open="deleteModalOpen"

@@ -60,7 +60,7 @@ const emit = defineEmits<{
         class="pressable flex-1 rounded-md px-2 py-1 text-xs"
         :class="
           active === view.value
-            ? 'bg-primary font-medium text-white'
+            ? 'bg-primary font-medium text-on-primary'
             : 'text-text-secondary hover:text-text'
         "
         @click="emit('selectView', view.value)"
@@ -83,7 +83,7 @@ const emit = defineEmits<{
           class="pressable shrink-0 rounded-full px-2.5 py-1 text-xs"
           :class="
             selectedThemeId === theme.themeId
-              ? 'bg-primary text-white'
+              ? 'bg-primary text-on-primary'
               : 'bg-flat-weak text-text-secondary hover:text-text'
           "
           @click="emit('selectTheme', theme.themeId)"

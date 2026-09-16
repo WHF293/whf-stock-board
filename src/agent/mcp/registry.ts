@@ -19,7 +19,9 @@ import type { StructuredToolInterface } from '@langchain/core/tools';
 import { isTauri } from '@tauri-apps/api/core';
 import { type z } from 'zod';
 import { listMcps } from '../../composables/use-agent-db';
+import { pluginKernel } from '../../plugin';
 import { APP_MCP_SERVER } from './app-tools';
+import { MARKET_DATA_MCP_SERVER } from './market-tools';
 import { STOCK_SDK_MCP_SERVER } from './stocksdk-tools';
 import { connectRemoteMcp } from './remote';
 import { UI_RESOURCE_PREFIX } from './constants';
@@ -35,10 +37,23 @@ import type {
   McpUiResource,
 } from './types';
 
-/** 全部内置 MCP 服务器（顺序即管理弹窗展示顺序） */
+/** 宿主自带的内置 MCP 服务器（顺序即管理弹窗展示顺序） */
 export const BUILTIN_MCP_SERVERS: readonly BuiltinMcpServer[] = [
   APP_MCP_SERVER,
   STOCK_SDK_MCP_SERVER,
+  MARKET_DATA_MCP_SERVER,
+];
+
+/**
+ * 全部内置 MCP 服务器 = 宿主自带 + 插件贡献
+ *
+ * 插件经 `ctx.agent.addServer()` 注册的服务器会出现在这里：Agent 的工具集
+ * 因此也是「插件可扩展」的 —— 关掉插件，它的工具对模型立刻不可见。
+ * @returns 内置 MCP 服务器列表（宿主在前、插件在后）
+ */
+export const listBuiltinMcpServers = (): readonly BuiltinMcpServer[] => [
+  ...BUILTIN_MCP_SERVERS,
+  ...pluginKernel.contributions.agent.servers,
 ];
 
 /** 运行期 server 条目：适配器 + 已列出的工具（内置即时，远端连接后缓存） */
@@ -61,6 +76,7 @@ let runtimePromise: Promise<McpRuntime> | null = null;
  */
 const toBuiltinAdapter = (server: BuiltinMcpServer): McpServerAdapter => ({
   key: server.key,
+  resourceId: server.id,
   name: server.name,
   builtin: true,
   listTools: async () => server.tools,
@@ -197,7 +213,7 @@ const loadRemoteConfigs = async (): Promise<Awaited<ReturnType<typeof listMcps>>
 const createRuntime = async (): Promise<McpRuntime> => {
   // 非 Tauri（浏览器）：内置工具依赖 SQLite / 直连网络，沿用既有约定不装配
   // （MCP Apps 资源解析同受此门控——没有工具就不会有卡片）
-  const builtinAdapters = isTauri() ? BUILTIN_MCP_SERVERS.map(toBuiltinAdapter) : [];
+  const builtinAdapters = isTauri() ? listBuiltinMcpServers().map(toBuiltinAdapter) : [];
   const remoteConfigs = await loadRemoteConfigs();
   const remoteAdapters: McpServerAdapter[] = [];
   for (const config of remoteConfigs) {
@@ -250,6 +266,32 @@ const createRuntime = async (): Promise<McpRuntime> => {
   };
 
   /**
+   * 按 server key 分组创建工具（供子 agent 级 MCP 白名单按组授权）
+   *
+   * ⚠️ 注册名去重（registerName）带副作用：`createTools` 与 `createToolsByServer`
+   * 必须**二选一**调用，否则同一批工具会被算两次去重，产生多余的前缀名。
+   * 运行时的做法是只用分组版，再由调用方拍平成主 agent 需要的全集。
+   *
+   * @param sink 事件接收器
+   * @returns serverKey → 该服务器的工具数组
+   */
+  const createToolsByServer = (
+    sink: McpToolEventSink,
+  ): Array<{ serverKey: string; resourceId: number; tools: StructuredToolInterface[] }> => {
+    const groups: Array<{ serverKey: string; resourceId: number; tools: StructuredToolInterface[] }> = [];
+    for (const bucket of buckets) {
+      const list: StructuredToolInterface[] = [];
+      for (const entry of bucket.tools) {
+        list.push(
+          toLangChainTool(registerName(bucket.adapter.key, entry.definition.name), bucket.adapter.key, entry, sink),
+        );
+      }
+      groups.push({ serverKey: bucket.adapter.key, resourceId: bucket.adapter.resourceId, tools: list });
+    }
+    return groups;
+  };
+
+  /**
    * 按 server key 找 bucket
    * @param serverKey 服务器 key
    * @returns bucket；不存在返回 null
@@ -295,6 +337,7 @@ const createRuntime = async (): Promise<McpRuntime> => {
 
   return {
     createTools,
+    createToolsByServer,
     serverKeys: buckets.map((bucket) => bucket.adapter.key),
     readUiResource,
     callUiTool,

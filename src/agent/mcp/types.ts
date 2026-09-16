@@ -117,6 +117,13 @@ export interface McpToolEntry {
 
 /** 内置 MCP 服务器（静态声明，随应用常驻） */
 export interface BuiltinMcpServer {
+  /**
+   * 授权用资源 id
+   *
+   * ⚠️ 内置服务器不在 `mcp_server` 表里，没有自增 id；沿用与内置 subagent 相同的
+   * **负数 id 约定**，使其能与远端服务器（正数 id）共用 `resource_grant` 表授权。
+   */
+  id: number;
   /** 稳定 key（持久化 / 日志 / ui:// 前缀用，如 'app-api' / 'stock-sdk'） */
   key: string;
   /** 展示名 */
@@ -133,6 +140,12 @@ export interface BuiltinMcpServer {
 export interface McpServerAdapter {
   /** 稳定 key（内置=常量 key；远端=`remote:<id>`） */
   key: string;
+  /**
+   * 授权用资源 id（对应 resource_grant.resource_id）
+   *
+   * 内置为负数常量 id（不在 mcp_server 表），远端为 mcp_server.id。
+   */
+  resourceId: number;
   /** 展示名 */
   name: string;
   /** 是否内置（内置不可删不可编辑） */
@@ -200,6 +213,19 @@ export interface McpRuntime {
    * @returns StructuredTool 列表
    */
   createTools: (sink: McpToolEventSink) => unknown[];
+  /**
+   * 按 server key 分组装配工具（子 agent 级 MCP 白名单按组授权用）
+   *
+   * 每组带 `resourceId`（内置为负数常量 id，远端为 mcp_server.id），
+   * 供调用方直接拿去比对 `resource_grant`，无需再解析 serverKey。
+   *
+   * ⚠️ 与 `createTools` **二选一**调用：注册名去重带副作用，两者同调会产生多余前缀名。
+   * @param sink 工具事件接收器（ChatPanel 提供）
+   * @returns 每台服务器的资源 id 与其 StructuredTool 列表
+   */
+  createToolsByServer: (
+    sink: McpToolEventSink,
+  ) => Array<{ serverKey: string; resourceId: number; tools: unknown[] }>;
   /** 参与装配的 server key 列表（诊断 / 展示用） */
   serverKeys: string[];
   /**

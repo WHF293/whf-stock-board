@@ -27,6 +27,7 @@ import {
   type QuoteTableRow,
 } from './ui-payload';
 import { QUOTE_TABLE_APP, SERIES_CHART_APP } from './ui-apps';
+import { BUILTIN_MCP_IDS } from './constants';
 import type { BuiltinMcpServer, McpCallToolResult, McpToolEntry } from './types';
 
 /** 工具执行体的返回：模型文本 + UI 载荷（可选，缺省则不渲染卡片） */
@@ -128,6 +129,7 @@ const toDigest = (q: Record<string, unknown>): QuoteDigest => ({
 
 /** 内置「stock-sdk」MCP 服务器 */
 export const STOCK_SDK_MCP_SERVER: BuiltinMcpServer = {
+  id: BUILTIN_MCP_IDS.stockSdk,
   key: 'stock-sdk',
   name: 'stock-sdk（内置）',
   description: 'A 股实时行情、K 线、技术指标（MA/MACD/RSI/BOLL）、MA 金叉回测、股票搜索',

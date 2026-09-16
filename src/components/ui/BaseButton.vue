@@ -23,7 +23,7 @@ const props = withDefaults(
 
 /** 变体 -> 样式类名 */
 const VARIANT_CLASS = {
-  primary: 'bg-primary text-white hover:opacity-90',
+  primary: 'bg-primary text-on-primary hover:opacity-90',
   ghost: 'bg-flat-weak text-text hover:bg-flat-weak/70',
   danger: 'bg-up-weak text-up hover:opacity-80',
 } as const;

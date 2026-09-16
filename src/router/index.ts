@@ -2,7 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router';
 import NProgress from 'nprogress';
 import 'nprogress/nprogress.css';
 import MainLayout from '../layouts/MainLayout.vue';
-import { ROUTE_PATH, MENU_ITEMS } from '../constants/router-meta.constants';
+import { LAYOUT_ROUTE_NAME, ROUTE_PATH, MENU_ITEMS } from '../constants/router-meta.constants';
 import DashboardView from '../views/DashboardView.vue';
 import WatchlistView from '../views/WatchlistView.vue';
 import PanoramaView from '../views/PanoramaView.vue';
@@ -15,6 +15,7 @@ import AgentAnalysisView from '../views/AgentAnalysisView.vue';
 import MarketRankView from '../views/MarketRankView.vue';
 import StockDetailView from '../views/StockDetailView.vue';
 import SystemLogView from '../views/SystemLogView.vue';
+import WhitepaperView from '../views/WhitepaperView.vue';
 
 /** 路由切换顶部进度条：钩子在路由表定义后立即挂载 */
 NProgress.configure({ showSpinner: false, speed: 300, minimum: 0.2 });
@@ -35,6 +36,8 @@ const ROUTE_TITLE_BY_PATH: Record<string, string> = {
 const routes = [
   {
     path: '/',
+    // 具名：插件路由经 `router.addRoute(LAYOUT_ROUTE_NAME, ...)` 挂为其子路由
+    name: LAYOUT_ROUTE_NAME,
     component: MainLayout,
     children: [
       { path: '', redirect: ROUTE_PATH.DASHBOARD },
@@ -97,6 +100,12 @@ const routes = [
         path: ROUTE_PATH.SYSTEM_LOG,
         component: SystemLogView,
         meta: { title: '系统日志' },
+      },
+      // 软件白皮书：由顶栏「软件白皮书」入口进入，不入左侧导航
+      {
+        path: ROUTE_PATH.WHITEPAPER,
+        component: WhitepaperView,
+        meta: { title: '软件白皮书' },
       },
       // 股票详情整页：全站双击个股进入；不入左侧导航
       {

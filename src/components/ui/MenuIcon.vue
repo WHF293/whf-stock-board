@@ -94,6 +94,9 @@ const ICON_PATHS: Record<string, string> = {
     '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>',
   // 系统日志：终端窗口 + 提示符 + 文本行
   log: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3"/><path d="M13 15h4"/>',
+  // 软件白皮书：摊开的书（左右两页 + 文本行），与 Skills 的单页手册区分
+  whitepaper:
+    '<path d="M12 6.5C10.3 5.2 8.1 4.8 4 4.8V19c4.1 0 6.3.4 8 1.7 1.7-1.3 3.9-1.7 8-1.7V4.8c-4.1 0-6.3.4-8 1.7z"/><path d="M12 6.5v14.2"/><path d="M6.6 8.6h2.4M6.6 11.6h2.4M15 8.6h2.4M15 11.6h2.4"/>',
 };
 
 const props = withDefaults(

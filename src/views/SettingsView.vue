@@ -9,8 +9,12 @@ import BaseSwitch from "../components/ui/BaseSwitch.vue";
 import MenuIcon from "../components/ui/MenuIcon.vue";
 import NoticeBar from "../components/ui/NoticeBar.vue";
 import BaseTag from "../components/ui/BaseTag.vue";
+import PluginManageModal from "../components/plugin/PluginManageModal.vue";
+import PluginInstallModal from "../components/plugin/PluginInstallModal.vue";
+import { pluginKernel } from "../plugin";
+import { usePlugins } from "../composables/use-plugins";
 import { sdk } from "../api/sdk";
-import { MENU_ITEMS, ROUTE_PATH } from "../constants/router-meta.constants";
+import { MENU_DEFAULT_ORDER, MENU_ITEMS, ROUTE_PATH } from "../constants/router-meta.constants";
 import { STOCK_PROXY_PATH } from "../constants/proxy.constants";
 import { REFRESH_INTERVAL_OPTIONS } from "../constants/polling.constants";
 import { THEME_COLOR_OPTIONS } from "../constants/theme-color.constants";
@@ -71,53 +75,108 @@ const onClearCaches = (): void => {
 /** 编排弹窗显隐 */
 const menuOrderModalOpen = ref(false);
 
+// ---------- 插件管理 ----------
+
+/** 插件管理弹窗显隐 */
+const pluginModalOpen = ref(false);
+
+/** 插件安装弹窗显隐（应用内安装用户插件） */
+const pluginInstallModalOpen = ref(false);
+
+/** 插件清单与已挂载数量（内核状态变化后自动刷新） */
+const { plugins: pluginList, mountedCount } = usePlugins();
+
+/** 编排弹窗里单条菜单的草稿形态（插件来源的项带标记，显隐开关跟着走） */
+interface MenuOrderDraftItem {
+  /** 路由 path */
+  path: string;
+  /** 菜单标题 */
+  title: string;
+  /** 图标 key */
+  icon: string;
+  /** 是否插件贡献的菜单 */
+  plugin: boolean;
+  /** 是否在侧栏显示 */
+  visible: boolean;
+}
+
 /** 编排草稿（打开弹窗时按当前顺序初始化；未点「确认」前仅本地改动，不落盘） */
-const menuOrderDraft = ref<{ path: string; title: string; icon: string }[]>([]);
+const menuOrderDraft = ref<MenuOrderDraftItem[]>([]);
+
+/** 宿主菜单的 path 集合（区分默认顺序比较口径用） */
+const HOST_MENU_PATHS: ReadonlySet<string> = new Set(
+  MENU_ITEMS.map((item) => item.path as string),
+);
 
 /**
- * 按当前持久化顺序排好的菜单项（不含设置页；未在顺序里的新页面追加末尾）
- * @returns 有序菜单项（path / title / icon）
+ * 全部可编排的菜单项（宿主 + 已挂载插件贡献的），按当前持久化顺序排好
+ *
+ * 插件菜单订阅内核版本号实时刷新；未在顺序里的新页面（升级新增 / 新装插件）追加末尾。
+ * @returns 有序菜单项（path / title / icon / plugin 标记）
  */
-const orderedMenuItems = computed(() => {
-  const byPath = new Map<string, (typeof MENU_ITEMS)[number]>();
-  for (const item of MENU_ITEMS) {
+const orderedMenuItems = computed<MenuOrderDraftItem[]>(() => {
+  void pluginKernel.revision.value;
+  const host: MenuOrderDraftItem[] = MENU_ITEMS.map((item) => ({
+    path: item.path,
+    title: item.title,
+    icon: item.icon,
+    plugin: false,
+    visible: true,
+  }));
+  const plugin: MenuOrderDraftItem[] = pluginKernel.contributions.menu.items.map(
+    (item) => ({
+      path: item.path,
+      title: item.title,
+      icon: item.icon,
+      plugin: true,
+      visible: true,
+    }),
+  );
+  const byPath = new Map<string, MenuOrderDraftItem>();
+  for (const item of [...host, ...plugin]) {
     byPath.set(item.path, item);
   }
-  const ordered: { path: string; title: string; icon: string }[] = [];
+  const ordered: MenuOrderDraftItem[] = [];
   for (const path of settingsStore.menuOrder) {
     const item = byPath.get(path);
     if (item) {
-      ordered.push({ path: item.path, title: item.title, icon: item.icon });
+      ordered.push(item);
       byPath.delete(path);
     }
   }
-  for (const item of MENU_ITEMS) {
-    if (byPath.has(item.path)) {
-      ordered.push({ path: item.path, title: item.title, icon: item.icon });
-    }
+  for (const item of [...host, ...plugin]) {
+    if (byPath.has(item.path)) ordered.push(item);
   }
   return ordered;
 });
 
-/** 当前顺序是否为默认（用于禁用「重置」按钮） */
+/** 当前宿主菜单顺序是否为默认（插件菜单不参与比较；用于禁用「重置」按钮） */
 const isDefaultMenuOrder = computed(
   () =>
-    orderedMenuItems.value.map((item) => item.path).join(",") ===
-    MENU_ITEMS.map((item) => item.path).join(","),
+    settingsStore.menuOrder
+      .filter((path) => HOST_MENU_PATHS.has(path))
+      .join(",") === MENU_DEFAULT_ORDER.join(","),
 );
 
-/** 打开编排弹窗：以当前顺序初始化草稿 */
+/** 打开编排弹窗：以当前顺序 + 显隐状态初始化草稿 */
 const openMenuOrderModal = (): void => {
-  menuOrderDraft.value = orderedMenuItems.value.map((item) => ({ ...item }));
+  const hidden = new Set(settingsStore.hiddenMenus);
+  menuOrderDraft.value = orderedMenuItems.value.map((item) => ({
+    ...item,
+    visible: !hidden.has(item.path),
+  }));
   menuOrderModalOpen.value = true;
 };
 
-/** 确认编排：持久化新顺序，侧栏即时刷新（下次进入仍生效） */
+/** 确认编排：持久化新顺序与显隐集合，侧栏即时刷新（下次进入仍生效） */
 const onConfirmMenuOrder = (): void => {
   settingsStore.setMenuOrder(menuOrderDraft.value.map((item) => item.path));
+  settingsStore.setHiddenMenus(
+    menuOrderDraft.value.filter((item) => !item.visible).map((item) => item.path),
+  );
 };
 
-/** 重置侧栏顺序为默认 */
+/** 重置侧栏：顺序恢复默认 + 全部页面重新显示 */
 const onResetMenuOrder = (): void => {
   settingsStore.resetMenuOrder();
 };
@@ -151,6 +210,22 @@ const SHORTCUTS = [
   { key: '↑ ↓', action: '搜索弹窗内切换标的' },
   { key: 'Enter', action: '搜索弹窗内确认选中标的' },
 ] as const;
+
+/**
+ * 插件命令的快捷键清单（已挂载插件贡献的带快捷键命令）
+ *
+ * 命令注册表只含当前挂载插件的贡献（禁用即撤销），订阅内核版本号保持同步。
+ */
+const pluginShortcuts = computed(() => {
+  void pluginKernel.revision.value;
+  const nameById = new Map(pluginKernel.list().map((info) => [info.id, info.name]));
+  return pluginKernel.contributions.commands.commands
+    .filter((command) => (command.keys ?? '').length > 0)
+    .map((command) => ({
+      key: command.keys ?? '',
+      action: `${command.title}（插件「${nameById.get(command.pluginId) ?? command.pluginId}」）`,
+    }));
+});
 
 /** 新版弹窗显隐 */
 const updateModalOpen = ref(false);
@@ -399,7 +474,7 @@ const onProbeProxy = async (): Promise<void> => {
             class="pressable rounded-lg px-2.5 py-1 text-xs font-medium active:scale-90"
             :class="
               settingsStore.refreshIntervalMs === option.value
-                ? 'bg-primary text-white'
+                ? 'bg-primary text-on-primary'
                 : 'bg-flat-weak text-text-secondary hover:text-text'
             "
             @click="settingsStore.setRefreshIntervalMs(option.value)"
@@ -514,7 +589,7 @@ const onProbeProxy = async (): Promise<void> => {
         <div>
           <p class="text-sm text-text">路由顺序编排</p>
           <p class="mt-0.5 text-xs text-text-tertiary">
-            拖拽调整左侧导航各页面的排列顺序，确认后立即生效并记住
+            拖拽调整左侧导航顺序（含插件菜单），并可控制各页面是否显示
           </p>
         </div>
         <BaseButton variant="ghost" data-track="MENU_ORDER_EDIT" @click="openMenuOrderModal">编排</BaseButton>
@@ -523,16 +598,47 @@ const onProbeProxy = async (): Promise<void> => {
         <div>
           <p class="text-sm text-text">重置顺序</p>
           <p class="mt-0.5 text-xs text-text-tertiary">
-            恢复为默认的侧栏导航顺序
+            恢复默认的侧栏导航顺序，并重新显示全部页面
           </p>
         </div>
         <BaseButton
           variant="ghost"
           :disabled="isDefaultMenuOrder"
+          data-track="MENU_ORDER_RESET"
           @click="onResetMenuOrder"
         >
           重置
         </BaseButton>
+      </div>
+    </BaseCard>
+
+    <BaseCard title="插件">
+      <div class="flex items-center justify-between gap-4">
+        <div>
+          <p class="text-sm text-text">插件管理</p>
+          <p class="mt-0.5 text-xs text-text-tertiary">
+            共 {{ pluginList.length }} 个插件，已挂载 {{ mountedCount }}
+            个；启停即时生效，插件的侧栏面板、菜单、路由与命令会一起增删
+          </p>
+        </div>
+        <div class="flex items-center gap-2">
+          <BaseButton
+            variant="ghost"
+            data-track="PLUGIN_INSTALL_OPEN"
+            @click="pluginInstallModalOpen = true"
+          >
+            安装插件
+          </BaseButton>
+          <BaseButton variant="ghost" data-track="PLUGIN_MANAGE_OPEN" @click="pluginModalOpen = true">
+            管理
+          </BaseButton>
+        </div>
+      </div>
+      <div class="mt-4 border-t border-flat-weak pt-4">
+        <p class="text-sm text-text">插件工坊</p>
+        <p class="mt-0.5 text-xs text-text-tertiary">
+          侧栏「插件工坊」页可查看已挂载插件、贡献点清单、生效服务与最近内核事件
+        </p>
       </div>
     </BaseCard>
 
@@ -631,6 +737,23 @@ const onProbeProxy = async (): Promise<void> => {
           <span class="text-sm text-text-secondary">{{ shortcut.action }}</span>
         </li>
       </ul>
+      <div v-if="pluginShortcuts.length > 0" class="mt-4 border-t border-flat-weak pt-4">
+        <p class="mb-3 text-xs font-medium text-text-tertiary">
+          插件命令（随插件启停自动增删，可在「设置 → 插件」里关闭）
+        </p>
+        <ul class="space-y-3">
+          <li
+            v-for="shortcut in pluginShortcuts"
+            :key="`plugin-${shortcut.key}`"
+            class="flex items-center gap-3"
+          >
+            <kbd class="min-w-[80px] shrink-0 rounded-md border border-flat-weak bg-flat-weak px-2.5 py-1 text-center text-xs font-semibold text-text tabular-nums">
+              {{ shortcut.key }}
+            </kbd>
+            <span class="text-sm text-text-secondary">{{ shortcut.action }}</span>
+          </li>
+        </ul>
+      </div>
     </BaseConfirmModal>
 
     <!-- 发现新版本弹窗：展示版本号与下载地址 -->
@@ -658,6 +781,12 @@ const onProbeProxy = async (): Promise<void> => {
       </a>
     </BaseConfirmModal>
 
+    <!-- 插件管理弹窗：列表 + 启停 + 重试 + 用户插件卸载 -->
+    <PluginManageModal v-model:open="pluginModalOpen" />
+
+    <!-- 插件安装弹窗：粘贴代码 / 选本地 .js → 解析预览 → 确认安装 -->
+    <PluginInstallModal v-model:open="pluginInstallModalOpen" />
+
     <!-- 路由顺序编排弹窗：拖拽调整侧栏顺序，确认后持久化并即时生效 -->
     <BaseConfirmModal
       v-model:open="menuOrderModalOpen"
@@ -668,7 +797,7 @@ const onProbeProxy = async (): Promise<void> => {
       @ok="onConfirmMenuOrder"
     >
       <p class="mb-3 text-xs text-text-tertiary">
-        拖拽下方条目调整顺序，点击「确认」保存并立即刷新侧栏
+        拖拽调整顺序；开关控制该页是否显示在左侧栏（隐藏后路由仍可达）。点「确认」保存并立即刷新侧栏
       </p>
       <VueDraggable
         v-model="menuOrderDraft"
@@ -685,6 +814,7 @@ const onProbeProxy = async (): Promise<void> => {
           v-for="item in menuOrderDraft"
           :key="item.path"
           class="flex select-none items-center gap-3 rounded-lg border border-flat-weak px-3 py-2.5 text-sm text-text-secondary"
+          :class="item.visible ? '' : 'opacity-55'"
         >
           <MenuIcon
             name="grip"
@@ -693,6 +823,13 @@ const onProbeProxy = async (): Promise<void> => {
           />
           <MenuIcon :name="item.icon" :size="16" class="text-text-tertiary" />
           <span class="text-text">{{ item.title }}</span>
+          <BaseTag v-if="item.plugin" tone="flat">插件</BaseTag>
+          <BaseSwitch
+            v-model="item.visible"
+            class="ml-auto shrink-0"
+            data-track="MENU_VISIBILITY_TOGGLE"
+            :aria-label="`在侧栏显示${item.title}`"
+          />
         </li>
       </VueDraggable>
     </BaseConfirmModal>

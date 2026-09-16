@@ -12,17 +12,23 @@
 import Database from '@tauri-apps/plugin-sql';
 import { AGENT_DB_URL } from '@/constants/agent.constants';
 import type {
+  AccessScope,
   AgentProfile,
   ChatGroup,
   ChatMessage,
   ChatSession,
   CreateSessionInput,
+  GrantAgentKind,
+  GrantResourceKind,
   McpServer,
   McpTransport,
   MessagePart,
   MessageStatus,
   ModelConfig,
   ModelPresetKey,
+  ResourceGrant,
+  ResourceGrantState,
+  ResourceScope,
   Skill,
   SubagentDef,
 } from '@/types/agent.types';
@@ -277,6 +283,9 @@ export function toSubagent(r: Row): SubagentDef {
     prompt: str(r.prompt),
     modelId: numOrNull(r.model_id),
     toolNames: jsonArr(r.tool_names),
+    skillNames: jsonArr(r.skill_names),
+    // 列由 v3 迁移补上（NOT NULL DEFAULT 1），老库升级后既存行即为启用
+    enabled: bool(r.enabled),
     createdAt: num(r.created_at),
     updatedAt: num(r.updated_at),
   };
@@ -662,8 +671,149 @@ export async function deleteModel(id: number): Promise<void> {
   await db.execute('DELETE FROM model_config WHERE id = $1', [id]);
 }
 
-/* ---------------------------------- Skill CRUD -------------------------------- */
+/* ------------------------------- 资源授权 (grant) ------------------------------ */
 
+/**
+ * 资源类型 → 表名/展示名映射的键（枚举分支，不接受外部字符串）
+ *
+ * ⚠️ `subagent` 只用于**内置子 agent 的启停**（读 resource_scope.enabled），
+ * 不参与 resource_grant，故列表里不会有它的授权行。
+ */
+const RESOURCE_KINDS: readonly GrantResourceKind[] = ['mcp', 'skill', 'subagent'];
+
+/**
+ * 全量授权行
+ *
+ * 列表页一次性拉取后在内存里判定，避免逐个资源查库。
+ * @returns 授权行数组
+ */
+export async function listResourceGrants(): Promise<ResourceGrant[]> {
+  const db = await getAgentDb();
+  const rows = await db.select<Row[]>('SELECT * FROM resource_grant');
+  return rows.map((r) => ({
+    id: num(r.id),
+    resourceKind: str(r.resource_kind) as GrantResourceKind,
+    resourceId: num(r.resource_id),
+    agentKind: str(r.agent_kind) as GrantAgentKind,
+    agentId: num(r.agent_id),
+    createdAt: num(r.created_at),
+  }));
+}
+
+/**
+ * 全量范围行（列表页一次性拉取；缺行的资源按 'all' 处理）
+ * @returns 范围行数组
+ */
+export async function listResourceScopes(): Promise<ResourceScope[]> {
+  const db = await getAgentDb();
+  const rows = await db.select<Row[]>('SELECT resource_kind, resource_id, scope, enabled FROM resource_scope');
+  return rows
+    .map((r) => ({
+      resourceKind: str(r.resource_kind) as GrantResourceKind,
+      resourceId: num(r.resource_id),
+      scope: str(r.scope, 'all') as AccessScope,
+      enabled: bool(r.enabled),
+    }))
+    .filter((row) => RESOURCE_KINDS.includes(row.resourceKind));
+}
+
+/**
+ * 读取单个资源的授权状态（范围 + 启用 + 被授权的对象集合）
+ * @param resourceKind 资源类型（'mcp' | 'skill'）
+ * @param resourceId 资源 id（内置资源为负数常量 id）
+ * @returns 授权状态；无 scope 行时回落 { scope: 'all', enabled: true }
+ */
+export async function getResourceGrantState(
+  resourceKind: GrantResourceKind,
+  resourceId: number,
+): Promise<ResourceGrantState> {
+  const db = await getAgentDb();
+  const scopeRows = await db.select<Row[]>(
+    'SELECT scope, enabled FROM resource_scope WHERE resource_kind = $1 AND resource_id = $2',
+    [resourceKind, resourceId],
+  );
+  const scope = str(scopeRows[0]?.scope, 'all') as AccessScope;
+  const enabled = scopeRows.length === 0 ? true : bool(scopeRows[0].enabled);
+  const grantRows = await db.select<Row[]>(
+    'SELECT agent_kind, agent_id FROM resource_grant WHERE resource_kind = $1 AND resource_id = $2',
+    [resourceKind, resourceId],
+  );
+  return {
+    scope,
+    enabled,
+    targets: grantRows.map((r) => ({
+      agentKind: str(r.agent_kind) as GrantAgentKind,
+      agentId: num(r.agent_id),
+    })),
+  };
+}
+
+/**
+ * 保存资源授权（范围 + 启用 + 被授权的对象集合）
+ *
+ * ⚠️ scope='all' 时**只改范围与启用、不动 grant 行** —— 保留用户的勾选，
+ * 便于其切回 'custom' 时恢复原状，避免一次误操作丢配置。
+ * scope='custom' 时才做「先删后插」的整体覆盖。
+ *
+ * ⚠️ 用户资源（自带 enabled 列）的启用状态请走 `toggleSkill` / `toggleMcp`，
+ * 本函数只负责内置资源与授权集合；这里仍写出 enabled 是为了让内置资源有落脚点。
+ *
+ * @param resourceKind 资源类型（'mcp' | 'skill'）
+ * @param resourceId 资源 id（内置资源为负数常量 id）
+ * @param state 授权状态
+ */
+export async function saveResourceGrantState(
+  resourceKind: GrantResourceKind,
+  resourceId: number,
+  state: ResourceGrantState,
+): Promise<void> {
+  const db = await getAgentDb();
+  await db.execute(
+    'INSERT INTO resource_scope (resource_kind, resource_id, scope, enabled) VALUES ($1,$2,$3,$4) ' +
+      'ON CONFLICT(resource_kind, resource_id) DO UPDATE SET scope = excluded.scope, enabled = excluded.enabled',
+    [resourceKind, resourceId, state.scope, state.enabled ? 1 : 0],
+  );
+  if (state.scope !== 'custom') return;
+  await db.execute('DELETE FROM resource_grant WHERE resource_kind = $1 AND resource_id = $2', [
+    resourceKind,
+    resourceId,
+  ]);
+  const now = Date.now();
+  for (const target of state.targets) {
+    await db.execute(
+      'INSERT OR IGNORE INTO resource_grant (resource_kind, resource_id, agent_kind, agent_id, created_at) VALUES ($1,$2,$3,$4,$5)',
+      [resourceKind, resourceId, target.agentKind, target.agentId, now],
+    );
+  }
+}
+
+/**
+ * 只改资源的启用状态（**不动 scope、不动 grant 行**）
+ *
+ * 内置资源（mcp / skill / subagent，库里的负数 id）没有自己的表，
+ * 启用状态就落在 `resource_scope.enabled`。列表页的开关走这里，
+ * 而不是 `saveResourceGrantState` —— 后者要求把整份 state（含 scope 与勾选集合）
+ * 一起读出来再写回，列表开关没必要为此先查一次库，还容易在并发下把刚改的范围覆盖掉。
+ *
+ * @param resourceKind 资源类型
+ * @param resourceId 资源 id（内置资源为负数常量 id）
+ * @param enabled 是否启用
+ */
+export async function setResourceEnabled(
+  resourceKind: GrantResourceKind,
+  resourceId: number,
+  enabled: boolean,
+): Promise<void> {
+  const db = await getAgentDb();
+  await db.execute(
+    'INSERT INTO resource_scope (resource_kind, resource_id, scope, enabled) VALUES ($1,$2,$3,$4) ' +
+      'ON CONFLICT(resource_kind, resource_id) DO UPDATE SET enabled = excluded.enabled',
+    // scope 只在插入时给默认值 'all'；冲突时**不更新 scope**（保留用户的全部/精确选择）
+    [resourceKind, resourceId, 'all', enabled ? 1 : 0],
+  );
+}
+
+/* ---------------------------------- Skill CRUD -------------------------------- */
 /**
  * 全量 Skill 列表
  * @returns Skill 数组
@@ -898,6 +1048,10 @@ export type SaveSubagentInput = Omit<SubagentDef, 'id' | 'createdAt' | 'updatedA
 
 /**
  * 新增 / 更新 subagent 定义
+ *
+ * ⚠️ `skill_names` 必须在这里写：`toSubagent` 会读它，漏写会让「子 agent 的 skill
+ * 声明」永远停在 DB 默认值 `[]`（编辑弹窗里改了也存不下来）。
+ *
  * @param input 定义字段
  * @returns 生效的 subagent id
  */
@@ -905,23 +1059,40 @@ export async function saveSubagent(input: SaveSubagentInput): Promise<number> {
   const db = await getAgentDb();
   const now = Date.now();
   const tools = JSON.stringify(input.toolNames);
+  const skills = JSON.stringify(input.skillNames);
+  const enabled = input.enabled ? 1 : 0;
   let id: number;
   if (input.id === undefined) {
     const result = await db.execute(
-      `INSERT INTO subagent (name, description, prompt, model_id, tool_names, created_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-      [input.name, input.description, input.prompt, input.modelId, tools, now, now],
+      `INSERT INTO subagent (name, description, prompt, model_id, tool_names, skill_names, enabled, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [input.name, input.description, input.prompt, input.modelId, tools, skills, enabled, now, now],
     );
     id = Number(result.lastInsertId);
   } else {
     id = input.id;
     await db.execute(
-      `UPDATE subagent SET name=$1, description=$2, prompt=$3, model_id=$4, tool_names=$5, updated_at=$6
-       WHERE id=$7`,
-      [input.name, input.description, input.prompt, input.modelId, tools, now, id],
+      `UPDATE subagent SET name=$1, description=$2, prompt=$3, model_id=$4, tool_names=$5,
+         skill_names=$6, enabled=$7, updated_at=$8
+       WHERE id=$9`,
+      [input.name, input.description, input.prompt, input.modelId, tools, skills, enabled, now, id],
     );
   }
   return id;
+}
+
+/**
+ * 启用 / 停用用户 subagent（写自身表；内置 subagent 走 setResourceEnabled）
+ * @param id subagent id（正数）
+ * @param enabled 是否启用
+ */
+export async function setSubagentEnabled(id: number, enabled: boolean): Promise<void> {
+  const db = await getAgentDb();
+  await db.execute('UPDATE subagent SET enabled = $1, updated_at = $2 WHERE id = $3', [
+    enabled ? 1 : 0,
+    Date.now(),
+    id,
+  ]);
 }
 
 /**

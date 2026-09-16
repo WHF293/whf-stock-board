@@ -95,6 +95,11 @@ const save = (): void => {
       prompt: plain.text.trim(),
       modelId: form.modelId,
       toolNames: target.value?.toolNames ?? [],
+      // skill 的「哪些 agent 能用」由资源侧设置弹窗经 resource_grant 决定，
+      // 这里只保留声明的 skillNames（授权是它的子集，见 agent/run-context.ts）
+      skillNames: target.value?.skillNames ?? [],
+      // 新建默认启用；编辑时沿用现状（启停以列表开关为主，这里只是不丢失）
+      enabled: target.value?.enabled ?? true,
     });
     open.value = false;
     return;
@@ -115,6 +120,8 @@ const save = (): void => {
     prompt: form.prompt.trim(),
     modelId: form.modelId,
     toolNames: target.value?.toolNames ?? [],
+    skillNames: target.value?.skillNames ?? [],
+    enabled: target.value?.enabled ?? true,
   });
   open.value = false;
 };
