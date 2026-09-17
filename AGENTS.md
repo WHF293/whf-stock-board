@@ -163,6 +163,11 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
   （`buildAddColumnSql`，一律补成可空列）——插件因此不需要写任何迁移逻辑。
   反过来说：**列声明就是唯一事实源，改列类型 / 删列不会被宿主感知**（SQLite 也不支持直接改），
   需要动类型时只能新建列名。
+- **列声明只写业务列**：`id` / `created_at` / `updated_at` 由宿主固定追加并自动维护
+  （写入时宿主自动填时间戳，读出时映射成 `id` / `createdAt` / `updatedAt`），插件**不要声明**这三个名字。
+  重复声明会让建表语句里出现两个同名列，SQLite 只报一句 `duplicate column name: updated_at`
+  （指向不了真实原因 —— dsh-mainline 挂载失败即此）→ 宿主已在 `toColumnMap` 里拒绝保留列并给出明确报错，
+  冒烟也用真 SQLite（`node:sqlite`）执行过一次建表 DDL 作为回归保护。
 - **表登记与卸载**：`ensureTable` 自动登记到 `plugin-db-tables`（appStorage）；卸载用户插件时
   若有登记表，弹窗挂起「保留数据 / 一并删除」待办（`use-user-plugins.ts` 的
   `pendingDbCleanup` + `resolveDbCleanup`），删表走 `dropPluginTables`（DROP + 清降级数据 + 清登记）
