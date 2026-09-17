@@ -109,6 +109,7 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
 | 菜单 | `ctx.menu.add({ path, title, icon, component, order? })` | **带 `component` 会自动注册路由**（挂在主布局之下），无需再手动 `router.add` |
 | 路由 | `ctx.router.add({ path, component, underLayout? })` | 无菜单入口的隐藏页用这个；`underLayout` 默认 `true` |
 | 停靠面板 | `ctx.dock.add(key, component, title)` | 右侧面板（`openPluginPanel(key)` 打开） |
+| 顶栏条目 | `ctx.header.add({ id, title, icon, component, props?, marquee?, marqueeIntervalMs? })` | 应用**右上角工具条**的插件入口（`panel:open` 服务同样能唤醒）：收起态由宿主按 `marquee()` 返回的行轮播（间隔默认 4s、下限 1500ms，单行不轮播），点开下拉渲染 `component`（`usePluginPanelHost().close()` 可自行收起）；顺序与显隐在设置页「顶栏工具」编排（`settings.headerOrder` / `hiddenHeaderItems`） |
 | 命令 | `ctx.command.add({ id, title, keys?, run })` | `keys: 'Ctrl+Alt+N'` 自动接管全局快捷键（`command-keys.ts` 解析） |
 | 股票行操作 | `ctx.stockRow.add({ id, title, activeTitle?, icon, order?, isActive?, run })` | 往**自选股表格的「操作」列**注入按钮（宿主不硬编码任何插件）；`isActive` 表达激活态（宿主据此高亮 + 换用 `activeTitle`），适合「盯盘 / 取消盯盘」这类开关动作 |
 | 个股详情扩展区 | `ctx.stockDetail.add({ id, title, component, order?, props? })` | 在**个股详情面板底部**注入一个卡片区块（宿主只传 `symbol`，内容完全由插件决定）；适合速记 / 标签 / 备注这类「跟着个股走」的功能，示范见 dsh-quick-note 的 `StockNotesSection.vue` |

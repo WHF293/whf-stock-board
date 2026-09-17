@@ -256,6 +256,7 @@ class 策略（`<html class="dark">`），`@custom-variant dark`。覆盖 canvas
 ## Responsive Behavior
 
 - 桌面端侧栏常驻，窄屏折叠为抽屉（`useMediaQuery` 驱动）
+- 右上角工具条 = 宿主内置项 + 插件条目（`ctx.header`），顺序与显隐由设置页「顶栏工具」编排；插件轮播文本框宽度固定（`w-44` 截断），长短文案变化时不推挤相邻按钮
 - 表格纵向 + 横向滚动，靠吸顶/吸左保持上下文，不做响应式列裁剪
 - 触控/按压目标遵循控件统一高度（py-1.5 + text-sm）
 
