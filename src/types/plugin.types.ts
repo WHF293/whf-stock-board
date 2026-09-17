@@ -169,6 +169,73 @@ export interface RegisteredDockPanel extends Required<DockPanelContribution> {
 }
 
 /**
+ * 股票行操作的作用目标（宿主把被操作的那一行交给插件）
+ *
+ * 只暴露「哪只票」，不暴露行对象 / 表格实例：插件因此无法改宿主数据，
+ * 只能对这只股票做自己的事（加入盯盘、打标签、发起分析…）。
+ */
+export interface StockRowTarget {
+  /** 完整符号（如 `sh600519`） */
+  symbol: string;
+  /** 股票名称（行情未取到时为自选记录里的名称） */
+  name: string;
+}
+
+/**
+ * 股票行操作贡献（在股票行表格的「操作」列注入一个按钮）
+ *
+ * 宿主不硬编码任何具体插件：谁注册谁渲染、插件卸载即消失。
+ * `isActive` 让插件表达「这一行已处于该动作的激活态」（如已在盯盘候选中），
+ * 宿主据此高亮按钮并切换提示文案 —— 于是「加入 / 移出」这类开关型动作
+ * 只需要插件声明两个文案 + 一个判定，宿主不必理解动作语义。
+ */
+export interface StockRowActionContribution {
+  /** 动作 id（插件内唯一，内核会拼成 `<pluginId>#<id>` 全局键） */
+  id: string;
+  /** 动作名（按钮 tooltip / aria 文案，如「盯盘」） */
+  title: string;
+  /** 已激活时的动作名（缺省沿用 `title`，如「取消盯盘」） */
+  activeTitle?: string;
+  /** 图标 key（MenuIcon 渲染） */
+  icon: string;
+  /** 排序权重，越小越靠前（默认 100；宿主自带的删除按钮恒在最后） */
+  order?: number;
+  /**
+   * 该行当前是否已处于激活态（缺省视为未激活）
+   * @param row 行数据
+   * @returns 是否激活
+   */
+  isActive?: (row: StockRowTarget) => boolean;
+  /**
+   * 执行动作
+   * @param row 行数据
+   */
+  run: (row: StockRowTarget) => void;
+}
+
+/** 已注册的股票行操作（内核补全默认值 + 归属插件后的形态） */
+export interface RegisteredStockRowAction {
+  /** 全局唯一键：`<pluginId>#<id>` */
+  key: string;
+  /** 归属插件 id */
+  pluginId: string;
+  /** 动作 id（插件内声明值） */
+  id: string;
+  /** 动作名（按钮提示文案） */
+  title: string;
+  /** 激活态动作名（已补默认值：缺省等于 title） */
+  activeTitle: string;
+  /** 图标 key（MenuIcon 渲染） */
+  icon: string;
+  /** 排序权重（已补默认值） */
+  order: number;
+  /** 激活态判定（已补默认值：恒为 false） */
+  isActive: (row: StockRowTarget) => boolean;
+  /** 执行体 */
+  run: (row: StockRowTarget) => void;
+}
+
+/**
  * 命令贡献（可挂全局快捷键的可执行动作）
  *
  * 快捷键用形如 `Ctrl+Alt+N` / `Shift+Tab` 的描述串，宿主在 capture 阶段统一匹配，
@@ -385,6 +452,16 @@ export interface CommandContributor {
   add: (command: CommandContribution) => Disposable;
 }
 
+/** 股票行操作贡献点（自选股等「股票行」表格的操作列由插件注入按钮） */
+export interface StockRowContributor {
+  /**
+   * 注册一个股票行操作
+   * @param action 动作声明
+   * @returns 撤销句柄（插件卸载时内核自动调用）
+   */
+  add: (action: StockRowActionContribution) => Disposable;
+}
+
 /** Agent 工具贡献点（把插件能力暴露给内置 MCP，Agent 即可调用） */
 export interface AgentContributor {
   /**
@@ -548,6 +625,8 @@ export interface PluginContributionCount {
   dockPanels: number;
   /** 命令数 */
   commands: number;
+  /** 股票行操作数 */
+  stockRowActions: number;
   /** 内置 MCP 服务器数 */
   agentServers: number;
 }
@@ -613,6 +692,8 @@ export interface PluginContext {
   readonly dock: DockContributor;
   /** 命令贡献点 */
   readonly command: CommandContributor;
+  /** 股票行操作贡献点（在股票行表格的操作列注入按钮） */
+  readonly stockRow: StockRowContributor;
   /** Agent 工具贡献点 */
   readonly agent: AgentContributor;
 

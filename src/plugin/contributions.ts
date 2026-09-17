@@ -1,12 +1,13 @@
 /**
  * 贡献点注册表（对标 dsh 的「能力即插件」：UI / 工具 / 存储都由插件贡献）
  *
- * 本文件把「插件能扩展什么」收敛成六个注册表：
+ * 本文件把「插件能扩展什么」收敛成七个注册表：
  * - `sidebar`  左侧栏面板（inline 常驻面板 / drawer 入口面板）
  * - `menu`     左侧导航菜单项（带 component 时同时产出页面路由）
  * - `routes`   不进菜单的路由（隐藏页 / 独立窗口页）
  * - `dock`     右侧停靠面板
  * - `commands` 可挂全局快捷键的命令
+ * - `stockRows` 股票行操作（自选股表格操作列注入按钮）
  * - `agent`    内置 MCP 服务器（把插件能力暴露给 Agent）
  *
  * 注册表本身是 Vue 响应式的（`shallowReactive` 数组）：插件挂载 / 卸载时
@@ -20,6 +21,7 @@ import {
   SIDEBAR_PANEL_ORDER_DEFAULT,
   SIDEBAR_PANEL_POSITION_DEFAULT,
   SIDEBAR_PANEL_VISIBLE_WHEN_COLLAPSED_DEFAULT,
+  STOCK_ROW_ACTION_ORDER_DEFAULT,
 } from '../constants/plugin.constants';
 import { createDisposable } from './disposable';
 import type { PluginEventBus } from './events';
@@ -39,10 +41,13 @@ import type {
   RegisteredMenuItem,
   RegisteredRoute,
   RegisteredSidebarPanel,
+  RegisteredStockRowAction,
   RouteContribution,
   RouterContributor,
   SidebarContributor,
   SidebarPanelContribution,
+  StockRowActionContribution,
+  StockRowContributor,
 } from '../types/plugin.types';
 import type { BuiltinMcpServer } from '../agent/mcp/types';
 
@@ -211,6 +216,42 @@ export class DockRegistry {
   }
 }
 
+/** 股票行操作注册表（自选股等表格的「操作」列由插件注入按钮） */
+export class StockRowRegistry {
+  /** 已注册的行操作（按 order 升序，同 order 按注册先后） */
+  readonly actions = shallowReactive<RegisteredStockRowAction[]>([]);
+
+  /**
+   * 注册一个股票行操作
+   * @param pluginId 归属插件 id
+   * @param action 动作声明
+   * @returns 撤销句柄
+   */
+  add(pluginId: string, action: StockRowActionContribution): Disposable {
+    const order = action.order ?? STOCK_ROW_ACTION_ORDER_DEFAULT;
+    const record: RegisteredStockRowAction = {
+      key: `${pluginId}#${action.id}`,
+      pluginId,
+      id: action.id,
+      title: action.title,
+      activeTitle: action.activeTitle ?? action.title,
+      icon: action.icon,
+      order,
+      // 缺省判定恒为「未激活」：宿主渲染时无需再判空
+      isActive: action.isActive ?? ((): boolean => false),
+      run: action.run,
+    };
+    const key = record.key;
+    const existing = this.actions.findIndex((item) => item.key === key);
+    if (existing >= 0) this.actions.splice(existing, 1);
+    this.actions.splice(resolveInsertIndex(this.actions, order), 0, record);
+    return createDisposable(() => {
+      const index = this.actions.findIndex((item) => item.key === key);
+      if (index >= 0) this.actions.splice(index, 1);
+    });
+  }
+}
+
 /** 命令注册表 */
 export class CommandRegistry {
   /** 已注册的命令 */
@@ -294,6 +335,8 @@ export interface PluginContributorSet {
   dock: DockContributor;
   /** 命令贡献点 */
   command: CommandContributor;
+  /** 股票行操作贡献点 */
+  stockRow: StockRowContributor;
   /** Agent 工具贡献点 */
   agent: AgentContributor;
 }
@@ -310,6 +353,8 @@ export class PluginContributions {
   readonly dock = new DockRegistry();
   /** 命令 */
   readonly commands = new CommandRegistry();
+  /** 股票行操作（表格操作列注入按钮） */
+  readonly stockRows = new StockRowRegistry();
   /** Agent 工具 */
   readonly agent = new AgentRegistry();
 
@@ -364,6 +409,9 @@ export class PluginContributions {
       command: {
         add: (command) => bag.add(this.commands.add(pluginId, command)),
       },
+      stockRow: {
+        add: (action) => bag.add(this.stockRows.add(pluginId, action)),
+      },
       agent: {
         addServer: (server) => bag.add(this.agent.addServer(pluginId, server)),
       },
@@ -384,6 +432,7 @@ export class PluginContributions {
       routes: count(this.routes.routes),
       dockPanels: count(this.dock.panels),
       commands: count(this.commands.commands),
+      stockRowActions: count(this.stockRows.actions),
       agentServers: this.agent.countFor(pluginId),
     };
   }
@@ -395,5 +444,6 @@ export class PluginContributions {
     this.routes.routes.length = 0;
     this.dock.panels.length = 0;
     this.commands.commands.length = 0;
+    this.stockRows.actions.length = 0;
     this.agent.servers.length = 0;
   }}

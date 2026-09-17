@@ -117,14 +117,22 @@ const latestNoteText = computed(() => {
  * @returns 形如「面板 1 · 菜单 0 · 命令 1」的摘要
  */
 const contributionSummary = (info: PluginRuntimeInfo): string => {
-  const { sidebarPanels, menuItems, routes, dockPanels, commands, agentServers } =
-    info.contributions;
+  const {
+    sidebarPanels,
+    menuItems,
+    routes,
+    dockPanels,
+    commands,
+    stockRowActions,
+    agentServers,
+  } = info.contributions;
   return [
     `侧栏面板 ${sidebarPanels}`,
     `菜单 ${menuItems}`,
     `路由 ${routes}`,
     `停靠面板 ${dockPanels}`,
     `命令 ${commands}`,
+    `行操作 ${stockRowActions}`,
     `MCP ${agentServers}`,
   ].join(' · ');
 };

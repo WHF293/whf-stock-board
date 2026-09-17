@@ -1,21 +1,27 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import BaseTable from '../ui/BaseTable.vue';
 import MenuIcon from '../ui/MenuIcon.vue';
+import { pluginKernel } from '../../plugin';
 import { getTrendByChangePercent } from '../../constants/trend.constants';
 import type { Trend } from '../../constants/trend.constants';
 import { TREND_PILL_CLASS, TREND_TEXT_CLASS } from '../../constants/stock-colors.constants';
 import { formatAmount } from '../../utils/format-amount';
 import { formatPercent, formatPercentUnsigned } from '../../utils/format-percent';
 import { formatPrice } from '../../utils/format-price';
+import { findQuoteBySymbol } from '../../utils/find-quote-by-symbol';
 import { useStockOpen } from '../../composables/use-stock-open';
 import type { FullQuote } from '../../types/stock-quote.types';
+import type { RegisteredStockRowAction, StockRowTarget } from '../../types/plugin.types';
 import type { WatchlistStock } from '../../types/watchlist.types';
 import type { TableColumn } from '../../types/table.types';
 
 /**
- * 自选股表格（列配置驱动）：拖拽手柄 / 现价 / 涨跌幅胶囊 / 成交额 / 换手率 / 删除操作，
+ * 自选股表格（列配置驱动）：拖拽手柄 / 现价 / 涨跌幅胶囊 / 成交额 / 换手率 / 操作，
  * 行点击进个股详情；拖拽手柄可重排自选顺序
+ *
+ * 「操作」列 = 宿主自带的删除 + **插件贡献的行操作**（`ctx.stockRow`）：
+ * 宿主不知道任何具体插件，只按注册表渲染按钮（图标 / 文案 / 激活态由插件声明）。
  */
 const props = defineProps<{
   /** 自选股条目（顺序即展示顺序） */
@@ -74,13 +80,13 @@ const onDrop = (event: DragEvent): void => {
 };
 
 /**
- * 双形态兼容查找报价：watchlist 存 sh600519 完整形态，
- * FullQuote.code 实际形态待联调确认，两种形态都兜底
+ * 双形态兼容查找报价：watchlist 存 sh600519 完整形态，上游 `FullQuote.code`
+ * 实际是裸代码（600519）——统一走 `findQuoteBySymbol`（自选盯盘面板共用同一实现）
  * @param symbol 自选股符号
  * @returns 匹配到的报价
  */
 const findQuote = (symbol: string): FullQuote | undefined =>
-  props.quotesMap[symbol] ?? props.quotesMap[symbol.replace(/^(sh|sz|bj)/, '')];
+  findQuoteBySymbol(props.quotesMap, symbol);
 
 /**
  * 行点击跳个股详情
@@ -97,6 +103,52 @@ const openDetail = (stock: WatchlistStock): void => {
  */
 const rowTrend = (stock: WatchlistStock): Trend =>
   getTrendByChangePercent(findQuote(stock.symbol)?.changePercent ?? 0);
+
+// ---------- 插件贡献的行操作（ctx.stockRow） ----------
+
+/** 注册表中的股票行操作（内核注册表是响应式的：插件启停即时增删按钮） */
+const rowActions = computed<RegisteredStockRowAction[]>(() => {
+  // 内核 revision 变化也一并纳入依赖：贡献点增删后表格立刻跟随
+  void pluginKernel.revision.value;
+  return [...pluginKernel.contributions.stockRows.actions];
+});
+
+/**
+ * 行操作目标（只把「哪只票」交给插件，不暴露表格行对象）
+ * @param stock 自选股条目
+ * @returns 行操作目标
+ */
+const toRowTarget = (stock: WatchlistStock): StockRowTarget => ({
+  symbol: stock.symbol,
+  name: stock.name,
+});
+
+/**
+ * 该行是否处于某行操作的激活态（如「已在盯盘候选」）
+ * @param action 已注册的行操作
+ * @param stock 自选股条目
+ * @returns 是否激活
+ */
+const isRowActionActive = (action: RegisteredStockRowAction, stock: WatchlistStock): boolean =>
+  action.isActive(toRowTarget(stock));
+
+/**
+ * 行操作的提示文案（激活态切换到插件声明的「取消…」文案）
+ * @param action 已注册的行操作
+ * @param stock 自选股条目
+ * @returns 形如「盯盘 贵州茅台」的文案
+ */
+const rowActionTitle = (action: RegisteredStockRowAction, stock: WatchlistStock): string =>
+  `${isRowActionActive(action, stock) ? action.activeTitle : action.title} ${stock.name}`;
+
+/**
+ * 触发行操作
+ * @param action 已注册的行操作
+ * @param stock 自选股条目
+ */
+const onRowAction = (action: RegisteredStockRowAction, stock: WatchlistStock): void => {
+  action.run(toRowTarget(stock));
+};
 
 /** 列配置（新增列 / 调整顺序只改此处；涨跌幅默认开启排序） */
 const columns: TableColumn<WatchlistStock>[] = [
@@ -167,14 +219,33 @@ const columns: TableColumn<WatchlistStock>[] = [
       </span>
     </template>
     <template #actions="{ row }">
-      <button
-        type="button"
-        class="pressable rounded p-1 text-text-tertiary hover:bg-up-weak hover:text-up active:scale-90"
-        :aria-label="`删除 ${row.name}`"
-        @click.stop="emit('remove', row.symbol)"
-      >
-        <MenuIcon name="trash" :size="14" />
-      </button>
+      <span class="inline-flex items-center gap-0.5">
+        <!-- 插件贡献的行操作（如自选盯盘的「盯盘」开关）：宿主只按注册表渲染 -->
+        <button
+          v-for="action in rowActions"
+          :key="action.key"
+          type="button"
+          class="pressable rounded p-1 active:scale-90"
+          :class="
+            isRowActionActive(action, row)
+              ? 'bg-primary-weak text-primary'
+              : 'text-text-tertiary hover:bg-flat-weak hover:text-text'
+          "
+          :title="rowActionTitle(action, row)"
+          :aria-label="rowActionTitle(action, row)"
+          @click.stop="onRowAction(action, row)"
+        >
+          <MenuIcon :name="action.icon" :size="14" />
+        </button>
+        <button
+          type="button"
+          class="pressable rounded p-1 text-text-tertiary hover:bg-up-weak hover:text-up active:scale-90"
+          :aria-label="`删除 ${row.name}`"
+          @click.stop="emit('remove', row.symbol)"
+        >
+          <MenuIcon name="trash" :size="14" />
+        </button>
+      </span>
     </template>
   </BaseTable>
 </template>

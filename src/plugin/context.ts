@@ -213,6 +213,15 @@ export class PluginContextImpl implements PluginContext {
   }
 
   /**
+   * 股票行操作贡献点
+   * @returns 股票行操作贡献点
+   */
+  get stockRow(): PluginContributorSet['stockRow'] {
+    return this.contributions.stockRow;
+  }
+
+
+  /**
    * Agent 工具贡献点
    * @returns Agent 工具贡献点
    */
