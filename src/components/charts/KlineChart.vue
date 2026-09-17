@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { useResizeObserver } from '@vueuse/core';
+import dayjs from 'dayjs';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import {
   dispose,
   init,
   registerYAxis,
   type AxisCreateTicksParams,
+  type AxisTick,
   type Chart,
   type DeepPartial,
   type KLineData,
@@ -14,14 +16,21 @@ import {
   type YAxisTemplate,
 } from 'klinecharts';
 import {
+  AXIS_TICK_COUNT,
   CHART_AXIS_LINE_COLOR,
   CHART_SPLIT_LINE_COLOR,
   CHART_TEXT_COLOR,
 } from '../../constants/chart.constants';
+import { MINUTE_AXIS_TICKS, MINUTE_AXIS_TOTAL } from '../../constants/kline.constants';
+import { padMinuteBars } from '../../utils/pad-minute-bars';
 import { readTrendColors } from '../../utils/trend-colors';
 import { useSettingsStore } from '../../stores/settings';
 import { isIndexSymbol } from '../../utils/normalize-a-share-code';
 import type { TradeMark } from '../../utils/trade-marks';
+import {
+  INTRADAY_MACD_INDICATOR,
+  INTRADAY_VOL_INDICATOR,
+} from './indicators/intraday-indicators';
 import {
   TRADE_POINT_OVERLAY,
   type TradePointExtend,
@@ -32,10 +41,14 @@ import '../charts/indicators/custom-indicators';
  * K 线图（klinecharts 实现）：
  *
  * - timeline 模式（分时 / 五日）：主图分时面积线（淡雅蓝，固定色）+ 均价线；副图成交量 + MACD
- * - candle 模式（5分 / 日K / 周K / 月K）：主图蜡烛 + MA[5,10,30]，副图成交量 + MACD&KDJ（含买/卖标注）
+ * - candle 模式（5分 / 日K / 周K / 月K）：主图蜡烛 + MA[5,10,30]，副图按配置清单（默认 VOL + MACD&KDJ）
+ * - subVolumeOnly：副图强制只留成交量（详情侧栏用），两种模式下均忽略其他副图指标
  *
  * 轴规格：Y 轴显示在左侧（3 等分刻度），X 轴 5 等分；副图不显示 Y 轴刻度线；
  * 十字光标 / X 轴日期：分时/五日为 MM/DD HH:mm，其余为 YYYY/MM/DD
+ *
+ * 单日分时（intradayAxis）额外把序列补齐到全天固定时间轴，X 轴恒为 09:30~15:00，
+ * 不随已发生的分钟数拉伸
  */
 const props = defineProps<{
   /** klinecharts K 线序列（时间升序；分钟级附 avgPrice 字段） */
@@ -56,10 +69,21 @@ const props = defineProps<{
   /** 蜡烛模式副图指标清单（每项独立面板）；不传用固定默认。timeline 模式忽略 */
   subIndicators?: string[];
   /**
+   * 副图只保留成交量：开启后忽略 subIndicators，蜡烛模式副图固定为 VOL，
+   * timeline 模式不再挂 MACD（仅主图 + 均价线 + VOL）。
+   * 详情侧栏（停靠面板）用——空间有限，只保留最必要的成交量副图
+   */
+  subVolumeOnly?: boolean;
+  /**
    * 当前标的符号（sh600519 形态）：用于判定分时/五日是否绘制均价线——
    * 指数（sh000xxx / sz399xxx）无均价概念，不绘制；不传默认绘制
    */
   symbol?: string;
+  /**
+   * 是否使用「全天固定时间轴」（单日分时专用，五日不开）：
+   * 序列补齐到 09:30~15:00 的固定分钟格，X 轴不随盘中进度拉伸
+   */
+  intradayAxis?: boolean;
   /** 成交 BS/T 标注点（时间升序）；数据或标注变化时吸附最近 bar 重建覆盖物 */
   tradeMarks?: TradeMark[];
 }>();
@@ -101,18 +125,23 @@ registerYAxis(TIMELINE_PCT_YAXIS);
 /**
  * timeline 模式的展示数据派生（分时 / 五日专用，蜡烛模式原样透传）：
  *
+ * - 单日分时（intradayAxis）：先把序列补齐到全天固定时间轴，未发生的分钟为占位 bar，
+ *   X 轴因此恒定横跨 09:30~15:00
  * - price：原始价格（转换前的 close）
- * - pre：昨收基准（取 preClose，快照未就绪时回退首根收盘）
+ * - pre：昨收基准（取 preClose，快照未就绪时回退首根真实收盘）
  * - close：涨跌幅小数 = (price - pre) / pre，保留 3 位小数
  * - avgPrice：均价同步转为涨跌幅小数（与 close 同轴，否则均价线画出范围）
  * - avgPriceRaw：原始均价（tooltip 展示「价格 + 涨跌幅」用）
+ *
+ * 占位 bar 的 close / avgPrice 均为 NaN：面积线与均价线的绘制会被图表库跳过
  */
 const displayBars = computed<KLineData[]>(() => {
   if (props.mode !== 'timeline') return props.bars;
+  const bars = props.intradayAxis ? padMinuteBars(props.bars) : props.bars;
   const pre = props.preClose ?? props.bars[0]?.close ?? null;
-  if (!pre) return props.bars;
+  if (!pre) return bars;
   const round3 = (value: number): number => Number(value.toFixed(3));
-  return props.bars.map((bar) => {
+  return bars.map((bar) => {
     const price = bar.close;
     const avgPriceRaw = typeof bar.avgPrice === 'number' ? bar.avgPrice : null;
     return {
@@ -128,8 +157,16 @@ const displayBars = computed<KLineData[]>(() => {
 });
 
 /**
+ * 是否为分时占位分钟（尚未发生）：占位 bar 的价格为 NaN
+ * @param bar K 线
+ * @returns 是否无成交数据
+ */
+const isEmptyBar = (bar: KLineData): boolean => !Number.isFinite(bar.close);
+
+/**
  * 分时 tooltip 自定义：开/高/低/收显示「价格（相对昨收涨跌幅）」，
- * 如 `10.10（+4.23%）`；数据取自 displayBars（price/pre/close 已就位）
+ * 如 `10.10（+4.23%）`；数据取自 displayBars（price/pre/close 已就位）。
+ * 占位分钟（尚未发生）不渲染 tooltip
  * @param data 十字光标邻域数据
  * @param data.current
  * @returns tooltip 图例列表
@@ -138,7 +175,7 @@ const timelineCandleTooltipLegends = (data: {
   current: KLineData | null;
 }): TooltipLegend[] => {
   const bar = data.current as (KLineData & { price?: number; pre?: number }) | null;
-  if (!bar) return [];
+  if (!bar || isEmptyBar(bar)) return [];
   const pre = bar.pre;
   const formatItem = (label: string, price: number | undefined, pct?: number): TooltipLegend => ({
     title: label,
@@ -214,22 +251,67 @@ const buildStyles = (): DeepPartial<Styles> => {
   };
 };
 
+/** 主图区实际像素宽度（X 轴 bounding 宽度，由 buildXAxisTicks 捕获，见其注释） */
+let axisWidth = 0;
+
 /**
- * 5 等分 X 轴：依据可见数据下标均匀分布 5 个刻度
- * @param params 轴创建参数
- * @returns 等距刻度序列
+ * 分时 X 轴固定刻度的轴下标
+ *
+ * 按 MINUTE_AXIS_TICKS 的时刻在补齐后的序列里定位（定位不到的时刻自动跳过）
  */
-const buildXAxisTicks = (params: AxisCreateTicksParams) => {
+const minuteAxisTickMarks = computed<{ index: number; timestamp: number; label: string }[]>(
+  () => {
+    const bars = displayBars.value;
+    if (!props.intradayAxis || bars.length === 0) return [];
+    const day = dayjs(bars[0].timestamp).format('YYYY-MM-DD');
+    const marks: { index: number; timestamp: number; label: string }[] = [];
+    for (const tick of MINUTE_AXIS_TICKS) {
+      const timestamp = dayjs(`${day} ${tick.time}`).valueOf();
+      const index = bars.findIndex((bar) => bar.timestamp === timestamp);
+      if (index >= 0) marks.push({ index, timestamp, label: tick.label });
+    }
+    return marks;
+  },
+);
+
+/**
+ * X 轴刻度：
+ *
+ * - 单日分时：固定标注全天关键时刻（09:30 / 10:30 / 11:30 / 14:00 / 15:00），
+ *   与已发生的分钟数无关；横坐标按「全天固定轴恰好铺满主图区」换算
+ * - 其余：可见区 5 等分（沿用原口径）
+ *
+ * 顺带捕获 X 轴 bounding 宽度（= 主图区宽度）：分时的 barSpace 要用它把全天
+ * 分钟格铺满，直接用容器宽度（含左侧 Y 轴刻度）会把头几根分钟挤出可视区
+ * @param params 轴创建参数
+ * @returns 刻度序列
+ */
+const buildXAxisTicks = (params: AxisCreateTicksParams): AxisTick[] => {
+  if (props.mode === 'timeline' && params.bounding.width > 0) {
+    if (params.bounding.width !== axisWidth) {
+      axisWidth = params.bounding.width;
+      // 轴宽变化（首次布局 / 容器缩放 / Y 轴刻度宽度变化）后按新宽度重新铺满；
+      // 布局中不可重入，下一帧再调整
+      void nextTick(() => fitTimelineBarSpace());
+    }
+    const barSpace = axisWidth / MINUTE_AXIS_TOTAL;
+    return minuteAxisTickMarks.value.map((mark) => ({
+      coord: (mark.index + 0.5) * barSpace,
+      value: mark.timestamp,
+      text: mark.label,
+    }));
+  }
   const from = Math.floor(params.range.realFrom);
   const to = Math.ceil(params.range.realTo);
   if (Number.isNaN(from) || Number.isNaN(to) || to <= from) return params.defaultTicks;
-  const step = (to - from) / 4;
-  const out = [];
-  for (let i = 0; i < 5; i += 1) {
-    const index = Math.round(from + step * i);
-    out.push({ ...params.defaultTicks[i], value: index });
+  // 默认刻度不足 N 个（如放大到很少的根数）无法等分，保留默认刻度
+  if (params.defaultTicks.length < AXIS_TICK_COUNT) return params.defaultTicks;
+  const step = (to - from) / (AXIS_TICK_COUNT - 1);
+  const ticks: AxisTick[] = [];
+  for (let i = 0; i < AXIS_TICK_COUNT; i += 1) {
+    ticks.push({ ...params.defaultTicks[i], value: Math.round(from + step * i) });
   }
-  return out;
+  return ticks;
 };
 
 /**
@@ -244,16 +326,22 @@ const showAvgLine = computed(() => !props.symbol || !isIndexSymbol(props.symbol)
 
 const setupIndicators = (chart: Chart): void => {
   if (props.mode === 'timeline') {
-    // 分时均价线叠加主图（仅个股）；副图成交量 + MACD
+    // 分时均价线叠加主图（仅个股）；副图成交量 + MACD（subVolumeOnly 时只留成交量）
     if (showAvgLine.value) {
       chart.createIndicator({ name: 'AVG_PRICE', paneId: CANDLE_PANE_ID }, true);
     }
-    chart.createIndicator('VOL');
-    chart.createIndicator('MACD');
+    // 单日分时含「尚未发生」的占位分钟，用空值安全口径的 VOL / MACD，
+    // 避免内置实现把 NaN 渲染进指标图例（见 indicators/intraday-indicators）
+    chart.createIndicator(props.intradayAxis ? INTRADAY_VOL_INDICATOR : 'VOL');
+    if (!props.subVolumeOnly) {
+      chart.createIndicator(props.intradayAxis ? INTRADAY_MACD_INDICATOR : 'MACD');
+    }
     return;
   }
   const main = props.mainIndicators ?? ['MA'];
-  const sub = props.subIndicators ?? ['VOL', 'MACD_KDJ'];
+  const sub = props.subVolumeOnly
+    ? ['VOL']
+    : (props.subIndicators ?? ['VOL', 'MACD_KDJ']);
   // 主图指标叠加蜡烛面板（MA 用本项目口径 [5,10,30]，其余走内置默认参数）
   for (const name of main) {
     if (name === 'MA') {
@@ -294,7 +382,7 @@ const applyAxisOptions = (chart: Chart): void => {
       needWidget: true,
     });
   });
-  // X 轴 5 等分
+  // X 轴刻度：单日分时为全天固定时刻，其余为可见区 5 等分（见 buildXAxisTicks）
   chart.overrideXAxis({ createTicks: buildXAxisTicks });
   // 分时 / 五日：禁用缩放与滚动，固定全量展示（setScrollEnabled(false) 后
   // setDataLoader 内部 resetData 的滚动重置也不可再拖动视窗）
@@ -415,6 +503,33 @@ const rebuildTradeOverlays = (): void => {
 };
 
 /**
+ * 分时 / 五日 barSpace 适配
+ *
+ * - 单日分时：按「全天固定轴恰好铺满主图区」取 barSpace（浮点，下限 1px），
+ *   并把右侧留白归零，使 09:30~15:00 正好铺满画布
+ * - 五日：按数据根数铺满（下限 1px，保持原有取整口径）
+ */
+const fitTimelineBarSpace = (): void => {
+  const chart = chartRef.value;
+  if (!chart || props.mode !== 'timeline') return;
+  const count = displayBars.value.length;
+  if (count === 0) return;
+  const width = props.intradayAxis
+    ? axisWidth
+    : (containerRef.value?.clientWidth ?? 0);
+  if (width <= 0) return;
+  const barSpace = props.intradayAxis
+    ? Math.max(1, width / count)
+    : Math.max(1, Math.floor(width / count));
+  if (Math.abs(chart.getBarSpace().bar - barSpace) > 0.01) {
+    chart.setBarSpace(barSpace);
+  }
+  if (props.intradayAxis) {
+    chart.setOffsetRightDistance(0);
+  }
+};
+
+/**
  * 注入数据：重设 loader 并以新 ticker 触发 init 加载（v10 数据只能经 loader 通道进入）
  */
 const applyData = (): void => {
@@ -423,15 +538,12 @@ const applyData = (): void => {
   chart.setDataLoader({
     getBars: ({ callback }) => {
       callback(displayBars.value, { forward: false, backward: false });
-      // 分时 / 五日：barSpace = 容器宽度 / 根数（下限 1px），让全部数据恰好铺满画布；
-      // 首屏渲染后再 resize 让父容器高度稳定后画布正确铺开
       if (props.mode === 'timeline' && displayBars.value.length > 0) {
-        const width = containerRef.value?.clientWidth ?? 0;
-        const barSpace = Math.max(1, Math.floor(width / displayBars.value.length));
-        chart.setBarSpace(barSpace);
+        // 首屏渲染后再 resize 让父容器高度稳定后画布正确铺开；
+        // 分时轴宽由布局回调捕获，barSpace 在下一帧按真实主轴宽度铺满
         nextTick(() => {
           chart.resize();
-          chart.scrollToRealTime();
+          fitTimelineBarSpace();
         });
       }
     },
@@ -488,10 +600,12 @@ onMounted(() => {
   setupIndicators(chart);
   applyAxisOptions(chart);
   chart.setFormatter({ formatDate: (timestamp) => formatDateByMode(timestamp) });
-  // 十字光标联动：悬停 bar 对外发事件（行情头联动展示），离开发 null
+  // 十字光标联动：悬停 bar 对外发事件（行情头联动展示），离开发 null；
+  // 分时占位分钟（尚未发生）无价格，按未悬停处理，避免行情头展示 NaN
   chart.subscribeAction('onCrosshairChange', (raw) => {
     const data = raw as { kLineData?: KLineData } | undefined;
-    emit('crosshairBar', data?.kLineData ?? null);
+    const bar = data?.kLineData;
+    emit('crosshairBar', bar && !isEmptyBar(bar) ? bar : null);
   });
   applyData();
 });
@@ -512,12 +626,8 @@ useResizeObserver(containerRef, () => {
   const chart = chartRef.value;
   if (!chart) return;
   nextTick(() => {
-    // 分时 / 五日：宽度变化时重算 barSpace，保持全量数据铺满
-    if (props.mode === 'timeline' && props.bars.length > 0) {
-      const width = containerRef.value?.clientWidth ?? 0;
-      chart.setBarSpace(Math.max(1, Math.floor(width / props.bars.length)));
-    }
     chart.resize();
+    fitTimelineBarSpace();
   });
 });
 
@@ -529,11 +639,8 @@ const refitChart = (): void => {
   const chart = chartRef.value;
   if (!chart) return;
   nextTick(() => {
-    if (props.mode === 'timeline' && props.bars.length > 0) {
-      const width = containerRef.value?.clientWidth ?? 0;
-      chart.setBarSpace(Math.max(1, Math.floor(width / props.bars.length)));
-    }
     chart.resize();
+    fitTimelineBarSpace();
   });
 };
 
@@ -567,17 +674,18 @@ watch(showAvgLine, () => {
   applyAxisOptions(chart);
 });
 
-// 展示数据或模式变化时整体重新加载（周期 / 标的切换由父组件重新拉取）；
-// 模式变化时指标集不同，先清空重建；
+// 展示数据 / 模式 / 固定时间轴开关变化时整体重新加载（周期 / 标的切换由父组件重新拉取）；
+// 模式或轴口径变化时指标集不同（分时 vs 五日 / 蜡烛），先清空重建；
 // preClose 异步就绪会触发 displayBars 重算，无需单独 watch
-let prevMode = props.mode;
+let prevSetupKey = `${props.mode}-${props.intradayAxis}`;
 watch(
-  () => [displayBars.value, props.mode] as const,
-  ([, mode]) => {
+  () => [displayBars.value, props.mode, props.intradayAxis] as const,
+  ([, mode, intradayAxis]) => {
     const chart = chartRef.value;
     if (!chart) return;
-    if (mode !== prevMode) {
-      prevMode = mode;
+    const setupKey = `${mode}-${intradayAxis}`;
+    if (setupKey !== prevSetupKey) {
+      prevSetupKey = setupKey;
       chart.removeIndicator({});
       setupIndicators(chart);
       applyAxisOptions(chart);

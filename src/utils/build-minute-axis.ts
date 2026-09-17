@@ -1,26 +1,22 @@
 import dayjs from 'dayjs';
-import {
-  MINUTE_AM_COUNT,
-  MINUTE_PM_COUNT,
-  MINUTE_SESSION,
-} from '../constants/kline.constants';
+import { MINUTE_AXIS_RANGES } from '../constants/kline.constants';
 
 /**
- * 生成 A 股分时固定时间轴（09:30~11:30 + 13:00~15:00 逐分钟，共 242 点）
+ * 生成某个交易日的分时固定时间轴（升序毫秒时间戳，共 238 格）
  *
- * 图表数据按 'HH:mm' 对齐到该轴，未发生的分钟为 null，避免盘中 x 轴拉伸
- * @returns 形如 ['09:30', '09:31', ..., '11:30', '13:00', ..., '15:00'] 的数组
+ * 与上游 1 分钟线口径一致：09:31~11:30 + 13:01~14:57 + 15:00
+ * @param dayTimestamp 该交易日内任一毫秒时间戳（只取日期部分，忽略时分）
+ * @returns 该交易日的固定分钟时间戳数组（升序）
  */
-export const buildMinuteAxis = (): string[] => {
-  const axis: string[] = [];
-  const pushRange = (start: string, count: number): void => {
-    let cursor = dayjs(`2026-01-01 ${start}`, 'YYYY-MM-DD HH:mm');
+export const buildMinuteAxis = (dayTimestamp: number): number[] => {
+  const day = dayjs(dayTimestamp).startOf('day');
+  const axis: number[] = [];
+  for (const { start, count } of MINUTE_AXIS_RANGES) {
+    const [hour, minute] = start.split(':').map(Number);
+    const first = day.hour(hour).minute(minute);
     for (let i = 0; i < count; i += 1) {
-      axis.push(cursor.format('HH:mm'));
-      cursor = cursor.add(1, 'minute');
+      axis.push(first.add(i, 'minute').valueOf());
     }
-  };
-  pushRange(MINUTE_SESSION.AM_START, MINUTE_AM_COUNT);
-  pushRange(MINUTE_SESSION.PM_START, MINUTE_PM_COUNT);
+  }
   return axis;
 };

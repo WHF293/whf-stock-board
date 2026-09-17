@@ -20,7 +20,7 @@ import KlineChart from '../components/charts/KlineChart.vue';
 import StockQuoteHeader from '../components/business/StockQuoteHeader.vue';
 import StockOrderBook from '../components/business/StockOrderBook.vue';
 import { fetchFullQuotes } from '../api/quotes.api';
-import { fetchSinaKline } from '../api/sina-kline.api';
+import { fetchKlineCached } from '../api/kline-cache.api';
 import { listTradeRecordsBySymbol } from '../api/account-records-db.api';
 import type { AccountTradeRecord } from '../types/account.types';
 import {
@@ -29,8 +29,9 @@ import {
   type TradeMark,
 } from '../utils/trade-marks';
 import { usePolling } from '../composables/use-polling';
+import { useChartPeriod } from '../composables/use-chart-period';
 import { POLLING_INTERVAL } from '../constants/polling.constants';
-import { CHART_PERIOD_OPTIONS, type ChartPeriod } from '../constants/stock-detail.constants';
+import { CHART_PERIOD_OPTIONS } from '../constants/stock-detail.constants';
 import { useDataCacheStore } from '../stores/data-cache';
 import { useWatchlistStore } from '../stores/watchlist';
 import { useStockAccountStore } from '../stores/stock-account';
@@ -89,8 +90,8 @@ const quoteTrendClass = computed(() =>
 );
 
 // ---------- 图表周期（按钮组：分时 / 五日 / 5分 / 日K / 周K / 月K） ----------
-/** 当前图表周期（默认分时） */
-const chartPeriod = ref<ChartPeriod>('minute');
+// 周期选择持久化到设置 store：用户选了哪个周期，下次打开默认还是它（与侧栏互通）
+const chartPeriod = useChartPeriod();
 
 /** 图表模式：分时 / 五日为分时线，其余为蜡烛图 */
 const chartMode = computed<'timeline' | 'candle'>(() =>
@@ -116,7 +117,8 @@ const loadKline = async (): Promise<void> => {
       klines.value = cachedBars;
       isKlineLoading.value = false;
     }
-    const bars = await fetchSinaKline(symbol.value, chartPeriod.value);
+    // 日 K 走本地缓存（首次全量落库，之后只补缺口）；分时等周期退回纯网络取数
+    const bars = await fetchKlineCached(symbol.value, chartPeriod.value);
     klines.value = bars;
     dataCache.set(klineCacheKey.value, bars);
   } catch (error) {
@@ -476,6 +478,7 @@ const pctClass = (value: number | null): string =>
             :main-indicators="settingsStore.chartMainIndicators"
             :sub-indicators="settingsStore.chartSubIndicators"
             :symbol="symbol"
+            :intraday-axis="chartPeriod === 'minute'"
             :trade-marks="chartTradeMarks"
             auto-height
           />

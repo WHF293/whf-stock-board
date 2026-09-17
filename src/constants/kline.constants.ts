@@ -1,4 +1,9 @@
-import type { KlineAdjust, KlinePeriod } from '../types/kline.types';
+import type {
+  KlineAdjust,
+  KlinePeriod,
+  MinuteAxisRange,
+  MinuteAxisTick,
+} from '../types/kline.types';
 
 /**
  * K 线周期常量（代替魔法串）
@@ -41,20 +46,44 @@ export const MA_FAST_PERIOD = 5;
 export const MA_SLOW_PERIOD = 20;
 
 /**
- * A 股分时时段常量（生成固定 09:30~15:00 时间轴，避免盘中拉伸）
+ * A 股分时固定时间轴分段（与上游 1 分钟线口径一致）
+ *
+ * 上午 09:31~11:30、下午 13:01~14:57 为连续竞价逐分钟；14:58 / 14:59 属收盘集合竞价
+ * （无逐分钟成交），收盘价单独占 15:00 一格 —— 合计 238 格。
+ * 盘中接口只下发已发生的分钟，补齐到该时间轴后 X 轴才恒定横跨全天
  */
-export const MINUTE_SESSION = {
-  AM_START: '09:30',
-  AM_END: '11:30',
-  PM_START: '13:00',
-  PM_END: '15:00',
-} as const;
+export const MINUTE_AXIS_RANGES: readonly MinuteAxisRange[] = [
+  { start: '09:31', count: 120 },
+  { start: '13:01', count: 117 },
+  { start: '15:00', count: 1 },
+];
 
-/** 分时轴上午分钟数（含 09:30 与 11:30） */
-export const MINUTE_AM_COUNT = 121;
+/** 分时固定时间轴总格数（238） */
+export const MINUTE_AXIS_TOTAL = MINUTE_AXIS_RANGES.reduce(
+  (total, range) => total + range.count,
+  0,
+);
 
-/** 分时轴下午分钟数（含 13:00 与 15:00） */
-export const MINUTE_PM_COUNT = 121;
+/**
+ * 分时 X 轴固定刻度（time 为轴上的分钟时刻，label 为展示文案）
+ *
+ * 09:31 是当日首根分钟线，按分时图惯例左端标注开盘时刻 09:30
+ */
+export const MINUTE_AXIS_TICKS: readonly MinuteAxisTick[] = [
+  { time: '09:31', label: '09:30' },
+  { time: '10:30', label: '10:30' },
+  { time: '11:30', label: '11:30' },
+  { time: '14:00', label: '14:00' },
+  { time: '15:00', label: '15:00' },
+];
 
-/** 分时轴总点数 */
-export const MINUTE_AXIS_TOTAL = MINUTE_AM_COUNT + MINUTE_PM_COUNT;
+/** MACD 参数（快线 / 慢线 / 信号线，与图表库内置口径一致） */
+export const MACD_PARAMS = [12, 26, 9] as const;
+
+/**
+ * 新浪单次请求的最大根数
+ *
+ * 实测上游上限约 1970 条，超过即返回 `var _=(null);`（见 parseJsonp 的显式报错）。
+ * 请求配置与「补尾部缺口估算」共用本值，避免两处各自写一个上限而漂移。
+ */
+export const KLINE_MAX_BARS_PER_REQUEST = 1900;

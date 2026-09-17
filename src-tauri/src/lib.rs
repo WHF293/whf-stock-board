@@ -424,6 +424,50 @@ CREATE TABLE IF NOT EXISTS plugin_storage (
 );
 ";
 
+/// stock-board.db v7：日 K 本地缓存（明细 + 水位）
+///
+/// 动机：日 K 属「已收盘即不变」的行情，重复拉 1900 根纯属浪费。
+/// 按**单票按需**缓存 —— 用户打开某只票才落库，不做全市场预取；
+/// 下次打开只请求「库中最新日期 → 现在」的缺口（见 api/kline-cache.api.ts）。
+///
+/// 口径说明（勿改）：
+/// - `period` 只为未来可能的周 / 月 K 扩展预留，当前只写 'daily'
+///   （周 / 月 K 的当期 bar 日期会随周月推进而漂移，需要额外的尾部失效逻辑，暂不入库）；
+/// - `trade_date` 存 `YYYY-MM-DD`，与日 K 的 bar 天然一一对应；盘中当日 bar 会持续变化，
+///   靠水位表的 `fetched_at` 按 TTL 重取（当日 bar 不是不可变数据）；
+/// - `kline_cache_meta.source` 记录数据口径（来源 + 复权方式）：口径不一致时整票作废重取，
+///   避免换源 / 换复权后新旧价格混在一条序列里；
+/// - 不复权行情的历史 bar 不会被上游修订，故**只补尾部、不回溯全量**
+///   （`first_date` 仅用于诊断「这只票的历史从哪天起」）；
+/// - `kline_bar` 不额外建索引：复合主键 (symbol, period, trade_date) 的隐式索引
+///   正好覆盖唯一查询形态（`WHERE symbol=? AND period=? ORDER BY trade_date`）。
+const STOCK_BOARD_DB_V7: &str = "
+CREATE TABLE IF NOT EXISTS kline_bar (
+  symbol     TEXT NOT NULL,
+  period     TEXT NOT NULL,
+  trade_date TEXT NOT NULL,
+  open       REAL NOT NULL,
+  high       REAL NOT NULL,
+  low        REAL NOT NULL,
+  close      REAL NOT NULL,
+  volume     REAL NOT NULL DEFAULT 0,
+  turnover   REAL NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (symbol, period, trade_date)
+);
+
+CREATE TABLE IF NOT EXISTS kline_cache_meta (
+  symbol     TEXT NOT NULL,
+  period     TEXT NOT NULL,
+  source     TEXT NOT NULL,
+  first_date TEXT NOT NULL,
+  last_date  TEXT NOT NULL,
+  bar_count  INTEGER NOT NULL DEFAULT 0,
+  fetched_at INTEGER NOT NULL,
+  PRIMARY KEY (symbol, period)
+);
+";
+
 /// weblog.db v1：系统日志（报错日志 + 行为日志）
 ///
 /// 独立成库的理由：日志是高频写入 + 按保留期整段删除的「滚动数据」，
@@ -534,6 +578,12 @@ fn stock_board_db_migrations() -> Vec<Migration> {
       version: 6,
       description: "create_watchlist_and_plugin_storage",
       sql: STOCK_BOARD_DB_V6,
+      kind: MigrationKind::Up,
+    },
+    Migration {
+      version: 7,
+      description: "create_kline_cache",
+      sql: STOCK_BOARD_DB_V7,
       kind: MigrationKind::Up,
     },
   ]

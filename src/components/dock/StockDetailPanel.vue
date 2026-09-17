@@ -10,9 +10,10 @@ import StockQuoteHeader from '../business/StockQuoteHeader.vue';
 import StockOrderBook from '../business/StockOrderBook.vue';
 import DockResizer from '../business/DockResizer.vue';
 import { fetchFullQuotes } from '../../api/quotes.api';
-import { fetchSinaKline } from '../../api/sina-kline.api';
-import { CHART_PERIOD_OPTIONS, type ChartPeriod } from '../../constants/stock-detail.constants';
+import { fetchKlineCached } from '../../api/kline-cache.api';
+import { CHART_PERIOD_OPTIONS } from '../../constants/stock-detail.constants';
 import { usePolling } from '../../composables/use-polling';
+import { useChartPeriod } from '../../composables/use-chart-period';
 import { POLLING_INTERVAL } from '../../constants/polling.constants';
 import type { KLineData } from 'klinecharts';
 import type { FullQuote } from '../../types/stock-quote.types';
@@ -181,10 +182,9 @@ const displayQuote = computed<FullQuote | null>(() => {
 
 
 // ---------- 图表周期（下拉切换：分时 / 五日 / 5分 / 日K / 周K / 月K，均走新浪源） ----------
-// 周期选项与详情页共用（constants/stock-detail.constants.ts），避免两处漂移
-
-/** 当前图表周期（默认分时） */
-const chartPeriod = ref<ChartPeriod>('minute');
+// 周期选项与详情页共用（constants/stock-detail.constants.ts），避免两处漂移；
+// 选择本身也持久化（composables/use-chart-period.ts），下次打开默认回到上次的周期
+const chartPeriod = useChartPeriod();
 
 /** 图表模式：分时 / 五日为分时线，其余为蜡烛图 */
 const chartMode = computed<'timeline' | 'candle'>(() =>
@@ -210,7 +210,8 @@ const loadKline = async (): Promise<void> => {
       klines.value = cachedBars;
       isKlineLoading.value = false;
     }
-    const bars = await fetchSinaKline(symbol.value, chartPeriod.value);
+    // 日 K 走本地缓存（首次全量落库，之后只补缺口）；分时等周期退回纯网络取数
+    const bars = await fetchKlineCached(symbol.value, chartPeriod.value);
     klines.value = bars;
     dataCache.set(klineCacheKey.value, bars);
   } catch (error) {
@@ -295,6 +296,8 @@ const onDockResizeEnd = (): void => {
           :mode="chartMode"
           :pre-close="quoteRef?.prevClose ?? null"
           :symbol="symbol"
+          :intraday-axis="chartPeriod === 'minute'"
+          sub-volume-only
           :resize-tick="chartResizeTick"
           @crosshair-bar="onCrosshairBar"
         />

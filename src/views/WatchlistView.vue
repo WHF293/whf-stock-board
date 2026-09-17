@@ -62,7 +62,12 @@ const fetchActiveGroupQuotes = async (): Promise<void> => {
     isQuotesLoading.value = false;
     return;
   }
-  isQuotesLoading.value = true;
+  // 仅首载（无任何报价快照）进骨架；轮询刷新不置 loading——
+  // 模板按它切换「整表 / 骨架屏」，每轮置 true 会让表格卸载重挂、整体闪烁。
+  // 已有数据时保留旧值展示，接口返回后原位更新单元格
+  if (Object.keys(quotesMap.value).length === 0) {
+    isQuotesLoading.value = true;
+  }
   try {
     const quotes = await fetchFullQuotes(symbols);
     quotesMap.value = Object.fromEntries(

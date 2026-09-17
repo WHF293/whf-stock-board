@@ -24,6 +24,26 @@ export type KlinePeriod = 'daily' | 'weekly' | 'monthly';
 export type KlineAdjust = '' | 'qfq' | 'hfq';
 
 /**
+ * 分时固定时间轴的连续段
+ */
+export interface MinuteAxisRange {
+  /** 该段首分钟的 HH:mm */
+  start: string;
+  /** 该段分钟数（含首分钟） */
+  count: number;
+}
+
+/**
+ * 分时 X 轴固定刻度
+ */
+export interface MinuteAxisTick {
+  /** 轴上的分钟时刻（HH:mm） */
+  time: string;
+  /** 刻度展示文案 */
+  label: string;
+}
+
+/**
  * 技术信号（SDK kline.signals 的返回结构）
  *
  * SDK 主入口未导出 KlineSignal 类型，此处按其声明等价定义（结构化兼容）

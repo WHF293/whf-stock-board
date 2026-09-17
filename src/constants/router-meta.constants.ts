@@ -6,6 +6,7 @@ export const ROUTE_PATH = {
   WATCHLIST: "/watchlist",
   PANORAMA: "/panorama",
   BOARD_CALENDAR: "/board-calendar",
+  BOARD_DETAIL: "/board-detail", // 板块日历详情（+/:code，板块日历页点板块名称进入，不入菜单）
 
   MARKET_EVENT: "/market-event", // 兼容旧路由跳转
   MARKET_MOOD: "/market-mood",

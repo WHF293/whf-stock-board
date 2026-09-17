@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
+import { useRouter } from 'vue-router';
 import BoardCalendarGrid from '../components/business/BoardCalendarGrid.vue';
 import BoardCellDetailModal from '../components/business/BoardCellDetailModal.vue';
 import BoardFilterModal from '../components/business/BoardFilterModal.vue';
@@ -30,6 +31,7 @@ import {
 } from '../constants/board-calendar.constants';
 import { DATA_CACHE_KEY } from '../constants/data-cache.constants';
 import { POLLING_INTERVAL } from '../constants/polling.constants';
+import { ROUTE_PATH } from '../constants/router-meta.constants';
 import { useDataCacheStore } from '../stores/data-cache';
 import { useMarketStatusStore } from '../stores/market-status';
 import { useSettingsStore } from '../stores/settings';
@@ -69,6 +71,7 @@ import { handleSdkError } from '../utils/handle-sdk-error';
 const settingsStore = useSettingsStore();
 const dataCache = useDataCacheStore();
 const marketStatusStore = useMarketStatusStore();
+const router = useRouter();
 
 /** 桌面端才有本地库（浏览器端降级为「仅当日、不累积」） */
 const isDbAvailable = isBoardDbAvailable();
@@ -370,7 +373,7 @@ const refresh = async (forceAxis: boolean): Promise<void> => {
  * 否则首屏会一直空白。采集失败只提示、不清空已渲染的数据。
  *
  * ⚠️ 这里刻意传 `false`：交易日轴由采集层按「当天是否已确认」自动决定要不要重拉，
- * 若传 `true` 会让每 2 分钟的轮询都强制打一次腾讯日 K（入库后只做增量的原则就失效了）。
+ * 若传 `true` 会让每 30s 的轮询都强制打一次腾讯日 K（入库后只做增量的原则就失效了）。
  */
 const pollTask = async (): Promise<void> => {
   // 首屏：不等采集，立即用库内已有数据 + 缓存交易日轴渲染（命中缓存即 0 请求）
@@ -386,7 +389,7 @@ const pollTask = async (): Promise<void> => {
   }
 };
 
-// 交易窗口内每 2 分钟采集 + 重读；窗口外仅在挂载时执行一次
+// 交易窗口内每 30s 采集 + 重读；窗口外仅在挂载时执行一次
 usePolling({
   task: pollTask,
   intervalMs: POLLING_INTERVAL.MARKET_BREADTH,
@@ -431,6 +434,14 @@ const onCellClick = (
 };
 
 /**
+ * 点击板块名称：进入板块详情页（成分股 × 交易日 涨跌幅矩阵）
+ * @param row 被点击的板块行
+ */
+const onBoardClick = (row: BoardCalendarRow): void => {
+  void router.push(`${ROUTE_PATH.BOARD_DETAIL}/${row.code}`);
+};
+
+/**
  * 确认板块过滤器：持久化勾选与行序（立即生效，下次进入自动恢复）
  * @param selection 勾选与顺序（已在弹窗内归一化）
  */
@@ -443,7 +454,8 @@ const NOTICE_TEXT =
   '单元格得分 = 涨停×10 + 跌停×-10 + 净上涨×5 + 净下跌×-5（净额口径：涨停 / 跌停不重复计入上涨 / 下跌）。' +
   '背景色按「得分率 = 得分 ÷ 成分股数」取 7 档涨跌语义色：越亮赚钱效应越强，越暗越弱；颜色随涨跌配色主题变化。' +
   '盘中为快照，15:00 后定稿。带 ⓘ 的格子是历史回补：板块级涨跌家数没有历史接口，只有涨跌停数据，故不带背景色；' +
-  '从本版本起每个交易日都以完整快照入库，可视范围内的历史色阶会随时间自然补齐。';
+  '从本版本起每个交易日都以完整快照入库，可视范围内的历史色阶会随时间自然补齐。' +
+  '点击左侧板块名称可进入板块详情（该板块成分股 × 交易日的涨跌幅矩阵）。';
 
 /**
  * 图例色块样式（背景取档位色，随主题级联自动变化）
@@ -564,6 +576,7 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
         :matrix="matrix"
         scroll-class="board-calendar-fill"
         @cell-click="onCellClick"
+        @board-click="onBoardClick"
       />
     </BaseCard>
 

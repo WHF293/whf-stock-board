@@ -16,3 +16,11 @@ export const CHART_PERIOD_OPTIONS: readonly { label: string; value: ChartPeriod 
   { label: '5分', value: 'min5' },
   { label: '五日', value: 'fiveDay' },
 ] as const;
+
+/**
+ * 图表周期默认值（分时）
+ *
+ * 仅在「用户从未选过周期」或持久化值非法时使用；正常路径由设置 store 的
+ * `detailChartPeriod` 记住上一次选择（见 composables/use-chart-period.ts）
+ */
+export const CHART_PERIOD_DEFAULT: ChartPeriod = 'minute';

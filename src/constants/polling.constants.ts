@@ -9,7 +9,7 @@ export const POLLING_INTERVAL = {
   /** 盘中：详情页分时 */
   DETAIL_MINUTE: 15_000,
   /** 盘中：市场宽度类重数据（全市场快照 / 板块列表 / 资金流），同时作为该类轮询的间隔下限 */
-  MARKET_BREADTH: 120_000,
+  MARKET_BREADTH: 30_000,
   /** 美股行情轮询（行情全景-美股全景）的间隔下限 */
   US_BOARDS: 60_000,
   /** 失败退避基数 */

@@ -46,6 +46,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   /** 点击单元格（cell 为 null 表示该日无快照） */
   cellClick: [row: BoardCalendarRow, cell: BoardCalendarCell | null, tradeDate: string];
+  /** 点击板块名称（跳板块详情页：成分股 × 交易日 涨跌幅矩阵） */
+  boardClick: [row: BoardCalendarRow];
 }>();
 
 /** 横向滚动容器（虚拟化测量可视宽度用） */
@@ -153,13 +155,20 @@ const cellTitle = (
       :style="{ height: `${BOARD_CALENDAR_ROW_HEIGHT}px` }"
     >
       <div
-        class="sticky left-0 z-10 flex shrink-0 flex-col justify-center border-r border-flat-weak bg-surface px-3"
+        class="sticky left-0 z-10 shrink-0 border-r border-flat-weak bg-surface"
         :style="{ width: `${BOARD_CALENDAR_NAME_COL_WIDTH}px` }"
       >
-        <span class="truncate text-sm font-medium text-text">{{ row.name }}</span>
-        <span class="truncate text-[10px] text-text-tertiary">
-          {{ row.code }} · 近5日涨停 {{ row.heatLimitUp }}
-        </span>
+        <button
+          type="button"
+          class="pressable flex h-full w-full flex-col justify-center px-3 text-left hover:bg-flat-weak"
+          :title="`${row.name} 成分股涨跌幅矩阵（点击进入板块详情）`"
+          @click="emit('boardClick', row)"
+        >
+          <span class="bc-name truncate text-sm font-medium text-text">{{ row.name }}</span>
+          <span class="truncate text-[10px] text-text-tertiary">
+            {{ row.code }} · 近5日涨停 {{ row.heatLimitUp }}
+          </span>
+        </button>
       </div>
       <div class="shrink-0" :style="{ width: `${offsetX}px` }" />
       <button
@@ -199,5 +208,16 @@ const cellTitle = (
 }
 .bc-cell:not(:disabled):hover {
   filter: brightness(1.12);
+}
+
+/* 首列可点击的暗示：hover 时板块名加下划线（与板块详情页首列同一套反馈） */
+.bc-name {
+  text-decoration-color: transparent;
+  text-underline-offset: 2px;
+  transition: text-decoration-color 0.15s ease;
+}
+button:hover .bc-name {
+  text-decoration: underline;
+  text-decoration-color: currentColor;
 }
 </style>

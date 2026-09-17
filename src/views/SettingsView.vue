@@ -6,6 +6,7 @@ import BaseButton from "../components/ui/BaseButton.vue";
 import BaseCard from "../components/ui/BaseCard.vue";
 import BaseConfirmModal from "../components/ui/BaseConfirmModal.vue";
 import BaseSwitch from "../components/ui/BaseSwitch.vue";
+import BaseTable from "../components/ui/BaseTable.vue";
 import MenuIcon from "../components/ui/MenuIcon.vue";
 import NoticeBar from "../components/ui/NoticeBar.vue";
 import BaseTag from "../components/ui/BaseTag.vue";
@@ -16,7 +17,11 @@ import { usePlugins } from "../composables/use-plugins";
 import { sdk } from "../api/sdk";
 import { MENU_DEFAULT_ORDER, MENU_ITEMS, ROUTE_PATH } from "../constants/router-meta.constants";
 import { STOCK_PROXY_PATH } from "../constants/proxy.constants";
-import { REFRESH_INTERVAL_OPTIONS } from "../constants/polling.constants";
+import {
+  POLLING_INTERVAL,
+  REFRESH_INTERVAL_OPTIONS,
+} from "../constants/polling.constants";
+import type { TableColumn } from "../types/table.types";
 import { THEME_COLOR_OPTIONS } from "../constants/theme-color.constants";
 import { TREND_THEME_OPTIONS } from "../constants/trend-theme.constants";
 import { WEBLOG_RETENTION_DAYS } from "../constants/weblog.constants";
@@ -226,6 +231,58 @@ const pluginShortcuts = computed(() => {
       action: `${command.title}（插件「${nameById.get(command.pluginId) ?? command.pluginId}」）`,
     }));
 });
+
+/** 轮询详情弹窗显隐（「查看轮询详情」按钮） */
+const pollingDetailModalOpen = ref(false);
+
+/** 轮询间隔秒数（展示文案用：从常量换算，避免与 polling.constants 双处维护） */
+const QUOTES_SEC = POLLING_INTERVAL.QUOTES_INTRADAY / 1000;
+const BREADTH_SEC = POLLING_INTERVAL.MARKET_BREADTH / 1000;
+const US_SEC = POLLING_INTERVAL.US_BOARDS / 1000;
+
+/** 轮询明细行（弹窗表格展示用） */
+interface PollingDetailRow {
+  /** 页面 / 位置 */
+  page: string;
+  /** 轮询内容 */
+  target: string;
+  /** 间隔下限文案 */
+  interval: string;
+  /** 交易窗口约束 */
+  window: string;
+}
+
+/**
+ * 轮询任务清单（与各页面 usePolling 调用点一一对应，改轮询时同步维护）
+ */
+const POLLING_DETAIL_ROWS: PollingDetailRow[] = [
+  { page: "市场总览", target: "全球指数报价", interval: `${QUOTES_SEC} 秒`, window: "不限（全天）" },
+  { page: "市场总览", target: "指数卡片行情", interval: `${QUOTES_SEC} 秒`, window: "A 股交易时段" },
+  { page: "市场总览", target: "市场宽度（全市场快照 / 行业板块 / 资金流）", interval: `${BREADTH_SEC} 秒`, window: "A 股交易时段" },
+  { page: "自选股", target: "当前分组自选行情", interval: `${QUOTES_SEC} 秒`, window: "A 股交易时段" },
+  { page: "行情全景 · A 股", target: "行业 / 概念板块排行", interval: `${BREADTH_SEC} 秒`, window: "A 股交易时段" },
+  { page: "行情全景 · 美股", target: "美股板块行情", interval: `${US_SEC} 秒`, window: "美股交易时段" },
+  { page: "资金动向", target: "全市场榜单（涨幅 / 成交额 / 换手率）", interval: `${BREADTH_SEC} 秒`, window: "A 股交易时段" },
+  { page: "涨停与异动", target: "涨停池 + 盘口 / 板块异动", interval: `${BREADTH_SEC} 秒`, window: "A 股交易时段" },
+  { page: "板块日历", target: "当日数据采集 + 重读", interval: `${BREADTH_SEC} 秒`, window: "A 股交易时段" },
+  { page: "个股详情（页面 / 停靠面板）", target: "单票报价", interval: `${QUOTES_SEC} 秒`, window: "A 股交易时段" },
+  { page: "侧栏自选面板", target: "自选行情", interval: `${QUOTES_SEC} 秒`, window: "A 股交易时段" },
+];
+
+/** 轮询明细表列配置 */
+const pollingDetailColumns: TableColumn<PollingDetailRow>[] = [
+  { key: "page", label: "页面 / 位置" },
+  { key: "target", label: "轮询内容" },
+  { key: "interval", label: "间隔下限", align: "right" },
+  { key: "window", label: "交易窗口" },
+];
+
+/**
+ * 轮询明细行 key（页面 + 内容唯一）
+ * @param row 轮询明细行
+ * @returns 行 key
+ */
+const pollingDetailRowKey = (row: PollingDetailRow): string => `${row.page}|${row.target}`;
 
 /** 新版弹窗显隐 */
 const updateModalOpen = ref(false);
@@ -452,8 +509,8 @@ const onProbeProxy = async (): Promise<void> => {
           <div>
             <p class="text-sm text-text">刷新间隔</p>
             <p class="mt-0.5 text-xs text-text-tertiary">
-              行情类数据按此间隔轮询；重数据（全市场快照等）保持不低于 1
-              分钟的克制档
+              行情类数据按此间隔轮询；重数据（全市场快照等）保持不低于 30
+              秒的克制档
             </p>
           </div>
           <BaseTag tone="primary">{{ activeIntervalLabel }}</BaseTag>
@@ -484,11 +541,18 @@ const onProbeProxy = async (): Promise<void> => {
         </div>
       </div>
 
-      <p class="mt-3">
+      <div class="mt-3 flex items-center justify-between">
         <BaseTag :tone="settingsStore.pollingEnabled ? 'primary' : 'flat'">
           {{ settingsStore.pollingEnabled ? "轮询已开启" : "轮询已暂停" }}
         </BaseTag>
-      </p>
+        <BaseButton
+          variant="ghost"
+          data-track="POLLING_DETAIL_VIEW"
+          @click="pollingDetailModalOpen = true"
+        >
+          查看轮询详情
+        </BaseButton>
+      </div>
     </BaseCard>
 
     <BaseCard title="主题色">
@@ -754,6 +818,25 @@ const onProbeProxy = async (): Promise<void> => {
           </li>
         </ul>
       </div>
+    </BaseConfirmModal>
+
+    <!-- 轮询详情弹窗：各页面轮询任务清单 -->
+    <BaseConfirmModal
+      v-model:open="pollingDetailModalOpen"
+      title="轮询详情"
+      ok-text="知道了"
+      cancel-text=""
+      max-width-class="max-w-2xl"
+    >
+      <BaseTable
+        :columns="pollingDetailColumns"
+        :rows="POLLING_DETAIL_ROWS"
+        :row-key="pollingDetailRowKey"
+        min-width="560px"
+      />
+      <p class="mt-3 text-xs leading-5 text-text-tertiary">
+        实际刷新间隔 = max（上方设置的刷新间隔，各任务的间隔下限）。页面隐藏或切走时暂停，恢复可见立即补刷；请求失败按指数退避（2s 起、封顶 60s），成功后恢复。系统日志页的 10 秒自动刷新为独立定时器，不受「行情自动刷新」总开关管理。
+      </p>
     </BaseConfirmModal>
 
     <!-- 发现新版本弹窗：展示版本号与下载地址 -->

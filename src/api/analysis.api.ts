@@ -9,10 +9,10 @@ import type {
 } from '../types/analysis.types';
 import type { FullQuote } from '../types/stock-quote.types';
 import type { TodayTimelineResponse } from '../types/kline.types';
-import { SCAN_CONCURRENCY, EOD_TIMELINE_CONCURRENCY } from '../constants/analysis.constants';
+import { SCAN_CONCURRENCY, EOD_TIMELINE_CONCURRENCY, SCAN_KLINE_BARS } from '../constants/analysis.constants';
 import { mapWithConcurrency } from '../utils/map-with-concurrency';
+import { fetchKlineCached } from './kline-cache.api';
 import { fetchAllMarketQuotes } from './quotes.api';
-import { fetchSinaKline } from './sina-kline.api';
 import { sdk } from './sdk';
 
 /**
@@ -157,16 +157,21 @@ const detectSignals = (bars: ScanKlineBar[], signals: SignalKey[]): string[] => 
  * ⚠️ 东财行情域（push2his）本机被封，`sdk.kline.withIndicators` 不可用，
  * 改走新浪 `fetchSinaKline`（数据源更换可行性报告 · 方案 A）。
  * ⚠️ 新浪日 K 为不复权：除权日附近指标可能失真（方案报告 R1 已知限制）。
+ * ⚠️ 整池逐票扫描必须 `write: false`：否则点一次扫描就会把整个股票池的日 K 写进本地库
+ * （本地缓存只服务「用户真的在看某只票」的场景，见 api/kline-cache.api.ts）。
  * @param symbol 完整符号（sh/sz 前缀；北交所新浪源不支持，由调用方跳过）
  * @param flags 按需启用的指标（减少无谓计算）
- * @returns 含指标的 K 线序列（升序，最长 400 根）
+ * @returns 含指标的 K 线序列（升序）
  * @throws 上游返回为空或请求失败时抛错
  */
 const fetchScanBars = async (
   symbol: string,
   flags: ScanIndicatorFlags,
 ): Promise<ScanKlineBar[]> => {
-  const bars = await fetchSinaKline(symbol, 'daily');
+  const bars = await fetchKlineCached(symbol, 'daily', {
+    write: false,
+    barLimit: SCAN_KLINE_BARS,
+  });
   if (bars.length === 0) {
     throw new Error(`新浪日K返回为空：${symbol}`);
   }

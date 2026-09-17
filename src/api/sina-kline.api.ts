@@ -1,5 +1,6 @@
 import dayjs from 'dayjs';
 import type { KLineData } from 'klinecharts';
+import { KLINE_MAX_BARS_PER_REQUEST } from '../constants/kline.constants';
 import { proxyFetch } from './proxy-fetch';
 
 /**
@@ -22,18 +23,37 @@ export type SinaKlinePeriod =
   | 'weekly'
   | 'monthly';
 
-/** 新浪 K 线请求参数（scale 周期分钟数 / 拉取根数 / 保留交易日数） */
+/**
+ * 新浪 K 线请求可选参数
+ */
+export interface SinaKlineFetchOptions {
+  /**
+   * 覆盖配置中的请求根数
+   *
+   * 用途：**收窄**单次请求。批量场景（如信号扫描只算短周期指标）不必拉满历史；
+   * 会被 KLINE_MAX_BARS_PER_REQUEST 收敛，不影响 keepDays 的窗口截取口径。
+   */
+  barLimit?: number;
+}
+
+/**
+ * 新浪 K 线请求参数（scale 周期分钟数 / 拉取根数 / 保留交易日数）
+ *
+ * datalen 决定可回看的历史深度：日 / 周 / 月 K 一律取到上游上限附近
+ * （实测超过 1970 条上游返回 null），避免往前拖动到尽头即无数据；
+ * 1 分钟线窗口有限，按根数覆盖所需交易日后本地截取
+ */
 const SINA_KLINE_CONFIG: Record<
   SinaKlinePeriod,
   { scale: number; datalen: number; keepDays: number }
 > = {
-  // 1 分钟线窗口有限（约最近若干交易日），按根数覆盖所需交易日后本地截取
   minute: { scale: 1, datalen: 320, keepDays: 1 },
   fiveDay: { scale: 1, datalen: 700, keepDays: 5 },
-  min5: { scale: 5, datalen: 500, keepDays: Number.MAX_SAFE_INTEGER },
-  daily: { scale: 240, datalen: 400, keepDays: Number.MAX_SAFE_INTEGER },
-  weekly: { scale: 1200, datalen: 200, keepDays: Number.MAX_SAFE_INTEGER },
-  monthly: { scale: 7200, datalen: 120, keepDays: Number.MAX_SAFE_INTEGER },
+  min5: { scale: 5, datalen: 1500, keepDays: Number.MAX_SAFE_INTEGER },
+  // 日 K 取满上游上限（≈7.5 年）；周 / 月 K 一次即可拿到上游全部历史
+  daily: { scale: 240, datalen: KLINE_MAX_BARS_PER_REQUEST, keepDays: Number.MAX_SAFE_INTEGER },
+  weekly: { scale: 1200, datalen: 1500, keepDays: Number.MAX_SAFE_INTEGER },
+  monthly: { scale: 7200, datalen: 1000, keepDays: Number.MAX_SAFE_INTEGER },
 };
 
 /** 新浪上游要求的 Referer（缺失返回 403） */
@@ -54,6 +74,9 @@ interface SinaKlineRaw {
 
 /**
  * 解析新浪 JSONP 文本：剥离首行注释、`var _=(` 前缀与尾部 `);`
+ *
+ * 上游在参数越界（如 datalen 超上限）或缺数据时返回 `var _=(null);`，
+ * 这里显式报错，避免下游拿到 null 后抛出难以定位的异常
  * @param text 响应原文
  * @returns 解析后的原始记录数组
  */
@@ -63,7 +86,11 @@ const parseJsonp = (text: string): SinaKlineRaw[] => {
   if (start === -1 || end === -1 || end <= start) {
     throw new Error(`新浪 K 线响应解析失败：${text.slice(0, 80)}`);
   }
-  return JSON.parse(text.slice(start + 1, end)) as SinaKlineRaw[];
+  const parsed = JSON.parse(text.slice(start + 1, end)) as SinaKlineRaw[] | null;
+  if (!Array.isArray(parsed)) {
+    throw new Error('新浪 K 线响应为空（可能参数越界或该标的无数据）');
+  }
+  return parsed;
 };
 
 /**
@@ -88,16 +115,22 @@ const applyAvgPrice = (bars: KLineData[]): void => {
  * 拉取新浪 K 线并转为 klinecharts 数据结构（时间升序）
  * @param symbol 完整符号（sh600519 形态，新浪前缀一致可直接使用）
  * @param period K 线周期
+ * @param options 可选请求参数（见 SinaKlineFetchOptions）
  * @returns klinecharts KLineData 序列（分钟级附 avgPrice 均价字段）
  */
 export const fetchSinaKline = async (
   symbol: string,
   period: SinaKlinePeriod,
+  options?: SinaKlineFetchOptions,
 ): Promise<KLineData[]> => {
   const { scale, datalen, keepDays } = SINA_KLINE_CONFIG[period];
+  const requestDatalen = Math.min(
+    Math.max(options?.barLimit ?? datalen, 1),
+    KLINE_MAX_BARS_PER_REQUEST,
+  );
   const url =
     `https://quotes.sina.cn/cn/api/jsonp_v2.php/var%20_=` +
-    `/CN_MarketDataService.getKLineData?symbol=${symbol}&scale=${scale}&ma=no&datalen=${datalen}`;
+    `/CN_MarketDataService.getKLineData?symbol=${symbol}&scale=${scale}&ma=no&datalen=${requestDatalen}`;
 
   // 浏览器态经 /stock-proxy 转发（中间件补 Referer）；Tauri 态 Rust 层直连需自带 Referer
   const response = await proxyFetch(url, {

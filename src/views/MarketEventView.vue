@@ -119,7 +119,7 @@ const {
   total: poolTotal,
   hasMore: poolHasMore,
   onScroll: onPoolScroll,
-} = useLazyRows<ZTPoolItem>(() => poolItems.value, POOL_CHUNK_SIZE);
+} = useLazyRows<ZTPoolItem>(() => poolItems.value, POOL_CHUNK_SIZE, () => activePool.value);
 
 /** 股池表列配置（涨跌幅默认开启排序） */
 const poolColumns: TableColumn<ZTPoolItem>[] = [

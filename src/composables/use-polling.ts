@@ -46,7 +46,7 @@ export const usePolling = (options: PollingOptions): UsePollingReturn => {
    * 当前生效间隔（毫秒）：
    * 1. 失败退避优先：BACKOFF_BASE * 2^n 封顶 BACKOFF_MAX；
    * 2. 正常档：取「用户设置的刷新间隔」与「本轮询自身下限 intervalMs」的较大值——
-   *    行情类轻轮询完全跟随用户设置，市场宽度类重轮询保持不低于 120s 的克制档
+   *    行情类轻轮询完全跟随用户设置，市场宽度类重轮询保持不低于 30s 的克制档
    */
   const activeInterval = computed(() => {
     if (failureCount.value > 0) {

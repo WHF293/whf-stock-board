@@ -40,4 +40,6 @@ export const DATA_CACHE_KEY = {
   BOARD_CALENDAR_DATES: 'boardCalendar.dates',
   /** 板块日历：矩阵原始行（切页秒出，接口返回后覆盖） */
   BOARD_CALENDAR_MATRIX: 'boardCalendar.matrix',
+  /** 板块日历详情：成分股涨跌幅矩阵（前缀 + 板块代码 + 范围，切页回来秒出） */
+  BOARD_DETAIL_MATRIX_PREFIX: 'boardDetail.matrix.',
 } as const;

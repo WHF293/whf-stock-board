@@ -27,6 +27,16 @@ export const SIGNAL_TEMPLATES: readonly {
 /** 信号扫描并发数（克制频率，避免触发上游反爬） */
 export const SCAN_CONCURRENCY = 3;
 
+/**
+ * 信号扫描单票请求的日 K 根数
+ *
+ * 扫描只用 MA(5,10) / MACD(12,26,9) / RSI(6,12) / BOLL(20)，
+ * 最长回看是 MACD 的慢线 EMA26，120 根足够预热且留足余量。
+ * 不拉满 1900 根：整池逐票请求时，多出来的历史纯属浪费带宽与上游额度。
+ * （命中本地缓存时不生效 —— 那种情况零请求，读的就是库里全部历史。）
+ */
+export const SCAN_KLINE_BARS = 120;
+
 /** 尾盘选股分时强度筛选的并发数（腾讯 JSONP 源，保守并发） */
 export const EOD_TIMELINE_CONCURRENCY = 2;
 
