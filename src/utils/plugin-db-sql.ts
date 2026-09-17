@@ -11,6 +11,7 @@ import {
   PLUGIN_DB_ID_COLUMN,
   PLUGIN_DB_IDENTIFIER_MAX_LENGTH,
   PLUGIN_DB_IDENTIFIER_PATTERN,
+  PLUGIN_DB_RESERVED_COLUMNS,
   PLUGIN_DB_TABLE_PREFIX,
   PLUGIN_DB_UPDATED_AT_COLUMN,
 } from '../constants/plugin-db.constants';
@@ -67,7 +68,10 @@ export const assertPluginColumnName = (column: string): void => {
 };
 
 /**
- * 校验一组列声明（非空、无重复、列名全部合法），不合法抛错
+ * 校验一组列声明（非空、无重复、列名全部合法且不占用宿主保留列），不合法抛错
+ *
+ * 「宿主保留列」指 `id` / `created_at` / `updated_at`：它们由宿主自动维护并固定写进
+ * 建表语句，插件重复声明只会得到一句难懂的 `duplicate column name`，故在此直接拒绝。
  * @param columns 列声明列表
  * @returns 列名 → 声明的映射（方便调用方按列序列化）
  */
@@ -78,6 +82,11 @@ export const toColumnMap = (columns: readonly PluginDbColumn[]): Map<string, Plu
   const map = new Map<string, PluginDbColumn>();
   for (const column of columns) {
     assertPluginColumnName(column.name);
+    if (PLUGIN_DB_RESERVED_COLUMNS.includes(column.name)) {
+      throw new Error(
+        `[plugin-db] 列名 "${column.name}" 是宿主保留列（${PLUGIN_DB_RESERVED_COLUMNS.join(' / ')}），由宿主自动维护，插件无需声明`,
+      );
+    }
     if (map.has(column.name)) {
       throw new Error(`[plugin-db] 重复列名："${column.name}"`);
     }

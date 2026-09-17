@@ -11,7 +11,7 @@
  */
 import { ref } from 'vue';
 import { MAINLINE_MAX_HISTORY_DAYS } from './constants';
-import type { PluginDatabase } from '../../types/plugin.types';
+import type { PluginDatabase, PluginDbColumn } from '../../types/plugin.types';
 import type { BoardSeries, MainlineScanMeta, MainlineSnapshot, MarketTurnoverPoint } from './types';
 
 /** 板块历史表名（物理表 `plugin_dsh_mainline_board_history`） */
@@ -26,6 +26,25 @@ export const MAINLINE_META_KEY = 'last_scan';
 /** 沪深成交额序列在表里的键 */
 const MAINLINE_MARKET_KEY = 'market_turnover';
 
+/**
+ * 板块历史表的列声明
+ *
+ * ⚠️ 只声明**业务列**：`id` / `created_at` / `updated_at` 由宿主自动维护并固定写进建表语句，
+ * 插件重复声明会让建表语句出现两个同名列（SQLite 报 `duplicate column name`）——
+ * 宿主已在 `toColumnMap` 里拒绝保留列，冒烟也用真 SQLite 执行过一次建表。
+ */
+export const MAINLINE_BOARD_COLUMNS: readonly PluginDbColumn[] = [
+  { name: 'board_code', type: 'text', indexed: true },
+  { name: 'board_name', type: 'text' },
+  { name: 'days', type: 'json' },
+];
+
+/** 扫描元信息表的列声明（键值行，同样只声明业务列） */
+export const MAINLINE_META_COLUMNS: readonly PluginDbColumn[] = [
+  { name: 'meta_key', type: 'text', indexed: true },
+  { name: 'meta_value', type: 'json' },
+];
+
 /** 板块历史表的一行 */
 interface BoardHistoryRow extends Record<string, unknown> {
   /** 板块代码（88xxxx，唯一） */
@@ -34,8 +53,6 @@ interface BoardHistoryRow extends Record<string, unknown> {
   board_name: string;
   /** 逐日行情（json 列，升序） */
   days: unknown;
-  /** 最近一次写入时间（毫秒时间戳） */
-  updated_at: number;
 }
 
 /** 元信息表的一行 */
@@ -88,16 +105,8 @@ export interface MainlineRepo {
  * @returns 主题快照仓储
  */
 export const createMainlineRepo = async (db: PluginDatabase): Promise<MainlineRepo> => {
-  await db.ensureTable(MAINLINE_BOARD_TABLE, [
-    { name: 'board_code', type: 'text', indexed: true },
-    { name: 'board_name', type: 'text' },
-    { name: 'days', type: 'json' },
-    { name: 'updated_at', type: 'integer' },
-  ]);
-  await db.ensureTable(MAINLINE_META_TABLE, [
-    { name: 'meta_key', type: 'text', indexed: true },
-    { name: 'meta_value', type: 'json' },
-  ]);
+  await db.ensureTable(MAINLINE_BOARD_TABLE, MAINLINE_BOARD_COLUMNS);
+  await db.ensureTable(MAINLINE_META_TABLE, MAINLINE_META_COLUMNS);
 
   const boards = ref<BoardSeries[]>([]);
   const market = ref<MarketTurnoverPoint[]>([]);
@@ -164,14 +173,13 @@ export const createMainlineRepo = async (db: PluginDatabase): Promise<MainlineRe
       nextMarket: MarketTurnoverPoint[],
       nextMeta: MainlineScanMeta,
     ): Promise<void> => {
-      const now = Date.now();
+      // 时间列（created_at / updated_at）由宿主自动维护，插件不传
       for (const series of nextBoards) {
         const days = series.days.slice(-MAINLINE_MAX_HISTORY_DAYS);
         await upsert(MAINLINE_BOARD_TABLE, series.code, {
           board_code: series.code,
           board_name: series.name,
           days,
-          updated_at: now,
         });
       }
       const marketRowKey = `${MAINLINE_META_TABLE}:${MAINLINE_MARKET_KEY}`;
