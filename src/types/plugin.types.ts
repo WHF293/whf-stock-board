@@ -13,7 +13,8 @@
  */
 import type { Component } from 'vue';
 import type { BuiltinMcpServer } from '../agent/mcp/types';
-import type { PLUGIN_ORIGIN, PLUGIN_STATUS } from '../constants/plugin.constants';
+import type { NotifyService } from './notify.types';
+import type { HEADER_MARQUEE_TONE, PLUGIN_ORIGIN, PLUGIN_STATUS } from '../constants/plugin.constants';
 
 /** 可逆副作用句柄：调用 `dispose()` 撤销一次注册（幂等） */
 export interface Disposable {
@@ -26,6 +27,9 @@ export type SidebarPanelPosition = 'nav' | 'footer';
 
 /** 侧栏面板展示形态：`inline` 直接渲染在侧栏内 / `drawer` 侧栏内只放入口按钮，内容走右侧抽屉 */
 export type SidebarPanelMode = 'inline' | 'drawer';
+
+/** 插件面板的承载形态（宿主 provide 给面板组件的上下文口径：内联 / 抽屉 / 顶栏下拉） */
+export type PluginPanelHostMode = SidebarPanelMode | 'header';
 
 /**
  * 左侧栏面板贡献（插件在左侧栏新增面板的唯一入口）
@@ -168,6 +172,197 @@ export interface RegisteredDockPanel extends Required<DockPanelContribution> {
   pluginId: string;
 }
 
+/** 顶栏轮播行的语义色调（取值见 constants/plugin.constants.ts 的 HEADER_MARQUEE_TONE） */
+export type HeaderMarqueeTone = (typeof HEADER_MARQUEE_TONE)[keyof typeof HEADER_MARQUEE_TONE];
+
+/**
+ * 顶栏条目收起态的「单条轮播」行
+ *
+ * 宿主只按 `tone` 映射配色、按 `text` 单行截断展示，**不理解业务语义** ——
+ * 与行操作贡献点同一个思路：插件声明「显示什么」，宿主只管「显示在哪」。
+ */
+export interface HeaderMarqueeLine {
+  /** 整行展示文本（无 `label` 时整行截断展示；同时作为这行的无障碍朗读内容） */
+  text: string;
+  /**
+   * 行首标签（如标的名称）
+   *
+   * 与 `price` / `percent` 成对给出时，宿主按「三段定宽」渲染：`label` 固定五字宽
+   * 超长截断，`price` / `percent` 各按最坏宽度定宽完整显示 —— 顶栏只有一行位置，
+   * 名称长短不一时宁可截名称，也不能把价格 / 涨跌幅挤掉。只给 `text` 则整行一起截断。
+   */
+  label?: string;
+  /** 价格段（如「1266.98」），定宽不截断（与 `label` 之间不留间距） */
+  price?: string;
+  /** 涨跌幅段（如「+0.71%」），定宽不截断（与 `price` 之间留 `PRICE_PERCENT_GAP` 间距） */
+  percent?: string;
+  /** 语义色调（缺省中性）；涨跌方向由色调表达，插件不碰具体色值 */
+  tone?: HeaderMarqueeTone;
+}
+
+/**
+ * 顶栏条目贡献（应用顶栏右侧工具条上的一个入口）
+ *
+ * 用作「一眼能看到、点开才展开」的常驻信息入口：收起态只有一个图标 + 一条轮播信息
+ * （`marquee` 提供数据源，宿主按 `marqueeIntervalMs` 轮流展示），点击展开下拉面板
+ * 承载 `component` —— 于是插件既能长期露脸，又不会长期占版面。
+ *
+ * 宿主不硬编码任何具体插件：谁注册谁出现在顶栏，插件卸载即消失。
+ */
+export interface HeaderItemContribution {
+  /** 条目 id（插件内唯一，内核会拼成 `<pluginId>#<id>` 全局键） */
+  id: string;
+  /** 条目名（下拉面板标题 / 无可轮播内容时的占位文案） */
+  title: string;
+  /** 图标 key（MenuIcon 渲染）。收起态不展示（顶栏位置金贵，留给轮播信息），设置页编排列表用它区分条目 */
+  icon: string;
+  /** 排序权重，越小越靠左（默认 100；宿主自带项不参与排序） */
+  order?: number;
+  /** 下拉面板内容组件（宿主在点击展开时挂载、收起时卸载） */
+  component: Component;
+  /** 传给下拉面板组件的 props */
+  props?: Record<string, unknown>;
+  /**
+   * 收起态轮播行的数据源（在响应式作用域内求值，插件直接读自己的 ref 即可）
+   *
+   * 返回空数组 = 当前无可展示内容，触发按钮回落为「条目名」；
+   * 返回单行 = 常显不轮播（宿主不会为一个定时器白跑）。
+   * @returns 轮播行列表（宿主按间隔轮流取一条，上下滑动切换）
+   */
+  marquee?: () => readonly HeaderMarqueeLine[];
+  /** 轮播间隔（毫秒，默认 4000，低于 HEADER_ITEM_MARQUEE_INTERVAL_MIN 会被夹到下限） */
+  marqueeIntervalMs?: number;
+}
+
+/** 已注册的顶栏条目（内核补全默认值 + 归属插件后的形态） */
+export interface RegisteredHeaderItem {
+  /** 全局唯一键：`<pluginId>#<id>` */
+  key: string;
+  /** 归属插件 id */
+  pluginId: string;
+  /** 条目 id（插件内声明值） */
+  id: string;
+  /** 条目名 */
+  title: string;
+  /** 图标 key */
+  icon: string;
+  /** 排序权重（已补默认值） */
+  order: number;
+  /** 下拉面板内容组件 */
+  component: Component;
+  /** 传给下拉面板组件的 props（已补默认空对象） */
+  props: Record<string, unknown>;
+  /** 轮播行数据源（已补默认：恒返回空数组） */
+  marquee: () => readonly HeaderMarqueeLine[];
+  /** 轮播间隔（已夹到下限之上） */
+  marqueeIntervalMs: number;
+}
+
+/**
+ * 股票行操作的作用目标（宿主把被操作的那一行交给插件）
+ *
+ * 只暴露「哪只票」，不暴露行对象 / 表格实例：插件因此无法改宿主数据，
+ * 只能对这只股票做自己的事（加入盯盘、打标签、发起分析…）。
+ */
+export interface StockRowTarget {
+  /** 完整符号（如 `sh600519`） */
+  symbol: string;
+  /** 股票名称（行情未取到时为自选记录里的名称） */
+  name: string;
+}
+
+/**
+ * 股票行操作贡献（在股票行表格的「操作」列注入一个按钮）
+ *
+ * 宿主不硬编码任何具体插件：谁注册谁渲染、插件卸载即消失。
+ * `isActive` 让插件表达「这一行已处于该动作的激活态」（如已在盯盘候选中），
+ * 宿主据此高亮按钮并切换提示文案 —— 于是「加入 / 移出」这类开关型动作
+ * 只需要插件声明两个文案 + 一个判定，宿主不必理解动作语义。
+ */
+export interface StockRowActionContribution {
+  /** 动作 id（插件内唯一，内核会拼成 `<pluginId>#<id>` 全局键） */
+  id: string;
+  /** 动作名（按钮 tooltip / aria 文案，如「盯盘」） */
+  title: string;
+  /** 已激活时的动作名（缺省沿用 `title`，如「取消盯盘」） */
+  activeTitle?: string;
+  /** 图标 key（MenuIcon 渲染） */
+  icon: string;
+  /** 排序权重，越小越靠前（默认 100；宿主自带的删除按钮恒在最后） */
+  order?: number;
+  /**
+   * 该行当前是否已处于激活态（缺省视为未激活）
+   * @param row 行数据
+   * @returns 是否激活
+   */
+  isActive?: (row: StockRowTarget) => boolean;
+  /**
+   * 执行动作
+   * @param row 行数据
+   */
+  run: (row: StockRowTarget) => void;
+}
+
+/** 已注册的股票行操作（内核补全默认值 + 归属插件后的形态） */
+export interface RegisteredStockRowAction {
+  /** 全局唯一键：`<pluginId>#<id>` */
+  key: string;
+  /** 归属插件 id */
+  pluginId: string;
+  /** 动作 id（插件内声明值） */
+  id: string;
+  /** 动作名（按钮提示文案） */
+  title: string;
+  /** 激活态动作名（已补默认值：缺省等于 title） */
+  activeTitle: string;
+  /** 图标 key（MenuIcon 渲染） */
+  icon: string;
+  /** 排序权重（已补默认值） */
+  order: number;
+  /** 激活态判定（已补默认值：恒为 false） */
+  isActive: (row: StockRowTarget) => boolean;
+  /** 执行体 */
+  run: (row: StockRowTarget) => void;
+}
+
+/**
+ * 个股详情扩展区贡献（在右侧个股详情面板底部注入一个区块）
+ *
+ * 宿主只提供承载位置并传入当前股票符号，区块内容完全由插件决定 ——
+ * 宿主不硬编码任何具体插件（速记 / 标签 / 备注等都走这个通用口子），
+ * 插件卸载即整体消失。组件会收到 `props: { symbol }`（归一化完整符号）。
+ */
+export interface StockDetailSectionContribution {
+  /** 区块 id（插件内唯一，内核会拼成 `<pluginId>#<id>` 全局键） */
+  id: string;
+  /** 区块标题（卡片标题栏文案） */
+  title: string;
+  /** 排序权重，越小越靠前（默认 100；同值按注册先后） */
+  order?: number;
+  /** 区块组件（props 为 `{ symbol: string }` 与本字段合并） */
+  component: Component;
+  /** 传给区块组件的额外 props（如插件注入自己的仓储服务） */
+  props?: Record<string, unknown>;
+}
+
+/** 已注册的个股详情扩展区（内核补全默认值 + 归属插件后的形态） */
+export interface RegisteredStockDetailSection {
+  /** 全局唯一键：`<pluginId>#<id>` */
+  key: string;
+  /** 归属插件 id */
+  pluginId: string;
+  /** 区块 id（插件内声明值） */
+  id: string;
+  /** 区块标题 */
+  title: string;
+  /** 排序权重（已补默认值） */
+  order: number;
+  /** 区块组件 */
+  component: Component;
+  /** 传给区块组件的额外 props（已补默认空对象） */
+  props: Record<string, unknown>;
+}
+
 /**
  * 命令贡献（可挂全局快捷键的可执行动作）
  *
@@ -286,7 +481,10 @@ export type PluginDbRow<T extends Record<string, unknown>> = T & {
  */
 export interface PluginDatabase {
   /**
-   * 声明一张本插件的数据表（幂等：已存在时只补齐列元信息，不动数据）
+   * 声明一张本插件的数据表（幂等：表已存在不重建，缺列自动 ALTER 补上）
+   *
+   * 想改表结构只需在声明里加列 —— 老库会在下次挂载时补列，插件不必写迁移逻辑。
+   * 新增列一律按可空列补（插件读取时自行兜底默认值）。
    * @param table 表名（snake_case，插件内唯一）
    * @param columns 列声明（至少一列；重复列名抛错）
    */
@@ -375,6 +573,16 @@ export interface DockContributor {
   add: (panel: DockPanelContribution) => Disposable;
 }
 
+/** 顶栏条目贡献点（应用顶栏右侧工具条由插件注入入口） */
+export interface HeaderContributor {
+  /**
+   * 注册一个顶栏条目（收起态图标 + 轮播，点击展开下拉面板）
+   * @param item 条目声明
+   * @returns 撤销句柄（插件卸载时内核自动调用）
+   */
+  add: (item: HeaderItemContribution) => Disposable;
+}
+
 /** 命令贡献点 */
 export interface CommandContributor {
   /**
@@ -383,6 +591,26 @@ export interface CommandContributor {
    * @returns 撤销句柄
    */
   add: (command: CommandContribution) => Disposable;
+}
+
+/** 股票行操作贡献点（自选股等「股票行」表格的操作列由插件注入按钮） */
+export interface StockRowContributor {
+  /**
+   * 注册一个股票行操作
+   * @param action 动作声明
+   * @returns 撤销句柄（插件卸载时内核自动调用）
+   */
+  add: (action: StockRowActionContribution) => Disposable;
+}
+
+/** 个股详情扩展区贡献点（个股详情面板的扩展区块由插件注入） */
+export interface StockDetailContributor {
+  /**
+   * 注册一个个股详情扩展区块
+   * @param section 区块声明
+   * @returns 撤销句柄（插件卸载时内核自动调用）
+   */
+  add: (section: StockDetailSectionContribution) => Disposable;
 }
 
 /** Agent 工具贡献点（把插件能力暴露给内置 MCP，Agent 即可调用） */
@@ -414,6 +642,8 @@ export interface AppEventMap {
   'plugin:failed': [info: PluginRuntimeInfo, error: unknown];
   /** 左侧栏面板注册表变化 */
   'sidebar:changed': [panels: readonly RegisteredSidebarPanel[]];
+  /** 顶栏条目注册表变化 */
+  'header:changed': [items: readonly RegisteredHeaderItem[]];
   /** 路由切换（宿主在 router.afterEach 中广播） */
   'route:changed': [to: string, from: string];
 }
@@ -442,6 +672,13 @@ export interface AppServiceMap {
    * 插件「注册面板」与「打开面板」因此可以分开：命令、事件回调都能唤醒面板。
    */
   'panel:open': (panelKey: string) => void;
+  /**
+   * 弹一条应用级浮窗提醒（右下角常驻，跨路由）
+   *
+   * 宿主承载、插件只发起：浮窗**不依赖发起它的组件是否挂载**，
+   * 因此「盯盘阈值告警」这类要长期生效的提醒不会因为面板被折叠就失效。
+   */
+  'app:notify': NotifyService;
 }
 
 /** 内核运行时只读视图（供插件自省，不暴露挂载 / 卸载能力） */
@@ -540,6 +777,8 @@ export interface PluginRuntimeInfo {
 export interface PluginContributionCount {
   /** 左侧栏面板数 */
   sidebarPanels: number;
+  /** 顶栏条目数 */
+  headerItems: number;
   /** 左侧导航菜单项数 */
   menuItems: number;
   /** 路由数 */
@@ -548,6 +787,10 @@ export interface PluginContributionCount {
   dockPanels: number;
   /** 命令数 */
   commands: number;
+  /** 股票行操作数 */
+  stockRowActions: number;
+  /** 个股详情扩展区块数 */
+  stockDetailSections: number;
   /** 内置 MCP 服务器数 */
   agentServers: number;
 }
@@ -611,8 +854,14 @@ export interface PluginContext {
   readonly router: RouterContributor;
   /** 右侧停靠面板贡献点 */
   readonly dock: DockContributor;
+  /** 顶栏条目贡献点（应用顶栏右侧工具条注入入口） */
+  readonly header: HeaderContributor;
   /** 命令贡献点 */
   readonly command: CommandContributor;
+  /** 股票行操作贡献点（在股票行表格的操作列注入按钮） */
+  readonly stockRow: StockRowContributor;
+  /** 个股详情扩展区贡献点（在个股详情面板注入扩展区块） */
+  readonly stockDetail: StockDetailContributor;
   /** Agent 工具贡献点 */
   readonly agent: AgentContributor;
 

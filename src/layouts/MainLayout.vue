@@ -9,13 +9,16 @@ import SettingsView from "../views/SettingsView.vue";
 import DockPanel from "../components/dock/DockPanel.vue";
 import BaseTooltip from "../components/ui/BaseTooltip.vue";
 import MenuIcon from "../components/ui/MenuIcon.vue";
+import NotificationHost from "../components/ui/NotificationHost.vue";
 import SidebarPanelHost from "../components/plugin/SidebarPanelHost.vue";
 import SidebarPanelEntry from "../components/plugin/SidebarPanelEntry.vue";
 import PluginPanelDrawer from "../components/plugin/PluginPanelDrawer.vue";
+import HeaderItemHost from "../components/plugin/HeaderItemHost.vue";
 import { pluginKernel } from "../plugin";
 import { matchesCommandKeys, parseCommandKeys } from "../plugin/command-keys";
 import { useTheme } from "../composables/use-theme";
 import { MARKET_STATUS_REFRESH_INTERVAL_MS } from "../constants/polling.constants";
+import { HOST_HEADER_ITEM, HOST_HEADER_ITEMS } from "../constants/header.constants";
 import { MENU_ITEMS, ROUTE_PATH } from "../constants/router-meta.constants";
 import { openAgentAnalysisWindow } from "../utils/agent-window";
 import { useStockOpen } from "../composables/use-stock-open";
@@ -24,17 +27,22 @@ import { useSettingsStore } from "../stores/settings";
 import { trackAction } from "../weblog/weblogActions";
 import type { SearchResult } from "../types/stock-quote.types";
 import type { ParsedCommandKeys } from "../plugin/command-keys";
-import type { RegisteredCommand, RegisteredSidebarPanel } from "../types/plugin.types";
+import type {
+  RegisteredCommand,
+  RegisteredHeaderItem,
+  RegisteredSidebarPanel,
+} from "../types/plugin.types";
 
 /**
  * 主布局：左侧导航（桌面固定 / 窄屏抽屉）+ 右侧路由内容区 + 右侧停靠面板（默认收起）
  *
  * 侧栏底部为设置入口（数据来源链接在设置页「数据获取」卡片内）；
- * 头部展示页面标题、交易时段徽标与明暗切换；
+ * 头部展示页面标题、顶栏工具条（交易时段徽标 / 明暗切换 / 搜索 / Agent 分析 + 插件条目）；
  * 挂载后刷新市场状态并每 10 分钟同步，供全部轮询消费
  *
- * 插件体系：左侧栏的面板与菜单项均由插件内核贡献（见 `src/plugin/`），
- * 本布局只负责渲染注册表 + 分发插件命令快捷键，不关心具体是哪个插件。
+ * 插件体系：左侧栏的面板与菜单项、顶栏条目均由插件内核贡献（见 `src/plugin/`），
+ * 本布局只负责渲染注册表 + 分发插件命令快捷键，不关心具体是哪个插件；
+ * 宿主自带顶栏项的声明顺序与插件条目合并后，统一由设置页「顶栏工具」编排顺序与显隐。
  */
 const route = useRoute();
 const router = useRouter();
@@ -201,6 +209,70 @@ const navInlinePanels = computed(() => pickPanels('nav', 'inline').filter(should
 const navDrawerPanels = computed(() => pickPanels('nav', 'drawer'));
 const footerInlinePanels = computed(() => pickPanels('footer', 'inline').filter(shouldRenderInline));
 const footerDrawerPanels = computed(() => pickPanels('footer', 'drawer'));
+
+// ---------- 顶栏（右上角工具条） ----------
+
+/** 顶栏渲染项：宿主自带项（`panel` 为 null，按 id 分支渲染）与插件条目（渲染 HeaderItemHost） */
+interface HeaderRenderItem {
+  /** 唯一键（宿主项 = 项 id；插件条目 = `<pluginId>#<id>`，也是设置页持久化的键） */
+  key: string;
+  /** 宿主项 id 或插件条目全局键 */
+  id: string;
+  /** 条目名 */
+  title: string;
+  /** 图标 key */
+  icon: string;
+  /** 插件条目（宿主自带项为 null） */
+  panel: RegisteredHeaderItem | null;
+}
+
+/** 宿主自带顶栏条目（声明顺序即默认顺序） */
+const hostHeaderItems: HeaderRenderItem[] = HOST_HEADER_ITEMS.map((item) => ({
+  key: item.id,
+  id: item.id,
+  title: item.title,
+  icon: item.icon,
+  panel: null,
+}));
+
+/** 插件贡献的顶栏条目（内核注册表，已按插件声明的 order 排好） */
+const pluginHeaderItems = computed<HeaderRenderItem[]>(() => {
+  void pluginKernel.revision.value;
+  return pluginKernel.contributions.header.items.map((item) => ({
+    key: item.key,
+    id: item.key,
+    title: item.title,
+    icon: item.icon,
+    panel: item,
+  }));
+});
+
+/**
+ * 按用户编排顺序渲染的顶栏条目
+ *
+ * 与侧栏导航同一套兜底规则：持久化顺序里没有的条目（版本升级新增、新装插件）
+ * 追加到末尾，保证入口不丢失；`settings.hiddenHeaderItems` 里编排时关掉的条目不渲染。
+ */
+const headerItems = computed<HeaderRenderItem[]>(() => {
+  const all: HeaderRenderItem[] = [...hostHeaderItems, ...pluginHeaderItems.value];
+  const hidden = new Set(settingsStore.hiddenHeaderItems);
+  const byKey = new Map<string, HeaderRenderItem>();
+  for (const item of all) {
+    if (!hidden.has(item.key)) byKey.set(item.key, item);
+  }
+  const ordered: HeaderRenderItem[] = [];
+  for (const key of settingsStore.headerOrder) {
+    const item = byKey.get(key);
+    if (item) {
+      ordered.push(item);
+      byKey.delete(key);
+    }
+  }
+  for (const item of all) {
+    if (byKey.has(item.key)) ordered.push(item);
+  }
+  return ordered;
+});
 
 /**
  * 插件命令的快捷键表
@@ -430,51 +502,60 @@ void marketStatusStore.refresh();
             {{ pageTitle }}
           </h1>
         </div>
+        <!-- 右上角工具条：宿主自带项 + 插件顶栏条目，顺序与显隐由设置页「顶栏工具」编排 -->
         <div class="flex shrink-0 items-center gap-1.5">
-          <MarketStatusBadge />
-          <button
-            type="button"
-            class="group relative pressable rounded-lg p-2 text-text-secondary hover:bg-flat-weak active:scale-90"
-            :aria-label="isDark ? '切换为亮色模式' : '切换为暗色模式'"
-            data-track="NAV_THEME_TOGGLE"
-            @click="toggleDark()"
-          >
-            <MenuIcon :name="isDark ? 'sun' : 'moon'" :size="16" />
-            <BaseTooltip :text="isDark ? '切换为亮色模式' : '切换为暗色模式'" placement="bottom" />
-          </button>
-          <!-- 搜索：点击打开弹窗 -->
-          <button
-            type="button"
-            class="group relative pressable rounded-lg p-2 text-text-secondary hover:bg-flat-weak active:scale-90"
-            aria-label="搜索个股"
-            data-track="NAV_SEARCH_OPEN"
-            @click="searchModalOpen = true"
-          >
-            <MenuIcon name="search" :size="16" />
-            <BaseTooltip text="搜索个股" placement="bottom" />
-          </button>
-          <!-- Agent 分析：Tauri 开独立窗口，浏览器回退站内 standalone 路由 -->
-          <button
-            type="button"
-            class="group relative pressable rounded-lg p-2 text-text-secondary hover:bg-flat-weak active:scale-90"
-            aria-label="Agent 分析"
-            data-track="NAV_AGENT_OPEN"
-            @click="openAgentAnalysis"
-          >
-            <MenuIcon name="agent" :size="16" />
-            <BaseTooltip text="Agent 分析" placement="bottom" />
-          </button>
-          <!-- 软件白皮书：站内文档页，hover 提示用途 -->
-          <button
-            type="button"
-            class="group relative pressable rounded-lg p-2 text-text-secondary hover:bg-flat-weak active:scale-90"
-            aria-label="软件白皮书"
-            data-track="NAV_WHITEPAPER_OPEN"
-            @click="openWhitepaper"
-          >
-            <MenuIcon name="whitepaper" :size="16" />
-            <BaseTooltip text="软件白皮书" placement="bottom" />
-          </button>
+          <template v-for="item in headerItems" :key="item.key">
+            <MarketStatusBadge v-if="item.id === HOST_HEADER_ITEM.MARKET_STATUS" />
+            <button
+              v-else-if="item.id === HOST_HEADER_ITEM.THEME"
+              type="button"
+              class="group relative pressable rounded-lg p-2 text-text-secondary hover:bg-flat-weak active:scale-90"
+              :aria-label="isDark ? '切换为亮色模式' : '切换为暗色模式'"
+              data-track="NAV_THEME_TOGGLE"
+              @click="toggleDark()"
+            >
+              <MenuIcon :name="isDark ? 'sun' : 'moon'" :size="16" />
+              <BaseTooltip :text="isDark ? '切换为亮色模式' : '切换为暗色模式'" placement="bottom" />
+            </button>
+            <!-- 搜索：点击打开弹窗 -->
+            <button
+              v-else-if="item.id === HOST_HEADER_ITEM.SEARCH"
+              type="button"
+              class="group relative pressable rounded-lg p-2 text-text-secondary hover:bg-flat-weak active:scale-90"
+              aria-label="搜索个股"
+              data-track="NAV_SEARCH_OPEN"
+              @click="searchModalOpen = true"
+            >
+              <MenuIcon name="search" :size="16" />
+              <BaseTooltip text="搜索个股" placement="bottom" />
+            </button>
+            <!-- Agent 分析：Tauri 开独立窗口，浏览器回退站内 standalone 路由 -->
+            <button
+              v-else-if="item.id === HOST_HEADER_ITEM.AGENT"
+              type="button"
+              class="group relative pressable rounded-lg p-2 text-text-secondary hover:bg-flat-weak active:scale-90"
+              aria-label="Agent 分析"
+              data-track="NAV_AGENT_OPEN"
+              @click="openAgentAnalysis"
+            >
+              <MenuIcon name="agent" :size="16" />
+              <BaseTooltip text="Agent 分析" placement="bottom" />
+            </button>
+            <!-- 软件白皮书：站内文档页，hover 提示用途 -->
+            <button
+              v-else-if="item.id === HOST_HEADER_ITEM.WHITEPAPER"
+              type="button"
+              class="group relative pressable rounded-lg p-2 text-text-secondary hover:bg-flat-weak active:scale-90"
+              aria-label="软件白皮书"
+              data-track="NAV_WHITEPAPER_OPEN"
+              @click="openWhitepaper"
+            >
+              <MenuIcon name="whitepaper" :size="16" />
+              <BaseTooltip text="软件白皮书" placement="bottom" />
+            </button>
+            <!-- 插件贡献的顶栏条目：图标 + 单条轮播，点击展开下拉面板 -->
+            <HeaderItemHost v-else-if="item.panel" :item="item.panel" />
+          </template>
         </div>
       </header>
       <main class="flex-1 overflow-y-auto">
@@ -511,5 +592,8 @@ void marketStatusStore.refresh();
 
     <!-- 插件面板抽屉（承载 mode: 'drawer' 的插件面板） -->
     <PluginPanelDrawer />
+
+    <!-- 应用级浮窗（插件经 app:notify 服务发起，跨路由常驻） -->
+    <NotificationHost />
   </div>
 </template>

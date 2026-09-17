@@ -24,6 +24,20 @@ export const PLUGIN_DB_CREATED_AT_COLUMN = 'created_at';
 export const PLUGIN_DB_UPDATED_AT_COLUMN = 'updated_at';
 
 /**
+ * 宿主保留列名 —— 插件**不得**在自己的列声明里出现
+ *
+ * 这三列由宿主自动维护（主键 + 创建/更新时间），`buildCreateTableSql` 固定追加。
+ * 插件若重复声明，生成的建表语句里会出现两个同名列，SQLite 直接报
+ * `duplicate column name: updated_at` —— 这个文案指向不了「与宿主保留列冲突」的真实原因，
+ * 排查成本极高（本次 dsh-mainline 踩过），因此宿主在声明校验阶段就拒绝并给出明确提示。
+ */
+export const PLUGIN_DB_RESERVED_COLUMNS: readonly string[] = [
+  PLUGIN_DB_ID_COLUMN,
+  PLUGIN_DB_CREATED_AT_COLUMN,
+  PLUGIN_DB_UPDATED_AT_COLUMN,
+];
+
+/**
  * 插件列类型 → SQLite 存储类型映射
  *
  * `json` 列物理上存 TEXT（写入 JSON.stringify、读出 JSON.parse），承载任意可序列化值

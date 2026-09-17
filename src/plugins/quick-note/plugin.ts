@@ -9,6 +9,7 @@
  * - **命令 + 宿主服务**：快捷键经 `panel:open` 服务唤醒自己的面板。
  */
 import QuickNotePanel from './QuickNotePanel.vue';
+import StockNotesSection from './StockNotesSection.vue';
 import { createQuickNoteRepo } from './service';
 import type { PluginDefinition } from '../../types/plugin.types';
 
@@ -24,9 +25,9 @@ export const QUICK_NOTE_PANEL_KEY = `dsh-quick-note#${QUICK_NOTE_PANEL_ID}`;
 export const quickNotePlugin: PluginDefinition = {
   id: 'dsh-quick-note',
   name: '速记',
-  version: '1.0.0',
+  version: '1.1.0',
   description:
-    '左侧栏底部新增「速记」入口（抽屉形态）：随手记一条，随写随存；对外提供 note:repo 服务与 note:saved 事件供其他插件复用。',
+    '左侧栏底部新增「速记」入口（抽屉形态）：随手记一条，随写随存，可关联一只股票（自选快选或全市场搜索），关联后的速记展示在该股的个股详情里；对外提供 note:repo 服务与 note:saved 事件供其他插件复用。',
   author: '内置',
   apply: async (ctx) => {
     // 建表 + 水合 + 旧数据迁移完成后才对外暴露服务（内核会等待异步 apply 完成）
@@ -49,6 +50,14 @@ export const quickNotePlugin: PluginDefinition = {
       props: { repo },
     });
 
+    // 个股详情扩展区：在该股的详情面板里展示 / 追加关联速记（宿主只传 symbol）
+    ctx.stockDetail.add({
+      id: 'stock-notes',
+      title: '速记',
+      component: StockNotesSection,
+      props: { repo },
+    });
+
     ctx.command.add({
       id: 'open',
       title: '打开速记',
@@ -58,6 +67,6 @@ export const quickNotePlugin: PluginDefinition = {
       },
     });
 
-    ctx.logger.info('已注册抽屉面板、note:repo 服务与 1 条命令');
+    ctx.logger.info('已注册抽屉面板、个股详情速记扩展区、note:repo 服务与 1 条命令');
   },
 };
