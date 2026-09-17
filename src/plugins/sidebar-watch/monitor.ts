@@ -15,7 +15,7 @@
  * 看到的即盯着的。把票从自选股移除只让该行与它的告警一起停下，
  * 候选记录与阈值仍保留在库里 —— 重新加回自选股即自动续上。
  */
-import { effectScope, ref, shallowRef } from 'vue';
+import { computed, effectScope, ref, shallowRef, watch } from 'vue';
 import { fetchFullQuotes } from '../../api/quotes.api';
 import { createPollingScheduler } from '../../composables/polling-scheduler';
 import { POLLING_INTERVAL } from '../../constants/polling.constants';
@@ -25,6 +25,7 @@ import { useWatchlistStore } from '../../stores/watchlist';
 import { findQuoteBySymbol } from '../../utils/find-quote-by-symbol';
 import { buildAlertNotice, evaluateAlert, isAlertConfigured } from './alerts';
 import { filterCandidatesByWatchlist } from './candidates';
+import { WATCH_QUOTE_CATCHUP_DEBOUNCE_MS } from './constants';
 import type { WatchCandidate, WatchCandidateRepo } from './service';
 import type { ShallowRef, Ref } from 'vue';
 import type { FullQuote } from '../../types/stock-quote.types';
@@ -139,18 +140,53 @@ export const createWatchMonitor = (deps: WatchMonitorDeps): WatchMonitor => {
 
   // 独立作用域：调度器的窗口 / 可见性监听随它一起回收
   const scope = effectScope();
+
+  /** 取消待执行的补拉（scope.run 里赋值；插件卸载时随 scope 一起收尾） */
+  let stopCatchUp: (() => void) | undefined;
+
   scope.run(() => {
-    createPollingScheduler({
+    const scheduler = createPollingScheduler({
       task: fetchQuotes,
       intervalMs: POLLING_INTERVAL.QUOTES_INTRADAY,
       tradingAware: true,
     });
+
+    /**
+     * 新候选补拉报价
+     *
+     * 调度器是交易窗口感知的：窗口外启动时只取一次，之后不再轮询 ——
+     * 那之后新加的候选永远拿不到报价，只能一直挂着 `--` 占位。
+     * 这里监听监控集合，出现快照里还没有的 symbol 就**防抖补一轮**
+     * （连续增删多只合并成一次；仍是单次批量请求，不碰频率红线）。
+     */
+    const monitoredSymbols = computed(() =>
+      monitoredCandidates().map((candidate) => candidate.symbol),
+    );
+    let catchUpTimer: ReturnType<typeof setTimeout> | undefined;
+    const scheduleCatchUp = (): void => {
+      if (catchUpTimer) clearTimeout(catchUpTimer);
+      catchUpTimer = setTimeout(() => {
+        catchUpTimer = undefined;
+        void scheduler.runNow();
+      }, WATCH_QUOTE_CATCHUP_DEBOUNCE_MS);
+    };
+    watch(monitoredSymbols, (symbols) => {
+      if (symbols.some((symbol) => !findQuoteBySymbol(quotes.value, symbol))) {
+        scheduleCatchUp();
+      }
+    });
+
+    stopCatchUp = (): void => {
+      if (catchUpTimer) clearTimeout(catchUpTimer);
+      catchUpTimer = undefined;
+    };
   });
 
   return {
     quotes,
     loading,
     stop: (): void => {
+      stopCatchUp?.();
       scope.stop();
       // 插件卸载时清掉自己弹过的提醒，不在界面上留下无主浮窗
       notify?.dismissBySource(NOTIFY_SOURCE_WATCH_ALERT);

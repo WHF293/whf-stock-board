@@ -65,25 +65,37 @@ export const HEADER_MARQUEE_SLIDE_MS = 400;
 /** 顶栏轮播滑动缓动（快起慢收，Swiper 那种「滑到位」的观感） */
 export const HEADER_MARQUEE_SLIDE_EASING = 'cubic-bezier(0.4, 0, 0.2, 1)';
 
-/** 顶栏轮播行首标签的宽度上限（em，随字号缩放；5 = 五个汉字宽，超出截断省略） */
-export const HEADER_MARQUEE_LABEL_MAX_EM = 5;
+/**
+ * 顶栏轮播名称段固定宽度（px）
+ *
+ * 五个汉字宽（12px 字号实测 60）—— 名称超长从这里省略号，价格 / 涨跌幅永不挤掉。
+ * 写死而不是自适应：视窗是定值，顶栏永不被轮播内容推挤，数字也不左右横跳。
+ */
+export const HEADER_MARQUEE_LABEL_WIDTH_PX = 60;
 
 /**
- * 顶栏轮播数值列固定宽度（px）
+ * 顶栏轮播价格段固定宽度（px）
  *
- * 按最坏一行里的「价格 + 涨跌幅」预留：`99999.99 +9999.99%` 本机 Chrome 实测 110.63
- * （系统字体栈 12px），向上取整到 111。**写死而不是自适应** —— 自适应会让每行的
- * 数值列宽随内容变化，数字左右横跳；固定后不论行情怎么变，这一列的位置都不动。
+ * 按最坏价格 `99999.99` 预留（本机 Chrome 实测 47.89，系统字体栈 12px，取整 48）。
  * 单价 5 位是冗余预留（A 股远达不到），宁可留白也不让极端数字把布局挤变形。
  */
-export const HEADER_MARQUEE_VALUE_WIDTH_PX = 111;
+export const HEADER_MARQUEE_PRICE_WIDTH_PX = 48;
+
+/**
+ * 顶栏轮播涨跌幅段固定宽度（px）
+ *
+ * 按最坏涨跌幅 `+9999.99%` 预留（本机 Chrome 实测 59.45，取整 60）。
+ */
+export const HEADER_MARQUEE_PERCENT_WIDTH_PX = 60;
+
+/** 顶栏轮播价格段与涨跌幅段之间的间距（px）—— 名称与价格之间不留间距 */
+export const HEADER_MARQUEE_PRICE_PERCENT_GAP_PX = 2;
 
 /**
  * 顶栏轮播视窗宽度（px）
  *
- * 两列宽度固定，视窗宽度才能是个定值、顶栏永不被轮播内容推挤：
- * 名称上限 5 字（12px 字号 = 60）+ 数值列 111 = 171。
- * 两列之间不留间距 —— 数值列本身就是冗余预留（见上），再留间距只会把名称挤窄。
+ * 三段宽度全固定，视窗宽度才能是个定值、顶栏永不被轮播内容推挤：
+ * 名称 60（无间距）+ 价格 48 + 间距 2 + 涨跌幅 60 = 170。
  */
-export const HEADER_MARQUEE_VIEWPORT_PX = 171;
+export const HEADER_MARQUEE_VIEWPORT_PX = 170;
 

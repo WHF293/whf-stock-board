@@ -5,12 +5,14 @@ import MenuIcon from '../ui/MenuIcon.vue';
 import { PLUGIN_PANEL_HOST_KEY } from '../../plugin/panel-host';
 import { usePluginPanelsStore } from '../../stores/plugin-panels';
 import {
-  HEADER_MARQUEE_LABEL_MAX_EM,
+  HEADER_MARQUEE_LABEL_WIDTH_PX,
   HEADER_MARQUEE_LINE_HEIGHT,
+  HEADER_MARQUEE_PERCENT_WIDTH_PX,
+  HEADER_MARQUEE_PRICE_PERCENT_GAP_PX,
+  HEADER_MARQUEE_PRICE_WIDTH_PX,
   HEADER_MARQUEE_SLIDE_EASING,
   HEADER_MARQUEE_SLIDE_MS,
   HEADER_MARQUEE_TONE_CLASS,
-  HEADER_MARQUEE_VALUE_WIDTH_PX,
   HEADER_MARQUEE_VIEWPORT_PX,
 } from '../../constants/header.constants';
 import { HEADER_MARQUEE_TONE } from '../../constants/plugin.constants';
@@ -74,23 +76,29 @@ const lineHeightStyle = computed<CSSProperties>(() => ({
 }));
 
 /**
- * 视窗样式：高一行、宽固定（= 名称上限 60 + 数值列 111 = 171，推导见常量注释）
+ * 视窗样式：高一行、宽固定（= 名称 60 + 价格 48 + 间距 2 + 涨跌幅 60 = 170，推导见常量注释）
  *
- * 两列宽全写死：视窗是定值，顶栏永不被轮播内容推挤，数字也不左右横跳。
+ * 三段宽全写死：视窗是定值，顶栏永不被轮播内容推挤，数字也不左右横跳。
  */
 const viewportStyle = computed<CSSProperties>(() => ({
   height: `${HEADER_MARQUEE_LINE_HEIGHT}px`,
   width: `${HEADER_MARQUEE_VIEWPORT_PX}px`,
 }));
 
-/** 行首标签上限：5 字宽（em 随字号缩放），超出省略号 —— 空间不够时从名称里省 */
+/** 名称段固定五字宽：超长省略号，空间永远让给价格 / 涨跌幅 */
 const labelStyle = computed<CSSProperties>(() => ({
-  maxWidth: `${HEADER_MARQUEE_LABEL_MAX_EM}em`,
+  width: `${HEADER_MARQUEE_LABEL_WIDTH_PX}px`,
 }));
 
-/** 数值列固定宽：按最坏 `99999.99 +9999.99%` 预留（冗余设计），数字位置稳定 */
-const valueStyle = computed<CSSProperties>(() => ({
-  width: `${HEADER_MARQUEE_VALUE_WIDTH_PX}px`,
+/** 价格段固定宽（最坏 `99999.99`），与名称之间不留间距 */
+const priceStyle = computed<CSSProperties>(() => ({
+  width: `${HEADER_MARQUEE_PRICE_WIDTH_PX}px`,
+}));
+
+/** 涨跌幅段固定宽（最坏 `+9999.99%`），与价格之间留 2px 间距 */
+const percentStyle = computed<CSSProperties>(() => ({
+  width: `${HEADER_MARQUEE_PERCENT_WIDTH_PX}px`,
+  marginLeft: `${HEADER_MARQUEE_PRICE_PERCENT_GAP_PX}px`,
 }));
 
 /** 轨道位移样式（每行滑动 LINE_HEIGHT 像素；回绕瞬间无过渡） */
@@ -230,8 +238,8 @@ const onToggle = (): void => {
            文案长短变化时不推挤相邻按钮；高度固定为一行，轨道上下滑动把下一条滑进来 -->
       <span v-if="hasLines" class="overflow-hidden" :style="viewportStyle">
         <span class="flex flex-col" :style="trackStyle" @transitionend="onSlideEnd">
-          <!-- 两列宽全固定：名称上限 5 字（超出省略号）、数值列按最坏宽度预留。
-               两列之间不留间距（数值列已是冗余预留），名称短时空白落在数值列右侧 -->
+          <!-- 三段定宽：名称五字（超长省略号）[无间距] 价格 [2px] 涨跌幅；
+               涨跌幅与右侧箭头之间靠按钮的 gap-1 留一点间距 -->
           <span
             v-for="(line, index) in trackLines"
             :key="`${index}-${line.text}`"
@@ -241,7 +249,8 @@ const onToggle = (): void => {
             :aria-label="line.text"
           >
             <span class="min-w-0 truncate text-left" :style="labelStyle">{{ line.label ?? line.text }}</span>
-            <span v-if="line.value" class="shrink-0 tabular-nums" :style="valueStyle">{{ line.value }}</span>
+            <span v-if="line.price" class="shrink-0 text-right tabular-nums" :style="priceStyle">{{ line.price }}</span>
+            <span v-if="line.percent" class="shrink-0 text-right tabular-nums" :style="percentStyle">{{ line.percent }}</span>
           </span>
         </span>
       </span>

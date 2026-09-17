@@ -99,6 +99,15 @@ export const WATCH_ALERT_REARM_PRICE_RATIO = 0.001;
 /** 涨跌幅阈值「重新武装」的绝对回差（百分点） */
 export const WATCH_ALERT_REARM_CHANGE_MARGIN = 0.1;
 
+/**
+ * 新增候选「补拉报价」的防抖间隔（毫秒）
+ *
+ * 候选池出现还没取过价的 symbol 时立即补一轮报价（交易窗口外调度器不再轮询，
+ * 不补的话新候选永远不进轮播 / 明细）；连续增删多只时防抖合并成一次取数，
+ * 仍是单次批量请求，不碰东财频率红线。
+ */
+export const WATCH_QUOTE_CATCHUP_DEBOUNCE_MS = 800;
+
 /** 阈值编辑器标题 */
 export const WATCH_ALERT_EDITOR_TITLE = '阈值提醒';
 

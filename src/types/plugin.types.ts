@@ -187,13 +187,15 @@ export interface HeaderMarqueeLine {
   /**
    * 行首标签（如标的名称）
    *
-   * 与 `value` 成对给出时，宿主按「两端布局」渲染：`label` 占用剩余宽度、超长截断，
-   * `value` 始终完整 —— 顶栏只有一行位置，名称长短不一时宁可截名称，
-   * 也不能把价格 / 涨跌幅挤掉。只给 `text` 则整行一起截断。
+   * 与 `price` / `percent` 成对给出时，宿主按「三段定宽」渲染：`label` 固定五字宽
+   * 超长截断，`price` / `percent` 各按最坏宽度定宽完整显示 —— 顶栏只有一行位置，
+   * 名称长短不一时宁可截名称，也不能把价格 / 涨跌幅挤掉。只给 `text` 则整行一起截断。
    */
   label?: string;
-  /** 行尾数值（如「1266.98 +0.71%」），不参与截断 */
-  value?: string;
+  /** 价格段（如「1266.98」），定宽不截断（与 `label` 之间不留间距） */
+  price?: string;
+  /** 涨跌幅段（如「+0.71%」），定宽不截断（与 `price` 之间留 `PRICE_PERCENT_GAP` 间距） */
+  percent?: string;
   /** 语义色调（缺省中性）；涨跌方向由色调表达，插件不碰具体色值 */
   tone?: HeaderMarqueeTone;
 }

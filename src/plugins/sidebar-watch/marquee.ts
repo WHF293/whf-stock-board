@@ -20,11 +20,10 @@ import type { FullQuote } from '../../types/stock-quote.types';
 /**
  * 造顶栏轮播行（收起态逐条展示的那一行：名称 + 现价 + 涨跌幅）
  *
- * **没有报价的候选不出行** —— 顶栏是给人扫一眼的地方，`--` 挂在那里等于噪音；
- * 宁可让轮播少几条（全部没报价时顶栏按钮回落为条目名）。
+ * **不做过滤**：还没取到报价的候选也出行（价格 / 涨跌幅用 `--` 占位）——
+ * 新加的票要立刻在轮播里露脸，而不是等引擎补拉完报价才出现；
+ * 占位只是暂时的，引擎对新候选会补一轮报价（见 monitor.ts），到时自动换成真实数字。
  *
- * 除整行 `text` 外还给 `label` / `value`：宿主按两端布局渲染时名称可截断、
- * 价格与涨跌幅常显 —— 顶栏很窄，宁可少看几个字也不能丢掉涨跌幅。
  * @param candidates 候选（已过滤为仍在自选股里的）
  * @param quotes 报价快照（key 为上游原始 `code`，查询走 `findQuoteBySymbol`）
  * @returns 轮播行（保持候选池顺序）
@@ -36,16 +35,16 @@ export const buildMarqueeLines = (
   const lines: HeaderMarqueeLine[] = [];
   for (const candidate of candidates) {
     const quote = findQuoteBySymbol(quotes, candidate.symbol);
-    if (!quote) continue;
-    const name = quote.name || candidate.name;
-    const price = formatPrice(quote.price ?? null);
-    const percent = formatPercent(quote.changePercent ?? null);
+    const name = quote?.name || candidate.name;
+    const price = formatPrice(quote?.price ?? null);
+    const percent = formatPercent(quote?.changePercent ?? null);
     lines.push({
       text: [name, price, percent].join(WATCH_MARQUEE_SEPARATOR),
       label: name,
-      value: [price, percent].join(WATCH_MARQUEE_SEPARATOR),
-      // 只给语气：具体色值由宿主按涨跌主题映射（插件不碰色值）
-      tone: WATCH_MARQUEE_TONE_BY_TREND[getTrendByChangePercent(quote.changePercent ?? 0)],
+      price,
+      percent,
+      // 只给语气：具体色值由宿主按涨跌主题映射（插件不碰色值）；无报价按「平」处理
+      tone: WATCH_MARQUEE_TONE_BY_TREND[getTrendByChangePercent(quote?.changePercent ?? 0)],
     });
   }
   return lines;
