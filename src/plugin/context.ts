@@ -220,6 +220,13 @@ export class PluginContextImpl implements PluginContext {
     return this.contributions.stockRow;
   }
 
+  /**
+   * 个股详情扩展区贡献点
+   * @returns 个股详情扩展区贡献点
+   */
+  get stockDetail(): PluginContributorSet['stockDetail'] {
+    return this.contributions.stockDetail;
+  }
 
   /**
    * Agent 工具贡献点

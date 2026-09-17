@@ -36,6 +36,9 @@ export const DOCK_PANEL_ORDER_DEFAULT = 100;
 /** 股票行操作默认排序权重（越小越靠前，同值按注册先后；宿主自带按钮不参与排序） */
 export const STOCK_ROW_ACTION_ORDER_DEFAULT = 100;
 
+/** 个股详情扩展区默认排序权重（越小越靠前，同值按注册先后） */
+export const STOCK_DETAIL_SECTION_ORDER_DEFAULT = 100;
+
 /** 插件自有存储命名空间前缀（appStorage 内按 `plugin:<id>` 分桶隔离） */
 export const PLUGIN_STORAGE_NAMESPACE_PREFIX = 'plugin:';
 

@@ -124,6 +124,7 @@ const contributionSummary = (info: PluginRuntimeInfo): string => {
     dockPanels,
     commands,
     stockRowActions,
+    stockDetailSections,
     agentServers,
   } = info.contributions;
   return [
@@ -133,6 +134,7 @@ const contributionSummary = (info: PluginRuntimeInfo): string => {
     `停靠面板 ${dockPanels}`,
     `命令 ${commands}`,
     `行操作 ${stockRowActions}`,
+    `详情扩展 ${stockDetailSections}`,
     `MCP ${agentServers}`,
   ].join(' · ');
 };

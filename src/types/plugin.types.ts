@@ -237,6 +237,44 @@ export interface RegisteredStockRowAction {
 }
 
 /**
+ * 个股详情扩展区贡献（在右侧个股详情面板底部注入一个区块）
+ *
+ * 宿主只提供承载位置并传入当前股票符号，区块内容完全由插件决定 ——
+ * 宿主不硬编码任何具体插件（速记 / 标签 / 备注等都走这个通用口子），
+ * 插件卸载即整体消失。组件会收到 `props: { symbol }`（归一化完整符号）。
+ */
+export interface StockDetailSectionContribution {
+  /** 区块 id（插件内唯一，内核会拼成 `<pluginId>#<id>` 全局键） */
+  id: string;
+  /** 区块标题（卡片标题栏文案） */
+  title: string;
+  /** 排序权重，越小越靠前（默认 100；同值按注册先后） */
+  order?: number;
+  /** 区块组件（props 为 `{ symbol: string }` 与本字段合并） */
+  component: Component;
+  /** 传给区块组件的额外 props（如插件注入自己的仓储服务） */
+  props?: Record<string, unknown>;
+}
+
+/** 已注册的个股详情扩展区（内核补全默认值 + 归属插件后的形态） */
+export interface RegisteredStockDetailSection {
+  /** 全局唯一键：`<pluginId>#<id>` */
+  key: string;
+  /** 归属插件 id */
+  pluginId: string;
+  /** 区块 id（插件内声明值） */
+  id: string;
+  /** 区块标题 */
+  title: string;
+  /** 排序权重（已补默认值） */
+  order: number;
+  /** 区块组件 */
+  component: Component;
+  /** 传给区块组件的额外 props（已补默认空对象） */
+  props: Record<string, unknown>;
+}
+
+/**
  * 命令贡献（可挂全局快捷键的可执行动作）
  *
  * 快捷键用形如 `Ctrl+Alt+N` / `Shift+Tab` 的描述串，宿主在 capture 阶段统一匹配，
@@ -466,6 +504,16 @@ export interface StockRowContributor {
   add: (action: StockRowActionContribution) => Disposable;
 }
 
+/** 个股详情扩展区贡献点（个股详情面板的扩展区块由插件注入） */
+export interface StockDetailContributor {
+  /**
+   * 注册一个个股详情扩展区块
+   * @param section 区块声明
+   * @returns 撤销句柄（插件卸载时内核自动调用）
+   */
+  add: (section: StockDetailSectionContribution) => Disposable;
+}
+
 /** Agent 工具贡献点（把插件能力暴露给内置 MCP，Agent 即可调用） */
 export interface AgentContributor {
   /**
@@ -638,6 +686,8 @@ export interface PluginContributionCount {
   commands: number;
   /** 股票行操作数 */
   stockRowActions: number;
+  /** 个股详情扩展区块数 */
+  stockDetailSections: number;
   /** 内置 MCP 服务器数 */
   agentServers: number;
 }
@@ -705,6 +755,8 @@ export interface PluginContext {
   readonly command: CommandContributor;
   /** 股票行操作贡献点（在股票行表格的操作列注入按钮） */
   readonly stockRow: StockRowContributor;
+  /** 个股详情扩展区贡献点（在个股详情面板注入扩展区块） */
+  readonly stockDetail: StockDetailContributor;
   /** Agent 工具贡献点 */
   readonly agent: AgentContributor;
 

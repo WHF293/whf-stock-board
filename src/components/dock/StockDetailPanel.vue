@@ -22,6 +22,7 @@ import { useWatchlistStore } from '../../stores/watchlist';
 import { DEFAULT_GROUP_ID } from '../../constants/watchlist.constants';
 import { useDockPanelStore } from '../../stores/dock-panel';
 import { DATA_CACHE_KEY } from '../../constants/data-cache.constants';
+import { pluginKernel } from '../../plugin';
 
 /**
  * 个股详情面板（右侧停靠面板内容，布局参考同花顺移动端）：
@@ -249,6 +250,10 @@ const chartResizeTick = ref(0);
 const onDockResizeEnd = (): void => {
   chartResizeTick.value += 1;
 };
+
+// ---------- 个股详情扩展区（插件贡献，宿主只承载不参与内容） ----------
+/** 已注册的扩展区块（按 order 升序；插件挂载 / 卸载自动增删） */
+const detailSections = computed(() => pluginKernel.contributions.stockDetail.sections);
 </script>
 
 <template>
@@ -306,6 +311,11 @@ const onDockResizeEnd = (): void => {
         <StockOrderBook :quote="quoteRef" />
       </BaseCard>
     </div>
+
+    <!-- 插件扩展区：内容完全由插件决定，宿主只传入当前股票符号 -->
+    <BaseCard v-for="section in detailSections" :key="section.key" :title="section.title">
+      <component :is="section.component" v-bind="section.props" :symbol="symbol" />
+    </BaseCard>
     <!-- 加自选弹窗：分组多选 + 新建分组 -->
     <BaseConfirmModal
       :open="watchDialog === 'add'"
