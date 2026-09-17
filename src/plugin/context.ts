@@ -181,6 +181,14 @@ export class PluginContextImpl implements PluginContext {
   }
 
   /**
+   * 顶栏条目贡献点
+   * @returns 顶栏条目贡献点
+   */
+  get header(): PluginContributorSet['header'] {
+    return this.contributions.header;
+  }
+
+  /**
    * 左侧导航菜单贡献点
    * @returns 左侧导航菜单贡献点
    */

@@ -1,8 +1,9 @@
 /**
  * 贡献点注册表（对标 dsh 的「能力即插件」：UI / 工具 / 存储都由插件贡献）
  *
- * 本文件把「插件能扩展什么」收敛成八个注册表：
+ * 本文件把「插件能扩展什么」收敛成九个注册表：
  * - `sidebar`  左侧栏面板（inline 常驻面板 / drawer 入口面板）
+ * - `header`   顶栏条目（右上角工具条：图标 + 单条轮播，点击展开下拉面板）
  * - `menu`     左侧导航菜单项（带 component 时同时产出页面路由）
  * - `routes`   不进菜单的路由（隐藏页 / 独立窗口页）
  * - `dock`     右侧停靠面板
@@ -17,6 +18,9 @@
  */
 import { markRaw, ref, shallowReactive } from 'vue';
 import {
+  HEADER_ITEM_MARQUEE_INTERVAL_DEFAULT,
+  HEADER_ITEM_MARQUEE_INTERVAL_MIN,
+  HEADER_ITEM_ORDER_DEFAULT,
   MENU_ITEM_ORDER_DEFAULT,
   SIDEBAR_PANEL_MODE_DEFAULT,
   SIDEBAR_PANEL_ORDER_DEFAULT,
@@ -35,11 +39,15 @@ import type {
   Disposable,
   DockContributor,
   DockPanelContribution,
+  HeaderContributor,
+  HeaderItemContribution,
+  HeaderMarqueeLine,
   MenuContributor,
   MenuItemContribution,
   PluginContributionCount,
   RegisteredCommand,
   RegisteredDockPanel,
+  RegisteredHeaderItem,
   RegisteredMenuItem,
   RegisteredRoute,
   RegisteredSidebarPanel,
@@ -120,6 +128,53 @@ export class SidebarRegistry {
     return createDisposable(() => {
       const index = this.panels.findIndex((item) => item.key === key);
       if (index >= 0) this.panels.splice(index, 1);
+    });
+  }
+}
+
+/**
+ * 顶栏条目注册表（应用顶栏右侧工具条：图标 + 单条轮播，点击展开下拉面板）
+ *
+ * 「收起态轮播」不在注册表里跑定时器：注册表是纯数据，定时器由宿主组件
+ * （`HeaderItemHost.vue`）持有 —— 一个条目的轮播计时只在它被渲染时存在，
+ * 插件卸载时组件一起消失，不存在漏掉的计时器。
+ */
+export class HeaderRegistry {
+  /** 已注册的顶栏条目（按 order 升序，同 order 按注册先后） */
+  readonly items = shallowReactive<RegisteredHeaderItem[]>([]);
+
+  /**
+   * 注册一个顶栏条目
+   * @param pluginId 归属插件 id
+   * @param item 条目声明
+   * @returns 撤销句柄
+   */
+  add(pluginId: string, item: HeaderItemContribution): Disposable {
+    const order = item.order ?? HEADER_ITEM_ORDER_DEFAULT;
+    const record: RegisteredHeaderItem = {
+      key: `${pluginId}#${item.id}`,
+      pluginId,
+      id: item.id,
+      title: item.title,
+      icon: item.icon,
+      order,
+      component: markRaw(item.component),
+      props: item.props ?? {},
+      // 缺省数据源恒空：宿主渲染时无需判空，无可轮播内容就显示条目名
+      marquee: item.marquee ?? ((): readonly HeaderMarqueeLine[] => []),
+      // 间隔夹到下限：插件写 0 / 负数不会被当成「越快越好」
+      marqueeIntervalMs: Math.max(
+        item.marqueeIntervalMs ?? HEADER_ITEM_MARQUEE_INTERVAL_DEFAULT,
+        HEADER_ITEM_MARQUEE_INTERVAL_MIN,
+      ),
+    };
+    const key = record.key;
+    const existing = this.items.findIndex((entry) => entry.key === key);
+    if (existing >= 0) this.items.splice(existing, 1);
+    this.items.splice(resolveInsertIndex(this.items, order), 0, record);
+    return createDisposable(() => {
+      const index = this.items.findIndex((entry) => entry.key === key);
+      if (index >= 0) this.items.splice(index, 1);
     });
   }
 }
@@ -365,6 +420,8 @@ export class AgentRegistry {
 export interface PluginContributorSet {
   /** 左侧栏面板贡献点 */
   sidebar: SidebarContributor;
+  /** 顶栏条目贡献点 */
+  header: HeaderContributor;
   /** 左侧导航菜单贡献点 */
   menu: MenuContributor;
   /** 路由贡献点 */
@@ -385,6 +442,8 @@ export interface PluginContributorSet {
 export class PluginContributions {
   /** 左侧栏面板 */
   readonly sidebar = new SidebarRegistry();
+  /** 顶栏条目（右上角工具条） */
+  readonly header = new HeaderRegistry();
   /** 左侧导航菜单 */
   readonly menu = new MenuRegistry();
   /** 隐藏路由 */
@@ -414,7 +473,7 @@ export class PluginContributions {
    * 为某次插件挂载创建贡献点写入器（注册结果自动进副作用袋）
    * @param pluginId 插件 id
    * @param bag 该插件的副作用袋
-   * @returns 六个贡献点写入器
+   * @returns 贡献点写入器集合（按贡献点分类）
    */
   createWriters(pluginId: string, bag: DisposableBag): PluginContributorSet {
     return {
@@ -422,6 +481,13 @@ export class PluginContributions {
         add: (panel) => {
           const disposable = bag.add(this.sidebar.add(pluginId, panel));
           this.events.emit('sidebar:changed', [this.sidebar.panels], pluginId);
+          return disposable;
+        },
+      },
+      header: {
+        add: (item) => {
+          const disposable = bag.add(this.header.add(pluginId, item));
+          this.events.emit('header:changed', [this.header.items], pluginId);
           return disposable;
         },
       },
@@ -473,6 +539,7 @@ export class PluginContributions {
       items.filter((item) => item.pluginId === pluginId).length;
     return {
       sidebarPanels: count(this.sidebar.panels),
+      headerItems: count(this.header.items),
       menuItems: count(this.menu.items),
       routes: count(this.routes.routes),
       dockPanels: count(this.dock.panels),
@@ -486,6 +553,7 @@ export class PluginContributions {
   /** 清空全部贡献（仅内核整体重置时调用） */
   clear(): void {
     this.sidebar.panels.length = 0;
+    this.header.items.length = 0;
     this.menu.items.length = 0;
     this.routes.routes.length = 0;
     this.dock.panels.length = 0;

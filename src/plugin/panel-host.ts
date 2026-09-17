@@ -13,15 +13,15 @@
  */
 import { inject } from 'vue';
 import type { InjectionKey } from 'vue';
-import type { SidebarPanelMode } from '../types/plugin.types';
+import type { PluginPanelHostMode } from '../types/plugin.types';
 
 /** 插件面板宿主上下文 */
 export interface PluginPanelHost {
   /** 面板全局键（`<pluginId>#<panelId>`） */
   key: string;
-  /** 面板展示形态 */
-  mode: SidebarPanelMode;
-  /** 关闭自己：inline 面板折叠；drawer 面板关抽屉 */
+  /** 面板承载形态（内联侧栏 / 右侧抽屉 / 顶栏下拉） */
+  mode: PluginPanelHostMode;
+  /** 关闭自己：inline 面板折叠；drawer 面板关抽屉；header 面板收起下拉 */
   close: () => void;
 }
 
