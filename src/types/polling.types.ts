@@ -27,3 +27,24 @@ export interface UsePollingReturn {
   /** 恢复轮询（不立即执行任务） */
   resume: () => void;
 }
+
+/**
+ * 轮询调度器（`createPollingScheduler` 返回；无组件依赖，插件可在 `apply` 里使用）
+ */
+export interface PollingScheduler {
+  /** 暂停轮询（不释放监听，可 resume） */
+  pause: () => void;
+  /** 恢复轮询（不立即执行任务） */
+  resume: () => void;
+  /** 立即执行一次任务（受互斥标记保护，执行中调用会被忽略） */
+  runNow: () => Promise<void>;
+  /**
+   * 当前是否允许轮询（总开关打开且处于交易窗口内）
+   * @returns 是否允许轮询
+   */
+  isEligible: () => boolean;
+  /** 页面重新激活（KeepAlive）：允许轮询时恢复并立即补刷一次 */
+  activate: () => void;
+  /** 彻底停止：暂停计时并释放窗口 / 可见性监听（插件卸载时必须调） */
+  stop: () => void;
+}

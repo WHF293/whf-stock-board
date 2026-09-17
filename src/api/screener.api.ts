@@ -7,8 +7,8 @@ import {
   BACKTEST_RANGE_DAYS,
   BACKTEST_INITIAL_CAPITAL,
 } from '../constants/screener.constants';
+import { fetchKlineCached } from './kline-cache.api';
 import { fetchAllMarketQuotes } from './quotes.api';
-import { fetchSinaKline } from './sina-kline.api';
 import { toFullSymbol } from '../utils/to-full-symbol';
 
 /**
@@ -131,8 +131,8 @@ export const runMaCrossBacktest = async (rawSymbol: string): Promise<BacktestRes
   // ⚠️ 必须用 toFullSymbol：normalizeSymbol 返回 NormalizedSymbol 对象，
   // String() 会得到 "[object Object]"，新浪取数恒空（回测曾因此全部失败）
   const symbol = toFullSymbol(rawSymbol);
-  // 新浪按根数取数（daily 固定 400 根 ≈ 1.6 年），本地截取近一年窗口
-  const allBars = await fetchSinaKline(symbol, 'daily');
+  // 单票回测（用户指定标的）⇒ 走本地缓存：首次落库、之后只补缺口，本地截取近一年窗口
+  const allBars = await fetchKlineCached(symbol, 'daily');
   const startTs = dayjs().subtract(BACKTEST_RANGE_DAYS, 'day').startOf('day').valueOf();
   const bars = allBars.filter((bar) => bar.timestamp >= startTs);
   if (bars.length < 40) {

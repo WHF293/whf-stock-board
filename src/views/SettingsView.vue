@@ -6,6 +6,7 @@ import BaseButton from "../components/ui/BaseButton.vue";
 import BaseCard from "../components/ui/BaseCard.vue";
 import BaseConfirmModal from "../components/ui/BaseConfirmModal.vue";
 import BaseSwitch from "../components/ui/BaseSwitch.vue";
+import BaseTable from "../components/ui/BaseTable.vue";
 import MenuIcon from "../components/ui/MenuIcon.vue";
 import NoticeBar from "../components/ui/NoticeBar.vue";
 import BaseTag from "../components/ui/BaseTag.vue";
@@ -15,8 +16,13 @@ import { pluginKernel } from "../plugin";
 import { usePlugins } from "../composables/use-plugins";
 import { sdk } from "../api/sdk";
 import { MENU_DEFAULT_ORDER, MENU_ITEMS, ROUTE_PATH } from "../constants/router-meta.constants";
+import { HEADER_DEFAULT_ORDER, HOST_HEADER_ITEMS } from "../constants/header.constants";
 import { STOCK_PROXY_PATH } from "../constants/proxy.constants";
-import { REFRESH_INTERVAL_OPTIONS } from "../constants/polling.constants";
+import {
+  POLLING_INTERVAL,
+  REFRESH_INTERVAL_OPTIONS,
+} from "../constants/polling.constants";
+import type { TableColumn } from "../types/table.types";
 import { THEME_COLOR_OPTIONS } from "../constants/theme-color.constants";
 import { TREND_THEME_OPTIONS } from "../constants/trend-theme.constants";
 import { WEBLOG_RETENTION_DAYS } from "../constants/weblog.constants";
@@ -150,9 +156,15 @@ const orderedMenuItems = computed<MenuOrderDraftItem[]>(() => {
   return ordered;
 });
 
-/** 当前宿主菜单顺序是否为默认（插件菜单不参与比较；用于禁用「重置」按钮） */
+/**
+ * 当前宿主菜单顺序是否为默认（插件菜单不参与比较；用于禁用「重置」按钮）
+ *
+ * 显隐集合也要算进来：「重置」承诺「重新显示全部页面」，若只隐藏了页面
+ * （顺序未动）也必须允许一键恢复，否则按钮禁用与文案自相矛盾。
+ */
 const isDefaultMenuOrder = computed(
   () =>
+    settingsStore.hiddenMenus.length === 0 &&
     settingsStore.menuOrder
       .filter((path) => HOST_MENU_PATHS.has(path))
       .join(",") === MENU_DEFAULT_ORDER.join(","),
@@ -179,6 +191,113 @@ const onConfirmMenuOrder = (): void => {
 /** 重置侧栏：顺序恢复默认 + 全部页面重新显示 */
 const onResetMenuOrder = (): void => {
   settingsStore.resetMenuOrder();
+};
+
+// ---------- 顶栏工具顺序编排 ----------
+
+/** 编排弹窗显隐 */
+const headerOrderModalOpen = ref(false);
+
+/** 编排弹窗里单条顶栏条目的草稿形态（插件来源的项带标记，显隐开关跟着走） */
+interface HeaderOrderDraftItem {
+  /** 条目键（宿主项 id / 插件条目 `<pluginId>#<id>`） */
+  key: string;
+  /** 条目名 */
+  title: string;
+  /** 图标 key */
+  icon: string;
+  /** 是否插件贡献的条目 */
+  plugin: boolean;
+  /** 是否在顶栏显示 */
+  visible: boolean;
+}
+
+/** 编排草稿（打开弹窗时按当前顺序初始化；未点「确认」前仅本地改动，不落盘） */
+const headerOrderDraft = ref<HeaderOrderDraftItem[]>([]);
+
+/** 宿主自带顶栏条目的键集合（区分默认顺序比较口径用） */
+const HOST_HEADER_KEYS: ReadonlySet<string> = new Set(
+  HOST_HEADER_ITEMS.map((item) => item.id),
+);
+
+/**
+ * 全部可编排的顶栏条目（宿主自带 + 已挂载插件贡献的），按当前持久化顺序排好
+ *
+ * 与「侧栏导航」同一套口径：插件条目订阅内核版本号实时刷新；未在顺序里的
+ * 新条目（升级新增 / 新装插件）追加末尾，保证入口不丢。
+ * @returns 有序顶栏条目（key / title / icon / plugin 标记）
+ */
+const orderedHeaderItems = computed<HeaderOrderDraftItem[]>(() => {
+  void pluginKernel.revision.value;
+  const host: HeaderOrderDraftItem[] = HOST_HEADER_ITEMS.map((item) => ({
+    key: item.id,
+    title: item.title,
+    icon: item.icon,
+    plugin: false,
+    visible: true,
+  }));
+  const plugin: HeaderOrderDraftItem[] = pluginKernel.contributions.header.items.map(
+    (item) => ({
+      key: item.key,
+      title: item.title,
+      icon: item.icon,
+      plugin: true,
+      visible: true,
+    }),
+  );
+  const byKey = new Map<string, HeaderOrderDraftItem>();
+  for (const item of [...host, ...plugin]) {
+    byKey.set(item.key, item);
+  }
+  const ordered: HeaderOrderDraftItem[] = [];
+  for (const key of settingsStore.headerOrder) {
+    const item = byKey.get(key);
+    if (item) {
+      ordered.push(item);
+      byKey.delete(key);
+    }
+  }
+  for (const item of [...host, ...plugin]) {
+    if (byKey.has(item.key)) ordered.push(item);
+  }
+  return ordered;
+});
+
+/**
+ * 当前顶栏顺序是否为默认（插件条目不参与比较；用于禁用「重置」按钮）
+ *
+ * 显隐集合也要算进来：「重置」承诺「重新显示全部条目」，若只隐藏了条目
+ * （顺序未动）也必须允许一键恢复，否则按钮禁用与文案自相矛盾。
+ */
+const isDefaultHeaderOrder = computed(
+  () =>
+    settingsStore.hiddenHeaderItems.length === 0 &&
+    settingsStore.headerOrder
+      .filter((key) => HOST_HEADER_KEYS.has(key))
+      .join(",") === HEADER_DEFAULT_ORDER.join(","),
+);
+
+/** 打开编排弹窗：以当前顺序 + 显隐状态初始化草稿 */
+const openHeaderOrderModal = (): void => {
+  const hidden = new Set(settingsStore.hiddenHeaderItems);
+  headerOrderDraft.value = orderedHeaderItems.value.map((item) => ({
+    ...item,
+    visible: !hidden.has(item.key),
+  }));
+  headerOrderModalOpen.value = true;
+};
+
+/** 确认编排：持久化新顺序与显隐集合，顶栏即时刷新（下次进入仍生效） */
+const onConfirmHeaderOrder = (): void => {
+  settingsStore.setHeaderOrder(headerOrderDraft.value.map((item) => item.key));
+  settingsStore.setHiddenHeaderItems(
+    headerOrderDraft.value.filter((item) => !item.visible).map((item) => item.key),
+  );
+};
+
+/** 重置顶栏：顺序恢复默认 + 全部条目重新显示 */
+const onResetHeaderOrder = (): void => {
+  settingsStore.resetHeaderOrder();
 };
 
 // ---------- 检查更新 ----------
@@ -226,6 +345,58 @@ const pluginShortcuts = computed(() => {
       action: `${command.title}（插件「${nameById.get(command.pluginId) ?? command.pluginId}」）`,
     }));
 });
+
+/** 轮询详情弹窗显隐（「查看轮询详情」按钮） */
+const pollingDetailModalOpen = ref(false);
+
+/** 轮询间隔秒数（展示文案用：从常量换算，避免与 polling.constants 双处维护） */
+const QUOTES_SEC = POLLING_INTERVAL.QUOTES_INTRADAY / 1000;
+const BREADTH_SEC = POLLING_INTERVAL.MARKET_BREADTH / 1000;
+const US_SEC = POLLING_INTERVAL.US_BOARDS / 1000;
+
+/** 轮询明细行（弹窗表格展示用） */
+interface PollingDetailRow {
+  /** 页面 / 位置 */
+  page: string;
+  /** 轮询内容 */
+  target: string;
+  /** 间隔下限文案 */
+  interval: string;
+  /** 交易窗口约束 */
+  window: string;
+}
+
+/**
+ * 轮询任务清单（与各页面 usePolling 调用点一一对应，改轮询时同步维护）
+ */
+const POLLING_DETAIL_ROWS: PollingDetailRow[] = [
+  { page: "市场总览", target: "全球指数报价", interval: `${QUOTES_SEC} 秒`, window: "不限（全天）" },
+  { page: "市场总览", target: "指数卡片行情", interval: `${QUOTES_SEC} 秒`, window: "A 股交易时段" },
+  { page: "市场总览", target: "市场宽度（全市场快照 / 行业板块 / 资金流）", interval: `${BREADTH_SEC} 秒`, window: "A 股交易时段" },
+  { page: "自选股", target: "当前分组自选行情", interval: `${QUOTES_SEC} 秒`, window: "A 股交易时段" },
+  { page: "行情全景 · A 股", target: "行业 / 概念板块排行", interval: `${BREADTH_SEC} 秒`, window: "A 股交易时段" },
+  { page: "行情全景 · 美股", target: "美股板块行情", interval: `${US_SEC} 秒`, window: "美股交易时段" },
+  { page: "资金动向", target: "全市场榜单（涨幅 / 成交额 / 换手率）", interval: `${BREADTH_SEC} 秒`, window: "A 股交易时段" },
+  { page: "涨停与异动", target: "涨停池 + 盘口 / 板块异动", interval: `${BREADTH_SEC} 秒`, window: "A 股交易时段" },
+  { page: "板块日历", target: "当日数据采集 + 重读", interval: `${BREADTH_SEC} 秒`, window: "A 股交易时段" },
+  { page: "个股详情（页面 / 停靠面板）", target: "单票报价", interval: `${QUOTES_SEC} 秒`, window: "A 股交易时段" },
+  { page: "侧栏自选面板", target: "自选行情", interval: `${QUOTES_SEC} 秒`, window: "A 股交易时段" },
+];
+
+/** 轮询明细表列配置 */
+const pollingDetailColumns: TableColumn<PollingDetailRow>[] = [
+  { key: "page", label: "页面 / 位置" },
+  { key: "target", label: "轮询内容" },
+  { key: "interval", label: "间隔下限", align: "right" },
+  { key: "window", label: "交易窗口" },
+];
+
+/**
+ * 轮询明细行 key（页面 + 内容唯一）
+ * @param row 轮询明细行
+ * @returns 行 key
+ */
+const pollingDetailRowKey = (row: PollingDetailRow): string => `${row.page}|${row.target}`;
 
 /** 新版弹窗显隐 */
 const updateModalOpen = ref(false);
@@ -452,8 +623,8 @@ const onProbeProxy = async (): Promise<void> => {
           <div>
             <p class="text-sm text-text">刷新间隔</p>
             <p class="mt-0.5 text-xs text-text-tertiary">
-              行情类数据按此间隔轮询；重数据（全市场快照等）保持不低于 1
-              分钟的克制档
+              行情类数据按此间隔轮询；重数据（全市场快照等）保持不低于 30
+              秒的克制档
             </p>
           </div>
           <BaseTag tone="primary">{{ activeIntervalLabel }}</BaseTag>
@@ -484,11 +655,18 @@ const onProbeProxy = async (): Promise<void> => {
         </div>
       </div>
 
-      <p class="mt-3">
+      <div class="mt-3 flex items-center justify-between">
         <BaseTag :tone="settingsStore.pollingEnabled ? 'primary' : 'flat'">
           {{ settingsStore.pollingEnabled ? "轮询已开启" : "轮询已暂停" }}
         </BaseTag>
-      </p>
+        <BaseButton
+          variant="ghost"
+          data-track="POLLING_DETAIL_VIEW"
+          @click="pollingDetailModalOpen = true"
+        >
+          查看轮询详情
+        </BaseButton>
+      </div>
     </BaseCard>
 
     <BaseCard title="主题色">
@@ -606,6 +784,36 @@ const onProbeProxy = async (): Promise<void> => {
           :disabled="isDefaultMenuOrder"
           data-track="MENU_ORDER_RESET"
           @click="onResetMenuOrder"
+        >
+          重置
+        </BaseButton>
+      </div>
+    </BaseCard>
+
+    <BaseCard title="顶栏工具">
+      <div class="flex items-center justify-between gap-4">
+        <div>
+          <p class="text-sm text-text">右上角工具编排</p>
+          <p class="mt-0.5 text-xs text-text-tertiary">
+            拖拽调整顶栏条目顺序（含插件条目），并可控制各条目是否显示
+          </p>
+        </div>
+        <BaseButton variant="ghost" data-track="HEADER_ORDER_EDIT" @click="openHeaderOrderModal">
+          编排
+        </BaseButton>
+      </div>
+      <div class="mt-4 flex items-center justify-between gap-4 border-t border-flat-weak pt-4">
+        <div>
+          <p class="text-sm text-text">重置顺序</p>
+          <p class="mt-0.5 text-xs text-text-tertiary">
+            恢复默认的顶栏顺序，并重新显示全部条目
+          </p>
+        </div>
+        <BaseButton
+          variant="ghost"
+          :disabled="isDefaultHeaderOrder"
+          data-track="HEADER_ORDER_RESET"
+          @click="onResetHeaderOrder"
         >
           重置
         </BaseButton>
@@ -756,6 +964,25 @@ const onProbeProxy = async (): Promise<void> => {
       </div>
     </BaseConfirmModal>
 
+    <!-- 轮询详情弹窗：各页面轮询任务清单 -->
+    <BaseConfirmModal
+      v-model:open="pollingDetailModalOpen"
+      title="轮询详情"
+      ok-text="知道了"
+      cancel-text=""
+      max-width-class="max-w-2xl"
+    >
+      <BaseTable
+        :columns="pollingDetailColumns"
+        :rows="POLLING_DETAIL_ROWS"
+        :row-key="pollingDetailRowKey"
+        min-width="560px"
+      />
+      <p class="mt-3 text-xs leading-5 text-text-tertiary">
+        实际刷新间隔 = max（上方设置的刷新间隔，各任务的间隔下限）。页面隐藏或切走时暂停，恢复可见立即补刷；请求失败按指数退避（2s 起、封顶 60s），成功后恢复。系统日志页的 10 秒自动刷新为独立定时器，不受「行情自动刷新」总开关管理。
+      </p>
+    </BaseConfirmModal>
+
     <!-- 发现新版本弹窗：展示版本号与下载地址 -->
     <BaseConfirmModal
       v-model:open="updateModalOpen"
@@ -829,6 +1056,52 @@ const onProbeProxy = async (): Promise<void> => {
             class="ml-auto shrink-0"
             data-track="MENU_VISIBILITY_TOGGLE"
             :aria-label="`在侧栏显示${item.title}`"
+          />
+        </li>
+      </VueDraggable>
+    </BaseConfirmModal>
+    <!-- 顶栏工具编排弹窗：拖拽调整顺序，确认后持久化并即时生效 -->
+    <BaseConfirmModal
+      v-model:open="headerOrderModalOpen"
+      title="顶栏工具编排"
+      ok-text="确认"
+      cancel-text="取消"
+      max-width-class="max-w-md"
+      @ok="onConfirmHeaderOrder"
+    >
+      <p class="mb-3 text-xs text-text-tertiary">
+        拖拽调整顺序（从右到左依次排列）；开关控制该条目是否显示在顶栏。点「确认」保存并立即生效
+      </p>
+      <VueDraggable
+        v-model="headerOrderDraft"
+        tag="ul"
+        :animation="150"
+        handle=".header-order-handle"
+        :force-fallback="true"
+        fallback-class="sortable-fallback bg-surface shadow-lg ring-1 ring-flat-weak"
+        ghost-class="opacity-40"
+        chosen-class="bg-flat-weak"
+        class="space-y-1"
+      >
+        <li
+          v-for="item in headerOrderDraft"
+          :key="item.key"
+          class="flex select-none items-center gap-3 rounded-lg border border-flat-weak px-3 py-2.5 text-sm text-text-secondary"
+          :class="item.visible ? '' : 'opacity-55'"
+        >
+          <MenuIcon
+            name="grip"
+            :size="16"
+            class="header-order-handle cursor-grab text-text-tertiary active:cursor-grabbing"
+          />
+          <MenuIcon :name="item.icon" :size="16" class="text-text-tertiary" />
+          <span class="text-text">{{ item.title }}</span>
+          <BaseTag v-if="item.plugin" tone="flat">插件</BaseTag>
+          <BaseSwitch
+            v-model="item.visible"
+            class="ml-auto shrink-0"
+            data-track="HEADER_VISIBILITY_TOGGLE"
+            :aria-label="`在顶栏显示${item.title}`"
           />
         </li>
       </VueDraggable>

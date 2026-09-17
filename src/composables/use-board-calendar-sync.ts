@@ -212,7 +212,7 @@ const toLimitStockRows = (
 /**
  * 交易日轴内存缓存
  *
- * 同一次会话内的轮询（每 120s 一次）直接命中，避免反复从库里读 5KB JSON；
+ * 同一次会话内的轮询（每 30s 一次）直接命中，避免反复从库里读 5KB JSON；
  * 跨会话的持久化由 board_sync_state 的 `trade_dates` 兜底。
  */
 let axisMemo: TradingDatesCache | null = null;

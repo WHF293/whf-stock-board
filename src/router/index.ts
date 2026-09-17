@@ -7,6 +7,7 @@ import DashboardView from '../views/DashboardView.vue';
 import WatchlistView from '../views/WatchlistView.vue';
 import PanoramaView from '../views/PanoramaView.vue';
 import BoardCalendarView from '../views/BoardCalendarView.vue';
+import BoardCalendarDetailView from '../views/BoardCalendarDetailView.vue';
 import MarketMoodView from '../views/MarketMoodView.vue';
 import ScreenerView from '../views/ScreenerView.vue';
 import HotNewsView from '../views/HotNewsView.vue';
@@ -60,6 +61,12 @@ const routes = [
         path: ROUTE_PATH.BOARD_CALENDAR,
         component: BoardCalendarView,
         meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.BOARD_CALENDAR] },
+      },
+      // 板块日历详情整页：板块日历页点击板块名称进入；不入左侧导航
+      {
+        path: `${ROUTE_PATH.BOARD_DETAIL}/:code`,
+        component: BoardCalendarDetailView,
+        meta: { title: '板块详情' },
       },
       // 资金动向已并入市场榜单（旧路径重定向）
       { path: '/funds', redirect: ROUTE_PATH.MARKET_RANK },

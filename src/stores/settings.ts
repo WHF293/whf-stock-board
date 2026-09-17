@@ -5,6 +5,7 @@ import {
   BOARD_CALENDAR_HEAT_BASIS_DEFAULT,
   BOARD_CALENDAR_RANGE_DEFAULT,
 } from '../constants/board-calendar.constants';
+import { BOARD_DETAIL_RANGE_DEFAULT } from '../constants/board-detail.constants';
 import { STORAGE_NS_SETTINGS } from '../constants/storage-key.constants';
 import { appStorage } from '../utils/app-local-storage';
 import { REFRESH_INTERVAL_DEFAULT } from '../constants/polling.constants';
@@ -16,14 +17,17 @@ import { WATERMARK_ENABLED_DEFAULT } from '../constants/watermark.constants';
 import { SIDEBAR_COLLAPSED_DEFAULT } from '../constants/sidebar.constants';
 import { WEBLOG_ENABLED_DEFAULT } from '../constants/weblog.constants';
 import { MENU_DEFAULT_ORDER } from '../constants/router-meta.constants';
+import { HEADER_DEFAULT_ORDER } from '../constants/header.constants';
 import { PANORAMA_CN_VIEW_MODE_DEFAULT } from '../constants/panorama.constants';
 import {
   CHART_MAIN_INDICATORS_DEFAULT,
   CHART_SUB_INDICATORS_DEFAULT,
 } from '../constants/stock-indicator.constants';
+import { CHART_PERIOD_DEFAULT, type ChartPeriod } from '../constants/stock-detail.constants';
 import type { HeatmapViewMode } from '../types/heatmap.types';
 import type { PanoramaCnViewMode } from '../constants/panorama.constants';
 import type { BoardCalendarHeatBasis, BoardCalendarRange } from '../types/board-calendar.types';
+import type { BoardDetailRange } from '../types/board-detail.types';
 import { BOARD_DEFAULT_ORDER, normalizeBoardHidden, normalizeBoardOrder } from '../utils/board-order';
 
 /** 设置 store 状态 */
@@ -44,6 +48,10 @@ interface SettingsState {
   menuOrder: string[];
   /** 左侧导航中被隐藏的页面 path（编排弹窗里关掉开关的项；侧栏不渲染但路由仍可达） */
   hiddenMenus: string[];
+  /** 顶栏顺序（存条目键数组；宿主项为 id、插件条目为 `<pluginId>#<id>`；插件条目追加末尾） */
+  headerOrder: string[];
+  /** 顶栏中被隐藏的条目键（编排弹窗里关掉开关的项；不渲染） */
+  hiddenHeaderItems: string[];
   /** 主题色（清新绿 / 淡雅蓝 / 淡雅粉 / 极光紫） */
   themeColor: ThemeColor;
   /** 涨跌配色主题（红涨绿跌 / 红跌绿涨 / 红涨蓝跌） */
@@ -58,10 +66,14 @@ interface SettingsState {
   boardCalendarOrder: string[];
   /** 板块日历 · 未勾选的板块代码（不在表格中渲染） */
   boardCalendarHidden: string[];
+  /** 板块日历详情 · 展示范围（交易日列数；与看板页的范围各自独立） */
+  boardDetailRange: BoardDetailRange;
   /** 股票详情 · 蜡烛模式主图指标清单（如 ['MA']，klinecharts 指标名） */
   chartMainIndicators: string[];
   /** 股票详情 · 蜡烛模式副图指标清单（如 ['VOL', 'MACD_KDJ']，每项独立面板） */
   chartSubIndicators: string[];
+  /** 股票详情 · 图表周期（详情页与详情侧栏共用；记住用户上次的选择） */
+  detailChartPeriod: ChartPeriod;
   /** 系统日志 · 采集开关（关闭后不再记录报错与行为，仅保留系统类事件） */
   weblogEnabled: boolean;
   /** Agent 分析 · 仅股票问答开关（开启时使用仅股票系统提示词；关闭后移除话题限制） */
@@ -81,6 +93,8 @@ export const useSettingsStore = defineStore('settings', {
     sidebarCollapsed: SIDEBAR_COLLAPSED_DEFAULT,
     menuOrder: [...MENU_DEFAULT_ORDER],
     hiddenMenus: [],
+    headerOrder: [...HEADER_DEFAULT_ORDER],
+    hiddenHeaderItems: [],
     themeColor: THEME_COLOR_DEFAULT,
     trendTheme: TREND_THEME_DEFAULT,
     watermarkEnabled: WATERMARK_ENABLED_DEFAULT,
@@ -88,8 +102,10 @@ export const useSettingsStore = defineStore('settings', {
     boardCalendarRange: BOARD_CALENDAR_RANGE_DEFAULT,
     boardCalendarOrder: [...BOARD_DEFAULT_ORDER],
     boardCalendarHidden: [],
+    boardDetailRange: BOARD_DETAIL_RANGE_DEFAULT,
     chartMainIndicators: [...CHART_MAIN_INDICATORS_DEFAULT],
     chartSubIndicators: [...CHART_SUB_INDICATORS_DEFAULT],
+    detailChartPeriod: CHART_PERIOD_DEFAULT,
     weblogEnabled: WEBLOG_ENABLED_DEFAULT,
     agentStockOnly: true,
   }),
@@ -195,6 +211,28 @@ export const useSettingsStore = defineStore('settings', {
     },
 
     /**
+     * 设置顶栏顺序（持久化，下次进入自动恢复）
+     * @param order 编排后的条目键数组（宿主项 id + 插件条目全局键）
+     */
+    setHeaderOrder(order: string[]): void {
+      this.headerOrder = [...order];
+    },
+
+    /**
+     * 设置顶栏隐藏条目集合（编排弹窗的显隐开关；持久化）
+     * @param keys 被隐藏的条目键数组
+     */
+    setHiddenHeaderItems(keys: string[]): void {
+      this.hiddenHeaderItems = [...keys];
+    },
+
+    /** 重置顶栏：顺序恢复默认、全部条目重新显示 */
+    resetHeaderOrder(): void {
+      this.headerOrder = [...HEADER_DEFAULT_ORDER];
+      this.hiddenHeaderItems = [];
+    },
+
+    /**
      * 设置板块日历 · 热门口径
      * @param basis 热门口径（取值须为 BOARD_CALENDAR_HEAT_BASIS 中的值）
      */
@@ -208,6 +246,14 @@ export const useSettingsStore = defineStore('settings', {
      */
     setBoardCalendarRange(range: BoardCalendarRange): void {
       this.boardCalendarRange = range;
+    },
+
+    /**
+     * 设置板块日历详情 · 展示范围
+     * @param range 展示范围（取值须为 BOARD_DETAIL_RANGE 中的值）
+     */
+    setBoardDetailRange(range: BoardDetailRange): void {
+      this.boardDetailRange = range;
     },
 
     /**
@@ -236,6 +282,17 @@ export const useSettingsStore = defineStore('settings', {
     setChartIndicators(mainIndicators: string[], subIndicators: string[]): void {
       this.chartMainIndicators = [...mainIndicators];
       this.chartSubIndicators = [...subIndicators];
+    },
+
+    /**
+     * 设置股票详情 · 图表周期（详情页与详情侧栏共用，持久化后下次打开即为该周期）
+     *
+     * 消费方请走 composables/use-chart-period.ts：它负责把本地选择写回本 store，
+     * 并在读取时校验持久化值是否仍为合法周期。
+     * @param period 图表周期（取值须为 CHART_PERIOD_OPTIONS 中的 value）
+     */
+    setDetailChartPeriod(period: ChartPeriod): void {
+      this.detailChartPeriod = period;
     },
 
     /**

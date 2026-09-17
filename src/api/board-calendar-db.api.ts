@@ -317,6 +317,29 @@ export const countConstituentsByBoard = async (): Promise<Map<string, number>> =
 };
 
 /**
+ * 读取某板块的成分股清单（板块日历详情页的行来源）
+ *
+ * 与 `listConstituentBoardMap` 的读取方向相反（那边是 symbol → 板块）。
+ * 返回顺序按股票代码升序，行序由调用方的排序口径决定，本函数不做业务排序。
+ * @param boardCode 板块代码（BKxxxx）
+ * @returns 该板块成分股（本地库为空时返回空数组，调用方回退上游）
+ */
+export const listConstituentsByBoard = async (boardCode: string): Promise<BoardConstituent[]> => {
+  const db = await getBoardDb();
+  if (!db) return [];
+  const rows = await db.select<Row[]>(
+    'SELECT * FROM board_constituent WHERE board_code = $1 ORDER BY symbol',
+    [boardCode],
+  );
+  return rows.map((row) => ({
+    boardCode: str(row.board_code),
+    symbol: str(row.symbol),
+    stockName: str(row.stock_name),
+    market: num(row.market),
+  }));
+};
+
+/**
  * 统计成分股映射条数
  * @returns 条数
  */

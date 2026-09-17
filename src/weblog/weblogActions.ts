@@ -165,6 +165,7 @@ const buildActionRecord = (
     status: options.status ?? null,
     appVersion: env.appVersion,
     osName: env.osName,
+    ua: env.ua,
     sessionId: env.sessionId,
     traceId: createTraceId(),
   };

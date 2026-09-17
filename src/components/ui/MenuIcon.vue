@@ -97,6 +97,8 @@ const ICON_PATHS: Record<string, string> = {
   // 软件白皮书：摊开的书（左右两页 + 文本行），与 Skills 的单页手册区分
   whitepaper:
     '<path d="M12 6.5C10.3 5.2 8.1 4.8 4 4.8V19c4.1 0 6.3.4 8 1.7 1.7-1.3 3.9-1.7 8-1.7V4.8c-4.1 0-6.3.4-8 1.7z"/><path d="M12 6.5v14.2"/><path d="M6.6 8.6h2.4M6.6 11.6h2.4M15 8.6h2.4M15 11.6h2.4"/>',
+  // 阈值提醒：铃铛 + 顶部提手 + 底部摆锤
+  bell: '<path d="M6 9a6 6 0 0 1 12 0c0 4 1.5 5.5 1.5 5.5h-15S6 13 6 9z"/><path d="M10 18a2 2 0 0 0 4 0"/>',
 };
 
 const props = withDefaults(

@@ -33,6 +33,26 @@ export const MENU_ITEM_ORDER_DEFAULT = 500;
 /** 停靠面板默认排序权重 */
 export const DOCK_PANEL_ORDER_DEFAULT = 100;
 
+/** 顶栏条目默认排序权重（越小越靠左，同值按注册先后） */
+export const HEADER_ITEM_ORDER_DEFAULT = 100;
+
+/** 顶栏条目轮播间隔默认值（毫秒） */
+export const HEADER_ITEM_MARQUEE_INTERVAL_DEFAULT = 4000;
+
+/**
+ * 顶栏条目轮播间隔下限（毫秒）
+ *
+ * 插件写 0 / 负数 / 极小值都夹到这里：轮播是「放着不太动」的信息条，
+ * 间隔过短既看不清也白烧 CPU。
+ */
+export const HEADER_ITEM_MARQUEE_INTERVAL_MIN = 1500;
+
+/** 股票行操作默认排序权重（越小越靠前，同值按注册先后；宿主自带按钮不参与排序） */
+export const STOCK_ROW_ACTION_ORDER_DEFAULT = 100;
+
+/** 个股详情扩展区默认排序权重（越小越靠前，同值按注册先后） */
+export const STOCK_DETAIL_SECTION_ORDER_DEFAULT = 100;
+
 /** 插件自有存储命名空间前缀（appStorage 内按 `plugin:<id>` 分桶隔离） */
 export const PLUGIN_STORAGE_NAMESPACE_PREFIX = 'plugin:';
 
@@ -85,6 +105,25 @@ export const PLUGIN_EVENT_NAME_PATTERN = /^[a-z][a-z0-9:_-]*$/i;
 
 /** 命令快捷键描述串的分隔符（如 `Ctrl+Alt+N`） */
 export const PLUGIN_KEY_SEPARATOR = '+';
+
+/**
+ * 顶栏轮播行的语义色调
+ *
+ * 与涨跌语义色完全同源（红涨绿跌跟随 `data-trend` 主题）：插件只声明「这是什么语气」，
+ * 具体色值由宿主在 `constants/header.constants.ts` 里映射，插件不碰色值。
+ */
+export const HEADER_MARQUEE_TONE = {
+  /** 中性（默认）：次级信息，如「2 只待触发」 */
+  DEFAULT: 'default',
+  /** 涨向：红色（跟随涨跌主题） */
+  UP: 'up',
+  /** 跌向：绿色（跟随涨跌主题） */
+  DOWN: 'down',
+  /** 平盘：中性灰 */
+  FLAT: 'flat',
+  /** 品牌主色：提示 / 强调 */
+  PRIMARY: 'primary',
+} as const satisfies Record<string, string>;
 
 /** 命令快捷键里的修饰键 token（小写） → ParsedCommandKeys 的修饰位字段名 */
 export const PLUGIN_KEY_MODIFIER = {

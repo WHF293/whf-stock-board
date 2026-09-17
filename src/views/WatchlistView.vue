@@ -16,6 +16,7 @@ import { DEFAULT_GROUP_ID } from "../constants/watchlist.constants";
 import { useWatchlistStore } from "../stores/watchlist";
 import { useDataCacheStore } from "../stores/data-cache";
 import { DATA_CACHE_KEY } from "../constants/data-cache.constants";
+import { findQuoteBySymbol } from "../utils/find-quote-by-symbol";
 import type { SearchResult } from "../types/stock-quote.types";
 import type { FullQuote } from "../types/stock-quote.types";
 
@@ -51,8 +52,23 @@ const quotesMap = ref<Record<string, FullQuote>>(
   ) ?? {},
 );
 
-/** 行情首载中：表格以骨架屏代替 `--` 闪现（有快照则直接展示快照，不进骨架） */
+/**
+ * 行情首载中：表格以骨架屏代替 `--` 闪现（有快照则直接展示快照，不进骨架）
+ *
+ * **只在「当前分组一条报价都还没有」时置 true**。这个标记一旦翻 true，
+ * 模板就会整表卸载换成骨架屏、数据回来再重建 —— 表现为「整个列表闪一下」，
+ * 顺带丢掉滚动位置与悬停态。常规轮询刷新只覆盖 `quotesMap`（行 key 不变，
+ * DOM 原地复用），绝不翻这个标记。
+ */
 const isQuotesLoading = ref(Object.keys(quotesMap.value).length === 0);
+
+/**
+ * 当前分组是否已经有任意一条报价（用来区分「首载」与「常规刷新」）
+ * @param symbols 当前分组标的符号
+ * @returns 是否已有报价
+ */
+const hasAnyQuote = (symbols: string[]): boolean =>
+  symbols.some((symbol) => findQuoteBySymbol(quotesMap.value, symbol) !== undefined);
 
 /** 拉取当前分组全部标的行情（成功后写快照） */
 const fetchActiveGroupQuotes = async (): Promise<void> => {
@@ -62,7 +78,11 @@ const fetchActiveGroupQuotes = async (): Promise<void> => {
     isQuotesLoading.value = false;
     return;
   }
-  isQuotesLoading.value = true;
+  // 首次进页 / 切到新分组才会一条报价都没有 → 此时才值得走骨架屏；
+  // 同分组的周期性刷新静默覆盖数据即可
+  if (!hasAnyQuote(symbols)) {
+    isQuotesLoading.value = true;
+  }
   try {
     const quotes = await fetchFullQuotes(symbols);
     quotesMap.value = Object.fromEntries(
@@ -70,6 +90,7 @@ const fetchActiveGroupQuotes = async (): Promise<void> => {
     );
     dataCache.set(DATA_CACHE_KEY.WATCHLIST_QUOTES_MAP, quotesMap.value);
   } finally {
+    // 已经是 false 时赋值不触发更新（ref 做同值比较），因此不产生多余渲染
     isQuotesLoading.value = false;
   }
 };

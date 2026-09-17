@@ -18,6 +18,7 @@ import { attachPluginRoutes } from './router-bridge';
 import { router } from '../router';
 import { usePluginPanelsStore } from '../stores/plugin-panels';
 import { usePluginStore } from '../stores/plugin';
+import { useNotificationsStore } from '../stores/notifications';
 import { useUserPluginsStore } from '../stores/user-plugins';
 import type { Pinia } from 'pinia';
 
@@ -27,10 +28,21 @@ let installed = false;
 /**
  * 打开一个插件面板（宿主能力，作为 `panel:open` 服务提供给插件）
  *
- * drawer 面板 → 打开右侧抽屉；inline 面板 → 取消折叠并滚动到可视区。
+ * 三种承载形态统一走这一个入口，调用方不必知道面板挂在哪：
+ * - drawer 面板 → 打开右侧抽屉；
+ * - inline 面板 → 取消折叠并滚动到可视区；
+ * - 顶栏条目 → 展开它的下拉面板（`HeaderItemHost` 消费请求）。
  * @param panelKey 面板全局键（`<pluginId>#<panelId>`）
  */
 const openPanelByKey = (panelKey: string): void => {
+  const panelsStore = usePluginPanelsStore();
+  const headerItem = pluginKernel.contributions.header.items.find(
+    (item) => item.key === panelKey,
+  );
+  if (headerItem) {
+    panelsStore.requestHeaderOpen(panelKey);
+    return;
+  }
   const panel = pluginKernel.contributions.sidebar.panels.find(
     (item) => item.key === panelKey,
   );
@@ -38,7 +50,6 @@ const openPanelByKey = (panelKey: string): void => {
     console.warn(`[plugin] 面板不存在：${panelKey}`);
     return;
   }
-  const panelsStore = usePluginPanelsStore();
   if (panel.mode === 'drawer') {
     panelsStore.openDrawer(panelKey);
     return;
@@ -74,6 +85,16 @@ export const installPlugins = (pinia?: Pinia): void => {
     void router.push(path);
   });
   pluginKernel.services.provide('panel:open', openPanelByKey);
+
+  // 应用级浮窗：插件发起、宿主渲染（承载组件在 MainLayout，与插件面板挂载状态无关）
+  const notificationsStore = pinia
+    ? useNotificationsStore(pinia)
+    : useNotificationsStore();
+  pluginKernel.services.provide('app:notify', {
+    notify: (options) => notificationsStore.push(options),
+    dismiss: (id) => notificationsStore.dismiss(id),
+    dismissBySource: (source) => notificationsStore.dismissBySource(source),
+  });
 
   // 2. 清理已下线插件的残留偏好，再按黑名单挂载
   //    存活名单要包含用户插件：它们此刻还没进内核，但持久化记录已经在了

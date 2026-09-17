@@ -2,8 +2,8 @@
  * 股票详情页 · 图表指标配置选项
  *
  * 主图指标叠加在蜡烛面板（klinecharts 内置 MA / BOLL）；
- * 副图指标每项独立面板（内置 VOL / MACD / BOLL / KDJ + 本项目自定义 MACD_KDJ 复合指标）。
- * 分时 / 五日模式固定为主图 + 均价线 + VOL + MACD，不参与配置。
+ * 副图指标每项独立面板（内置 VOL / MACD / BOLL / KDJ / RSI + 本项目自定义 MACD_KDJ 复合指标）。
+ * 分时 / 五日模式固定为主图 + 均价线 + VOL + MACD，不参与配置（配置按钮置灰）。
  */
 
 /** 主图指标选项 */
@@ -18,6 +18,7 @@ export const CHART_SUB_INDICATOR_OPTIONS = [
   { label: 'MACD', value: 'MACD' },
   { label: 'BOLL', value: 'BOLL' },
   { label: 'KDJ', value: 'KDJ' },
+  { label: 'RSI', value: 'RSI' },
   { label: 'MACD&KDJ', value: 'MACD_KDJ' },
 ] as const;
 

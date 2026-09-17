@@ -48,14 +48,26 @@ const onUninstall = (info: PluginRuntimeInfo): void => {
  * @returns 形如「侧栏面板 1 · 命令 1」的摘要
  */
 const contributionSummary = (info: PluginRuntimeInfo): string => {
-  const { sidebarPanels, menuItems, routes, dockPanels, commands, agentServers } =
-    info.contributions;
+  const {
+    sidebarPanels,
+    headerItems,
+    menuItems,
+    routes,
+    dockPanels,
+    commands,
+    stockRowActions,
+    stockDetailSections,
+    agentServers,
+  } = info.contributions;
   const parts = [
     sidebarPanels > 0 ? `侧栏面板 ${sidebarPanels}` : '',
+    headerItems > 0 ? `顶栏条目 ${headerItems}` : '',
     menuItems > 0 ? `菜单 ${menuItems}` : '',
     routes > 0 ? `路由 ${routes}` : '',
     dockPanels > 0 ? `停靠面板 ${dockPanels}` : '',
     commands > 0 ? `命令 ${commands}` : '',
+    stockRowActions > 0 ? `行操作 ${stockRowActions}` : '',
+    stockDetailSections > 0 ? `详情扩展 ${stockDetailSections}` : '',
     agentServers > 0 ? `MCP 工具集 ${agentServers}` : '',
   ].filter((part) => part.length > 0);
   return parts.length > 0 ? parts.join(' · ') : '无贡献点';

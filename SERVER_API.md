@@ -37,6 +37,8 @@
 | `fetchUsSectorPanorama` | `api/panorama.api.ts` | `push2delay.eastmoney.com/api/qt/ulist.np/get` | GET | 美股行业 ETF（按 `secids` 精确查询） |
 | 更新检查 | `constants/app-info.constants.ts` + `views/SettingsView.vue` | `api.github.com/repos/WHF293/whf-stock-board/releases/latest` | GET | 检查更新（非行情数据） |
 | 连通性探针 | `views/SettingsView.vue` | `qt.gtimg.cn/q=sh000001` | GET | 设置页「网络诊断」用腾讯源直连测连通性 |
+| `fetchThsBoardList` | `plugins/mainline/ths-data.ts` | `q.10jqka.com.cn/thshy/` | GET | 同花顺行业板块清单（**GBK HTML**）。按 `detail/code/88xxxx` 锚点正则抽取后去重（页面含同一板块多份重复链接），只留 `88` 开头的行业板块。带 `Referer: q.10jqka.com.cn` |
+| `fetchThsBoardKline` | `plugins/mainline/ths-data.ts` | `d.10jqka.com.cn/v6/line/48_<板块码>/<复权>/<年>.js` | GET(JSONP) | 同花顺板块**年 K**（含成交额）：剥 JSONP 壳后 `data` 为 `日期,开,高,低,收,量,额,…` 逐日分号分隔。⚠️ **复权口径必须回退**：部分板块 `01`（前复权）年文件被上游网关拒（502）、另一些仅 `00`（不复权）可用 → 按「当年 01 → 当年 00 → 去年 01 → 去年 00」逐个尝试，首个有数据者胜出。带 `Referer` |
 
 ---
 
@@ -81,6 +83,8 @@
 
 - **市场总览 `DashboardView`**：`fetchFullQuotes`(指数卡) · `fetchMarketFundFlow`(资金速览) · `fetchMarketTurnover`(成交额变化) · `fetchIndustryBoards`(板块热力) · `fetchAllMarketQuotes`(涨跌分布)
 - **自选股 `WatchlistView`**：`fetchFullQuotes`
+- **自选盯盘（侧栏插件 `dsh-sidebar-watch`）**：`fetchFullQuotes` —— 由**插件级盯盘引擎**（`plugins/sidebar-watch/monitor.ts`）轮询「候选池 ∩ 自选股」，与面板是否折叠无关。
+  ⚠️ 已知重叠：在自选股页时，该引擎与 `WatchlistView` 会**各自轮询同一批符号**（各一次 `fetchFullQuotes`，间隔取用户设置与 `QUOTES_INTRADAY` 的较大值）。这是改动前就有的重叠（原先是面板组件自己轮询），若要收敛需引入宿主级报价总线，目前未做。
 - **行情全景 `PanoramaView`**：`fetchGlobalIndexPanorama` · `fetchUsSectorPanorama` · `fetchGlobalFuturesPanorama`
 - **资金动向 `FundFlowView`**：`fetchMarketFundFlow` · `fetchFundFlowRank` · `fetchSectorFundFlowRank` · `fetchNorthboundHoldingRank`
 - **涨停与异动 `MarketMoodView`**：`fetchZtPool` · `fetchStockChanges` · `fetchBoardChanges`
@@ -88,6 +92,9 @@
 - **选股器 `ScreenerView`**：`runScreener` · `runMaCrossBacktest` · 信号扫描 / 尾盘选股（`analysis.api`）
 - **热点新闻 `HotNewsView`**：`fetchSinaHotNews` · `fetchEastmoneyHotNews` · `fetchThsHotNews` · `fetchThepaperHotNews`
 - **个股详情（停靠面板）`StockDetailPanel`**：`fetchSinaKline`(K线) · `fetchTodayTimeline`(分时) · `fetchIndividualFundFlow` · `fetchKlineWithIndicators` · `fetchKlineSignals`
+- **股票主线（侧栏插件 `dsh-mainline`）**：`fetchThsBoardList` · `fetchThsBoardKline` · `fetchMarketTurnover`(复用宿主，算成交占比分母)
+  ⚠️ 只由用户点击「扫描主线」触发、**不轮询**；同上游并发 3 + 连续间隔 500ms（`MAINLINE_SCAN_CONCURRENCY` / `MAINLINE_SCAN_DELAY_MS`）。
+  板块日 K 落插件自有表（`ctx.db` 的 `plugin_dsh-mainline_board_history`），日常查看看板只读库不联网。
 - **搜索**：`searchStocks`
 
 ---
@@ -96,8 +103,9 @@
 
 1. **先看是不是东财行情域**：`push2` / `push2his`（含数字前缀镜像）在本机全封，凡走这些域的请求都会 `fetch failed` / TCP RST。指数成交额走 §1 腾讯 `newfqkline`；个股日 K 走新浪 `fetchSinaKline`。
 2. **HTTP 200 不等于有数据**：`push2delay` 的 kline 返回 200 但 `klines` 空。解析前必须校验拿到非空数据，否则会把「上游无数据」当成成功，页面表现为**空白且无报错**。
-2. **新域名 403 FORBIDDEN_TARGET**：补 `proxy.constants.ts` 白名单（浏览器）+ capability scope（Tauri）。
-3. **403 / 空数据**：检查 `Referer`（新浪/同花顺需带），或上游换了字段（参考 `.ai/` 下的新浪接口文档、新浪新闻接口文档）。
-4. **JSONP 源乱码**：确保 `proxyFetch` 按 `arrayBuffer` 透传、腾讯源由 SDK 按 GBK 解码，不要自行转码。
-5. **封 IP**：东财高频 → 全域名 TCP RST 数十分钟；重接口严格错峰、低并发（≤3）、不轮询。
-6. **境外财经站（已评估否决，勿重复尝试）**：**华尔街日报中文版 `cn.wsj.com` 不可接入**——境内 DNS 污染（解析到 108.160.169.55 / 31.13.69.245 等无关段）+ TCP 443 全超时；走本机代理（Clash 7897）或 DoH 取真实 Akamai IP 后，仍被 **DataDome 反爬**挡回 `401`（响应含 `set-cookie: datadome=…`，正文是「Please enable JS and disable any ad blocker」）→ **纯 HTTP 抓取永远拿不到 HTML，必须能执行 JS 的真浏览器**；存档站 `archive.org` 整域不可达，三方中转（allorigins / corsproxy / codetabs / r.jina.ai）全灭；WSJ 官方 RSS（`feeds.a.dj.com`）**已停更**（冻结在 2025-01-27）。同集团 MarketWatch 的 `feeds.content.dowjones.io/public/rss/mw_topstories`、`mw_bulletins` 实测**实时可达**（英文），是唯一可用的道琼斯系替代源。财联社 `www.cls.cn` 同理：站点下发 Next.js 壳、正文靠客户端再拉，需 `sign = md5(sha1(sortedQuery))`，暂缓。
+3. **新域名 403 FORBIDDEN_TARGET**：补 `proxy.constants.ts` 白名单（浏览器）+ capability scope（Tauri）。
+4. **403 / 空数据**：检查 `Referer`（新浪/同花顺需带），或上游换了字段（参考 `.ai/` 下的新浪接口文档、新浪新闻接口文档）。
+5. **JSONP 源乱码**：确保 `proxyFetch` 按 `arrayBuffer` 透传、腾讯源由 SDK 按 GBK 解码，不要自行转码。
+6. **同花顺板块年 K 502 / 空**：不是封禁，而是该板块在该复权口径下不可用 → 按回退链换口径/年份；若四种组合全空才记该板块取数失败（扫描结果里会计入失败数，不静默）。
+7. **封 IP**：东财高频 → 全域名 TCP RST 数十分钟；重接口严格错峰、低并发（≤3）、不轮询。
+8. **境外财经站（已评估否决，勿重复尝试）**：**华尔街日报中文版 `cn.wsj.com` 不可接入**——境内 DNS 污染（解析到 108.160.169.55 / 31.13.69.245 等无关段）+ TCP 443 全超时；走本机代理（Clash 7897）或 DoH 取真实 Akamai IP 后，仍被 **DataDome 反爬**挡回 `401`（响应含 `set-cookie: datadome=…`，正文是「Please enable JS and disable any ad blocker」）→ **纯 HTTP 抓取永远拿不到 HTML，必须能执行 JS 的真浏览器**；存档站 `archive.org` 整域不可达，三方中转（allorigins / corsproxy / codetabs / r.jina.ai）全灭；WSJ 官方 RSS（`feeds.a.dj.com`）**已停更**（冻结在 2025-01-27）。同集团 MarketWatch 的 `feeds.content.dowjones.io/public/rss/mw_topstories`、`mw_bulletins` 实测**实时可达**（英文），是唯一可用的道琼斯系替代源。财联社 `www.cls.cn` 同理：站点下发 Next.js 壳、正文靠客户端再拉，需 `sign = md5(sha1(sortedQuery))`，暂缓。

@@ -91,7 +91,7 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
 
 ### 三条硬性约定
 
-1. **可逆副作用**：`ctx.sidebar/menu/router/dock/command/agent` 的每次 `add` 都由内核登记撤销句柄，
+1. **可逆副作用**：`ctx.sidebar/menu/router/dock/command/stockRow/stockDetail/agent` 的每次 `add` 都由内核登记撤销句柄，
    插件卸载 = 撤销全部贡献。**插件里禁止直接改宿主状态**（如往 pinia 塞数据），必须走贡献点或服务。
 2. **依赖靠服务名，不靠 import 顺序**：`inject: ['note:repo']` 声明依赖 → 依赖未就绪时状态为 `pending`
    （不报错、不阻塞其它插件）；就绪后自动挂载。依赖被禁用 → 依赖方级联回到 `pending`，恢复后自动重挂。
@@ -109,7 +109,10 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
 | 菜单 | `ctx.menu.add({ path, title, icon, component, order? })` | **带 `component` 会自动注册路由**（挂在主布局之下），无需再手动 `router.add` |
 | 路由 | `ctx.router.add({ path, component, underLayout? })` | 无菜单入口的隐藏页用这个；`underLayout` 默认 `true` |
 | 停靠面板 | `ctx.dock.add(key, component, title)` | 右侧面板（`openPluginPanel(key)` 打开） |
+| 顶栏条目 | `ctx.header.add({ id, title, icon, component, props?, marquee?, marqueeIntervalMs? })` | 应用**右上角工具条**的插件入口（`panel:open` 服务同样能唤醒）：收起态不展示图标，由宿主按 `marquee()` 返回的行做 Swiper 式上下滑动轮播（间隔默认 4s、下限 1500ms，单行不轮播；行给 `label`/`value` 时名称可截断、数值常显，视窗 171px 固定），点开下拉渲染 `component`（`usePluginPanelHost().close()` 可自行收起）；顺序与显隐在设置页「顶栏工具」编排（`settings.headerOrder` / `hiddenHeaderItems`） |
 | 命令 | `ctx.command.add({ id, title, keys?, run })` | `keys: 'Ctrl+Alt+N'` 自动接管全局快捷键（`command-keys.ts` 解析） |
+| 股票行操作 | `ctx.stockRow.add({ id, title, activeTitle?, icon, order?, isActive?, run })` | 往**自选股表格的「操作」列**注入按钮（宿主不硬编码任何插件）；`isActive` 表达激活态（宿主据此高亮 + 换用 `activeTitle`），适合「盯盘 / 取消盯盘」这类开关动作 |
+| 个股详情扩展区 | `ctx.stockDetail.add({ id, title, component, order?, props? })` | 在**个股详情面板底部**注入一个卡片区块（宿主只传 `symbol`，内容完全由插件决定）；适合速记 / 标签 / 备注这类「跟着个股走」的功能，示范见 dsh-quick-note 的 `StockNotesSection.vue` |
 | Agent 工具 | `ctx.agent.addServer({ key, name, description, tools })` | 并入 `listBuiltinMcpServers()`，与内置 MCP 同权 |
 
 ### 新增一个左侧栏面板插件（最小流程）
@@ -123,11 +126,27 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
 ### 宿主接线（别绕开）
 
 - `main.ts` 在 `app.use(router)` **之前**调 `installPlugins(pinia)`（`plugin/setup.ts`）：
-  先 provide 宿主服务（`app:version` / `kernel:runtime` / `app:navigate` / `panel:open`），再挂插件，
+  先 provide 宿主服务（`app:version` / `kernel:runtime` / `app:navigate` / `panel:open` / `app:notify`），再挂插件，
   再 `attachPluginRoutes(router)`（订阅路由注册表版本号），随后**异步挂载用户插件**，最后 `router.afterEach` 广播 `route:changed`
 - 侧栏面板渲染：`components/plugin/SidebarPanelHost.vue`（inline，折叠时不挂载）+ `SidebarPanelEntry.vue`（drawer 入口按钮）+ `PluginPanelDrawer.vue`（抽屉承载）
 - 插件存储：`ctx.storage` 落在 `whf:app` 整包的 `plugin:<pluginId>` 命名空间下，**插件之间天然隔离**
 - 插件通用数据库 `ctx.db`（见下节）；面板组件通过 `usePluginPanelHost()`（`plugin/panel-host.ts`）拿到 `{ mode, visibleWhenCollapsed }` 等宿主上下文
+- **应用级浮窗 `app:notify`**（`types/notify.types.ts` + `stores/notifications.ts` + `components/ui/NotificationHost.vue`）：
+  插件 `ctx.consume('app:notify')` 即可弹右下角提醒（tone 走涨跌 token，自动跟随 `data-trend`）。
+  承载组件由 `MainLayout` 渲染一次，**与发起它的插件面板是否挂载无关**——需要长期生效的提醒（如盯盘到价）必须走这里，
+  不能挂在面板组件里（面板折叠即卸载）
+
+### 面板挂载语义（决定「后台任务该放哪」，别踩）
+
+侧栏面板有**两层**折叠，都会让面板组件被卸载：
+
+1. 面板自身标题条折叠 → `SidebarPanelHost.vue` 的 `v-if="!collapsed"`；
+2. 侧栏收起为 64px 图标栏 → `MainLayout` 的 `shouldRenderInline()` 按面板声明的 `visibleWhenCollapsed` 决定是否渲染。
+
+所以**任何需要「用户不看也在跑」的逻辑（轮询、到价告警、定时任务）都不能写在面板组件里**，
+要放插件层，用 `createPollingScheduler`（`composables/polling-scheduler.ts`，无组件依赖，
+与 `usePolling` 共用同一份交易窗口 / 退避 / 可见性策略）+ `ctx.onDispose()` 收尾；
+面板只读引擎暴露的响应式快照（示范：dsh-sidebar-watch 的 `monitor.ts`）。
 
 ### 插件通用数据层（ctx.db / ctx.storage，硬性：插件永不直接访问 SQL）
 
@@ -140,10 +159,28 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
   是防注入边界）。声明式建表（`ensureTable` 幂等）+ CRUD（insert/select/update/remove/count/clear，
   等值过滤参数化，`json` 列自动 stringify/parse）。Tauri 端落 stock-board.db 动态表，
   浏览器端降级为 appStorage JSON 表仿真，两端语义一致（`api/plugin-db.api.ts`）
+- **表结构演进：加列直接改声明，宿主自动补列**。`CREATE TABLE IF NOT EXISTS` 对已存在的表是空操作，
+  所以 `ensureTable` 会比对 `PRAGMA table_info` 并对缺列执行 `ALTER TABLE … ADD COLUMN`
+  （`buildAddColumnSql`，一律补成可空列）——插件因此不需要写任何迁移逻辑。
+  反过来说：**列声明就是唯一事实源，改列类型 / 删列不会被宿主感知**（SQLite 也不支持直接改），
+  需要动类型时只能新建列名。
+- **列声明只写业务列**：`id` / `created_at` / `updated_at` 由宿主固定追加并自动维护
+  （写入时宿主自动填时间戳，读出时映射成 `id` / `createdAt` / `updatedAt`），插件**不要声明**这三个名字。
+  重复声明会让建表语句里出现两个同名列，SQLite 只报一句 `duplicate column name: updated_at`
+  （指向不了真实原因 —— dsh-mainline 挂载失败即此）→ 宿主已在 `toColumnMap` 里拒绝保留列并给出明确报错，
+  冒烟也用真 SQLite（`node:sqlite`）执行过一次建表 DDL 作为回归保护。
 - **表登记与卸载**：`ensureTable` 自动登记到 `plugin-db-tables`（appStorage）；卸载用户插件时
   若有登记表，弹窗挂起「保留数据 / 一并删除」待办（`use-user-plugins.ts` 的
   `pendingDbCleanup` + `resolveDbCleanup`），删表走 `dropPluginTables`（DROP + 清降级数据 + 清登记）
-- **内置插件的示范实现**：dsh-quick-note 的速记就落在自己的表上（含 ctx.storage 旧数据一次性迁移）
+- **内置插件的示范实现**：dsh-quick-note 的速记（含 ctx.storage 旧数据一次性迁移、
+  后续追加的股票关联两列 `symbol/stock_name`、以及「个股详情扩展区」贡献点的消费方 `StockNotesSection.vue`）、
+  dsh-sidebar-watch 的盯盘候选（`plugin_dsh_sidebar_watch_watch_candidates`，含「刚加入就移除」的串行写队列、
+  以及后续追加的阈值四列 `alert_kind/alert_value/alert_above/alert_armed` —— 加列的现成例子）
+- **dsh-mainline 的主线快照**（`plugin_dsh-mainline_board_history` / `plugin_dsh-mainline_scan_meta`）：
+  「外部数据源 + 纯函数判定 + 只读看板」的示范 —— 抓取与解析在 `ths-data.ts`（同花顺 GBK 清单 + 年 K，
+  含复权/年份回退链），指标与四阶段判定是 `judge.ts` 纯函数（可被冒烟直跑），落库在 `storage.ts`；
+  看板只读 `repo.snapshot()` 后本地重算，**打开页面不联网**。扫描为用户点击触发的一次性任务（非轮询），
+  仍受同上游并发 ≤3 + 500ms 间隔约束。
 - **MCP 同步**：新增表 / 改表结构后同步 `app-tools.ts` 的 `db_query` / `db_execute` 描述；
   Agent 对 `plugin_*` 表默认只看不改
 
@@ -195,6 +232,16 @@ Agent 的内置 MCP 工具定义在 `src/agent/mcp/`（`app-tools.ts`「app-api�
   同样适用上述口径，改完确认启停插件时它随之出现与消失
 
 自检口径：改完跑 `pnpm lint` + `pnpm build`；问自己一句「Agent 现在调用这些接口/表的方式还和代码一致吗？」
+
+## 软件白皮书同步（硬性，勿漏）
+
+软件白皮书（顶栏「软件白皮书」入口，`views/WhitepaperView.vue`）是面向用户的操作文档，按「当前版本的实际行为」逐页描述。凡改动**用户可感知的行为**，必须同步更新白皮书对应章节，否则文档与软件脱节：
+
+- **新增功能 / 页面 / 交互入口**：在对应章节补术语（`defs` 条目）或要点（`list` 条目）；全新页面则新增章节
+- **行为变更**（默认值 / 口径 / 交互方式 / 数据范围变化）：同步改写对应描述
+- **功能删除 / 入口迁移**：删除或改写对应段落，不留失效描述
+
+自检口径：发版前问自己一句「用户照着白皮书操作，每一步都还能走通吗？」
 
 ## MCP Apps 渲染约定（工具结果可视化，硬性）
 

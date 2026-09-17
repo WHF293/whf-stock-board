@@ -13,6 +13,10 @@ interface PluginPanelsState {
    * 布尔值第二次不会变化、watch 不触发；序号每次都变，滚动必定重放。
    */
   revealSeq: number;
+  /** 请求展开的顶栏条目全局键（`<pluginId>#<id>`，空串 = 无请求） */
+  headerItemKey: string;
+  /** 顶栏展开请求序号（同 revealSeq 的理由：连续两次请求同一个条目也要能重放） */
+  headerSeq: number;
 }
 
 /**
@@ -27,6 +31,8 @@ export const usePluginPanelsStore = defineStore('pluginPanels', {
     drawerPanelKey: null,
     revealPanelKey: '',
     revealSeq: 0,
+    headerItemKey: '',
+    headerSeq: 0,
   }),
 
   getters: {
@@ -59,6 +65,15 @@ export const usePluginPanelsStore = defineStore('pluginPanels', {
     requestReveal(panelKey: string): void {
       this.revealPanelKey = panelKey;
       this.revealSeq += 1;
+    },
+
+    /**
+     * 请求展开某个顶栏条目的下拉面板
+     * @param itemKey 条目全局键（`<pluginId>#<id>`）
+     */
+    requestHeaderOpen(itemKey: string): void {
+      this.headerItemKey = itemKey;
+      this.headerSeq += 1;
     },
   },
 });

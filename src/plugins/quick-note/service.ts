@@ -6,10 +6,21 @@
  *   `ctx.consume('note:repo')` 都能拿到强类型实现（未启用本插件时返回 undefined）；
  * - **通用数据层消费**：速记数据落在本插件独立表 `plugin_dsh_quick_note_notes`
  *   （`ctx.db`，Tauri 端 SQLite / 浏览器端本地 JSON 表仿真），插件永不直接写 SQL。
+ *
+ * v1.1.0：速记可关联一只股票（自选股快选或全市场搜索），
+ * 个股详情面板经「个股详情扩展区」贡献点展示该股的速记。
  */
 import { ref } from 'vue';
 import { PLUGIN_LOG_PREFIX } from '../../constants/plugin.constants';
 import type { PluginDatabase, PluginStorage } from '../../types/plugin.types';
+
+/** 速记关联的股票（关联在创建时一并落库，符号为归一化完整形态如 sh600519） */
+export interface NoteStockRef {
+  /** 完整符号（sh600519） */
+  symbol: string;
+  /** 股票名称（展示用） */
+  name: string;
+}
 
 /** 一条速记 */
 export interface QuickNote {
@@ -19,6 +30,10 @@ export interface QuickNote {
   text: string;
   /** 创建时间戳（毫秒） */
   createdAt: number;
+  /** 关联的股票符号（未关联为 null） */
+  symbol: string | null;
+  /** 关联股票的名称（未关联为空串） */
+  stockName: string;
 }
 
 /** 速记仓储（插件对外贡献的能力） */
@@ -29,6 +44,12 @@ export interface QuickNoteRepo {
    */
   list: () => readonly QuickNote[];
   /**
+   * 列出关联了某只股票的速记（新的在前，响应式）
+   * @param symbol 完整符号
+   * @returns 该股的速记数组
+   */
+  listBySymbol: (symbol: string) => readonly QuickNote[];
+  /**
    * 取最近一条速记
    * @returns 最近一条；空仓返回 null
    */
@@ -36,9 +57,10 @@ export interface QuickNoteRepo {
   /**
    * 新增一条速记（写数据表）
    * @param text 正文（空白内容会被忽略）
+   * @param stock 关联的股票（可选；不传即普通速记）
    * @returns 新建的速记；内容为空时返回 null
    */
-  create: (text: string) => QuickNote | null;
+  create: (text: string, stock?: NoteStockRef) => QuickNote | null;
   /**
    * 删除一条速记
    * @param id 速记 id
@@ -76,6 +98,10 @@ interface QuickNoteRow extends Record<string, unknown> {
   content: string;
   /** 创建时间戳（毫秒） */
   created_at_ms: number;
+  /** 关联股票的完整符号（未关联为 null；v1.1.0 新增列，老库由宿主自动补列） */
+  symbol: string | null;
+  /** 关联股票名称（未关联为空串） */
+  stock_name: string;
 }
 
 /**
@@ -97,6 +123,9 @@ export const createQuickNoteRepo = async (
     { name: 'note_id', type: 'text', indexed: true },
     { name: 'content', type: 'text' },
     { name: 'created_at_ms', type: 'integer', indexed: true },
+    // v1.1.0 新增：股票关联。老库缺列时宿主 ensureTable 自动 ALTER 补上，无需迁移脚本
+    { name: 'symbol', type: 'text', indexed: true },
+    { name: 'stock_name', type: 'text' },
   ]);
 
   const items = ref<QuickNote[]>([]);
@@ -110,6 +139,8 @@ export const createQuickNoteRepo = async (
     id: row.note_id,
     text: row.content,
     createdAt: row.created_at_ms,
+    symbol: row.symbol || null,
+    stockName: row.stock_name || '',
   });
 
   // 水合：优先数据表；表为空且旧版 storage 有历史数据时做一次性迁移
@@ -125,9 +156,20 @@ export const createQuickNoteRepo = async (
         note_id: note.id,
         content: note.text.slice(0, QUICK_NOTE_MAX_LENGTH),
         created_at_ms: note.createdAt,
+        symbol: null,
+        stock_name: '',
       });
     }
-    if (legacyNotes.length > 0) items.value = [...legacyNotes];
+    if (legacyNotes.length > 0) {
+      // 旧形态没有 symbol / stockName 字段，必须补齐成 QuickNote 完整形态
+      items.value = legacyNotes.map((note) => ({
+        id: note.id,
+        text: note.text.slice(0, QUICK_NOTE_MAX_LENGTH),
+        createdAt: note.createdAt,
+        symbol: null,
+        stockName: '',
+      }));
+    }
   }
   // 旧存储键使命完成（无论是否迁移成功都不再作为数据源），清掉避免新旧并存
   legacyStorage.remove(QUICK_NOTE_STORAGE_KEY);
@@ -146,20 +188,26 @@ export const createQuickNoteRepo = async (
 
   return {
     list: (): readonly QuickNote[] => items.value,
+    listBySymbol: (symbol: string): readonly QuickNote[] =>
+      items.value.filter((note) => note.symbol === symbol),
     latest: (): QuickNote | null => items.value[0] ?? null,
-    create: (text: string): QuickNote | null => {
+    create: (text: string, stock?: NoteStockRef): QuickNote | null => {
       const trimmed = text.trim();
       if (!trimmed) return null;
       const note: QuickNote = {
         id: crypto.randomUUID(),
         text: trimmed.slice(0, QUICK_NOTE_MAX_LENGTH),
         createdAt: Date.now(),
+        symbol: stock?.symbol ?? null,
+        stockName: stock?.name ?? '',
       };
       items.value = [note, ...items.value];
       void insertQuietly({
         note_id: note.id,
         content: note.text,
         created_at_ms: note.createdAt,
+        symbol: note.symbol,
+        stock_name: note.stockName,
       });
       onCreated?.(note);
       return note;

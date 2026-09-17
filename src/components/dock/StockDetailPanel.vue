@@ -5,14 +5,16 @@ import BaseCard from '../ui/BaseCard.vue';
 import BaseConfirmModal from '../ui/BaseConfirmModal.vue';
 import BaseEmpty from '../ui/BaseEmpty.vue';
 import BaseSkeleton from '../ui/BaseSkeleton.vue';
+import BaseTabs from '../ui/BaseTabs.vue';
 import KlineChart from '../charts/KlineChart.vue';
 import StockQuoteHeader from '../business/StockQuoteHeader.vue';
 import StockOrderBook from '../business/StockOrderBook.vue';
 import DockResizer from '../business/DockResizer.vue';
 import { fetchFullQuotes } from '../../api/quotes.api';
-import { fetchSinaKline } from '../../api/sina-kline.api';
-import { CHART_PERIOD_OPTIONS, type ChartPeriod } from '../../constants/stock-detail.constants';
+import { fetchKlineCached } from '../../api/kline-cache.api';
+import { CHART_PERIOD_OPTIONS } from '../../constants/stock-detail.constants';
 import { usePolling } from '../../composables/use-polling';
+import { useChartPeriod } from '../../composables/use-chart-period';
 import { POLLING_INTERVAL } from '../../constants/polling.constants';
 import type { KLineData } from 'klinecharts';
 import type { FullQuote } from '../../types/stock-quote.types';
@@ -22,10 +24,11 @@ import { useWatchlistStore } from '../../stores/watchlist';
 import { DEFAULT_GROUP_ID } from '../../constants/watchlist.constants';
 import { useDockPanelStore } from '../../stores/dock-panel';
 import { DATA_CACHE_KEY } from '../../constants/data-cache.constants';
+import { pluginKernel } from '../../plugin';
 
 /**
  * 个股详情面板（右侧停靠面板内容，布局参考同花顺移动端）：
- * 报价头 + 分时/五日/5分/日K/周K/月K 下拉切换 + 侧栏（分时/五日 -> 五档盘口）
+ * 报价头 + 分时/五日/5分/日K/周K/月K 按钮组切换 + 侧栏（分时/五日 -> 五档盘口）
  *
  * K 线走新浪源（不复权），为重接口，仅在打开面板或切换周期时拉取一次，不参与轮询；
  * 全部数据有内存快照：同标的重复打开先展示快照，接口返回后刷新
@@ -180,11 +183,10 @@ const displayQuote = computed<FullQuote | null>(() => {
 });
 
 
-// ---------- 图表周期（下拉切换：分时 / 五日 / 5分 / 日K / 周K / 月K，均走新浪源） ----------
-// 周期选项与详情页共用（constants/stock-detail.constants.ts），避免两处漂移
-
-/** 当前图表周期（默认分时） */
-const chartPeriod = ref<ChartPeriod>('minute');
+// ---------- 图表周期（按钮组切换：分时 / 五日 / 5分 / 日K / 周K / 月K，均走新浪源） ----------
+// 周期选项与详情页共用（constants/stock-detail.constants.ts），避免两处漂移；
+// 选择本身也持久化（composables/use-chart-period.ts），下次打开默认回到上次的周期
+const chartPeriod = useChartPeriod();
 
 /** 图表模式：分时 / 五日为分时线，其余为蜡烛图 */
 const chartMode = computed<'timeline' | 'candle'>(() =>
@@ -210,7 +212,8 @@ const loadKline = async (): Promise<void> => {
       klines.value = cachedBars;
       isKlineLoading.value = false;
     }
-    const bars = await fetchSinaKline(symbol.value, chartPeriod.value);
+    // 日 K 走本地缓存（首次全量落库，之后只补缺口）；分时等周期退回纯网络取数
+    const bars = await fetchKlineCached(symbol.value, chartPeriod.value);
     klines.value = bars;
     dataCache.set(klineCacheKey.value, bars);
   } catch (error) {
@@ -249,6 +252,10 @@ const chartResizeTick = ref(0);
 const onDockResizeEnd = (): void => {
   chartResizeTick.value += 1;
 };
+
+// ---------- 个股详情扩展区（插件贡献，宿主只承载不参与内容） ----------
+/** 已注册的扩展区块（按 order 升序；插件挂载 / 卸载自动增删） */
+const detailSections = computed(() => pluginKernel.contributions.stockDetail.sections);
 </script>
 
 <template>
@@ -272,18 +279,14 @@ const onDockResizeEnd = (): void => {
         @resize-end="onDockResizeEnd"
       />
 
-      <!-- K 线卡片：extra 为周期切换 -->
-      <BaseCard title="K 线图">
+      <!-- K 线卡片：无标题，头部右侧为周期切换按钮组 -->
+      <BaseCard>
         <template #extra>
-          <select
+          <BaseTabs
             v-model="chartPeriod"
-            class="rounded-lg border border-flat-weak bg-surface px-2 py-1 text-xs text-text"
+            :options="CHART_PERIOD_OPTIONS"
             aria-label="K 线周期"
-          >
-            <option v-for="option in CHART_PERIOD_OPTIONS" :key="option.value" :value="option.value">
-              {{ option.label }}
-            </option>
-          </select>
+          />
         </template>
         <div v-if="klineError" class="py-10">
           <BaseEmpty text="K 线数据加载失败，请稍后重试（上游可能限频，稍后自动恢复）" />
@@ -295,6 +298,8 @@ const onDockResizeEnd = (): void => {
           :mode="chartMode"
           :pre-close="quoteRef?.prevClose ?? null"
           :symbol="symbol"
+          :intraday-axis="chartPeriod === 'minute'"
+          sub-volume-only
           :resize-tick="chartResizeTick"
           @crosshair-bar="onCrosshairBar"
         />
@@ -306,6 +311,11 @@ const onDockResizeEnd = (): void => {
         <StockOrderBook :quote="quoteRef" />
       </BaseCard>
     </div>
+
+    <!-- 插件扩展区：内容完全由插件决定，宿主只传入当前股票符号 -->
+    <BaseCard v-for="section in detailSections" :key="section.key" :title="section.title">
+      <component :is="section.component" v-bind="section.props" :symbol="symbol" />
+    </BaseCard>
     <!-- 加自选弹窗：分组多选 + 新建分组 -->
     <BaseConfirmModal
       :open="watchDialog === 'add'"

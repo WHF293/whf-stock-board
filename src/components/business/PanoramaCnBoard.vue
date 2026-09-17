@@ -171,7 +171,13 @@ const {
   total: boardsTotal,
   hasMore: boardsHasMore,
   onScroll: onBoardsScroll,
-} = useLazyRows<BoardRow>(() => sortedBoardsFull.value, BOARDS_CHUNK_SIZE);
+} = useLazyRows<BoardRow>(
+  () => sortedBoardsFull.value,
+  BOARDS_CHUNK_SIZE,
+  // 轮询刷新（30s）不换数据集：仅 tab / 筛选变化才重置放行进度，
+  // 否则每轮轮询已放行的行数被砍回首屏，表格整体塌一下
+  () => `${activeTab.value}|${filterKey.value}`,
+);
 
 /** 已展开的板块 code 列表（扩展行受控） */
 const expandedBoardCodes = ref<string[]>([]);

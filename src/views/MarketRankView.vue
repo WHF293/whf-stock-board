@@ -41,7 +41,7 @@ import { delay } from '../utils/delay';
  * 数据源 stock-sdk `getAllAShareQuotes`（上游东方财富 push2.eastmoney.com，代理通道）。
  *
  * 一次拉取全市场报价（约 5k+ 只），在前端按 sortKey 排序展示前 N 条；
- * 默认轮询 2 分钟（与市场宽度一致）；行点击打开右侧个股详情
+ * 默认轮询 30 秒（与市场宽度一致）；行点击打开右侧个股详情
  */
 const { openSidebar, openPage, toContextList } = useStockOpen();
 
@@ -365,7 +365,7 @@ const openDetail = (code: string): void => {
         <TabConfigButton page-id="market-rank" :options="SORT_TAB_OPTIONS" />
       </div>
       <span class="text-xs text-text-tertiary">
-        共 {{ allQuotes.length }} 只 · 前 {{ displayedRows.length }} 名 · 2 分钟自动刷新
+        共 {{ allQuotes.length }} 只 · 前 {{ displayedRows.length }} 名 · 30 秒自动刷新
       </span>
     </div>
 

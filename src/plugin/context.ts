@@ -181,6 +181,14 @@ export class PluginContextImpl implements PluginContext {
   }
 
   /**
+   * 顶栏条目贡献点
+   * @returns 顶栏条目贡献点
+   */
+  get header(): PluginContributorSet['header'] {
+    return this.contributions.header;
+  }
+
+  /**
    * 左侧导航菜单贡献点
    * @returns 左侧导航菜单贡献点
    */
@@ -210,6 +218,22 @@ export class PluginContextImpl implements PluginContext {
    */
   get command(): PluginContributorSet['command'] {
     return this.contributions.command;
+  }
+
+  /**
+   * 股票行操作贡献点
+   * @returns 股票行操作贡献点
+   */
+  get stockRow(): PluginContributorSet['stockRow'] {
+    return this.contributions.stockRow;
+  }
+
+  /**
+   * 个股详情扩展区贡献点
+   * @returns 个股详情扩展区贡献点
+   */
+  get stockDetail(): PluginContributorSet['stockDetail'] {
+    return this.contributions.stockDetail;
   }
 
   /**

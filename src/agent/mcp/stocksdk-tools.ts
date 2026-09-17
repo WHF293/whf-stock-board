@@ -16,7 +16,8 @@ import { calcBOLL, calcMA, calcMACD, calcRSI, normalizeSymbol } from 'stock-sdk'
 import { z } from 'zod';
 import { fetchFullQuotes } from '../../api/quotes.api';
 import { searchStocks } from '../../api/search.api';
-import { fetchSinaKline, type SinaKlinePeriod } from '../../api/sina-kline.api';
+import { fetchKlineCached } from '../../api/kline-cache.api';
+import { type SinaKlinePeriod } from '../../api/sina-kline.api';
 import { runMaCrossBacktest } from '../../api/screener.api';
 import { toFullSymbol } from '../../utils/to-full-symbol';
 import {
@@ -179,7 +180,8 @@ export const STOCK_SDK_MCP_SERVER: BuiltinMcpServer = {
           limit: number;
         };
         const full = fullSymbol(symbol);
-        const bars = await fetchSinaKline(full, period);
+        // 单票查询走本地缓存（Agent 只问这一只，值得落库；首次全量、之后只补缺口）
+        const bars = await fetchKlineCached(full, period);
         const tail: KlineBar[] = bars.slice(-limit).map((bar) => ({
           date: new Date(bar.timestamp).toISOString().slice(0, 10),
           open: bar.open,
@@ -216,7 +218,8 @@ export const STOCK_SDK_MCP_SERVER: BuiltinMcpServer = {
           limit: number;
         };
         const full = fullSymbol(symbol);
-        const bars = await fetchSinaKline(full, 'daily');
+        // 单票指标计算走本地缓存（MA60 最长回看 60 根，本地历史足够即零请求）
+        const bars = await fetchKlineCached(full, 'daily');
         const closes = bars.map((bar) => bar.close);
         let rows: Array<Record<string, number | null>>;
         switch (kind) {

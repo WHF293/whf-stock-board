@@ -7,6 +7,7 @@
 import { sidebarWatchPlugin } from './sidebar-watch/plugin';
 import { quickNotePlugin } from './quick-note/plugin';
 import { pluginLabPlugin } from './plugin-lab/plugin';
+import { mainlinePlugin } from './mainline/plugin';
 import type { PluginDefinition } from '../types/plugin.types';
 
 /** 全部随应用分发的内置插件 */
@@ -14,4 +15,5 @@ export const BUILTIN_PLUGINS: readonly PluginDefinition[] = [
   sidebarWatchPlugin,
   quickNotePlugin,
   pluginLabPlugin,
+  mainlinePlugin,
 ];
