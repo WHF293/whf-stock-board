@@ -81,6 +81,8 @@
 
 - **市场总览 `DashboardView`**：`fetchFullQuotes`(指数卡) · `fetchMarketFundFlow`(资金速览) · `fetchMarketTurnover`(成交额变化) · `fetchIndustryBoards`(板块热力) · `fetchAllMarketQuotes`(涨跌分布)
 - **自选股 `WatchlistView`**：`fetchFullQuotes`
+- **自选盯盘（侧栏插件 `dsh-sidebar-watch`）**：`fetchFullQuotes` —— 由**插件级盯盘引擎**（`plugins/sidebar-watch/monitor.ts`）轮询「候选池 ∩ 自选股」，与面板是否折叠无关。
+  ⚠️ 已知重叠：在自选股页时，该引擎与 `WatchlistView` 会**各自轮询同一批符号**（各一次 `fetchFullQuotes`，间隔取用户设置与 `QUOTES_INTRADAY` 的较大值）。这是改动前就有的重叠（原先是面板组件自己轮询），若要收敛需引入宿主级报价总线，目前未做。
 - **行情全景 `PanoramaView`**：`fetchGlobalIndexPanorama` · `fetchUsSectorPanorama` · `fetchGlobalFuturesPanorama`
 - **资金动向 `FundFlowView`**：`fetchMarketFundFlow` · `fetchFundFlowRank` · `fetchSectorFundFlowRank` · `fetchNorthboundHoldingRank`
 - **涨停与异动 `MarketMoodView`**：`fetchZtPool` · `fetchStockChanges` · `fetchBoardChanges`
