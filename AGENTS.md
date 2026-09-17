@@ -170,6 +170,11 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
   后续追加的股票关联两列 `symbol/stock_name`、以及「个股详情扩展区」贡献点的消费方 `StockNotesSection.vue`）、
   dsh-sidebar-watch 的盯盘候选（`plugin_dsh_sidebar_watch_watch_candidates`，含「刚加入就移除」的串行写队列、
   以及后续追加的阈值四列 `alert_kind/alert_value/alert_above/alert_armed` —— 加列的现成例子）
+- **dsh-mainline 的主线快照**（`plugin_dsh-mainline_board_history` / `plugin_dsh-mainline_scan_meta`）：
+  「外部数据源 + 纯函数判定 + 只读看板」的示范 —— 抓取与解析在 `ths-data.ts`（同花顺 GBK 清单 + 年 K，
+  含复权/年份回退链），指标与四阶段判定是 `judge.ts` 纯函数（可被冒烟直跑），落库在 `storage.ts`；
+  看板只读 `repo.snapshot()` 后本地重算，**打开页面不联网**。扫描为用户点击触发的一次性任务（非轮询），
+  仍受同上游并发 ≤3 + 500ms 间隔约束。
 - **MCP 同步**：新增表 / 改表结构后同步 `app-tools.ts` 的 `db_query` / `db_execute` 描述；
   Agent 对 `plugin_*` 表默认只看不改
 
