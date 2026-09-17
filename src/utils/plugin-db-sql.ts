@@ -122,6 +122,23 @@ export const buildCreateIndexSqlList = (
     .map((column) => `CREATE INDEX IF NOT EXISTS idx_${tableName}_${column.name} ON ${tableName}(${column.name})`);
 
 /**
+ * 生成补列 DDL（`ALTER TABLE … ADD COLUMN`）
+ *
+ * 为什么需要：SQLite 的 `CREATE TABLE IF NOT EXISTS` 对**已存在**的表什么都不做，
+ * 于是插件给老表新增列时物理列不会自动出现 —— 缺列会让插件对新列的写入直接报
+ * 「table has no column named x」。补列与「声明式建表」语义一致：
+ * 插件只管声明完整列集，宿主负责把库补齐。
+ *
+ * 只生成可空列（不带 NOT NULL / UNIQUE / DEFAULT）：SQLite 的 ADD COLUMN 对
+ * 带约束的列限制很多，而插件表新增列本就该由插件自己在读取时兜底默认值。
+ * @param tableName 物理表名（须先过 resolvePluginTableName）
+ * @param column 列声明
+ * @returns 单条 ALTER TABLE ADD COLUMN 语句
+ */
+export const buildAddColumnSql = (tableName: string, column: PluginDbColumn): string =>
+  `ALTER TABLE ${tableName} ADD COLUMN ${column.name} ${PLUGIN_DB_COLUMN_TYPE_MAP[column.type]}`;
+
+/**
  * 序列化一个单元格值（写入方向：json 列 stringify，其余原样；undefined 归 null）
  * @param value 原始值
  * @param type 列类型

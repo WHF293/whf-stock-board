@@ -20,6 +20,7 @@ import {
 } from '../constants/plugin-db.constants';
 import { appStorage } from '../utils/app-local-storage';
 import {
+  buildAddColumnSql,
   buildCreateIndexSqlList,
   buildCreateTableSql,
   deserializePluginCell,
@@ -49,8 +50,14 @@ let dbPromise: Promise<Database> | null = null;
 /** 物理表名 → 列声明（进程级；ensureTable 登记，CRUD 消费） */
 const tableColumns = new Map<string, PluginDbColumn[]>();
 
-/** 已执行过 DDL 的物理表集合（防止重复建表请求） */
-const ensuredTables = new Set<string>();
+/**
+ * 物理表名 → 已落库的列名集合
+ *
+ * 记列名而不是记表名：`CREATE TABLE IF NOT EXISTS` 对已存在的表是空操作，
+ * 所以「表已建过」不等于「列都在」——插件新增列后必须再比对一次列集，
+ * 缺列走 ALTER 补上（见 `ensurePluginTable`）。
+ */
+const ensuredTables = new Map<string, Set<string>>();
 
 /**
  * 惰性打开 stock-board.db（非 Tauri 环境返回 null，调用方走降级通道）
@@ -133,7 +140,60 @@ const registerPluginTable = (pluginId: string, table: string): void => {
 };
 
 /**
- * 声明一张插件表（幂等；Tauri 端执行 DDL，浏览器端只登记元信息）
+ * 判断错误是否为「列已存在」
+ *
+ * 只在盲加路径（拿不到真实列集时）用来区分「预期内的重复」与「真故障」，
+ * 因此宁可匹配不上（照抛）也不能误吞其它错误。
+ * @param error 捕获到的错误
+ * @returns 是否为重复列错误
+ */
+const isDuplicateColumnError = (error: unknown): boolean =>
+  /duplicate column name/i.test(error instanceof Error ? error.message : String(error));
+
+/**
+ * 给已存在的表补齐缺列
+ *
+ * 两条路径，优先前者：
+ * 1. 用 `PRAGMA table_info` 取真实列集做差集 —— 不依赖错误文案，也不产生无效语句；
+ * 2. 若驱动的查询通道不接受 PRAGMA，退回「逐列盲加 + 吞掉 duplicate column name」。
+ *
+ * 这一步只在「声明的列集变化」时执行（见 ensuredTables 的比对），
+ * 所以两条路径的任何开销都只发生在插件升级表结构后的第一次挂载。
+ * @param conn 数据库连接
+ * @param tableName 物理表名
+ * @param columns 本次声明的列
+ */
+const syncPluginTableColumns = async (
+  conn: Database,
+  tableName: string,
+  columns: readonly PluginDbColumn[],
+): Promise<void> => {
+  /** 真实列集；为 null 表示 PRAGMA 不可用，走盲加路径 */
+  let existing: Set<string> | null = null;
+  try {
+    const rows = await conn.select<{ name: string }[]>(`PRAGMA table_info(${tableName})`);
+    existing = new Set(rows.map((row) => row.name));
+  } catch (error) {
+    console.warn('[plugin-db] PRAGMA table_info 不可用，改用逐列补列', error);
+  }
+  for (const column of columns) {
+    if (existing?.has(column.name)) continue;
+    try {
+      await conn.execute(buildAddColumnSql(tableName, column));
+    } catch (error) {
+      // 盲加路径下「列已存在」是预期结果；有真实列集时不存在这个歧义，照抛
+      if (existing !== null || !isDuplicateColumnError(error)) throw error;
+    }
+  }
+};
+
+/**
+ * 声明一张插件表（幂等：建表 + 补齐缺列；Tauri 端执行 DDL，浏览器端只登记元信息）
+ *
+ * 「幂等」包含两层：表已存在不重建，**已存在的表缺列则自动 ALTER 补上**。
+ * 后者是插件演进表结构（如盯盘候选后来加了阈值列）能平滑升级的前提 ——
+ * 少了它，老库上新列的写入会直接报「table has no column named x」。
+ * 浏览器降级通道是 JSON 表，列天然可增，无需 DDL。
  * @param pluginId 插件 id
  * @param table 插件内表名
  * @param columns 列声明
@@ -146,20 +206,29 @@ export const ensurePluginTable = async (
   const checked = [...columns];
   toColumnMap(checked);
   const tableName = resolvePluginTableName(pluginId, table);
+  // 列元信息以最近一次声明为准（CRUD 的序列化 / 校验据此进行）
   tableColumns.set(tableName, checked);
   registerPluginTable(pluginId, table);
-  if (ensuredTables.has(tableName)) return;
+
+  /** 本次声明的列名集合；与已落库集合一致时可直接返回（省掉重复 DDL 往返） */
+  const declared = new Set(checked.map((column) => column.name));
+  const ensured = ensuredTables.get(tableName);
+  if (ensured && declared.size === ensured.size && [...declared].every((name) => ensured.has(name))) {
+    return;
+  }
+
   const db = getDb();
   if (!db) {
-    ensuredTables.add(tableName);
+    ensuredTables.set(tableName, declared);
     return;
   }
   const conn = await db;
   await conn.execute(buildCreateTableSql(tableName, checked));
+  await syncPluginTableColumns(conn, tableName, checked);
   for (const sql of buildCreateIndexSqlList(tableName, checked)) {
     await conn.execute(sql);
   }
-  ensuredTables.add(tableName);
+  ensuredTables.set(tableName, declared);
 };
 
 /**

@@ -354,7 +354,10 @@ export type PluginDbRow<T extends Record<string, unknown>> = T & {
  */
 export interface PluginDatabase {
   /**
-   * 声明一张本插件的数据表（幂等：已存在时只补齐列元信息，不动数据）
+   * 声明一张本插件的数据表（幂等：表已存在不重建，缺列自动 ALTER 补上）
+   *
+   * 想改表结构只需在声明里加列 —— 老库会在下次挂载时补列，插件不必写迁移逻辑。
+   * 新增列一律按可空列补（插件读取时自行兜底默认值）。
    * @param table 表名（snake_case，插件内唯一）
    * @param columns 列声明（至少一列；重复列名抛错）
    */
