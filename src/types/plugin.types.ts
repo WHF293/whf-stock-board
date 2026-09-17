@@ -182,8 +182,18 @@ export type HeaderMarqueeTone = (typeof HEADER_MARQUEE_TONE)[keyof typeof HEADER
  * 与行操作贡献点同一个思路：插件声明「显示什么」，宿主只管「显示在哪」。
  */
 export interface HeaderMarqueeLine {
-  /** 单行展示文本（宿主单行截断，不换行） */
+  /** 整行展示文本（无 `label` 时整行截断展示；同时作为这行的无障碍朗读内容） */
   text: string;
+  /**
+   * 行首标签（如标的名称）
+   *
+   * 与 `value` 成对给出时，宿主按「两端布局」渲染：`label` 占用剩余宽度、超长截断，
+   * `value` 始终完整 —— 顶栏只有一行位置，名称长短不一时宁可截名称，
+   * 也不能把价格 / 涨跌幅挤掉。只给 `text` 则整行一起截断。
+   */
+  label?: string;
+  /** 行尾数值（如「1266.98 +0.71%」），不参与截断 */
+  value?: string;
   /** 语义色调（缺省中性）；涨跌方向由色调表达，插件不碰具体色值 */
   tone?: HeaderMarqueeTone;
 }
@@ -200,9 +210,9 @@ export interface HeaderMarqueeLine {
 export interface HeaderItemContribution {
   /** 条目 id（插件内唯一，内核会拼成 `<pluginId>#<id>` 全局键） */
   id: string;
-  /** 条目名（下拉面板标题 / 触发按钮提示 / 无可轮播内容时的占位文案） */
+  /** 条目名（下拉面板标题 / 无可轮播内容时的占位文案） */
   title: string;
-  /** 图标 key（MenuIcon 渲染） */
+  /** 图标 key（MenuIcon 渲染）。收起态不展示（顶栏位置金贵，留给轮播信息），设置页编排列表用它区分条目 */
   icon: string;
   /** 排序权重，越小越靠左（默认 100；宿主自带项不参与排序） */
   order?: number;
@@ -213,9 +223,9 @@ export interface HeaderItemContribution {
   /**
    * 收起态轮播行的数据源（在响应式作用域内求值，插件直接读自己的 ref 即可）
    *
-   * 返回空数组 = 当前无可展示内容，触发按钮回落为「图标 + 条目名」；
+   * 返回空数组 = 当前无可展示内容，触发按钮回落为「条目名」；
    * 返回单行 = 常显不轮播（宿主不会为一个定时器白跑）。
-   * @returns 轮播行列表（宿主按间隔轮流取一条展示）
+   * @returns 轮播行列表（宿主按间隔轮流取一条，上下滑动切换）
    */
   marquee?: () => readonly HeaderMarqueeLine[];
   /** 轮播间隔（毫秒，默认 4000，低于 HEADER_ITEM_MARQUEE_INTERVAL_MIN 会被夹到下限） */
