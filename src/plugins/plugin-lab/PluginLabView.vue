@@ -119,6 +119,7 @@ const latestNoteText = computed(() => {
 const contributionSummary = (info: PluginRuntimeInfo): string => {
   const {
     sidebarPanels,
+    headerItems,
     menuItems,
     routes,
     dockPanels,
@@ -129,6 +130,7 @@ const contributionSummary = (info: PluginRuntimeInfo): string => {
   } = info.contributions;
   return [
     `侧栏面板 ${sidebarPanels}`,
+    `顶栏条目 ${headerItems}`,
     `菜单 ${menuItems}`,
     `路由 ${routes}`,
     `停靠面板 ${dockPanels}`,

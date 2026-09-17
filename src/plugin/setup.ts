@@ -28,10 +28,21 @@ let installed = false;
 /**
  * 打开一个插件面板（宿主能力，作为 `panel:open` 服务提供给插件）
  *
- * drawer 面板 → 打开右侧抽屉；inline 面板 → 取消折叠并滚动到可视区。
+ * 三种承载形态统一走这一个入口，调用方不必知道面板挂在哪：
+ * - drawer 面板 → 打开右侧抽屉；
+ * - inline 面板 → 取消折叠并滚动到可视区；
+ * - 顶栏条目 → 展开它的下拉面板（`HeaderItemHost` 消费请求）。
  * @param panelKey 面板全局键（`<pluginId>#<panelId>`）
  */
 const openPanelByKey = (panelKey: string): void => {
+  const panelsStore = usePluginPanelsStore();
+  const headerItem = pluginKernel.contributions.header.items.find(
+    (item) => item.key === panelKey,
+  );
+  if (headerItem) {
+    panelsStore.requestHeaderOpen(panelKey);
+    return;
+  }
   const panel = pluginKernel.contributions.sidebar.panels.find(
     (item) => item.key === panelKey,
   );
@@ -39,7 +50,6 @@ const openPanelByKey = (panelKey: string): void => {
     console.warn(`[plugin] 面板不存在：${panelKey}`);
     return;
   }
-  const panelsStore = usePluginPanelsStore();
   if (panel.mode === 'drawer') {
     panelsStore.openDrawer(panelKey);
     return;

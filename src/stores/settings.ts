@@ -16,6 +16,7 @@ import { WATERMARK_ENABLED_DEFAULT } from '../constants/watermark.constants';
 import { SIDEBAR_COLLAPSED_DEFAULT } from '../constants/sidebar.constants';
 import { WEBLOG_ENABLED_DEFAULT } from '../constants/weblog.constants';
 import { MENU_DEFAULT_ORDER } from '../constants/router-meta.constants';
+import { HEADER_DEFAULT_ORDER } from '../constants/header.constants';
 import { PANORAMA_CN_VIEW_MODE_DEFAULT } from '../constants/panorama.constants';
 import {
   CHART_MAIN_INDICATORS_DEFAULT,
@@ -44,6 +45,10 @@ interface SettingsState {
   menuOrder: string[];
   /** 左侧导航中被隐藏的页面 path（编排弹窗里关掉开关的项；侧栏不渲染但路由仍可达） */
   hiddenMenus: string[];
+  /** 顶栏顺序（存条目键数组；宿主项为 id、插件条目为 `<pluginId>#<id>`；插件条目追加末尾） */
+  headerOrder: string[];
+  /** 顶栏中被隐藏的条目键（编排弹窗里关掉开关的项；不渲染） */
+  hiddenHeaderItems: string[];
   /** 主题色（清新绿 / 淡雅蓝 / 淡雅粉 / 极光紫） */
   themeColor: ThemeColor;
   /** 涨跌配色主题（红涨绿跌 / 红跌绿涨 / 红涨蓝跌） */
@@ -81,6 +86,8 @@ export const useSettingsStore = defineStore('settings', {
     sidebarCollapsed: SIDEBAR_COLLAPSED_DEFAULT,
     menuOrder: [...MENU_DEFAULT_ORDER],
     hiddenMenus: [],
+    headerOrder: [...HEADER_DEFAULT_ORDER],
+    hiddenHeaderItems: [],
     themeColor: THEME_COLOR_DEFAULT,
     trendTheme: TREND_THEME_DEFAULT,
     watermarkEnabled: WATERMARK_ENABLED_DEFAULT,
@@ -192,6 +199,28 @@ export const useSettingsStore = defineStore('settings', {
     resetMenuOrder(): void {
       this.menuOrder = [...MENU_DEFAULT_ORDER];
       this.hiddenMenus = [];
+    },
+
+    /**
+     * 设置顶栏顺序（持久化，下次进入自动恢复）
+     * @param order 编排后的条目键数组（宿主项 id + 插件条目全局键）
+     */
+    setHeaderOrder(order: string[]): void {
+      this.headerOrder = [...order];
+    },
+
+    /**
+     * 设置顶栏隐藏条目集合（编排弹窗的显隐开关；持久化）
+     * @param keys 被隐藏的条目键数组
+     */
+    setHiddenHeaderItems(keys: string[]): void {
+      this.hiddenHeaderItems = [...keys];
+    },
+
+    /** 重置顶栏：顺序恢复默认、全部条目重新显示 */
+    resetHeaderOrder(): void {
+      this.headerOrder = [...HEADER_DEFAULT_ORDER];
+      this.hiddenHeaderItems = [];
     },
 
     /**
