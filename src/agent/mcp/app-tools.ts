@@ -152,7 +152,7 @@ export const APP_MCP_SERVER: BuiltinMcpServer = {
     ),
     entry(
       'db_execute',
-      '本地 SQLite 写操作（INSERT / UPDATE / DELETE 单条语句，仅 agent.db / stock-board.db；日志库 weblog.db 只读，不开放写入与删除。DDL（CREATE / DROP / ALTER）与 PRAGMA、ATTACH 一律拒绝；plugin_* 插件表的数据归插件与用户管，除非用户明确要求否则不要改动）',
+      '本地 SQLite 写操作（INSERT / UPDATE / DELETE 单条语句，仅 agent.db / stock-board.db；日志库 weblog.db 只读，不开放写入与删除。DDL（CREATE / DROP / ALTER）与 PRAGMA、ATTACH 一律拒绝；plugin_* 插件表的数据归插件与用户管，除非用户明确要求否则不要改动 —— 这些表的 id / created_at / updated_at 由宿主维护且两个时间列为 NOT NULL，确需手工 INSERT 时要自己带上毫秒时间戳）',
       z.object({
         database: z.enum(['agent', 'stock-board']).describe('目标库名'),
         sql: z.string().describe('单条写语句'),
