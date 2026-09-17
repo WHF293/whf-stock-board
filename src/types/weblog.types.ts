@@ -114,6 +114,8 @@ export interface WeblogActionLog extends WeblogActionInput {
   appVersion: string;
   /** 操作系统名 */
   osName: string | null;
+  /** User-Agent（与报错日志同口径的运行环境快照） */
+  ua: string | null;
   /** 链路标识（SkyWalking 语义，用于串联同一次交互） */
   traceId: string | null;
   /** 会话标识（本次启动） */

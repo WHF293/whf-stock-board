@@ -7,7 +7,9 @@
  * 约束：
  * - 仅在 Tauri 桌面端可用（浏览器无 SQLite），非 Tauri 环境由上层降级到内存缓冲；
  * - 插件无事务 API → 批量写入按块拼多值 INSERT（块大小须满足 行数×列数 < SQLite 变量上限）；
- * - 查询一律 `occurred_at DESC` 倒序，并强制 limit 上限，避免把库整表拉进前端。
+ * - 查询一律 `occurred_at DESC` 倒序，并强制 limit 上限，避免把库整表拉进前端；
+ * - **列序与行取值映射不在本文件**，见纯函数层 `weblog/weblog-rows.ts`
+ *   （INSERT 的列名与取值由类型穷尽校验绑定，杜绝列 / 值数量不一致的静默错位）。
  */
 import { isTauri } from '@tauri-apps/api/core';
 import Database from '@tauri-apps/plugin-sql';
@@ -17,6 +19,12 @@ import {
   WEBLOG_QUERY_LIMIT,
   WEBLOG_QUERY_LIMIT_MAX,
 } from '../constants/weblog.constants';
+import {
+  ACTION_LOG_COLUMNS,
+  ERROR_LOG_COLUMNS,
+  toActionLogValues,
+  toErrorLogValues,
+} from '../weblog/weblog-rows';
 import type {
   WeblogActionLog,
   WeblogErrorKind,
@@ -26,50 +34,6 @@ import type {
   WeblogQuery,
   WeblogRuntime,
 } from '../types/weblog.types';
-
-/** 报错日志列顺序（INSERT 与 SELECT 共用，改动必须同步 Rust 侧建表） */
-const ERROR_LOG_COLUMNS = [
-  'occurred_at',
-  'time_text',
-  'level',
-  'kind',
-  'message',
-  'stack',
-  'page_path',
-  'page_title',
-  'api_url',
-  'api_status',
-  'duration_ms',
-  'app_version',
-  'runtime',
-  'os_name',
-  'os_version',
-  'ua',
-  'webview',
-  'screen',
-  'trace_id',
-  'detail',
-] as const;
-
-/** 行为日志列顺序 */
-const ACTION_LOG_COLUMNS = [
-  'occurred_at',
-  'time_text',
-  'action',
-  'category',
-  'label',
-  'target',
-  'detail',
-  'page_path',
-  'page_title',
-  'duration_ms',
-  'status',
-  'app_version',
-  'os_name',
-  'ua',
-  'session_id',
-  'trace_id',
-] as const;
 
 /** 行为日志关键字匹配列（用户按文案搜索的范围） */
 const ACTION_LOG_SEARCH_COLUMNS = ['label', 'action', 'target', 'detail', 'page_path'] as const;
@@ -129,7 +93,7 @@ const buildValueSegments = (
  * 分块写入一批日志（块内失败重试一次，仍失败则该块整体丢弃并抛出）
  * @param table 目标表名
  * @param columns 列名（顺序即参数顺序）
- * @param rows 行数据（每行长度须等于列数）
+ * @param rows 行数据（由纯函数层按列序生成，长度恒等于列数）
  * @returns 实际写入行数
  */
 const insertRows = async (
@@ -161,55 +125,21 @@ const insertRows = async (
  */
 export const insertErrorLogRows = async (rows: WeblogErrorLog[]): Promise<number> => {
   if (rows.length === 0) return 0;
-  const values = rows.map((row) => [
-    row.occurredAt,
-    row.timeText,
-    row.level,
-    row.kind,
-    row.message,
-    row.stack ?? null,
-    row.pagePath,
-    row.pageTitle ?? null,
-    row.apiUrl ?? null,
-    row.apiStatus ?? null,
-    row.durationMs ?? null,
-    row.appVersion,
-    row.runtime,
-    row.osName ?? null,
-    row.osVersion ?? null,
-    row.ua ?? null,
-    row.webview ?? null,
-    row.screen ?? null,
-    row.traceId ?? null,
-    row.detail ?? null,
-  ]);
+  const values = rows.map((row) => toErrorLogValues(row));
   return insertRows('error_log', ERROR_LOG_COLUMNS, values);
 };
 
 /**
  * 写入行为日志
+ *
+ * 行值由 `weblog-rows.ts` 按列名映射生成（不用位置数组：列序与取值一对一
+ * 由类型穷尽校验保证，避免再次出现「列 16 个、取值 15 个」的静默错位）。
  * @param rows 待落库的行为记录
  * @returns 写入行数（非 Tauri 环境返回 0）
  */
 export const insertActionLogRows = async (rows: WeblogActionLog[]): Promise<number> => {
   if (rows.length === 0) return 0;
-  const values = rows.map((row) => [
-    row.occurredAt,
-    row.timeText,
-    row.action,
-    row.category,
-    row.label,
-    row.target ?? null,
-    row.detail ?? null,
-    row.pagePath,
-    row.pageTitle ?? null,
-    row.durationMs ?? null,
-    row.status ?? null,
-    row.appVersion,
-    row.osName ?? null,
-    row.sessionId ?? null,
-    row.traceId ?? null,
-  ]);
+  const values = rows.map((row) => toActionLogValues(row));
   return insertRows('action_log', ACTION_LOG_COLUMNS, values);
 };
 
@@ -298,6 +228,7 @@ const toActionLog = (row: RawRow): WeblogActionLog => ({
     : (String(row.status) as WeblogActionLog['status']),
   appVersion: String(row.app_version ?? ''),
   osName: asNullableString(row.os_name),
+  ua: asNullableString(row.ua),
   sessionId: asNullableString(row.session_id),
   traceId: asNullableString(row.trace_id),
 });
