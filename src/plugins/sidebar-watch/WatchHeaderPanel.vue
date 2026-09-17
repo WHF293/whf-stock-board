@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
+import { useRouter } from 'vue-router';
 import BaseModal from '../../components/ui/BaseModal.vue';
 import BaseSkeleton from '../../components/ui/BaseSkeleton.vue';
 import MenuIcon from '../../components/ui/MenuIcon.vue';
 import AlertEditor from './AlertEditor.vue';
+import { usePluginPanelHost } from '../../plugin/panel-host';
 import { useDockPanelStore } from '../../stores/dock-panel';
 import { useWatchlistStore } from '../../stores/watchlist';
 import { NOTIFY_TONE, NOTIFY_TONE_CLASS } from '../../constants/notify.constants';
+import { ROUTE_PATH } from '../../constants/router-meta.constants';
 import { getTrendByChangePercent } from '../../constants/trend.constants';
 import { TREND_TEXT_CLASS } from '../../constants/stock-colors.constants';
 import { formatPercent } from '../../utils/format-percent';
@@ -15,8 +18,8 @@ import { findQuoteBySymbol } from '../../utils/find-quote-by-symbol';
 import { describeAlertRule, isAlertConfigured, createEmptyAlertRule } from './alerts';
 import { filterCandidatesByWatchlist } from './candidates';
 import {
-  SIDEBAR_WATCH_EMPTY_HINT,
-  SIDEBAR_WATCH_SKELETON_ROWS,
+  WATCH_EMPTY_HINT,
+  WATCH_SKELETON_ROWS,
   WATCH_ALERT_BUTTON_ACTIVE_TITLE,
   WATCH_ALERT_BUTTON_TITLE,
   WATCH_ALERT_EDITOR_TITLE,
@@ -27,7 +30,7 @@ import type { WatchAlertRule } from './alerts';
 import type { FullQuote } from '../../types/stock-quote.types';
 
 /**
- * 自选盯盘面板（插件 dsh-sidebar-watch 的 inline 侧栏面板）
+ * 自选盯盘下拉面板（插件 dsh-sidebar-watch 的顶栏条目内容）
  *
  * 盯的是**候选池**：候选由用户在自选股表格「操作」列逐只点「盯盘」加入，
  * 落库在本插件自己的表里（`ctx.db`，见 service.ts），与自选股是「子集」关系 ——
@@ -35,7 +38,11 @@ import type { FullQuote } from '../../types/stock-quote.types';
  * 因此删自选股只会让对应行消失，不会报错、也不会留下幽灵行。
  *
  * **本组件不取数**：报价与阈值判定都在插件的盯盘引擎里（见 monitor.ts），
- * 面板只读引擎的快照。这样面板被折叠 / 侧栏收起后，阈值提醒照常触发。
+ * 面板只读引擎的快照。引擎不依赖本组件是否挂载，所以下拉收起后阈值提醒照常触发；
+ * 顶栏收起态的「单条轮播」读的也是同一份快照（见 plugin.ts 的 marquee）。
+ *
+ * 点击一行会打开右侧个股详情（全站打开个股的唯一入口），并顺手把自己收起 ——
+ * 下拉浮在内容之上，不收起会挡住刚打开的详情面板。
  */
 const props = defineProps<{
   /** 盯盘候选仓储（插件在 apply 里经 props 注入自己的实现） */
@@ -44,6 +51,8 @@ const props = defineProps<{
   monitor: WatchMonitor;
 }>();
 
+const router = useRouter();
+const panelHost = usePluginPanelHost();
 const watchlistStore = useWatchlistStore();
 const dockPanel = useDockPanelStore();
 
@@ -76,6 +85,8 @@ interface WatchRow {
   alertClass: string;
   /** 是否已设阈值 */
   hasAlert: boolean;
+  /** 阈值是否已触发（已提醒过，等价格回到内侧才重新武装） */
+  fired: boolean;
 }
 
 /** 仍在自选股里的候选（删掉的票不渲染，记录保留在库里） */
@@ -85,6 +96,11 @@ const candidates = computed(() =>
 
 /** 是否首载中（引擎只在第一次拉取时为 true，后续刷新不闪） */
 const loading = computed(() => props.monitor.loading.value);
+
+/** 已设阈值的候选数量（顶部摘要） */
+const alertCount = computed(
+  () => candidates.value.filter((candidate) => isAlertConfigured(candidate.alert)).length,
+);
 
 /** 面板内展示的行 */
 const rows = computed<WatchRow[]>(() =>
@@ -110,6 +126,7 @@ const rows = computed<WatchRow[]>(() =>
       alertText: describeAlertRule(candidate.alert),
       alertClass,
       hasAlert,
+      fired: hasAlert && !candidate.alert.armed,
     };
   }),
 );
@@ -128,11 +145,12 @@ const alertRuleOf = (symbol: string): WatchAlertRule =>
   props.repo.get(symbol)?.alert ?? createEmptyAlertRule();
 
 /**
- * 单击一行：打开右侧个股详情面板（打开个股的唯一入口，不走路由）
+ * 单击一行：打开右侧个股详情面板，并收起下拉
  * @param symbol 完整符号
  */
 const onOpenStock = (symbol: string): void => {
   dockPanel.openStock(symbol);
+  panelHost?.close();
 };
 
 /**
@@ -172,29 +190,44 @@ const onClearAlert = (): void => {
   props.repo.clearAlert(symbol);
   editingSymbol.value = null;
 };
+
+/** 去自选股页挑票（下拉随之收起，避免浮在自选表上） */
+const onOpenWatchlist = (): void => {
+  void router.push(ROUTE_PATH.WATCHLIST);
+  panelHost?.close();
+};
 </script>
 
 <template>
   <div>
+    <!-- 顶部摘要：候选数 + 已设阈值数（下拉里空间够，不必再靠 hover 表达） -->
+    <div
+      v-if="rows.length > 0"
+      class="mb-2 flex items-center justify-between gap-2 text-xs text-text-tertiary"
+    >
+      <span>{{ rows.length }} 只在盯</span>
+      <span v-if="alertCount > 0">{{ alertCount }} 只设了阈值</span>
+    </div>
+
     <BaseSkeleton v-if="loading && rows.length > 0">
       <div
-        v-for="index in SIDEBAR_WATCH_SKELETON_ROWS"
+        v-for="index in WATCH_SKELETON_ROWS"
         :key="index"
-        class="h-6 rounded bg-flat-weak"
+        class="h-7 rounded bg-flat-weak"
       />
     </BaseSkeleton>
 
     <!-- 空态：说清候选从哪来（面板本身没坏，只是还没挑票） -->
-    <p v-else-if="rows.length === 0" class="px-2 py-1 text-xs leading-relaxed text-text-tertiary">
-      {{ SIDEBAR_WATCH_EMPTY_HINT }}
+    <p v-else-if="rows.length === 0" class="py-1 text-xs leading-relaxed text-text-tertiary">
+      {{ WATCH_EMPTY_HINT }}
     </p>
 
-    <ul v-else class="space-y-0.5">
+    <ul v-else class="max-h-[52vh] space-y-0.5 overflow-y-auto">
       <li v-for="row in rows" :key="row.symbol" class="rounded-md">
         <div class="group flex items-center gap-0.5 rounded-md hover:bg-flat-weak">
           <button
             type="button"
-            class="pressable flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1 text-left active:scale-[0.98]"
+            class="pressable flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1.5 text-left active:scale-[0.98]"
             :title="`${row.name} ${row.price} ${row.change}`"
             @click="onOpenStock(row.symbol)"
           >
@@ -205,10 +238,11 @@ const onClearAlert = (): void => {
             </span>
           </button>
 
-          <!-- 阈值提醒：已设阈值时铃铛按触发方向上色，一眼能看出这只票在等什么 -->
+          <!-- 阈值提醒：已设阈值时铃铛按触发方向上色，一眼能看出这只票在等什么；
+               已触发过一次的加一个小点，表示要等价格回到内侧才重新生效 -->
           <button
             type="button"
-            class="pressable shrink-0 rounded p-0.5 transition-opacity hover:bg-flat-weak active:scale-90"
+            class="pressable relative shrink-0 rounded p-0.5 transition-opacity hover:bg-flat-weak active:scale-90"
             :class="[
               row.hasAlert
                 ? row.alertClass
@@ -216,15 +250,16 @@ const onClearAlert = (): void => {
               editingSymbol === row.symbol ? 'bg-primary-weak text-primary opacity-100' : '',
             ]"
             :aria-label="`${row.hasAlert ? WATCH_ALERT_BUTTON_ACTIVE_TITLE : WATCH_ALERT_BUTTON_TITLE} ${row.name}`"
-            :title="row.hasAlert ? `阈值：${row.alertText}` : WATCH_ALERT_BUTTON_TITLE"
+            :title="row.hasAlert ? `阈值：${row.alertText}${row.fired ? '（已触发，待重新生效）' : ''}` : WATCH_ALERT_BUTTON_TITLE"
             @click.stop="onToggleEditor(row.symbol)"
           >
             <MenuIcon name="bell" :size="12" />
+            <span v-if="row.fired" class="absolute right-0 top-0 h-1 w-1 rounded-full bg-current" />
           </button>
 
           <button
             type="button"
-            class="pressable mr-1 shrink-0 rounded p-0.5 text-text-tertiary opacity-0 transition-opacity hover:bg-flat-weak hover:text-text group-hover:opacity-100 active:scale-90"
+            class="pressable shrink-0 rounded p-0.5 text-text-tertiary opacity-0 transition-opacity hover:bg-flat-weak hover:text-text group-hover:opacity-100 active:scale-90"
             :aria-label="`移出盯盘 ${row.name}`"
             :title="`移出盯盘 ${row.name}`"
             @click.stop="onRemoveCandidate(row.symbol)"
@@ -240,7 +275,19 @@ const onClearAlert = (): void => {
       </li>
     </ul>
 
-    <!-- 阈值弹窗：侧栏 224px 塞不下编辑器，点铃铛统一改为居中弹窗 -->
+    <!-- 底部入口：候选从自选股的「盯盘」按钮来，给一条直达路径 -->
+    <div class="mt-2 border-t border-flat-weak pt-2">
+      <button
+        type="button"
+        class="pressable flex w-full items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs text-text-secondary hover:bg-flat-weak hover:text-text active:scale-[0.98]"
+        @click="onOpenWatchlist"
+      >
+        <MenuIcon name="star" :size="12" />
+        打开自选股页挑票
+      </button>
+    </div>
+
+    <!-- 阈值弹窗：下拉 320px 塞不下编辑器，点铃铛统一改为居中弹窗 -->
     <BaseModal
       v-model:open="editorOpen"
       :title="

@@ -3,12 +3,39 @@
  *
  * 插件自成一体：只在本插件内使用的魔法值随插件目录，跨插件复用才上提到 `src/constants/`
  */
+import { HEADER_MARQUEE_TONE } from '../../constants/plugin.constants';
+import type { Trend } from '../../constants/trend.constants';
+import type { HeaderMarqueeTone } from '../../types/plugin.types';
+
+/** 顶栏条目 id（内核会拼成 `dsh-sidebar-watch#<id>` 全局键） */
+export const WATCH_HEADER_ITEM_ID = 'watch';
+
+/** 顶栏条目名（触发按钮提示 / 下拉面板标题；无可轮播内容时的占位文案） */
+export const WATCH_HEADER_ITEM_TITLE = '自选盯盘';
+
+/** 顶栏条目图标（MenuIcon key：铃铛，与阈值提醒语义一致） */
+export const WATCH_HEADER_ITEM_ICON = 'bell';
 
 /** 加载中的骨架行数 */
-export const SIDEBAR_WATCH_SKELETON_ROWS = 4;
+export const WATCH_SKELETON_ROWS = 4;
 
 /** 空态引导文案（说清候选从哪来，避免用户以为面板坏了） */
-export const SIDEBAR_WATCH_EMPTY_HINT = '在自选股「操作」列点一下「盯盘」，这只票就会盯在这里';
+export const WATCH_EMPTY_HINT = '在自选股「操作」列点一下「盯盘」，这只票就会盯在这里';
+
+/** 轮播行里「名称 现价 涨跌幅」的分隔符 */
+export const WATCH_MARQUEE_SEPARATOR = ' ';
+
+/**
+ * 涨跌方向 → 轮播行色调
+ *
+ * 插件只声明语气（涨 / 跌 / 平），具体色值由宿主按涨跌主题映射
+ * （见 `constants/header.constants.ts` 的 HEADER_MARQUEE_TONE_CLASS）。
+ */
+export const WATCH_MARQUEE_TONE_BY_TREND: Record<Trend, HeaderMarqueeTone> = {
+  up: HEADER_MARQUEE_TONE.UP,
+  down: HEADER_MARQUEE_TONE.DOWN,
+  flat: HEADER_MARQUEE_TONE.FLAT,
+};
 
 /** 行操作 id（内核会拼成 `dsh-sidebar-watch#<id>` 全局键） */
 export const STOCK_ROW_ACTION_ID = 'watch-toggle';
