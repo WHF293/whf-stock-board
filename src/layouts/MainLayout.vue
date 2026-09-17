@@ -9,6 +9,7 @@ import SettingsView from "../views/SettingsView.vue";
 import DockPanel from "../components/dock/DockPanel.vue";
 import BaseTooltip from "../components/ui/BaseTooltip.vue";
 import MenuIcon from "../components/ui/MenuIcon.vue";
+import NotificationHost from "../components/ui/NotificationHost.vue";
 import SidebarPanelHost from "../components/plugin/SidebarPanelHost.vue";
 import SidebarPanelEntry from "../components/plugin/SidebarPanelEntry.vue";
 import PluginPanelDrawer from "../components/plugin/PluginPanelDrawer.vue";
@@ -490,5 +491,8 @@ void marketStatusStore.refresh();
 
     <!-- 插件面板抽屉（承载 mode: 'drawer' 的插件面板） -->
     <PluginPanelDrawer />
+
+    <!-- 应用级浮窗（插件经 app:notify 服务发起，跨路由常驻） -->
+    <NotificationHost />
   </div>
 </template>

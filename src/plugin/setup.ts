@@ -18,6 +18,7 @@ import { attachPluginRoutes } from './router-bridge';
 import { router } from '../router';
 import { usePluginPanelsStore } from '../stores/plugin-panels';
 import { usePluginStore } from '../stores/plugin';
+import { useNotificationsStore } from '../stores/notifications';
 import { useUserPluginsStore } from '../stores/user-plugins';
 import type { Pinia } from 'pinia';
 
@@ -74,6 +75,16 @@ export const installPlugins = (pinia?: Pinia): void => {
     void router.push(path);
   });
   pluginKernel.services.provide('panel:open', openPanelByKey);
+
+  // 应用级浮窗：插件发起、宿主渲染（承载组件在 MainLayout，与插件面板挂载状态无关）
+  const notificationsStore = pinia
+    ? useNotificationsStore(pinia)
+    : useNotificationsStore();
+  pluginKernel.services.provide('app:notify', {
+    notify: (options) => notificationsStore.push(options),
+    dismiss: (id) => notificationsStore.dismiss(id),
+    dismissBySource: (source) => notificationsStore.dismissBySource(source),
+  });
 
   // 2. 清理已下线插件的残留偏好，再按黑名单挂载
   //    存活名单要包含用户插件：它们此刻还没进内核，但持久化记录已经在了

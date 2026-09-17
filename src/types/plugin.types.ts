@@ -13,6 +13,7 @@
  */
 import type { Component } from 'vue';
 import type { BuiltinMcpServer } from '../agent/mcp/types';
+import type { NotifyService } from './notify.types';
 import type { PLUGIN_ORIGIN, PLUGIN_STATUS } from '../constants/plugin.constants';
 
 /** 可逆副作用句柄：调用 `dispose()` 撤销一次注册（幂等） */
@@ -519,6 +520,13 @@ export interface AppServiceMap {
    * 插件「注册面板」与「打开面板」因此可以分开：命令、事件回调都能唤醒面板。
    */
   'panel:open': (panelKey: string) => void;
+  /**
+   * 弹一条应用级浮窗提醒（右下角常驻，跨路由）
+   *
+   * 宿主承载、插件只发起：浮窗**不依赖发起它的组件是否挂载**，
+   * 因此「盯盘阈值告警」这类要长期生效的提醒不会因为面板被折叠就失效。
+   */
+  'app:notify': NotifyService;
 }
 
 /** 内核运行时只读视图（供插件自省，不暴露挂载 / 卸载能力） */

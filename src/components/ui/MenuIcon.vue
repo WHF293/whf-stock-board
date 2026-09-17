@@ -94,6 +94,8 @@ const ICON_PATHS: Record<string, string> = {
     '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>',
   // 系统日志：终端窗口 + 提示符 + 文本行
   log: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3"/><path d="M13 15h4"/>',
+  // 阈值提醒：铃铛 + 顶部提手 + 底部摆锤
+  bell: '<path d="M6 9a6 6 0 0 1 12 0c0 4 1.5 5.5 1.5 5.5h-15S6 13 6 9z"/><path d="M10 18a2 2 0 0 0 4 0"/>',
 };
 
 const props = withDefaults(
