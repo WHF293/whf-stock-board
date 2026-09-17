@@ -7,6 +7,7 @@ import {
   init,
   registerYAxis,
   type AxisCreateTicksParams,
+  type AxisRange,
   type AxisTick,
   type Chart,
   type DeepPartial,
@@ -17,13 +18,21 @@ import {
 } from 'klinecharts';
 import {
   AXIS_TICK_COUNT,
+  CANDLE_Y_AXIS_TICK_COUNT,
   CHART_AXIS_LINE_COLOR,
+  CHART_GRID_LINE_CSS_VAR,
   CHART_SPLIT_LINE_COLOR,
   CHART_TEXT_COLOR,
 } from '../../constants/chart.constants';
-import { MINUTE_AXIS_TICKS, MINUTE_AXIS_TOTAL } from '../../constants/kline.constants';
+import {
+  MINUTE_AXIS_TICKS,
+  MINUTE_AXIS_TOTAL,
+  TIMELINE_PCT_AXIS_HEADROOM,
+} from '../../constants/kline.constants';
 import { padMinuteBars } from '../../utils/pad-minute-bars';
+import { readCssVar } from '../../utils/read-css-var';
 import { readTrendColors } from '../../utils/trend-colors';
+import { useTheme } from '../../composables/use-theme';
 import { useSettingsStore } from '../../stores/settings';
 import { isIndexSymbol } from '../../utils/normalize-a-share-code';
 import type { TradeMark } from '../../utils/trade-marks';
@@ -113,11 +122,63 @@ const MA_PERIODS = [5, 10, 30];
  *
  * timeline 模式的数据在传入前已完成转换：close = (price - pre) / pre（昨收涨跌幅小数），
  * 轴上没有价格，只有涨跌幅小数值，因此默认恒等换算即可，仅需格式化刻度文本
+ *
+ * Y 轴固定以 0% 为中心上下对称：可视区最大绝对涨跌幅 × TIMELINE_PCT_AXIS_HEADROOM
+ * 作为统一边界。库内会在 createRange 之后叠加非对称 gap（上 0.2 / 下 0.1），
+ * 故这里把 gap 归零，留白全部由 createRange 内的系数提供
+ *
+ * 刻度固定三条（上界 / 0% / 下界）：水平网格线随之只有这三条，
+ * 不再按 nice interval 铺满全轴（分时图只关心极值与昨收基准）
  */
 const TIMELINE_PCT_YAXIS: YAxisTemplate = {
   name: 'timeline_pct',
   minSpan: () => 0.0001,
   displayValueToText: (value) => `${(value * 100).toFixed(2)}%`,
+  gap: { top: 0, bottom: 0 },
+  /**
+   * 以 0 为中心重设轴范围（defaultRange 含主图分时线 + 均价线的极值）
+   * @param params 轴范围创建参数
+   * @param params.defaultRange 库内算出的默认范围（数据极值）
+   * @returns 上下对称的轴范围
+   */
+  createRange: ({ defaultRange }): AxisRange => {
+    const bound =
+      Math.max(Math.abs(defaultRange.from), Math.abs(defaultRange.to)) *
+      TIMELINE_PCT_AXIS_HEADROOM;
+    const range = bound * 2;
+    return {
+      from: -bound,
+      to: bound,
+      range,
+      realFrom: -bound,
+      realTo: bound,
+      realRange: range,
+      displayFrom: -bound,
+      displayTo: bound,
+      displayRange: range,
+    };
+  },
+  /**
+   * 固定三条刻度（上界 / 0% / 下界），像素坐标按线性轴自行换算
+   * （库内 defaultTicks 只含 nice interval 落点，不含轴上下界）
+   * @param params 轴刻度创建参数
+   * @param params.range 轴范围（displayFrom / displayTo / displayRange）
+   * @param params.bounding 轴区域尺寸（height 为像素换算基准）
+   * @param params.defaultTicks 库内默认刻度（首帧布局未完成时兜底用）
+   * @returns 三条刻度（上界 / 0% / 下界）
+   */
+  createTicks: ({ range, bounding, defaultTicks }) => {
+    const { displayFrom, displayTo, displayRange } = range;
+    if (displayRange <= 0 || bounding.height <= 0) return defaultTicks;
+    const toCoord = (value: number): number =>
+      ((displayTo - value) / displayRange) * bounding.height;
+    const toText = (value: number): string => `${(value * 100).toFixed(2)}%`;
+    return [
+      { coord: toCoord(displayTo), value: displayTo, text: toText(displayTo) },
+      { coord: toCoord(0), value: 0, text: toText(0) },
+      { coord: toCoord(displayFrom), value: displayFrom, text: toText(displayFrom) },
+    ];
+  },
 };
 
 registerYAxis(TIMELINE_PCT_YAXIS);
@@ -199,6 +260,18 @@ const trendSet = computed(() => {
   return readTrendColors();
 });
 
+const { isDark } = useTheme();
+
+/**
+ * 网格线颜色：读主题 token --color-flat-weak（亮 #eef1f5 / 暗 #232a33，极淡灰，
+ * 随明暗与主题色变体自动切换）。canvas 内不能直接用 var()，经 readCssVar 解析；
+ * 依赖 isDark 使明暗切换时本 computed 失效重算。变量缺失时回退亮色分隔线常量
+ */
+const gridColor = computed(() => {
+  void isDark.value;
+  return readCssVar(CHART_GRID_LINE_CSS_VAR) || CHART_SPLIT_LINE_COLOR;
+});
+
 /**
  * 构建图表样式（蜡烛涨跌色 / 轴线 / 网格线均取当前主题色）
  * @returns klinecharts 样式覆盖对象
@@ -207,8 +280,14 @@ const buildStyles = (): DeepPartial<Styles> => {
   const trend = trendSet.value;
   const isTimeline = props.mode === 'timeline';
   return {
-    // 水平网格线不显示
-    grid: { horizontal: { show: false }, vertical: { show: false } },
+    // 水平网格线全模式开启：分时 / 五日为三条（上下界 + 0%，见 timeline_pct 模板
+    // 的 createTicks），蜡烛为四条（上下界 + 三等分两点，见 buildCandleYAxisTicks）；
+    // 副图（VOL / MACD）仍按各自默认刻度铺线；纵向网格线仅分时 / 五日开启：
+    // 分时 = 固定时刻，五日 = 交易日分界
+    grid: {
+      horizontal: { show: true, color: gridColor.value },
+      vertical: { show: isTimeline, color: gridColor.value },
+    },
     candle: {
       type: isTimeline ? 'area' : 'candle_solid',
       bar: {
@@ -275,11 +354,40 @@ const minuteAxisTickMarks = computed<{ index: number; timestamp: number; label: 
 );
 
 /**
+ * 五日 X 轴刻度的轴下标：每个交易日首根 bar（日期分界）
+ *
+ * label 为该交易日 MM/DD。首个交易日的分界线与面板左边缘重合
+ * （网格线无分隔意义、标签会被裁切），跳过
+ */
+const fiveDayAxisTickMarks = computed<{ index: number; timestamp: number; label: string }[]>(
+  () => {
+    const bars = displayBars.value;
+    if (props.mode !== 'timeline' || props.intradayAxis || bars.length === 0) return [];
+    const marks: { index: number; timestamp: number; label: string }[] = [];
+    let prevDay = '';
+    bars.forEach((bar, index) => {
+      const day = dayjs(bar.timestamp).format('YYYY-MM-DD');
+      if (day === prevDay) return;
+      prevDay = day;
+      if (index === 0) return;
+      marks.push({
+        index,
+        timestamp: bar.timestamp ?? 0,
+        label: dayjs(bar.timestamp).format('MM/DD'),
+      });
+    });
+    return marks;
+  },
+);
+
+/**
  * X 轴刻度：
  *
  * - 单日分时：固定标注全天关键时刻（09:30 / 10:30 / 11:30 / 14:00 / 15:00），
  *   与已发生的分钟数无关；横坐标按「全天固定轴恰好铺满主图区」换算
- * - 其余：可见区 5 等分（沿用原口径）
+ * - 五日：每个交易日首根 bar 为分界（MM/DD 标签），坐标按库内
+ *   dataIndexToCoordinate 同款线性式换算（(i - from + 0.5) × barSpace + 0.5）
+ * - 蜡烛模式：可见区 5 等分（沿用原口径）
  *
  * 顺带捕获 X 轴 bounding 宽度（= 主图区宽度）：分时的 barSpace 要用它把全天
  * 分钟格铺满，直接用容器宽度（含左侧 Y 轴刻度）会把头几根分钟挤出可视区
@@ -294,9 +402,20 @@ const buildXAxisTicks = (params: AxisCreateTicksParams): AxisTick[] => {
       // 布局中不可重入，下一帧再调整
       void nextTick(() => fitTimelineBarSpace());
     }
-    const barSpace = axisWidth / MINUTE_AXIS_TOTAL;
-    return minuteAxisTickMarks.value.map((mark) => ({
-      coord: (mark.index + 0.5) * barSpace,
+    if (props.intradayAxis) {
+      const barSpace = axisWidth / MINUTE_AXIS_TOTAL;
+      return minuteAxisTickMarks.value.map((mark) => ({
+        coord: (mark.index + 0.5) * barSpace,
+        value: mark.timestamp,
+        text: mark.label,
+      }));
+    }
+    // 五日：barSpace 以图表实例当前值为准（fitTimelineBarSpace 设置的取整值）
+    const barSpace = chartRef.value?.getBarSpace().bar ?? 0;
+    const marks = fiveDayAxisTickMarks.value;
+    if (barSpace <= 0 || marks.length === 0) return params.defaultTicks;
+    return marks.map((mark) => ({
+      coord: (mark.index - params.range.from + 0.5) * barSpace + 0.5,
       value: mark.timestamp,
       text: mark.label,
     }));
@@ -365,13 +484,46 @@ const setupIndicators = (chart: Chart): void => {
  * X 轴 5 等分；分时/五日主图使用 percentage 涨跌幅轴；分时/五日锁定缩放
  * @param chart
  */
+/**
+ * 蜡烛模式主图 Y 轴固定刻度：上下界 + 中间三等分两点，共 4 条水平网格线
+ *
+ * 库内默认刻度按 nice interval 取落点（条数不定且不含轴上下界），
+ * 这里改为在轴区间内等分取值，像素按线性轴换算（coord = height × k / (n-1)）；
+ * 小数位跟随库内默认刻度文本（价格精度由 symbol 决定）
+ * @param params 轴刻度创建参数
+ * @returns 固定条数的刻度（首帧无默认刻度时回退 defaultTicks）
+ */
+const buildCandleYAxisTicks = (params: AxisCreateTicksParams): AxisTick[] => {
+  const { displayTo, displayRange } = params.range;
+  const height = params.bounding.height;
+  if (displayRange <= 0 || height <= 0 || params.defaultTicks.length === 0) {
+    return params.defaultTicks;
+  }
+  const decimals = Math.max(
+    0,
+    ...params.defaultTicks.map((tick) => tick.text.split('.')[1]?.length ?? 0),
+  );
+  return Array.from({ length: CANDLE_Y_AXIS_TICK_COUNT }, (_, k) => {
+    const value = displayTo - (displayRange * k) / (CANDLE_Y_AXIS_TICK_COUNT - 1);
+    return {
+      coord: (height * k) / (CANDLE_Y_AXIS_TICK_COUNT - 1),
+      value,
+      text: value.toFixed(decimals),
+    };
+  });
+};
+
 const applyAxisOptions = (chart: Chart): void => {
   const isTimeline = props.mode === 'timeline';
-  // 主图 Y 轴：左 + 3 等分；分时/五日切换到涨跌幅百分比轴（价格空间换算的自定义模板）
+  // 主图 Y 轴：左；分时/五日切换到涨跌幅百分比轴（价格空间换算的自定义模板，
+  // 固定三条刻度）；蜡烛模式用默认轴但固定四条刻度（buildCandleYAxisTicks）。
+  // ⚠️ timeline 分支不能显式传 createTicks: undefined——库内 merge 会把 undefined
+  // 覆盖到轴实例上，打掉 timeline_pct 模板自带的 createTicks
   chart.overrideYAxis({
     paneId: CANDLE_PANE_ID,
     position: 'left',
     name: isTimeline ? 'timeline_pct' : 'normal',
+    ...(isTimeline ? {} : { createTicks: buildCandleYAxisTicks }),
   });
   // 副图（成交量 / MACD / MACD&KDJ）：保留轴标但隐藏刻度线
   chart.getIndicators().forEach((indicator) => {
@@ -704,7 +856,8 @@ watch(
   },
 );
 
-watch(trendSet, () => {
+// 涨跌配色主题 / 明暗主题变化时重设样式（网格线颜色取自 CSS 变量，需重新解析）
+watch([trendSet, isDark], () => {
   chartRef.value?.setStyles(buildStyles());
 });
 </script>

@@ -5,6 +5,7 @@ import BaseCard from '../ui/BaseCard.vue';
 import BaseConfirmModal from '../ui/BaseConfirmModal.vue';
 import BaseEmpty from '../ui/BaseEmpty.vue';
 import BaseSkeleton from '../ui/BaseSkeleton.vue';
+import BaseTabs from '../ui/BaseTabs.vue';
 import KlineChart from '../charts/KlineChart.vue';
 import StockQuoteHeader from '../business/StockQuoteHeader.vue';
 import StockOrderBook from '../business/StockOrderBook.vue';
@@ -26,7 +27,7 @@ import { DATA_CACHE_KEY } from '../../constants/data-cache.constants';
 
 /**
  * 个股详情面板（右侧停靠面板内容，布局参考同花顺移动端）：
- * 报价头 + 分时/五日/5分/日K/周K/月K 下拉切换 + 侧栏（分时/五日 -> 五档盘口）
+ * 报价头 + 分时/五日/5分/日K/周K/月K 按钮组切换 + 侧栏（分时/五日 -> 五档盘口）
  *
  * K 线走新浪源（不复权），为重接口，仅在打开面板或切换周期时拉取一次，不参与轮询；
  * 全部数据有内存快照：同标的重复打开先展示快照，接口返回后刷新
@@ -181,7 +182,7 @@ const displayQuote = computed<FullQuote | null>(() => {
 });
 
 
-// ---------- 图表周期（下拉切换：分时 / 五日 / 5分 / 日K / 周K / 月K，均走新浪源） ----------
+// ---------- 图表周期（按钮组切换：分时 / 五日 / 5分 / 日K / 周K / 月K，均走新浪源） ----------
 // 周期选项与详情页共用（constants/stock-detail.constants.ts），避免两处漂移；
 // 选择本身也持久化（composables/use-chart-period.ts），下次打开默认回到上次的周期
 const chartPeriod = useChartPeriod();
@@ -273,18 +274,14 @@ const onDockResizeEnd = (): void => {
         @resize-end="onDockResizeEnd"
       />
 
-      <!-- K 线卡片：extra 为周期切换 -->
-      <BaseCard title="K 线图">
+      <!-- K 线卡片：无标题，头部右侧为周期切换按钮组 -->
+      <BaseCard>
         <template #extra>
-          <select
+          <BaseTabs
             v-model="chartPeriod"
-            class="rounded-lg border border-flat-weak bg-surface px-2 py-1 text-xs text-text"
+            :options="CHART_PERIOD_OPTIONS"
             aria-label="K 线周期"
-          >
-            <option v-for="option in CHART_PERIOD_OPTIONS" :key="option.value" :value="option.value">
-              {{ option.label }}
-            </option>
-          </select>
+          />
         </template>
         <div v-if="klineError" class="py-10">
           <BaseEmpty text="K 线数据加载失败，请稍后重试（上游可能限频，稍后自动恢复）" />

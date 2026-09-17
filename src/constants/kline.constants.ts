@@ -81,6 +81,14 @@ export const MINUTE_AXIS_TICKS: readonly MinuteAxisTick[] = [
 export const MACD_PARAMS = [12, 26, 9] as const;
 
 /**
+ * 分时涨跌幅轴的上下留白系数（相对可视区最大绝对涨跌幅）
+ *
+ * 分时 / 五日的 Y 轴以 0% 为中心上下对称：边界 = max(|min|, |max|) × 本系数。
+ * 库内轴 gap 已归零（非对称 gap 会破坏对称性），留白由本系数统一提供
+ */
+export const TIMELINE_PCT_AXIS_HEADROOM = 1.1;
+
+/**
  * 新浪单次请求的最大根数
  *
  * 实测上游上限约 1970 条，超过即返回 `var _=(null);`（见 parseJsonp 的显式报错）。

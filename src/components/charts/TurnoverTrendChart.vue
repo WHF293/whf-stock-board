@@ -33,6 +33,12 @@ const CHART_HEIGHT_PX = height;
 /** 亿元换算保留位数（展示值） */
 const YI_DECIMALS = 2;
 
+/** Y 轴固定步长（亿）：刻度恒为 5000 亿的整数倍 */
+const Y_AXIS_STEP_YI = 5000;
+
+/** Y 轴固定步长（元，与序列同单位） */
+const Y_AXIS_STEP = Y_AXIS_STEP_YI * YUAN_PER_YI;
+
 /** 副系列固定配色（保证深色 / 浅色主题下均可读） */
 const SH_COLOR = '#f97316'; // 上证：橙
 const SZ_COLOR = '#22d3ee'; // 深证：青
@@ -48,6 +54,13 @@ const option = computed<EChartsCoreOption>(() => {
   // 依赖 themeColor：切换主题色后本 computed 重新求值
   void settingsStore.themeColor;
   const primary = readCssVar(CSS_VAR_PRIMARY);
+  // Y 轴 min/max 对齐固定步长的整数倍（空序列兜底 0 ~ 1 步长），
+  // 保证刻度恒为 5000 亿的整齐倍数，而不是从数据最小值起跳
+  const amounts = days.flatMap((day) => [day.totalAmount, day.shanghaiAmount, day.shenzhenAmount]);
+  const rawMin = amounts.length ? Math.min(...amounts) : 0;
+  const rawMax = amounts.length ? Math.max(...amounts) : Y_AXIS_STEP;
+  const yMin = Math.floor(rawMin / Y_AXIS_STEP) * Y_AXIS_STEP;
+  const yMax = Math.max(Math.ceil(rawMax / Y_AXIS_STEP) * Y_AXIS_STEP, yMin + Y_AXIS_STEP);
   return {
     animation: false,
     tooltip: {
@@ -81,7 +94,10 @@ const option = computed<EChartsCoreOption>(() => {
     },
     yAxis: {
       type: 'value',
-      scale: true,
+      // 固定 5000 亿步长（min/max 已对齐步长倍数，无需 scale 自动收缩）
+      min: yMin,
+      max: yMax,
+      interval: Y_AXIS_STEP,
       axisLabel: {
         color: CHART_TEXT_COLOR,
         // 上游单位为元，换算为亿展示
