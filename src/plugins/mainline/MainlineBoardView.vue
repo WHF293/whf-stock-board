@@ -23,9 +23,16 @@ import {
   MAINLINE_DETAIL_UNIT,
   MAINLINE_DISCLAIMER,
   MAINLINE_EMPTY_TEXT,
+  MAINLINE_EM_CALIBER_NOTICE,
+  MAINLINE_EM_SLOW_NOTICE,
+  MAINLINE_EM_UNMAPPED_BADGE,
+  MAINLINE_EM_UNMAPPED_TEXT,
+  MAINLINE_FALLBACK_NOTICE,
+  MAINLINE_FALLBACK_REASON_LABEL,
   MAINLINE_HEADER_LABEL,
   MAINLINE_INTRADAY_NOTICE,
   MAINLINE_LIMIT_UP_TEXT,
+  MAINLINE_LIST_ONLY_NOTICE,
   MAINLINE_MENU_ICON,
   MAINLINE_METRIC_PLACEHOLDER,
   MAINLINE_MISSING_INPUTS,
@@ -35,22 +42,36 @@ import {
   MAINLINE_PAGE_TITLE,
   MAINLINE_PHASE_BADGE_CLASS,
   MAINLINE_PHASE_LABEL,
-  MAINLINE_ROW_KEY_PREFIX,
+  MAINLINE_REFS_SOURCE,
+  MAINLINE_REFS_SOURCE_LABEL,
   MAINLINE_SCAN_BUTTON,
   MAINLINE_SCAN_FAILED,
   MAINLINE_SCAN_PROGRESS_SUFFIX,
   MAINLINE_SCAN_RUNNING,
+  MAINLINE_SOURCE,
+  MAINLINE_SOURCE_BADGE_CLASS,
+  MAINLINE_SOURCE_LABEL,
   MAINLINE_STALE_BADGE,
+  MAINLINE_STALE_NO_BAR_BADGE,
   MAINLINE_STRUCTURE_HOT_BADGE,
   MAINLINE_STRUCTURE_UNAVAILABLE,
   MAINLINE_WARNING_TITLE,
   MANIA_MIN_STREAK,
   YI_UNIT,
   YUAN_PER_YI,
+  mainlineRowKey,
 } from './constants';
 import type { MainlineRepo } from './storage';
 import type { MainlineVerdict } from './types';
 import type { TableColumn } from '../../types/table.types';
+
+/** 页头数据源提示（tone 决定提示条配色：primary = 需要用户注意的口径变化） */
+interface SourceNotice {
+  /** 提示条配色 */
+  tone: 'primary' | 'flat';
+  /** 提示正文 */
+  text: string;
+}
 
 /**
  * 股票主线看板（插件 dsh-mainline 的页面）
@@ -93,8 +114,54 @@ const rows = computed<MainlineVerdict[]>(() =>
 /** 扫描元信息 */
 const meta = computed(() => props.repo.snapshot().meta);
 
+/** 当前数据源（未扫描过默认同花顺；两个来源的序列分开存放，界面永远只看一套） */
+const currentSource = computed(() => props.repo.snapshot().source);
+
 /** 基准日覆盖率是否降级（没有任何交易日达到覆盖率门槛，已退回覆盖最全的一天） */
 const degraded = computed(() => meta.value?.degraded === true);
+
+/** 板块清单来源文案（清单页现取 / 本地缓存 / 内置兜底 / 东财） */
+const refsSourceLabel = computed(() => {
+  const info = meta.value;
+  if (!info) return '';
+  return MAINLINE_REFS_SOURCE_LABEL[info.refsSource ?? MAINLINE_REFS_SOURCE.LIVE];
+});
+
+/** 整表切换数据源的原因文案（空串 = 未切换） */
+const fallbackReasonText = computed(() => {
+  const key = meta.value?.fallbackReason;
+  if (!key) return '';
+  return key in MAINLINE_FALLBACK_REASON_LABEL
+    ? MAINLINE_FALLBACK_REASON_LABEL[key as keyof typeof MAINLINE_FALLBACK_REASON_LABEL]
+    : key;
+});
+
+/** 页头数据源提示（切换原因 / 口径差 / 清单降级），空数组 = 一切正常 */
+const sourceNotices = computed<SourceNotice[]>(() => {
+  const info = meta.value;
+  if (!info) return [];
+  const notices: SourceNotice[] = [];
+  if (info.source === MAINLINE_SOURCE.EM) {
+    // 整表降级：把「为什么切」「上游报了什么错」「口径差在哪」一次说清
+    notices.push({
+      tone: 'primary',
+      text: MAINLINE_FALLBACK_NOTICE(fallbackReasonText.value, info.fallbackError ?? ''),
+    });
+    notices.push({ tone: 'primary', text: MAINLINE_EM_CALIBER_NOTICE });
+    notices.push({ tone: 'flat', text: MAINLINE_EM_SLOW_NOTICE });
+    const unmapped = info.emUnmapped ?? [];
+    if (unmapped.length > 0) {
+      notices.push({ tone: 'primary', text: MAINLINE_EM_UNMAPPED_TEXT(unmapped) });
+    }
+  } else if (info.listError) {
+    // 清单页故障但日线仍走同花顺：口径没变，只是缺当日结构指标
+    notices.push({
+      tone: 'flat',
+      text: MAINLINE_LIST_ONLY_NOTICE(info.listError, refsSourceLabel.value),
+    });
+  }
+  return notices;
+});
 
 /** 各阶段数量统计（看板顶部速览） */
 const phaseSummary = computed(() =>
@@ -122,11 +189,34 @@ const columns: TableColumn<MainlineVerdict>[] = [
 ];
 
 /**
- * 行 key（展开行与排序都用它）
+ * 行 key（展开行与排序都用它；带数据源 —— 切换来源时不会复用同一行、把两套口径混着看）
  * @param row 判定结论
  * @returns 行 key
  */
-const rowKey = (row: MainlineVerdict): string => `${MAINLINE_ROW_KEY_PREFIX}${row.code}`;
+const rowKey = (row: MainlineVerdict): string => mainlineRowKey(row.metrics.source, row.code);
+
+/**
+ * 该行是否为「兜底模式下东财无同义板块」（映射不上 → 空序列 → 历史样本为 0）
+ * @param row 判定结论
+ * @returns 是否
+ */
+const isEmUnmapped = (row: MainlineVerdict): boolean =>
+  row.metrics.source === MAINLINE_SOURCE.EM && row.metrics.historyDays === 0;
+
+/**
+ * 数据滞后徽标文案
+ *
+ * 分三种情形：「滞后 N 日」/「无基准日行情」（有序列但基准日缺 bar）/
+ * 空串（EM 无同义板块的行由自己的徽标表达，不重复）。
+ * @param row 判定结论
+ * @returns 徽标文案；不需要展示时为空串
+ */
+const staleBadge = (row: MainlineVerdict): string => {
+  if (!row.metrics.stale || isEmUnmapped(row)) return '';
+  return row.metrics.staleDays > 0
+    ? MAINLINE_STALE_BADGE(row.metrics.staleDays)
+    : MAINLINE_STALE_NO_BAR_BADGE;
+};
 
 /**
  * 涨跌幅文案样式（跟全站涨跌色一致）
@@ -253,7 +343,7 @@ const onScan = async (): Promise<void> => {
     const snapshot = props.repo.snapshot();
     const result = await runMainlineScan(
       props.repo,
-      snapshot.boards,
+      snapshot,
       (next) => {
         progress.value = next;
       },
@@ -302,8 +392,18 @@ const onScan = async (): Promise<void> => {
         </div>
       </div>
 
-      <!-- 口径信息：基准交易日是全部指标的截面日，覆盖率与结构采集情况一并如实给出 -->
+      <!-- 口径信息：基准交易日是全部指标的截面日，数据源与清单来源一并如实给出 -->
       <div class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-text-tertiary">
+        <span class="inline-flex items-center gap-1">
+          {{ MAINLINE_HEADER_LABEL.source }}：
+          <span
+            class="rounded px-1.5 py-0.5 text-[11px] font-medium"
+            :class="MAINLINE_SOURCE_BADGE_CLASS[currentSource]"
+          >
+            {{ MAINLINE_SOURCE_LABEL[currentSource] }}
+          </span>
+        </span>
+        <span v-if="meta">{{ MAINLINE_HEADER_LABEL.refsSource }}：{{ refsSourceLabel }}</span>
         <span>
           {{ MAINLINE_HEADER_LABEL.benchmark }}：{{ meta?.asOf || MAINLINE_METRIC_PLACEHOLDER }}
         </span>
@@ -337,6 +437,16 @@ const onScan = async (): Promise<void> => {
         class="mt-2 rounded-lg bg-primary-weak px-2 py-1.5 text-xs leading-relaxed text-primary"
       >
         {{ MAINLINE_DEGRADED_NOTICE(meta.asOf) }}
+      </p>
+
+      <!-- 数据源提示：切换原因 / 口径差 / 清单降级，一律显式说明，不静默换源 -->
+      <p
+        v-for="(notice, index) in sourceNotices"
+        :key="`source-${index}`"
+        class="mt-2 rounded-lg px-2 py-1.5 text-xs leading-relaxed"
+        :class="notice.tone === 'primary' ? 'bg-primary-weak text-primary' : 'bg-flat-weak text-text-secondary'"
+      >
+        {{ notice.text }}
       </p>
 
       <p v-if="scanNotice" class="mt-2 rounded-lg bg-primary-weak px-2 py-1.5 text-xs text-primary">
@@ -398,10 +508,16 @@ const onScan = async (): Promise<void> => {
               {{ MAINLINE_STRUCTURE_HOT_BADGE }}
             </span>
             <span
-              v-if="row.metrics.stale"
+              v-if="isEmUnmapped(row)"
+              class="rounded bg-primary-weak px-1 py-0.5 text-[10px] text-primary"
+            >
+              {{ MAINLINE_EM_UNMAPPED_BADGE }}
+            </span>
+            <span
+              v-if="staleBadge(row)"
               class="rounded bg-flat-weak px-1 py-0.5 text-[10px] text-text-tertiary"
             >
-              {{ MAINLINE_STALE_BADGE(row.metrics.staleDays) }}
+              {{ staleBadge(row) }}
             </span>
           </span>
         </template>
@@ -456,6 +572,17 @@ const onScan = async (): Promise<void> => {
                 <dt class="text-text-tertiary">{{ MAINLINE_DETAIL_LABEL.benchmark }}</dt>
                 <dd class="tabular-nums text-text">
                   {{ row.metrics.benchmarkDate || '—' }}
+                </dd>
+              </div>
+              <div>
+                <dt class="text-text-tertiary">{{ MAINLINE_DETAIL_LABEL.source }}</dt>
+                <dd>
+                  <span
+                    class="rounded px-1 py-0.5 text-[10px]"
+                    :class="MAINLINE_SOURCE_BADGE_CLASS[row.metrics.source]"
+                  >
+                    {{ MAINLINE_SOURCE_LABEL[row.metrics.source] }}
+                  </span>
                 </dd>
               </div>
               <div>

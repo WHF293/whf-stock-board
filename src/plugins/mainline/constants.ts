@@ -3,9 +3,11 @@
  *
  * 口径参考本地技能 `a-share-huddle-mainline`（A 股板块抱团主线四阶段判定）：
  * 把「抱团主线」从主观感觉变成可复现的状态规则 —— 数据源换成**应用内可直连的接口**：
- * - 板块清单与板块日 K（含成交额）：同花顺（`q.10jqka.com.cn` / `d.10jqka.com.cn`，GBK 编码）
- *   —— 东财 `push2his` 在本机被封、`push2delay` 不返回 K 线（见 SERVER_API.md），故走同花顺；
- * - 沪深两市总成交额：复用宿主既有 `fetchMarketTurnover`（腾讯日 K，含真实成交额）。
+ * - 板块清单与板块日 K（含成交额）：**同花顺为主源**（`q.10jqka.com.cn` / `d.10jqka.com.cn`，GBK 编码）；
+ * - 兜底源：**东方财富**（`push2his` 板块日 K + `push2delay` 板块快照）——
+ *   实测（2026-09-18）东财行情域可用但是**突发限速**（间隔 ≥1s 正常、连发即拒连），
+ *   故只作「同花顺整体不可用」时的整表降级，见 `MAINLINE_SOURCE` 与 L2.5 说明；
+ * - 沪深两市总成交额：复用宿主既有 `fetchMarketTurnover`（腾讯日 K，含真实成交额，与板块源无关）。
  */
 
 /** 插件 id */
@@ -101,6 +103,190 @@ export const THS_REFERER = 'https://q.10jqka.com.cn/';
 /** 同花顺板块清单里板块代码的前缀（88xxxx 为行业板块；概念板块不在本期范围） */
 export const THS_INDUSTRY_CODE_PREFIX = '88';
 
+// ---------- 数据源与兜底（L2.5） ----------
+
+/**
+ * 板块数据源取值
+ *
+ * 一次扫描**整表只有一个来源（绝不混排）**：同花顺优先，只在「同花顺整体不可用」时
+ * 整表切东财。两个来源的日线序列在库里**分开存放**（行键带来源），同花顺恢复后自动切回，
+ * 切换期间的东财数据不会污染同花顺累积的分位序列。
+ */
+export const MAINLINE_SOURCE = {
+  /** 同花顺行业板块（主源：清单页 + 板块年 K / 近端 K） */
+  THS: 'ths',
+  /** 东方财富行业板块（兜底源：板块日 K + 板块快照，按名称映射到同花顺板块） */
+  EM: 'em',
+} as const;
+
+/** 数据源取值类型 */
+export type MainlineSource = (typeof MAINLINE_SOURCE)[keyof typeof MAINLINE_SOURCE];
+
+/** 数据源中文名（界面徽标用） */
+export const MAINLINE_SOURCE_LABEL = {
+  ths: '同花顺',
+  em: '东方财富',
+} as const satisfies Record<MainlineSource, string>;
+
+/** 数据源徽标样式（兜底源用主色提示「口径已变」，让用户一眼看见） */
+export const MAINLINE_SOURCE_BADGE_CLASS = {
+  ths: 'bg-flat-weak text-text-secondary',
+  em: 'bg-primary-weak text-primary',
+} as const satisfies Record<MainlineSource, string>;
+
+/**
+ * 板块清单（代码 + 名称）的来源
+ *
+ * 清单页 `q.10jqka.com.cn` 与日线主机 `d.10jqka.com.cn` 是两个域，可能单独故障 ——
+ * 清单页挂掉但日线正常时，用缓存清单继续取**同花顺**日线（仍是同源同口径，不切源），
+ * 只是当日结构快照（宽度 / 净流入）取不到；连缓存都没有才用内置兜底清单。
+ */
+export const MAINLINE_REFS_SOURCE = {
+  /** 清单页现取（正常路径） */
+  LIVE: 'live',
+  /** 上次成功扫描时落库的清单（清单页故障时的首选） */
+  CACHE: 'cache',
+  /** 内置兜底清单（`MAINLINE_THS_BOARD_FALLBACK`，首次扫描就撞上清单页故障时用） */
+  STATIC: 'static',
+  /** 东财自带板块清单（东财模式下不再依赖同花顺清单） */
+  EM: 'em',
+} as const;
+
+/** 板块清单来源取值类型 */
+export type MainlineRefsSource = (typeof MAINLINE_REFS_SOURCE)[keyof typeof MAINLINE_REFS_SOURCE];
+
+/** 板块清单来源中文名 */
+export const MAINLINE_REFS_SOURCE_LABEL = {
+  live: '清单页现取',
+  cache: '本地缓存清单',
+  static: '内置兜底清单',
+  em: '东财板块清单',
+} as const satisfies Record<MainlineRefsSource, string>;
+
+/** 触发整表切换数据源的原因（落库为键，界面按此取文案） */
+export const MAINLINE_FALLBACK_REASON = {
+  /** 同花顺全部板块日线取数失败 → 判定同花顺整体不可用 */
+  KLINE_ALL_FAILED: 'kline_all_failed',
+} as const;
+
+/**
+ * 切换原因文案
+ *
+ * 只保留**可复现的判定依据**（不写「可能 / 大概」）：整表切换的唯一触发条件是
+ * 同花顺清单解析出的**全部**板块日线都取不到 —— 单板块失败仍走同源回退链与本地旧数据。
+ */
+export const MAINLINE_FALLBACK_REASON_LABEL = {
+  kline_all_failed: '同花顺全部板块日线取数失败，判定为同花顺整体不可用',
+} as const satisfies Record<
+  (typeof MAINLINE_FALLBACK_REASON)[keyof typeof MAINLINE_FALLBACK_REASON],
+  string
+>;
+
+/** 东财要求带 Referer，否则可能被拒 */
+export const EM_REFERER = 'https://quote.eastmoney.com/';
+
+/** 东财行业板块清单（一次给出涨跌幅 / 成交额 / 主力净流入 / 涨跌家数 / 领涨股） */
+export const EM_BOARD_LIST_URL = 'https://push2delay.eastmoney.com/api/qt/clist/get';
+
+/** 东财板块日 K */
+export const EM_BOARD_KLINE_URL = 'https://push2his.eastmoney.com/api/qt/stock/kline/get';
+
+/** 东财板块 secid 前缀（`90.` = 板块；`0./1.` 是个股与指数） */
+export const EM_BOARD_SECID_PREFIX = '90.';
+
+/**
+ * 东财清单的排序字段 / 方向（**必须是稳定字段，见下方血的教训**）
+ *
+ * ⚠️ 实测坑（2026-09-18）：`fid=f3&po=1`（按**涨跌幅**降序）—— 分页是「逐页串行请求」，
+ * 而 f3 在盘中每秒都在变，翻到第 5 页时前几页的行序已经漂移 → **行在页边界来回搬家**
+ * → 实测 `data.total` 报 496，但 6 页去重后只有 491 行、且出现 5 个重复，
+ * **5 个板块被静默丢掉**（丢的恰是「化学纤维 / 非金属材料 / 生物制品」，表现为
+ * 「未映射」名单每次跑都不一样）。改用代码升序（`f12`）后实测 496 行 / 0 重复 / 与 total 一致。
+ *
+ * → 排序字段必须选**不随时间变化**的（代码、名称），绝不能选行情字段。
+ */
+export const EM_BOARD_LIST_SORT_FIELD = 'f12';
+
+/** 排序方向（0 = 升序；配合代码字段即稳定序） */
+export const EM_BOARD_LIST_SORT_ORDER = '0';
+
+/**
+ * 东财行业板块清单的查询串（`{page}` 由调用方替换）
+ *
+ * `fs=m:90+t:2` = 行业板块（含一/二/三级混合，实测共 496 个）——
+ * 我们**不用它当板块全集**，只用它做「同花顺板块名 → 东财板块代码」的映射表。
+ */
+export const EM_BOARD_LIST_QUERY =
+  `pn={page}&pz=100&po=${EM_BOARD_LIST_SORT_ORDER}&np=1&fltt=2&invt=2` +
+  `&fid=${EM_BOARD_LIST_SORT_FIELD}&fs=m:90+t:2` +
+  '&fields=f12,f14,f3,f6,f62,f104,f105,f128';
+
+/** 清单查询串里页码的占位符（由取数层替换为实际页码） */
+export const EM_BOARD_LIST_PAGE_TOKEN = '{page}';
+
+/** 东财日 K 的元信息字段（f1 代码 / f2 名称 / f3 市场，必填但不用其值） */
+export const EM_KLINE_META_FIELDS = 'f1,f2,f3';
+
+/** 东财板块清单最多翻页数（实测 496 个 / 每页 100 → 5 页足够，留 1 页护栏） */
+export const EM_BOARD_LIST_MAX_PAGES = 6;
+
+/** 清单行里各字段的键（避免在解析层写裸字符串） */
+export const EM_BOARD_FIELD = {
+  CODE: 'f12',
+  NAME: 'f14',
+  CHANGE_PERCENT: 'f3',
+  AMOUNT: 'f6',
+  NET_INFLOW: 'f62',
+  RISE: 'f104',
+  FALL: 'f105',
+  LEADER: 'f128',
+} as const;
+
+/** 日 K 要取的字段（f51~f57 = 日期 / 开 / 收 / 高 / 低 / 量 / 额；实测返回顺序即此） */
+export const EM_KLINE_FIELDS = 'f51,f52,f53,f54,f55,f56,f57';
+
+/** 日 K 周期（101 = 日线） */
+export const EM_KLINE_KLT = '101';
+
+/** 日 K 复权（1 = 前复权，与同花顺主用口径一致） */
+export const EM_KLINE_ADJUST = '1';
+
+/** 日 K 结束日期（给足够大的值即取到最新） */
+export const EM_KLINE_END = '20500101';
+
+/** 日 K 起始年份向前推的年数（1 → 取到去年初，约 370 个交易日，够算 60 日分位与 5/20 日量能） */
+export const EM_KLINE_YEARS_BACK = 1;
+
+/** 东财兜底模式的同上游间隔（毫秒）
+ *
+ * 实测（2026-09-18）：东财行情域是**突发限速** —— 间隔 ≥1s 时板块日 K 与板块快照都正常返回，
+ * 短时间连发立刻拒连（curl 退出码 000）、停顿约 20s 后恢复。故兜底轮必须**串行**且留足间隔。
+ */
+export const EM_SCAN_DELAY_MS = 1200;
+
+/** 东财兜底的并发（恒为 1：突发限速下并发会直接触发拒连） */
+export const EM_SCAN_CONCURRENCY = 1;
+
+/**
+ * 东财单次请求的尝试次数（含首次）
+ *
+ * 实测（2026-09-18）：东财会**直接掐断连接**而不是回 HTTP 错误码
+ * （`UND_ERR_SOCKET` / curl 退出码 000，约 0.2s 返回，8 次里成功 1 次），
+ * 稍等重试即可恢复 → 与同花顺 5xx 一样做原地重试，只是间隔更长。
+ */
+export const EM_FETCH_ATTEMPTS = 3;
+
+/** 东财兜底的失败补采间隔（毫秒；比同花顺更长，给限速留恢复时间） */
+export const EM_SCAN_RETRY_DELAY_MS = 5000;
+
+/**
+ * 板块清单收不满（与上游 `total` 对账不足）时整轮重跑的轮数
+ *
+ * 稳定排序后实测应一次到位（496 行 / total 496）；这里只是护栏 —— 真收不满时
+ * 宁可多跑一轮，也不能把缺行当成「东财没有同义板块」报给用户。
+ */
+export const EM_UNIVERSE_ROUNDS = 2;
+
 /**
  * 东财涨停池的行业名 → 同花顺行业板块名（**近似归属**）
  *
@@ -133,6 +319,143 @@ export const MAINLINE_INDUSTRY_ALIAS: Readonly<Record<string, string>> = {
   '玻璃玻纤': '建筑材料',
   '航运港口': '港口航运',
 };
+
+/**
+ * 同花顺板块名 → 东财板块名（**兜底模式的名称映射表**）
+ *
+ * 兜底模式下东财是唯一的板块数据源，所以要把同花顺的 90 个板块名对应到东财板块。
+ * 自动匹配只做**同层级语义等价**的两级：等值 → 剥罗马数字后缀（优先「Ⅱ」级，
+ * 因为同花顺 90 板块≈申万二级）。下表是语义等价但**名称不同**的 12 个：
+ *
+ * - 词序颠倒：`公路铁路运输` ↔ `铁路公路`、`港口航运` ↔ `航运港口`、`机场航运` ↔ `航空机场`
+ * - 申万改名 / 纯后缀差：`煤炭开采加工` → `煤炭开采`、`石油加工贸易` → `炼化及贸易`、
+ *   `油气开采及服务` → `油气开采`、`汽车服务及其他` → `汽车服务`、`文化传媒` → `传媒`、
+ *   `塑料制品` → `塑料`、`橡胶制品` → `橡胶`、`食品加工制造` → `食品加工`、
+ *   `种植业与林业` → `种植业`
+ *
+ * **故意不收录**的 7 个（宁可让它们落进「未映射」并在页头如实列出，也不硬凑）：
+ * - `汽车整车`：东财只有一级 `汽车`（含零部件/服务），而零部件已单独映射到 `汽车零部件`
+ *   → 硬映射会把零部件重复计入整车；
+ * - `零售`（东财拆成一般零售 / 商贸零售 / 多业态零售）、`旅游及酒店`（拆成旅游及景区 + 酒店餐饮）、
+ *   `军工装备`（拆成航天/航空/航海/地面兵装）、`其他社会服务`（东财「社会服务」是一级，还含教育/旅游）
+ *   —— 同花顺做过合并，东财没有一一对应的板块；
+ * - `化学纤维`（东财只剩三级 `其他化学纤维`）、`饮料制造`（东财为 `饮料乳品`，多出乳品）
+ *   —— 成分范围不同，映射会给出偏小/偏大的成交额。
+ */
+export const MAINLINE_THS_TO_EM_ALIAS: Readonly<Record<string, string>> = {
+  '公路铁路运输': '铁路公路',
+  '港口航运': '航运港口',
+  '机场航运': '航空机场',
+  '煤炭开采加工': '煤炭开采',
+  '石油加工贸易': '炼化及贸易',
+  '油气开采及服务': '油气开采',
+  '汽车服务及其他': '汽车服务',
+  '文化传媒': '传媒',
+  '塑料制品': '塑料',
+  '橡胶制品': '橡胶',
+  '食品加工制造': '食品加工',
+  '种植业与林业': '种植业',
+};
+
+/**
+ * 内置兜底板块清单（同花顺 90 个行业板块的快照，2026-09-18 取自清单页）
+ *
+ * 只在「清单页故障 **且** 本地没有缓存清单」时使用（首次扫描就撞上故障）。
+ * 板块代码与名称极少变动；若上游调整分类，靠页头「清单来源：内置兜底清单」提示，
+ * 并且下一次清单页正常时缓存会被现取清单覆盖。
+ */
+export const MAINLINE_THS_BOARD_FALLBACK: readonly { code: string; name: string }[] = [
+  { code: '881101', name: '种植业与林业' },
+  { code: '881102', name: '养殖业' },
+  { code: '881103', name: '农产品加工' },
+  { code: '881105', name: '煤炭开采加工' },
+  { code: '881107', name: '油气开采及服务' },
+  { code: '881108', name: '化学原料' },
+  { code: '881109', name: '化学制品' },
+  { code: '881112', name: '钢铁' },
+  { code: '881114', name: '金属新材料' },
+  { code: '881115', name: '建筑材料' },
+  { code: '881116', name: '建筑装饰' },
+  { code: '881117', name: '通用设备' },
+  { code: '881118', name: '专用设备' },
+  { code: '881121', name: '半导体' },
+  { code: '881122', name: '光学光电子' },
+  { code: '881123', name: '其他电子' },
+  { code: '881124', name: '消费电子' },
+  { code: '881125', name: '汽车整车' },
+  { code: '881126', name: '汽车零部件' },
+  { code: '881128', name: '汽车服务及其他' },
+  { code: '881129', name: '通信设备' },
+  { code: '881130', name: '计算机设备' },
+  { code: '881131', name: '白色家电' },
+  { code: '881132', name: '黑色家电' },
+  { code: '881133', name: '饮料制造' },
+  { code: '881134', name: '食品加工制造' },
+  { code: '881135', name: '纺织制造' },
+  { code: '881136', name: '服装家纺' },
+  { code: '881137', name: '造纸' },
+  { code: '881138', name: '包装印刷' },
+  { code: '881139', name: '家居用品' },
+  { code: '881140', name: '化学制药' },
+  { code: '881141', name: '中药' },
+  { code: '881142', name: '生物制品' },
+  { code: '881143', name: '医药商业' },
+  { code: '881144', name: '医疗器械' },
+  { code: '881145', name: '电力' },
+  { code: '881146', name: '燃气' },
+  { code: '881148', name: '港口航运' },
+  { code: '881149', name: '公路铁路运输' },
+  { code: '881151', name: '机场航运' },
+  { code: '881152', name: '物流' },
+  { code: '881153', name: '房地产' },
+  { code: '881155', name: '银行' },
+  { code: '881156', name: '保险' },
+  { code: '881157', name: '证券' },
+  { code: '881158', name: '零售' },
+  { code: '881159', name: '贸易' },
+  { code: '881160', name: '旅游及酒店' },
+  { code: '881162', name: '通信服务' },
+  { code: '881164', name: '文化传媒' },
+  { code: '881165', name: '综合' },
+  { code: '881166', name: '军工装备' },
+  { code: '881167', name: '非金属材料' },
+  { code: '881168', name: '工业金属' },
+  { code: '881169', name: '贵金属' },
+  { code: '881170', name: '小金属' },
+  { code: '881171', name: '自动化设备' },
+  { code: '881172', name: '电子化学品' },
+  { code: '881173', name: '小家电' },
+  { code: '881174', name: '厨卫电器' },
+  { code: '881175', name: '医疗服务' },
+  { code: '881177', name: '互联网电商' },
+  { code: '881178', name: '教育' },
+  { code: '881179', name: '其他社会服务' },
+  { code: '881180', name: '石油加工贸易' },
+  { code: '881181', name: '环境治理' },
+  { code: '881182', name: '美容护理' },
+  { code: '881263', name: '农化制品' },
+  { code: '881264', name: '化学纤维' },
+  { code: '881265', name: '塑料制品' },
+  { code: '881266', name: '橡胶制品' },
+  { code: '881267', name: '能源金属' },
+  { code: '881268', name: '工程机械' },
+  { code: '881269', name: '轨交设备' },
+  { code: '881270', name: '元件' },
+  { code: '881271', name: 'IT服务' },
+  { code: '881272', name: '软件开发' },
+  { code: '881273', name: '白酒' },
+  { code: '881274', name: '影视院线' },
+  { code: '881275', name: '游戏' },
+  { code: '881276', name: '军工电子' },
+  { code: '881277', name: '电机' },
+  { code: '881278', name: '电网设备' },
+  { code: '881279', name: '光伏设备' },
+  { code: '881280', name: '风电设备' },
+  { code: '881281', name: '电池' },
+  { code: '881282', name: '其他电源设备' },
+  { code: '881283', name: '多元金融' },
+  { code: '881284', name: '环保设备' },
+];
 
 /** 东财涨停池类型（主线只取涨停池） */
 export const MAINLINE_LIMIT_UP_POOL_TYPE = 'zt';
@@ -384,7 +707,8 @@ export const MAINLINE_SCAN_RUNNING = '扫描中';
 export const MAINLINE_SCAN_PROGRESS_SUFFIX = '个板块';
 
 /** 首次空态文案 */
-export const MAINLINE_EMPTY_TEXT = '还没有主线快照，点「扫描主线」拉取同花顺行业板块与成交额历史';
+export const MAINLINE_EMPTY_TEXT =
+  '还没有主线快照，点「扫描主线」拉取行业板块与成交额历史（板块数据优先同花顺，整体不可用时自动切东财兜底）';
 
 /** 无历史样本提示（表格内） */
 export const MAINLINE_NO_SAMPLE_TEXT = '无样本';
@@ -417,6 +741,7 @@ export const MAINLINE_DETAIL_TITLE = '指标明细';
 export const MAINLINE_DETAIL_LABEL = {
   asOf: '数据截止',
   benchmark: '基准交易日',
+  source: '数据源',
   historyDays: '历史样本',
   latestChange: '当日涨跌',
   change5: '近 5 日累计',
@@ -467,6 +792,7 @@ export const MAINLINE_CONNECTED_INPUTS = [
   '价格分位（收盘价在近 60 日区间中的分位）',
   '板块内涨停家数 / 最高连板 / 封板资金合计（东财涨停池按行业归属聚合）',
   '板块宽度（上涨 ÷ 上涨+下跌）与主力净流入（同花顺行业清单页快照）',
+  '数据源兜底：同花顺清单页/日线可用时一律走同花顺；确认同花顺整体不可用（全部板块日线均失败）时整表降级东财，来源与切换原因在页头明示，两个来源的序列分开存放、不拼接',
 ] as const;
 
 /** 置信度文案 */
@@ -493,7 +819,14 @@ export const MAINLINE_CONFIDENCE_MEDIUM_DAYS = 60;
  * 指标一律取**最近完整交易日**截面（盘中不落半日 bar）；结构指标来自榜单快照与涨停池。
  */
 export const MAINLINE_DISCLAIMER =
-  '仅历史统计规则下的状态判定，是概率工具而非预言，不构成投资建议，不含任何买卖或仓位指令。成交占比口径为「同花顺行业板块成交额 ÷ 沪深两市总成交额」，板块合计约为全市场成交额的 98.5%（实测 9/15~9/17 为 98.4%~98.6%），故占比存在约 1.5% 的系统性低估，但分位是同一基准下的相对位置、不受该缺口影响。全部指标一律取**最近完整交易日**截面：盘中扫描不写入当日半日数据，避免污染占比分位序列。涨停家数、连板高度、封板资金来自东财涨停池（按行业归属聚合，未归属家数在页头如实列出）；上涨/下跌家数、主力净流入来自同花顺行业清单页。';
+  '仅历史统计规则下的状态判定，是概率工具而非预言，不构成投资建议，不含任何买卖或仓位指令。' +
+  '成交占比口径为「行业板块成交额 ÷ 沪深两市总成交额」（同花顺口径下板块合计约为全市场成交额的 98.5%，' +
+  '实测 9/15~9/17 为 98.4%~98.6%，故存在约 1.5% 的系统性低估；但分位是同一基准下的相对位置、不受该缺口影响）。' +
+  '全部指标一律取「最近完整交易日」截面：盘中扫描不写入当日半日数据，避免污染占比分位序列。' +
+  '板块日线默认取同花顺；仅在确认同花顺整体不可用时整表降级东财（页头标注来源与切换原因，' +
+  '两个来源的序列分开存放、不拼接）。涨停家数、连板高度、封板资金来自东财涨停池（按行业归属聚合，' +
+  '未归属家数在页头如实列出）；上涨/下跌家数、净流入来自板块清单页快照（同花顺口径为净流入，' +
+  '东财口径为主力净流入，两者不可直接比较）。';
 
 /** 风险提示区标题 */
 export const MAINLINE_WARNING_TITLE = '风险提示';
@@ -508,11 +841,25 @@ export const MAINLINE_CANDIDATE_BADGE = '主线候选';
  */
 export const MAINLINE_STALE_BADGE = (days: number): string => `滞后${days}日`;
 
+/** 基准日完全没有行情 bar 时的徽标文案（滞后天数为 0 但确实不在基准日截面上） */
+export const MAINLINE_STALE_NO_BAR_BADGE = '无基准日行情';
+
+/** 兜底模式下「东财无同义板块」徽标文案（映射不上 → 空序列） */
+export const MAINLINE_EM_UNMAPPED_BADGE = '东财无同义板块';
+
 /** 情绪加速徽标文案 */
 export const MAINLINE_STRUCTURE_HOT_BADGE = '情绪加速';
 
-/** 表格行 key 前缀（板块代码本身唯一，保留前缀便于将来区分来源） */
-export const MAINLINE_ROW_KEY_PREFIX = 'ths-';
+/**
+ * 表格行 key
+ *
+ * 同一板块在「同花顺」与「东财」两个来源下是**两条不同的序列**（分开存放、绝不拼接），
+ * 所以行 key 必须带来源，否则切换来源时表格会复用同一行、把两套口径混起来看。
+ * @param source 数据源
+ * @param code 板块代码
+ * @returns 行 key
+ */
+export const mainlineRowKey = (source: MainlineSource, code: string): string => `${source}-${code}`;
 
 // ---------- 页头说明文案 ----------
 
@@ -525,6 +872,8 @@ export const MAINLINE_HEADER_LABEL = {
   scannedAt: '上次扫描',
   limitUp: '基准日涨停',
   structure: '结构指标',
+  source: '数据源',
+  refsSource: '板块清单',
 } as const;
 
 /**
@@ -564,6 +913,50 @@ export const MAINLINE_INTRADAY_NOTICE = (date: string, benchmark: string): strin
  */
 export const MAINLINE_DEGRADED_NOTICE = (benchmark: string): string =>
   `未找到覆盖率达标的交易日，已退回覆盖最全的 ${benchmark}；该日部分板块行情缺失，横截面比较需谨慎。`;
+
+// ---------- 数据源兜底文案（L2.5） ----------
+
+/**
+ * 整表切换数据源的提示模板
+ *
+ * 必须同时给出「为什么切」「上游报了什么错」「口径差在哪」—— 否则用户会把东财口径的
+ * 12.58% 直接和昨天的同花顺口径比，而两套板块指数不同源，点位与成分都不保证一致。
+ * @param reason 切换原因（来自 `MAINLINE_FALLBACK_REASON_LABEL`）
+ * @param error 上游原始报错（可为空串）
+ * @returns 提示文案
+ */
+export const MAINLINE_FALLBACK_NOTICE = (reason: string, error: string): string =>
+  `本次已整表切换为东方财富口径。原因：${reason}${error ? `（上游报错：${error}）` : ''}。` +
+  '东财板块指数与同花顺不同源：点位不可比、成分不保证一致，因此指标只保证「同一次扫描内横向自洽」，' +
+  '请勿与同花顺口径的历史数值直接比较。两个来源的日线在库里分开存放、绝不拼接；' +
+  '同花顺恢复后会自动切回，切换期间的东财数据也不会污染同花顺累积的分位序列。';
+
+/**
+ * 兜底模式的净流入口径提示（东财 `f62` 是主力净流入，与同花顺清单页口径不同）
+ */
+export const MAINLINE_EM_CALIBER_NOTICE =
+  '兜底模式下「净流入」为东财主力净流入（大单口径），与同花顺清单页的净流入不可直接比较；涨停家数 / 连板高度 / 封板资金仍来自东财涨停池，与同花顺模式下一致。';
+
+/**
+ * 兜底模式未映射板块提示模板（东财没有同义板块的同花顺板块，如实列出、不猜）
+ * @param names 未映射的同花顺板块名
+ * @returns 提示文案
+ */
+export const MAINLINE_EM_UNMAPPED_TEXT = (names: readonly string[]): string =>
+  `有 ${names.length} 个同花顺板块在东财找不到同义板块（两套分类口径不同），本次按「无数据」处理而非猜测映射：${names.join('、')}。`;
+
+/**
+ * 清单页故障但日线仍可用的提示模板（不切源，只是拿不到当日结构快照）
+ * @param error 清单页原始报错
+ * @param refsLabel 实际使用的清单来源文案
+ * @returns 提示文案
+ */
+export const MAINLINE_LIST_ONLY_NOTICE = (error: string, refsLabel: string): string =>
+  `同花顺板块清单页取数失败（${error}），本次改用${refsLabel}继续取同花顺日线：数据口径未变，但当日结构指标（宽度 / 净流入）与涨停池行业归属本期未采集。`;
+
+/** 兜底扫描耗时提示（东财必须串行 ≥1.1s，比同花顺慢得多） */
+export const MAINLINE_EM_SLOW_NOTICE =
+  '东财兜底必须串行请求（同上游间隔 ≥1.1s），一次扫描约需 2 分钟，请勿重复点击「扫描主线」。';
 
 // ---------- 判定层动态文案 ----------
 

@@ -8,12 +8,12 @@
  * 若直接以年 K 覆盖，上次扫描采到的结构数据会在下次扫描时被抹掉，而涨停池只覆盖近端日期、
  * 抹掉就补不回来。
  */
-import type { BoardDaily, BoardSeries, LimitUpStat, ThsBoardSnapshot } from './types';
+import type { BoardDaily, BoardSeries, BoardSnapshot, LimitUpStat } from './types';
 
 /** 基准日的结构数据（清单页快照 + 涨停池聚合，任一可为空表示未采集） */
 export interface BenchmarkStructure {
   /** 板块代码 → 清单页快照（空 Map = 快照与基准日不同源，未采用） */
-  snapshots: ReadonlyMap<string, ThsBoardSnapshot>;
+  snapshots: ReadonlyMap<string, BoardSnapshot>;
   /** 板块代码 → 涨停结构；null = 涨停池未采集成功 */
   limitUp: ReadonlyMap<string, LimitUpStat> | null;
 }

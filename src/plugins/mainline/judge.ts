@@ -47,6 +47,7 @@ import {
   MAINLINE_PHASE_WARNINGS,
   MAINLINE_PRICE_WINDOW,
   MAINLINE_SHORT_WINDOW,
+  MAINLINE_SOURCE,
   MAINLINE_WARNING_NO_LIMIT_UP,
   MAINLINE_WARNING_NO_STRUCTURE,
   MAINLINE_WARNING_STALE,
@@ -150,6 +151,7 @@ export const computeMetrics = (
 
   const metrics: BoardMetrics = {
     asOf: '',
+    source: series.source ?? MAINLINE_SOURCE.THS,
     benchmarkDate: context.benchmarkDate,
     stale,
     staleDays: 0,

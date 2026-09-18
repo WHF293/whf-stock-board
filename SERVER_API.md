@@ -14,7 +14,9 @@
   新增域名需同步改这里（浏览器）与 capability（Tauri）。
 - **本机关键约束（踩坑结论，2026-09-14 实测复现）**：
   - ⚠️ **东财行情域 `push2his.eastmoney.com` 与 `push2.eastmoney.com` 在本机长期表现为被 TCP 层封禁**（`fetch failed` / `UND_ERR_SOCKET`，即 AGENTS 里记的「东财封 IP」）。**带数字前缀的镜像域同样不可达**（实测 `1./13./45.push2his`、`1./7./20./45./91.push2` 全部失败）→ `stock-sdk` 的 `sdk.kline.*` / `sdk.batch.cn` 等走东财行情域的方法也随之失败。
-  - 📌 **2026-09-18 补充实测（口径修正：突发限速，不是永久封禁）**：该域**间隔 ≥1s 时可用**——`push2his/api/qt/stock/kline/get?secid=90.BKxxxx`（板块指数日 K，含成交额）与 `push2/api/qt/clist/get`（板块快照）均返回 200 且数据非空；但**短时间连发会立刻拒连**（curl `000`），停顿约 20s 后自动恢复。**结论：可作兜底源，但必须严格低频（点击触发、串行 + ≥1s 间隔），不能当稳定主源或轮询源。**
+  - 📌 **2026-09-18 补充实测（口径修正：突发限速，不是永久封禁）**：该域**间隔 ≥1s 时可用**——`push2his/api/qt/stock/kline/get?secid=90.BKxxxx`（板块指数日 K，含成交额）与 `push2/api/qt/clist/get`（板块快照）均返回 200 且数据非空；但**短时间连发会立刻拒连**，停顿后自动恢复。**结论：可作兜底源，但必须严格低频（点击触发、串行 + ≥1.2s 间隔），不能当稳定主源或轮询源。**
+  - 📌 **失败形态（2026-09-18 复测，决定重试策略）**：多半是**连接层被掐断**而非 HTTP 错误码 —— `fetch failed` / `UND_ERR_SOCKET other side closed`（curl 侧 `000`，约 0.2s 即返回，实测 8 次里成功 1 次；间隔 1.5s 连打 12 次成功 3 次）。**稍候重试能恢复**（实测同 URL 第 2 次即 200）→ 因此「同 URL 原地重试 + 拉长间隔」是本域唯一有效的兜底手段，胜于换镜像域（镜像域实测全不可达）。
+  - 📌 **两源量级对照（2026-09-18 实测，说明为何绝不混排）**：同一天同一板块，东财 `半导体(BK1036)` 成交额 3070.2 亿 vs 同花顺 `半导体(881121)` 2348.7 亿，**比值 1.31**（成分口径不同）；两套指数点位也不可比（东财 2868.43 vs 同花顺 8993 上下）。跨源拼接会让成交额口径在接缝处跳变，直接污染量能倍数与占比分位 → 两源数据必须**整表降级 + 分开存放**。
   - 同属东财但**实测可达**的域：`push2delay.eastmoney.com`（快照列表 / 分时 `trends2`）、`push2ex`（涨停池）、`datacenter-web`、`np-listapi`（7×24 快讯）。
   - ⚠️ **`push2delay` 不提供历史 K 线**：`/api/qt/stock/kline/get` 返回 **HTTP 200 但 `data` 为 null / `klines` 为空**。调用方若把「200 但无数据」当成功，会静默返回空数组 —— 表现为**图表空白、列表为空且没有任何错误提示**（本模块曾踩此坑）。解析上游必须校验「拿到非空数据」才算成功。
   - **指数日 K 成交额因此改走腾讯** `web.ifzq.gtimg.cn/appstock/app/newfqkline/get`（见 §1 `fetchMarketTurnover`）。该域已在代理白名单 `gtimg.cn` 与 Tauri capability `https://*.gtimg.cn/*` 内，无需新增配置。
@@ -40,6 +42,8 @@
 | 连通性探针 | `views/SettingsView.vue` | `qt.gtimg.cn/q=sh000001` | GET | 设置页「网络诊断」用腾讯源直连测连通性 |
 | `fetchThsBoardPage` | `plugins/mainline/ths-data.ts` | 清单页 `q.10jqka.com.cn/thshy/` + 分页 `q.10jqka.com.cn/thshy/index/field/199112/order/desc/page/<n>/ajax/1/` | GET | 同花顺行业板块清单 + **当日结构快照**（**GBK HTML**）。首页锚点正则抽 `detail/code/88xxxx` 得**全部 90 个**行业板块；表格行解析得 `涨跌幅 / 总成交额(亿元) / 净流入(亿元) / 上涨家数 / 下跌家数 / 均价 / 领涨股`。⚠️ **表格每页只有 50 行**（90 个板块分布在 2 页：50 + 40，第 2 页须走 ajax 形态），两页并集与锚点集合实测完全一致。带 `Referer: q.10jqka.com.cn` |
 | `fetchThsBoardKline` | `plugins/mainline/ths-data.ts` | `d.10jqka.com.cn/v6/line/48_<板块码>/<复权>/<文件>.js` | GET(JSONP) | 同花顺板块**日 K**（含成交额）：剥 JSONP 壳后 `data` 为 `日期,开,高,低,收,量,额,…` 逐日分号分隔。**三文件 × 两复权 = 6 个候选按序回退**（`buildKlineCandidates`）：当年 `2026` → 近端 `last` → 去年 `2025`，各试 `01` 前复权/`00` 不复权；同一候选遇 5xx 原地重试一次。⚠️ 近端 `last.js` 是**同源同口径**的第二份数据（≈140 个交易日，与年 K 重叠日期数值逐日一致，实测 140/140 全等）→ 是年文件 502 的主要救援手段。带 `Referer` |
+| `fetchEmBoardUniverse` | `plugins/mainline/em-data.ts` | `push2delay.eastmoney.com/api/qt/clist/get?fs=m:90+t:2` | GET | **东财兜底（L2.5）**：行业板块清单全表（`pn` 分页 `pz=100`，实测 484~496 行，一/二/三级混合）。字段 `f12` 代码 / `f14` 名称 / `f3` 涨跌幅 / `f6` 成交额(元) / `f62` **主力净流入**(元) / `f104` 上涨家数 / `f105` 下跌家数 / `f128` 领涨股（实测八字段 100% 有值）。⚠️ **不当板块全集用**，只当「同花顺板块名 → 东财板块代码」的映射表（同花顺才是板块口径的定义者）。带 `Referer: quote.eastmoney.com`；串行 + `EM_SCAN_DELAY_MS`(1200ms)；连接被掐断时原地重试 `EM_FETCH_ATTEMPTS`(3) 次 |
+| `fetchEmBoardKline` | `plugins/mainline/em-data.ts` | `push2his.eastmoney.com/api/qt/stock/kline/get?secid=90.<BKxxxx>` | GET | **东财兜底（L2.5）**：板块**日 K**，`klt=101` 日线 / `fqt=1` 前复权 / `beg=<去年>0101`（实测 417 个交易日，够 60 日分位与 5/20 日量能）。`data.klines` 每行 **`日期,开,收,高,低,成交量,成交额`（f51~f57，顺序如此，成交额单位元、日期已是 `YYYY-MM-DD`）**。⚠️ 本域连接会被随机掐断 → 原地重试 3 次（间隔 1.2s）。与同花顺**不同源**，量级与点位都不可比（见 §0） |
 
 ---
 
@@ -93,11 +97,16 @@
 - **选股器 `ScreenerView`**：`runScreener` · `runMaCrossBacktest` · 信号扫描 / 尾盘选股（`analysis.api`）
 - **热点新闻 `HotNewsView`**：`fetchSinaHotNews` · `fetchEastmoneyHotNews` · `fetchThsHotNews` · `fetchThepaperHotNews`
 - **个股详情（停靠面板）`StockDetailPanel`**：`fetchSinaKline`(K线) · `fetchTodayTimeline`(分时) · `fetchIndividualFundFlow` · `fetchKlineWithIndicators` · `fetchKlineSignals`
-- **股票主线（侧栏插件 `dsh-mainline`）**：`fetchThsBoardPage`(清单+结构快照，含 1 次分页) · `fetchThsBoardKline`(×90) · `fetchMarketTurnover`(复用宿主，算成交占比分母) · `fetchZtPool('zt', 基准日)`(涨停结构)
-  ⚠️ 只由用户点击「扫描主线」触发、**不轮询**；同上游并发 3 + 连续间隔 500ms（`MAINLINE_SCAN_CONCURRENCY` / `MAINLINE_SCAN_DELAY_MS`）。
-  单次扫描请求数 ≈ **94**（清单首页 1 + 分页 1 + 板块年 K 90 + 两市成交额 1 + 涨停池 1；板块失败补采轮另计）。
+- **股票主线（侧栏插件 `dsh-mainline`）**：`fetchThsBoardPage`(清单+结构快照，含 1 次分页) · `fetchThsBoardKline`(×90) · `fetchMarketTurnover`(复用宿主，算成交占比分母) · `fetchZtPool('zt', 基准日)`(涨停结构)；**跨源兜底专用** `fetchEmBoardUniverse`(东财板块清单) · `fetchEmBoardKline`(东财板块日 K)
+  ⚠️ 只由用户点击「扫描主线」触发、**不轮询**；同上游并发 3 + 连续间隔 500ms（`MAINLINE_SCAN_CONCURRENCY` / `MAINLINE_SCAN_DELAY_MS`）；东财侧**串行 1 + 间隔 1200ms**（`EM_SCAN_CONCURRENCY` / `EM_SCAN_DELAY_MS`，实测 `push2his` 突发限流，连接会被切断）。
+  单次扫描请求数 ≈ **94**（清单首页 1 + 分页 1 + 板块年 K 90 + 两市成交额 1 + 涨停池 1；板块失败补采轮另计）；降级东财时 ≈ **96 + 6 页清单**（清单分页 ≤6 + 90 个板块日 K）。
   **可靠性（2026-09-18 实测）**：`d.10jqka.com.cn` 的 openresty 网关会**瞬时 502 且按文件发生** —— 同一板块年文件 `2026.js` 502 而 `last.js` 200。三层兜底：① 回退链含近端 `last.js`（同源同口径，与年 K 重叠日期数值逐日一致）；② 同一候选 URL 对 5xx 原地重试一次（`THS_BOARD_KLINE_URL_ATTEMPTS`）；③ 整轮跑完隔 2s 对失败板块**补采一轮**（`MAINLINE_SCAN_RETRY_DELAY_MS`）。三层全失败才记 failures 并提示（保留本地旧数据）。
-  **未实现的兜底（评估完成、待决策）**：跨源兜底（东财板块日 K `secid=90.BKxxxx` + 东财板块快照 `clist m:90+t:2` 的 f104/f105/f62）——技术可达，但东财行业分类与同花顺不同源（名称映射实测 62/90 直接命中、剥罗马数字后缀后 71/90），**混排会污染量能/占比序列**，只能「整段降级 + 标记来源」，见 `.ai/开发方案/2026-09-18-数据源兜底方案.md`。
+  **已实现的跨源兜底（L2.5 简化版，2026-09-18）**：**只在同花顺整体不可用（全部板块日 K 均失败）时整表降级东财**（板块日 K `push2his secid=90.BKxxxx`，字段 `f51~f57 = 日期/开/收/高/低/成交量/成交额`，日期已是 `YYYY-MM-DD`，成交额单位元；板块快照 `push2 clist m:90+t:2` 取 `f12/f14/f3/f6/f62/f104/f105/f128`）。单板块失败仍走同源兜底（`last.js` + 本地缓存），**绝不单板混源**。
+  - **板块清单三级解析**（降级判定与清单解耦）：实时清单页 → 本地缓存（上次成功扫描的清单）→ 内置静态清单 `MAINLINE_THS_BOARD_FALLBACK`。清单页失败**不等于**换源，仍用缓存清单取同花顺日 K，只是丢掉当日结构快照。
+  - **名称映射（实测 84/90，东财全表 496 个板块）**：东财行业分类与同花顺不同源 —— 等值 + 剥罗马数字后缀（优先Ⅱ）+ 唯一前缀 + 人工别名 12 条，合计命中 84；剩 **6 个故意不猜**（汽车整车 / 零售 / 旅游及酒店 / 军工装备 / 饮料制造 / 其他社会服务），界面标「东财无同义板块」。`matchThsToEm` **不做前缀兜底**（会把东财一级行业 `汽车` 与已映射的 `汽车零部件` 重复计数）。
+  - ⚠️ **清单分页必须用稳定排序字段**（血的教训，2026-09-18）：原先用 `fid=f3`（涨跌幅）排序，而分页是逐页串行请求、f3 盘中每秒都在变 → **行在页边界来回搬家**，实测上游 `total` 报 496 却只收到 491 行 + 5 个重复，**5 个板块被静默丢掉**（丢的恰是化学纤维 / 非金属材料 / 生物制品），表现为「未映射名单每次跑都不一样」。改用 `fid=f12`（代码）升序后实测 496 行 / 0 重复 / 与 `total` 一致；`fetchEmBoardUniverse` 另加「与 `total` 对账，短了整轮重跑一次（`EM_UNIVERSE_ROUNDS`），仍短则抛错」的护栏 —— 清单缺行绝不能报成「东财无同义板块」。
+  - **两源数据绝不混排**：按 `source:code` 分表存储，界面同一时刻只展示一源，并显式标注**数据源徽标 + 降级原因 + 口径差异提示**（实测半导体成交额，**同为 2026-09-18 完整日**：东财 3200.3 亿 vs 同花顺 3010.2 亿 ≈ **1.06×**，因指数成分不同；⚠️ 早前记的 1.31× 是**错配对比** —— 拿东财完整日比同花顺盘中半日值，不可复用）；同花顺恢复后自动切回，东财历史保留。
+  - 方案全文见 `.ai/开发方案/2026-09-18-数据源兜底方案.md`。
   **口径（必须遵守，否则指标会错）**：
   - 全部指标取**基准交易日截面** —— 基准日 = 最近一个「有行情的板块数 ≥ 清单总数 × 85%」的交易日，且**当日数据未落定（本地 < 15:30）时排除当日**（盘中分子是半日混合、分母是半日全市场，实测占比仅 35.6% 而完整日为 98.5%）；
   - 未落定日的半日 bar **不写入历史**（写入会覆盖同日、永久污染占比分位序列）；

@@ -24,6 +24,7 @@ import { proxyFetch } from '../../api/proxy-fetch';
 import { delay } from '../../utils/delay';
 import {
   MAINLINE_SCAN_DELAY_MS,
+  MAINLINE_SOURCE,
   THS_BOARD_KLINE_ADJUST_FALLBACK,
   THS_BOARD_KLINE_ADJUST_PRIMARY,
   THS_BOARD_KLINE_FILE_LAST,
@@ -41,7 +42,7 @@ import {
   THS_REFERER,
   YUAN_PER_YI,
 } from './constants';
-import type { BoardDaily, ThsBoardRef, ThsBoardSnapshot } from './types';
+import type { BoardDaily, BoardSnapshot, ThsBoardRef } from './types';
 
 /** 清单页里板块链接的代码提取（`detail/code/<6 位数字>/`） */
 const BOARD_LIST_CODE_PATTERN = /\/thshy\/detail\/code\/(\d{6})\//g;
@@ -235,8 +236,8 @@ const cellNumber = (html: string): number | null => {
  * @param html 清单页 HTML（已按 GBK 解码）
  * @returns 每个板块一行的快照（按页面顺序去重）
  */
-export const parseBoardListSnapshotHtml = (html: string): ThsBoardSnapshot[] => {
-  const rows: ThsBoardSnapshot[] = [];
+export const parseBoardListSnapshotHtml = (html: string): BoardSnapshot[] => {
+  const rows: BoardSnapshot[] = [];
   const seen = new Set<string>();
 
   for (const rowMatch of html.matchAll(BOARD_ROW_PATTERN)) {
@@ -257,6 +258,7 @@ export const parseBoardListSnapshotHtml = (html: string): ThsBoardSnapshot[] => 
     rows.push({
       code,
       name: cellText(cells[BOARD_CELL_INDEX.NAME]) || code,
+      source: MAINLINE_SOURCE.THS,
       changePercent: cellNumber(cells[BOARD_CELL_INDEX.CHANGE_PERCENT]),
       amount: amountYi === null ? null : amountYi * YUAN_PER_YI,
       netInflow: netInflowYi === null ? null : netInflowYi * YUAN_PER_YI,
@@ -289,10 +291,10 @@ const fetchBoardListHtml = async (): Promise<string> => {
  * @returns 合并后的快照行
  */
 export const mergeSnapshotRows = (
-  pages: readonly (readonly ThsBoardSnapshot[])[],
-): ThsBoardSnapshot[] => {
+  pages: readonly (readonly BoardSnapshot[])[],
+): BoardSnapshot[] => {
   const seen = new Set<string>();
-  const merged: ThsBoardSnapshot[] = [];
+  const merged: BoardSnapshot[] = [];
   for (const page of pages) {
     for (const row of page) {
       if (seen.has(row.code)) continue;
@@ -322,7 +324,7 @@ const fetchBoardListPageHtml = async (page: number): Promise<string> => {
  * @param page 页码
  * @returns 该页快照行；取数或解析失败为 null
  */
-const tryFetchBoardListPage = async (page: number): Promise<ThsBoardSnapshot[] | null> => {
+const tryFetchBoardListPage = async (page: number): Promise<BoardSnapshot[] | null> => {
   try {
     // 频率红线：同一上游连续请求之间留间隔
     await delay(MAINLINE_SCAN_DELAY_MS);
@@ -346,11 +348,11 @@ const tryFetchBoardListPage = async (page: number): Promise<ThsBoardSnapshot[] |
  */
 export const fetchThsBoardPage = async (): Promise<{
   refs: ThsBoardRef[];
-  rows: ThsBoardSnapshot[];
+  rows: BoardSnapshot[];
 }> => {
   const html = await fetchBoardListHtml();
   const refs = parseBoardListHtml(html);
-  const pages: ThsBoardSnapshot[][] = [parseBoardListSnapshotHtml(html)];
+  const pages: BoardSnapshot[][] = [parseBoardListSnapshotHtml(html)];
 
   for (let page = THS_BOARD_LIST_NEXT_PAGE; page <= THS_BOARD_LIST_MAX_PAGES; page += 1) {
     const pageRows = await tryFetchBoardListPage(page);

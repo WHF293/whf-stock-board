@@ -4,7 +4,12 @@
  * 判定层（`judge.ts`）是纯函数层：输入 `BoardSeries` + 沪深成交额序列 + 基准交易日，
  * 输出 `MainlineVerdict` —— 便于冒烟断言与将来回测（历史 bundle 直接喂进去重算标签）。
  */
-import type { MainlineConfidence, MainlinePhase } from './constants';
+import type {
+  MainlineConfidence,
+  MainlinePhase,
+  MainlineRefsSource,
+  MainlineSource,
+} from './constants';
 
 /** 板块清单里的一项（同花顺行业板块） */
 export interface ThsBoardRef {
@@ -48,6 +53,14 @@ export interface BoardDaily {
 
 /** 板块日线序列（按日期升序） */
 export interface BoardSeries extends ThsBoardRef {
+  /**
+   * 该序列的数据源
+   *
+   * 缺省（`undefined`）视为同花顺 —— 兼容早于来源标记写入库的历史行。
+   * 两个来源的序列**分开存放、绝不拼接**（跨源拼接会让成交额口径在接缝处跳变，
+   * 直接污染量能倍数与成交占比分位）。
+   */
+  source?: MainlineSource;
   /** 逐日行情（升序，尾部为最新） */
   days: BoardDaily[];
 }
@@ -60,17 +73,24 @@ export interface MarketTurnoverPoint {
   totalAmount: number;
 }
 
-/** 同花顺行业清单页的一行快照（当日截面，含涨跌家数与资金流） */
-export interface ThsBoardSnapshot {
-  /** 板块代码（88xxxx） */
+/**
+ * 板块清单页的一行快照（当日截面，含涨跌家数与资金流）
+ *
+ * 同花顺清单页与东财板块清单都能填出这套字段（字段名一一对应），
+ * 差别只在「净流入」口径：同花顺为净流入，东财 `f62` 为**主力净流入**。
+ */
+export interface BoardSnapshot {
+  /** 板块代码（同花顺 88xxxx / 东财 BKxxxx） */
   code: string;
   /** 板块名称 */
   name: string;
+  /** 数据源 */
+  source: MainlineSource;
   /** 板块当日涨跌幅（%） */
   changePercent: number | null;
-  /** 板块当日成交额（元，清单页「总成交额(亿元)」换算） */
+  /** 板块当日成交额（元） */
   amount: number | null;
-  /** 板块当日净流入（元） */
+  /** 板块当日净流入（元；东财为主力净流入口径） */
   netInflow: number | null;
   /** 上涨家数 */
   riseCount: number | null;
@@ -102,10 +122,25 @@ export interface LimitUpAggregate {
   total: number;
 }
 
+/**
+ * 「同花顺板块 → 东财板块」映射结果（兜底模式用）
+ *
+ * 两级都如实保留：映射不上的板块**不猜**（宁可按「无数据」处理并在页头列出），
+ * 因为硬映射会把成分不同的板块当成同一个，比缺数据更误导。
+ */
+export interface EmMappingResult {
+  /** 同花顺板块代码 → 命中的东财板块快照 */
+  mapped: Map<string, BoardSnapshot>;
+  /** 未能映射的同花顺板块名（页头如实展示） */
+  unmapped: string[];
+}
+
 /** 板块指标面板（原始指标，供界面直接展示，不做二次加工） */
 export interface BoardMetrics {
   /** 该板块自身序列的最后一天（滞后板块会小于基准日） */
   asOf: string;
+  /** 该板块序列的数据源（同花顺 / 东财） */
+  source: MainlineSource;
   /** 全板块统一的基准交易日 */
   benchmarkDate: string;
   /** 该板块是否滞后于基准日（无基准日 bar，不参与阶段判定） */
@@ -198,14 +233,30 @@ export interface MainlineScanMeta {
   limitUpUnmapped: number | null;
   /** 结构指标（涨停/宽度/净流入）是否采集成功 */
   structureReady: boolean;
+  /** 本次扫描使用的数据源（整表一致，绝不混排） */
+  source: MainlineSource;
+  /** 板块清单（代码+名称）的来源 */
+  refsSource: MainlineRefsSource;
+  /** 清单页的原始报错（空串 = 清单页正常） */
+  listError: string;
+  /** 触发整表切换数据源的原因键（空串 = 未切换） */
+  fallbackReason: string;
+  /** 触发切换时的上游原始报错（空串 = 无） */
+  fallbackError: string;
+  /** 兜底模式下未能映射到东财板块的同花顺板块名（已按「无数据」处理） */
+  emUnmapped: string[];
 }
 
 /** 本地快照（启动时读库得到，无需联网） */
 export interface MainlineSnapshot {
-  /** 各板块日线序列 */
+  /** **当前数据源**的各板块日线序列（切换来源后自动换成另一套，不混排） */
   boards: BoardSeries[];
   /** 沪深成交额序列 */
   market: MarketTurnoverPoint[];
   /** 扫描元信息；从未扫描过为 null */
   meta: MainlineScanMeta | null;
+  /** 最近一次同花顺扫描缓存的板块清单（清单页故障时用它继续取同花顺日线） */
+  refs: ThsBoardRef[];
+  /** 当前生效的数据源（= 上次扫描的来源；从未扫描过为同花顺） */
+  source: MainlineSource;
 }
