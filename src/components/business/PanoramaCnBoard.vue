@@ -46,6 +46,17 @@ import {
   type BoardFilterValue,
   type BoardRow,
 } from "../../constants/boards.constants";
+import {
+  BOARD_CATEGORIES,
+  BOARD_CATEGORY_ALL,
+  BOARD_CATEGORY_FILTER_OPTIONS,
+  BOARD_CATEGORY_UNKNOWN_LABEL,
+  getBoardCategoryKey,
+  getBoardCategoryLabelByCode,
+  matchBoardCategory,
+  type BoardCategoryFilterValue,
+} from "../../constants/board-taxonomy.constants";
+import type { BoardCategoryGroup } from "../../types/board-taxonomy.types";
 
 /** 排行表每批放行行数 */
 const BOARDS_CHUNK_SIZE = 60;
@@ -78,6 +89,22 @@ const sortKey = ref<string>("changePercent");
 
 /** 当前涨跌筛选 */
 const filterKey = ref<BoardFilterValue>(BOARD_FILTER.ALL);
+
+/**
+ * 风格大类筛选（科技 / 医药 / 消费 / 大金融 …）
+ *
+ * 仅对行业板块生效：概念板块（fs=m:90+t:3）里混有策略与风格标签，
+ * 不具备行业归属语义，切到概念 tab 时本筛选自动失效（见 effectiveCategoryFilter）
+ */
+const categoryFilter = ref<BoardCategoryFilterValue>(BOARD_CATEGORY_ALL);
+
+/** 是否行业板块 tab（风格大类归类只对行业板块有意义） */
+const isIndustryTab = computed(() => activeTab.value === "industry");
+
+/** 当前生效的风格大类筛选（概念 tab 下恒为「全部」） */
+const effectiveCategoryFilter = computed<BoardCategoryFilterValue>(() =>
+  isIndustryTab.value ? categoryFilter.value : BOARD_CATEGORY_ALL,
+);
 
 /** 板块排行快照键（按 tab 区分） */
 const boardsCacheKey = computed(() =>
@@ -135,10 +162,17 @@ watch(activeTab, () => {
 // 挂载即拉一次（组件首次渲染 / 从其他模块切回）
 void fetchBoards();
 
-/** 涨跌统计（基于当前板块全量，与筛选无关） */
+/** 风格大类筛选后的板块（涨跌统计、排序、平铺分区的共同上游） */
+const categoryFilteredBoards = computed(() =>
+  boards.value.filter((board) =>
+    matchBoardCategory(board.code, effectiveCategoryFilter.value),
+  ),
+);
+
+/** 涨跌统计（基于当前大类全量，与涨跌筛选无关） */
 const boardStats = computed(() => {
   const threshold = BOARD_STAT_THRESHOLD.STRONG;
-  const list = boards.value;
+  const list = categoryFilteredBoards.value;
   const count = (predicate: (pct: number) => boolean): number =>
     list.filter((board) => predicate(board.changePercent ?? 0)).length;
   return {
@@ -151,7 +185,7 @@ const boardStats = computed(() => {
 
 /** 筛选 + 排序后的展示数据（空值沉底；排序作用于筛选结果全量，懒加载再切片） */
 const sortedBoardsFull = computed(() => {
-  const filtered = boards.value.filter((board) =>
+  const filtered = categoryFilteredBoards.value.filter((board) =>
     matchBoardFilter(board.changePercent, filterKey.value),
   );
   return filtered.sort(
@@ -176,8 +210,33 @@ const {
   BOARDS_CHUNK_SIZE,
   // 轮询刷新（30s）不换数据集：仅 tab / 筛选变化才重置放行进度，
   // 否则每轮轮询已放行的行数被砍回首屏，表格整体塌一下
-  () => `${activeTab.value}|${filterKey.value}`,
+  () => `${activeTab.value}|${filterKey.value}|${effectiveCategoryFilter.value}`,
 );
+
+/**
+ * 平铺模式的风格大类分区（顺序 = BOARD_CATEGORIES，未收录板块沉到末尾）
+ *
+ * 概念 tab 不分区（概念无行业归属语义），整体作为一个无标题分组；
+ * 分区在 `sortedBoardsFull` 之上做，故组内保持既有的涨跌幅 / 市值排序。
+ */
+const tiledCategoryGroups = computed<BoardCategoryGroup[]>(() => {
+  const list = sortedBoardsFull.value;
+  if (!isIndustryTab.value) {
+    return [{ key: null, label: "", rows: list }];
+  }
+  const groups = BOARD_CATEGORIES.map((category) => ({
+    key: category.key as BoardCategoryGroup['key'],
+    label: category.label,
+    rows: list.filter((board) => getBoardCategoryKey(board.code) === category.key),
+  })).filter((group) => group.rows.length > 0);
+  const unclassified = list.filter((board) => getBoardCategoryKey(board.code) === null);
+  return unclassified.length === 0
+    ? groups
+    : [
+        ...groups,
+        { key: null, label: BOARD_CATEGORY_UNKNOWN_LABEL, rows: unclassified },
+      ];
+});
 
 /** 已展开的板块 code 列表（扩展行受控） */
 const expandedBoardCodes = ref<string[]>([]);
@@ -219,22 +278,32 @@ const loadConstituents = async (board: BoardRow): Promise<void> => {
   }
 };
 
-/** 排行表列配置（涨跌幅默认开启排序） */
-const boardColumns: TableColumn<BoardRow>[] = [
-  { key: "name", label: "板块" },
-  { key: "price", label: "最新价", align: "right" },
-  {
-    key: "changePercent",
-    label: "涨跌幅",
-    align: "right",
-    sortable: true,
-    sortValue: (board) => board.changePercent,
-  },
-  { key: "totalMarketCap", label: "总市值", align: "right" },
-  { key: "turnoverRate", label: "换手率", align: "right" },
-  { key: "riseFall", label: "上涨/下跌", align: "right" },
-  { key: "leader", label: "领涨股" },
-];
+/**
+ * 排行表列配置（涨跌幅默认开启排序）
+ *
+ * 行业板块 tab 额外插入「大类」列（概念板块不具备行业归属语义，不展示）
+ */
+const boardColumns = computed<TableColumn<BoardRow>[]>(() => {
+  const columns: TableColumn<BoardRow>[] = [{ key: "name", label: "板块" }];
+  if (isIndustryTab.value) {
+    columns.push({ key: "category", label: "大类" });
+  }
+  columns.push(
+    { key: "price", label: "最新价", align: "right" },
+    {
+      key: "changePercent",
+      label: "涨跌幅",
+      align: "right",
+      sortable: true,
+      sortValue: (board) => board.changePercent,
+    },
+    { key: "totalMarketCap", label: "总市值", align: "right" },
+    { key: "turnoverRate", label: "换手率", align: "right" },
+    { key: "riseFall", label: "上涨/下跌", align: "right" },
+    { key: "leader", label: "领涨股" },
+  );
+  return columns;
+});
 
 /** 成分股表列配置（涨跌幅默认开启排序） */
 const constituentColumns: TableColumn<IndustryBoardConstituent>[] = [
@@ -264,7 +333,7 @@ const openDetail = (code: string): void => {
     <BaseCard
       fill
       class="min-h-0 flex-1"
-      :title="`${activeTab === 'industry' ? '行业' : '概念'}板块排行（命中 ${sortedBoardsFull.length} / 共 ${boards.length} 个）`"
+      :title="`${activeTab === 'industry' ? '行业' : '概念'}板块排行（命中 ${sortedBoardsFull.length} / 共 ${categoryFilteredBoards.length} 个）`"
     >
       <template #extra>
         <div class="flex flex-wrap items-center gap-2">
@@ -280,6 +349,19 @@ const openDetail = (code: string): void => {
           />
         </div>
       </template>
+
+      <!-- 风格大类筛选（仅行业板块；概念板块不具备行业归属语义） -->
+      <div
+        v-if="isIndustryTab"
+        class="mb-2 flex shrink-0 flex-wrap items-center gap-2"
+      >
+        <span class="text-xs text-text-tertiary">大类</span>
+        <BaseTabs
+          v-model="categoryFilter"
+          :options="BOARD_CATEGORY_FILTER_OPTIONS"
+          aria-label="风格大类"
+        />
+      </div>
 
       <!-- 涨跌统计 + 筛选（列表 / 平铺共用；固定高度，把剩余空间让给下方列表） -->
       <div class="mb-3 flex shrink-0 flex-wrap items-center justify-between gap-3">
@@ -318,30 +400,43 @@ const openDetail = (code: string): void => {
       <div v-else-if="isBoardsLoading && boards.length === 0">
         <BaseSkeleton />
       </div>
-      <!-- 平铺网格（与美股全景一致：板块名 + 涨跌幅；高度同列表，名称不可点击） -->
+      <!-- 平铺网格（与美股全景一致：板块名 + 涨跌幅；高度同列表，名称不可点击）
+           行业板块按风格大类分区，概念板块整体一区（无标题） -->
       <div
         v-else-if="isTileMode && sortedBoardsFull.length > 0"
         class="table-scroll-fill"
       >
-        <div class="grid grid-cols-4 gap-2">
-          <div
-            v-for="board in sortedBoardsFull"
-            :key="board.code"
-            class="flex items-center justify-between gap-2 rounded-lg bg-flat-weak px-3 py-2.5"
-          >
-            <span class="truncate text-sm text-text" :title="board.name">
-              {{ board.name }}
+        <section
+          v-for="(group, groupIndex) in tiledCategoryGroups"
+          :key="group.key ?? groupIndex"
+          class="mb-4 last:mb-0"
+        >
+          <p v-if="group.label" class="mb-2 flex items-baseline gap-2">
+            <span class="text-sm font-medium text-text">{{ group.label }}</span>
+            <span class="text-xs text-text-tertiary">
+              {{ group.rows.length }} 个板块
             </span>
-            <span
-              class="shrink-0 text-sm font-semibold tabular-nums"
-              :class="
-                TREND_TEXT_CLASS[getTrendByChangePercent(board.changePercent ?? 0)]
-              "
+          </p>
+          <div class="grid grid-cols-4 gap-2">
+            <div
+              v-for="board in group.rows"
+              :key="board.code"
+              class="flex items-center justify-between gap-2 rounded-lg bg-flat-weak px-3 py-2.5"
             >
-              {{ formatPercent(board.changePercent) }}
-            </span>
+              <span class="truncate text-sm text-text" :title="board.name">
+                {{ board.name }}
+              </span>
+              <span
+                class="shrink-0 text-sm font-semibold tabular-nums"
+                :class="
+                  TREND_TEXT_CLASS[getTrendByChangePercent(board.changePercent ?? 0)]
+                "
+              >
+                {{ formatPercent(board.changePercent) }}
+              </span>
+            </div>
           </div>
-        </div>
+        </section>
       </div>
       <!-- 列表：撑满卡片剩余高度（外层 div 是 flex 子项，必须自己也是 flex 列，
            否则表格的 flex:1 被普通块级父级吃掉，高度会退化成内容高） -->
@@ -350,7 +445,7 @@ const openDetail = (code: string): void => {
           :columns="boardColumns"
           :rows="sortedBoards"
           :row-key="(board) => board.code"
-          min-width="760px"
+          min-width="840px"
           expandable
           :expanded-keys="expandedBoardCodes"
           scroll-class="table-scroll-fill"
@@ -365,6 +460,17 @@ const openDetail = (code: string): void => {
           <template #name="{ row }">
             <span class="block max-w-full truncate font-medium text-text" :title="row.name">
               {{ row.name }}
+            </span>
+          </template>
+          <template #category="{ row }">
+            <span
+              v-if="getBoardCategoryLabelByCode(row.code)"
+              class="rounded bg-flat-weak px-1.5 py-0.5 text-xs text-text-secondary"
+            >
+              {{ getBoardCategoryLabelByCode(row.code) }}
+            </span>
+            <span v-else class="text-xs text-text-tertiary">
+              {{ BOARD_CATEGORY_UNKNOWN_LABEL }}
             </span>
           </template>
           <template #price="{ row }">

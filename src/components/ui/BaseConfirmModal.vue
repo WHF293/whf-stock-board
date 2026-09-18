@@ -14,6 +14,10 @@ import MenuIcon from './MenuIcon.vue';
  *
  * 使用方监听 @ok / @cancel；弹窗本身在用户确认或取消后自动关闭，
  * 调用方无需在回调里再设 open=false
+ *
+ * 插槽：
+ * - 默认插槽 / #title：正文与标题自定义
+ * - #footer-extra：操作栏左侧附加区（左侧动作按钮，如「恢复默认」），取消 / 确认恒在右侧
  */
 withDefaults(
   defineProps<{
@@ -122,10 +126,15 @@ onBeforeUnmount(() => {
           <div class="px-5 py-4 text-sm text-text-secondary">
             <slot>{{ content }}</slot>
           </div>
-          <!-- 操作栏 -->
-          <div class="flex items-center justify-end gap-2 border-t border-flat-weak px-5 py-3">
-            <BaseButton variant="ghost" @click="onCancel">{{ cancelText }}</BaseButton>
-            <BaseButton :variant="okVariant" @click="onOk">{{ okText }}</BaseButton>
+          <!-- 操作栏（#footer-extra 放左侧附加动作，如「恢复默认」；留空时与原布局一致） -->
+          <div class="flex items-center justify-between gap-2 border-t border-flat-weak px-5 py-3">
+            <div class="flex items-center gap-2">
+              <slot name="footer-extra" />
+            </div>
+            <div class="flex shrink-0 items-center gap-2">
+              <BaseButton variant="ghost" @click="onCancel">{{ cancelText }}</BaseButton>
+              <BaseButton :variant="okVariant" @click="onOk">{{ okText }}</BaseButton>
+            </div>
           </div>
         </div>
       </div>

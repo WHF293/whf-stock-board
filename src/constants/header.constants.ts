@@ -35,7 +35,7 @@ export const HOST_HEADER_ITEMS = [
   { id: HOST_HEADER_ITEM.WHITEPAPER, title: '软件白皮书', icon: 'whitepaper' },
 ] as const;
 
-/** 宿主自带顶栏条目的 id 集合（设置页「重置」判定与合并顺序用） */
+/** 宿主自带顶栏条目的默认顺序（设置页编排弹窗的「恢复默认」与合并顺序用） */
 export const HEADER_DEFAULT_ORDER: readonly string[] = HOST_HEADER_ITEMS.map(
   (item) => item.id,
 );
