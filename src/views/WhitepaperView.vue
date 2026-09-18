@@ -1327,6 +1327,9 @@ watch([showSearchPanel, () => flatHits.value.length], () => {
 /** 当前高亮的章节 id（目录高亮 + 点击后立即反馈） */
 const activeChapterId = ref<string>(GUIDE_CHAPTERS[0]?.id ?? '');
 
+/** 正文滚动容器（宽屏一屏约束下章节在它内部滚动，作为观察器 root） */
+const contentRef = ref<HTMLElement | null>(null);
+
 /** 章节滚动观察器（视口相交驱动目录高亮） */
 let chapterObserver: IntersectionObserver | null = null;
 
@@ -1342,6 +1345,8 @@ const scrollToChapter = (id: string): void => {
 onMounted(() => {
   window.addEventListener('resize', syncPanelMaxHeight);
   if (typeof IntersectionObserver === 'undefined') return;
+  // root 用正文滚动容器：宽屏一屏约束下章节在它内部滚动，视口 root 感知不到内部位移
+  //（窄屏没有内部滚动容器，root 为 null 时浏览器回退视口，行为与旧版一致）
   chapterObserver = new IntersectionObserver(
     (entries) => {
       for (const entry of entries) {
@@ -1349,7 +1354,7 @@ onMounted(() => {
       }
     },
     // 上边距内缩、下边距大幅内缩：以「章节标题刚进入上部可视区」为判定点
-    { rootMargin: '-72px 0px -70% 0px', threshold: 0 },
+    { root: contentRef.value, rootMargin: '-72px 0px -70% 0px', threshold: 0 },
   );
   for (const chapter of GUIDE_CHAPTERS) {
     const element = document.getElementById(chapter.id);
@@ -1369,9 +1374,14 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="space-y-4">
+  <!--
+    一屏约束（宽屏）：高度 = 100dvh − 顶栏 56px（h-14）− 主区内边距 48px（p-6 双侧）= 100dvh − 6.5rem。
+    文档头 / 提示条固定，目录与正文占满剩余高度、各自内部滚动 —— 正文不再把整页撑成长滚动；
+    窄屏（<lg）不约束高度，保持原有的整页滚动阅读。
+  -->
+  <div class="flex flex-col gap-4 lg:h-[calc(100dvh-6.5rem)]">
     <!-- 文档头：标题 + 版本 + 阅读建议 -->
-    <BaseCard>
+    <BaseCard class="shrink-0">
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div class="min-w-0">
           <h2 class="text-base font-semibold text-text">软件白皮书</h2>
@@ -1385,13 +1395,14 @@ onBeforeUnmount(() => {
     </BaseCard>
 
     <NoticeBar
+      class="shrink-0"
       text="本文档描述的是当前版本的实际行为。行情数据来自公开接口，可能存在延迟或缺失；软件只提供数据与统计口径，不构成投资建议。"
     />
 
-    <div class="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start">
+    <div class="grid gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-[220px_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)]">
       <!-- 目录：宽屏固定左侧，窄屏隐藏（正文按顺序阅读即可） -->
-      <nav class="hidden lg:block">
-        <div class="sticky top-0 z-20 space-y-1 rounded-card bg-surface p-3 shadow-card">
+      <nav class="hidden lg:block lg:min-h-0">
+        <div class="flex h-full flex-col rounded-card bg-surface p-3 shadow-card">
           <!-- 关键字搜索：结果面板浮在目录之上，最大高度贴着视口底，超出面板内滚动 -->
           <div class="relative" @focusin="searchFocused = true" @focusout="searchFocused = false">
             <MenuIcon
@@ -1476,32 +1487,35 @@ onBeforeUnmount(() => {
           </div>
 
           <!--
-            目录列表在搜索态下**不卸载**：这 19 个按钮 v-if 增删会让左列高度突变，
+            目录列表在搜索态下**不卸载**：这 19 个按钮 v-if 增删会让列表高度突变，
             实测会打断跳转时的平滑滚动（滚到半路停住）。故只切换下面这行文案。
+            列表自身内部滚动（flex-1 + overflow）：章节数增长不再撑破一屏约束。
           -->
-          <p class="px-2 pb-1 pt-1 text-xs font-medium text-text-tertiary">
+          <p class="shrink-0 px-2 pb-1 pt-1 text-xs font-medium text-text-tertiary">
             {{ isSearching ? `${searchHitCount} 条结果 · Esc 退出搜索` : '目录' }}
           </p>
-          <button
-            v-for="chapter in GUIDE_CHAPTERS"
-            :key="chapter.id"
-            type="button"
-            class="pressable flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs active:scale-[0.98]"
-            :class="
-              activeChapterId === chapter.id
-                ? 'bg-primary-weak font-medium text-primary'
-                : 'text-text-secondary hover:bg-flat-weak hover:text-text'
-            "
-            @click="scrollToChapter(chapter.id)"
-          >
-            <MenuIcon :name="chapter.icon" :size="14" class="shrink-0" />
-            <span class="truncate">{{ chapter.title }}</span>
-          </button>
+          <div class="min-h-0 flex-1 space-y-1 overflow-y-auto">
+            <button
+              v-for="chapter in GUIDE_CHAPTERS"
+              :key="chapter.id"
+              type="button"
+              class="pressable flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs active:scale-[0.98]"
+              :class="
+                activeChapterId === chapter.id
+                  ? 'bg-primary-weak font-medium text-primary'
+                  : 'text-text-secondary hover:bg-flat-weak hover:text-text'
+              "
+              @click="scrollToChapter(chapter.id)"
+            >
+              <MenuIcon :name="chapter.icon" :size="14" class="shrink-0" />
+              <span class="truncate">{{ chapter.title }}</span>
+            </button>
+          </div>
         </div>
       </nav>
 
-      <!-- 正文：章节卡片 -->
-      <div class="space-y-4">
+      <!-- 正文：章节卡片（宽屏在此列内部滚动，是目录高亮 IntersectionObserver 的 root） -->
+      <div ref="contentRef" class="min-h-0 space-y-4 pb-1 lg:overflow-y-auto">
         <BaseCard
           v-for="chapter in GUIDE_CHAPTERS"
           :id="chapter.id"
