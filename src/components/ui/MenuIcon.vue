@@ -56,6 +56,9 @@ const ICON_PATHS: Record<string, string> = {
     '<path d="M6 9l6 6 6-6"/>',
   panelLeft:
     '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>',
+  // 面板右栏开关：panelLeft 的镜像（右侧竖线分隔），详情页右栏收起/展开用
+  panelRight:
+    '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/>',
   // 机器人/Agent：方形头 + 天线 + 双眼 + 嘴
   agent:
     '<rect x="5" y="8" width="14" height="11" rx="2"/><path d="M12 4v4"/><circle cx="12" cy="3" r="1"/><circle cx="9" cy="13" r="1.1"/><circle cx="15" cy="13" r="1.1"/><path d="M9 16.5h6"/>',

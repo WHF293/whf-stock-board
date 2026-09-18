@@ -1,4 +1,7 @@
+use tauri::Manager;
 use tauri_plugin_sql::{Migration, MigrationKind};
+
+mod window_syscmd;
 
 /// agent.db v1：Agent 分析模块全部表（方案 §3，2026-09-14 第五版，仅 OpenAI 兼容规范）
 ///
@@ -609,6 +612,12 @@ pub fn run() {
             .level(log::LevelFilter::Info)
             .build(),
         )?;
+      }
+      // 无边框主窗口补系统命令支持：decorations:false 后触控板三指手势投递的
+      // WM_SYSCOMMAND（最大化 / 最小化）无人处理，见 window_syscmd.rs。
+      // Agent 窗口是原生边框，系统自带处理，无需启用。
+      if let Some(main_window) = app.get_webview_window("main") {
+        window_syscmd::enable(&main_window);
       }
       Ok(())
     })
