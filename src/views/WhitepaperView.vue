@@ -27,6 +27,7 @@ type GuideBlock =
   | { type: 'steps'; items: string[] }
   | { type: 'defs'; items: { term: string; desc: string }[] }
   | { type: 'tip'; text: string }
+  | { type: 'code'; text: string }
   | { type: 'table'; head: string[]; rows: string[][] };
 
 /** 白皮书章节 */
@@ -44,6 +45,28 @@ interface GuideChapter {
   /** 内容块 */
   blocks: GuideBlock[];
 }
+
+/** 用户插件最小模板（与安装弹窗内置示例一致：预构建 ESM JS + 渲染函数组件） */
+const USER_PLUGIN_TEMPLATE = `import { defineComponent, h } from 'vue';
+
+export default {
+  id: 'my-plugin',
+  name: '我的插件',
+  version: '1.0.0',
+  description: '示例：往左侧栏加一个面板',
+  apply(ctx) {
+    ctx.sidebar.add({
+      id: 'main',
+      title: '我的插件',
+      mode: 'inline',
+      position: 'nav',
+      order: 300,
+      component: defineComponent({
+        render: () => h('div', { class: 'p-3 text-xs' }, 'Hello 插件'),
+      }),
+    });
+  },
+};`;
 
 /** 白皮书章节内容（顺序即阅读顺序） */
 const GUIDE_CHAPTERS: GuideChapter[] = [
@@ -749,7 +772,7 @@ const GUIDE_CHAPTERS: GuideChapter[] = [
         items: [
           {
             term: 'Agent 数据接口（MCP）',
-            desc: 'Agent 的数据全部来自内置 MCP 服务器：「应用接口」（读写本机功能数据）、「stock-sdk」（行情原始查询）、「市场数据」（现成口径工具：市场概览、资金流、板块涨跌、涨停池、涨跌分布、龙虎榜、大宗交易、全球指数、美股板块、热点新闻等）。插件也可以给 Agent 贡献自己的数据工具，停用插件其工具立即对模型不可见。',
+            desc: 'Agent 的数据全部来自内置 MCP 服务器：「应用接口」（读写本机功能数据）、「stock-sdk」（行情原始查询）、「市场数据」（现成口径工具：市场概览、资金流、板块涨跌、涨停池、涨跌分布、龙虎榜、大宗交易、全球指数、美股板块、热点新闻等）。插件也可以给 Agent 贡献自己的数据工具，停用插件其工具立即对模型不可见；如何接入外部服务见「开发者指南」章节。',
           },
           {
             term: '工具调用可核对',
@@ -770,6 +793,93 @@ const GUIDE_CHAPTERS: GuideChapter[] = [
       {
         type: 'tip',
         text: '本章只记录插件体系与开放接口相关的迭代；完整版本变化可在设置 →「系统」里查看当前版本并对照 GitHub Releases。',
+      },
+    ],
+  },
+  {
+    id: 'dev',
+    title: '开发者指南：接入开放接口与第三方插件',
+    tag: '开发者',
+    icon: 'cpu',
+    intro:
+      '本应用有两条不改主程序代码的扩展路径：把外部数据服务接入 AI Agent（远端 MCP，填个地址就能用），或开发插件（往应用里加界面与能力）。这一章面向开发者，说清接入方式与插件格式。',
+    blocks: [
+      {
+        type: 'defs',
+        items: [
+          {
+            term: '路径一：远端 MCP',
+            desc: '不动应用代码：把支持 MCP 协议的外部服务接入 AI Agent，其工具随会话合入模型可用集。适合接入自建数据服务、内部接口等。',
+          },
+          {
+            term: '路径二：插件',
+            desc: '一个符合插件规范的 JS 模块：通过「贡献点」往应用里注册面板、页面、顶栏条目、快捷键、Agent 工具等，卸载即自动撤销，应用主程序零改动。',
+          },
+        ],
+      },
+      {
+        type: 'steps',
+        items: [
+          '准备插件代码：单个预构建 ESM JS 模块（export default { … } 导出插件定义；组件用 Vue 渲染函数编写，生产构建不含运行时模板编译器）。',
+          '打开 设置 →「插件」卡片 →「安装插件」。',
+          '粘贴代码或选择本地 .js 文件 → 点「解析预览」做结构校验（id 不能与内置或已安装插件重复）。',
+          '点「确认安装」：代码持久化到本机，面板 / 菜单 / 路由即时生效，下次启动自动挂载。',
+          '到「插件工坊」页面核对贡献点与生效服务；设置 →「插件」里可随时停用 / 启用，失败可重试。',
+        ],
+      },
+      {
+        type: 'code',
+        text: USER_PLUGIN_TEMPLATE,
+      },
+      {
+        type: 'text',
+        text: '插件与应用同权限运行，只安装来源可信的插件；插件数据存放在插件自己的命名空间里，停用 / 卸载不影响其他插件与主程序数据。',
+      },
+      {
+        type: 'table',
+        head: ['贡献点', '注册的能力'],
+        rows: [
+          ['ctx.sidebar.add', '左侧栏面板（inline 内嵌 / drawer 抽屉两种形态）'],
+          ['ctx.menu.add', '左侧导航页面（带 component 自动注册路由）'],
+          ['ctx.router.add', '无菜单入口的隐藏页面'],
+          ['ctx.dock.add', '右侧停靠面板'],
+          ['ctx.header.add', '顶栏工具条目（可附轮播数据源）'],
+          ['ctx.command.add', '命令与全局快捷键（如 Ctrl + Alt + N）'],
+          ['ctx.stockRow.add', '自选股表格「操作」列按钮（如「盯盘」）'],
+          ['ctx.stockDetail.add', '个股详情底部的扩展卡片'],
+          ['ctx.agent.addServer', '给 AI Agent 注册 MCP 数据工具（与内置同权）'],
+          ['ctx.storage / ctx.db', '插件专属存储：KV 偏好数据 / 结构化记录，插件之间互相隔离'],
+        ],
+      },
+      {
+        type: 'defs',
+        items: [
+          {
+            term: '可逆副作用',
+            desc: '所有贡献点的 add 都由内核登记撤销句柄：插件卸载 / 停用 = 贡献全量撤销。插件里禁止直接改宿主状态（如往全局状态里塞数据），必须走贡献点或服务。',
+          },
+          {
+            term: '服务依赖',
+            desc: '插件之间用 ctx.provide / ctx.consume 按服务名协作（如速记插件提供 note:repo），不靠 import 顺序；依赖未就绪时插件挂起（pending）而不报错，就绪后自动挂载。',
+          },
+          {
+            term: '类型化事件',
+            desc: 'ctx.on / ctx.emit 订阅与广播事件，订阅随插件卸载自动退订；保存速记后的 note:saved 就是插件间事件协作的例子。',
+          },
+        ],
+      },
+      {
+        type: 'steps',
+        items: [
+          '打开「AI Agent」分析页 →「MCP 管理」。',
+          '点「添加 MCP 服务器」：手动填写名称、传输方式（Streamable HTTP 或 SSE）、URL、可选请求头（如鉴权头）；或直接粘贴 { "mcpServers": { … } } 格式的 JSON 一键导入。',
+          '启用后，下一次 Agent 运行即连接并合入其工具；连接失败只跳过该服务器，不影响其他工具。',
+          '内置 MCP（应用接口 / stock-sdk / 市场数据）可直接开关，或用右侧设置限定只给部分 Agent 使用。',
+        ],
+      },
+      {
+        type: 'tip',
+        text: '安全边界：MCP 界面卡片在沙箱 iframe 中渲染，能反向调用的工具受「资源声明 ∧ 工具声明」双重白名单限制，写库类工具一律不允许由界面触发；哪些 Agent 能用哪些工具见「AI Agent」章节的资源授权。远端 MCP 只接入可信服务，请求头中的密钥仅存本机。',
       },
     ],
   },
@@ -1022,6 +1132,8 @@ const buildSearchDocs = (): GuideSearchDoc[] => {
         block.items.forEach((item, i) => push(`步骤 ${i + 1}`, item));
       } else if (block.type === 'defs') {
         block.items.forEach((item) => push(`名词 · ${item.term}`, `${item.term}：${item.desc}`));
+      } else if (block.type === 'code') {
+        push('代码', block.text);
       } else if (block.type === 'tip') {
         push('提示', block.text);
       } else {
@@ -1364,7 +1476,7 @@ onBeforeUnmount(() => {
           </div>
 
           <!--
-            目录列表在搜索态下**不卸载**：这 18 个按钮 v-if 增删会让左列高度突变，
+            目录列表在搜索态下**不卸载**：这 19 个按钮 v-if 增删会让左列高度突变，
             实测会打断跳转时的平滑滚动（滚到半路停住）。故只切换下面这行文案。
           -->
           <p class="px-2 pb-1 pt-1 text-xs font-medium text-text-tertiary">
@@ -1483,6 +1595,13 @@ onBeforeUnmount(() => {
                 <MenuIcon name="info" :size="14" class="mt-0.5 shrink-0 text-primary" />
                 <p>{{ block.text }}</p>
               </div>
+
+              <!-- 代码块（开发者指南）：等宽字体，横向滚动防溢出 -->
+              <pre
+                v-else-if="block.type === 'code'"
+                :id="blockAnchorId(chapter.id, index)"
+                class="scroll-mt-16 overflow-x-auto rounded-lg border border-flat-weak bg-surface px-3 py-2.5 font-mono text-xs leading-relaxed text-text"
+              >{{ block.text }}</pre>
 
               <!-- 表格 -->
               <div v-else :id="blockAnchorId(chapter.id, index)" class="scroll-mt-16 overflow-x-auto">
