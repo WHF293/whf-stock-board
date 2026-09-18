@@ -11,7 +11,7 @@
  */
 import { ref } from 'vue';
 import { MAINLINE_MAX_HISTORY_DAYS } from './constants';
-import type { PluginDatabase, PluginDbColumn } from '../../types/plugin.types';
+import type { PluginDatabase, PluginDbColumn, PluginDbRow } from '../../types/plugin.types';
 import type { BoardSeries, MainlineScanMeta, MainlineSnapshot, MarketTurnoverPoint } from './types';
 
 /** 板块历史表名（物理表 `plugin_dsh_mainline_board_history`） */
@@ -119,8 +119,27 @@ export const createMainlineRepo = async (db: PluginDatabase): Promise<MainlineRe
   const boardRows = await db.select<BoardHistoryRow>(MAINLINE_BOARD_TABLE, {
     orderBy: { column: 'board_code' },
   });
+
+  // 早前主键登记 bug 会让同一板块重复插入多行（见下方注释）—— 水合时按 updated_at 去重，
+  // 保留最新一行并删掉冗余行：重复行会让看板出现同板块多行，且两行数据各自分叉。
+  const newestByCode = new Map<string, PluginDbRow<BoardHistoryRow>>();
+  const redundantIds: number[] = [];
   for (const row of boardRows) {
     if (!row.board_code) continue;
+    const current = newestByCode.get(row.board_code);
+    if (!current) {
+      newestByCode.set(row.board_code, row);
+      continue;
+    }
+    const keep = row.updatedAt >= current.updatedAt ? row : current;
+    redundantIds.push(keep === row ? current.id : row.id);
+    newestByCode.set(row.board_code, keep);
+  }
+  for (const id of redundantIds) {
+    await db.remove(MAINLINE_BOARD_TABLE, id);
+  }
+
+  for (const row of newestByCode.values()) {
     // ⚠️ 主键登记必须与 upsert 的查找键同形（`${table}:${key}`）：
     // 早前这里记的是裸板块代码，导致重启后首次扫描查不到已有行、把 90 个板块
     // 整批重复插入（表行数翻倍，水合出的快照也出现重复板块）。
@@ -135,7 +154,24 @@ export const createMainlineRepo = async (db: PluginDatabase): Promise<MainlineRe
   const metaRows = await db.select<MetaRow>(MAINLINE_META_TABLE, {
     orderBy: { column: 'meta_key' },
   });
+  const newestMetaByKey = new Map<string, PluginDbRow<MetaRow>>();
+  const redundantMetaIds: number[] = [];
   for (const row of metaRows) {
+    if (!row.meta_key) continue;
+    const current = newestMetaByKey.get(row.meta_key);
+    if (!current) {
+      newestMetaByKey.set(row.meta_key, row);
+      continue;
+    }
+    const keep = row.updatedAt >= current.updatedAt ? row : current;
+    redundantMetaIds.push(keep === row ? current.id : row.id);
+    newestMetaByKey.set(row.meta_key, keep);
+  }
+  for (const id of redundantMetaIds) {
+    await db.remove(MAINLINE_META_TABLE, id);
+  }
+
+  for (const row of newestMetaByKey.values()) {
     // 同样登记主键：不登记的话每次重启后首扫会再插一份元信息行（读时靠后写覆盖，属垃圾行）
     rowIds.set(`${MAINLINE_META_TABLE}:${row.meta_key}`, row.id);
     if (row.meta_key === MAINLINE_META_KEY && row.meta_value && typeof row.meta_value === 'object') {

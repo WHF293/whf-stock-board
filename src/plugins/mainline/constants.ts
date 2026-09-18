@@ -26,6 +26,24 @@ export const MAINLINE_MENU_ICON = 'flame';
 export const THS_BOARD_LIST_URL = 'https://q.10jqka.com.cn/thshy/';
 
 /**
+ * 清单页分页地址基址（ajax 形态，只返回表格行）
+ *
+ * 实测：首页表格每页只给 **50 行**（90 个行业板块要两页），第 2 页返回剩余 40 行，
+ * 两页并集与首页页脚导航里的 90 个代码**完全一致**（探针 `.ai/tmp/mainline-probe9.mjs`）。
+ */
+export const THS_BOARD_LIST_PAGE_URL_BASE =
+  'https://q.10jqka.com.cn/thshy/index/field/199112/order/desc/page/';
+
+/** 分页地址尾段（`<page>` 与 `/ajax/1/` 之间插页码） */
+export const THS_BOARD_LIST_PAGE_URL_SUFFIX = '/ajax/1/';
+
+/** 从第几页开始翻（首页已由清单页本身取到） */
+export const THS_BOARD_LIST_NEXT_PAGE = 2;
+
+/** 最多翻到第几页（护栏：防止上游改版导致无限翻页） */
+export const THS_BOARD_LIST_MAX_PAGES = 4;
+
+/**
  * 同花顺板块日 K 基址（年文件）
  *
  * 完整形态 `${base}${boardCode}/01/${year}.js`，如
@@ -58,6 +76,36 @@ export const THS_REFERER = 'https://q.10jqka.com.cn/';
 /** 同花顺板块清单里板块代码的前缀（88xxxx 为行业板块；概念板块不在本期范围） */
 export const THS_INDUSTRY_CODE_PREFIX = '88';
 
+/**
+ * 东财涨停池的行业名 → 同花顺行业板块名（**近似归属**）
+ *
+ * 涨停池的 `hybk` 用的是东财（≈申万）行业口径，与同花顺行业板块**不是同一套分类**，
+ * 且长名会被上游截断到 4 个汉字（`光学光电子` → `光学光电`，由前缀匹配自动兜住）。
+ * 下表是**分类口径不同、名称也不同**时的兜底映射，只收录语义等价、可确认的对应关系：
+ *
+ * - 截断名（光学光电 / 汽车零部 / 计算机设 …）由前缀匹配处理，不在此表；
+ * - 两套分类下**无法确认**对应板块的（`文娱用品`、`照明设备`）**故意不收录** ——
+ *   宁可让它们落进「未归属」计数并在界面如实展示，也不猜一个板块出去；
+ * - 上游分类调整时本表会漂移，故 `scan_meta` 会记录未归属家数，便于发现漂移。
+ */
+export const MAINLINE_INDUSTRY_ALIAS: Readonly<Record<string, string>> = {
+  '工程咨询': '建筑装饰',
+  '专业工程': '建筑装饰',
+  '装修装饰': '建筑装饰',
+  '装修建材': '建筑材料',
+  '出版': '文化传媒',
+  '广告营销': '文化传媒',
+  '一般零售': '零售',
+  '炼化及贸': '石油加工贸易',
+  '旅游及景': '旅游及酒店',
+  '非白酒': '饮料制造',
+  '铁路公路': '公路铁路运输',
+  '冶钢原料': '钢铁',
+};
+
+/** 东财涨停池类型（主线只取涨停池） */
+export const MAINLINE_LIMIT_UP_POOL_TYPE = 'zt';
+
 /** 单次扫描的同上游并发上限（频率红线：不得高于 3） */
 export const MAINLINE_SCAN_CONCURRENCY = 3;
 
@@ -66,6 +114,23 @@ export const MAINLINE_SCAN_DELAY_MS = 500;
 
 /** 每板块保留的最大历史交易日数（约一年，够算分位又不过度膨胀） */
 export const MAINLINE_MAX_HISTORY_DAYS = 260;
+
+/**
+ * 基准交易日的覆盖率门槛（0-1）
+ *
+ * 基准日 = 最近一个「有行情 bar 的板块数 ≥ 全清单 × 本比例」的交易日。
+ * 实测依据：完整交易日稳定在 88/90 ≈ 0.978；盘中只有 68/90 ≈ 0.756 且两市成交额只有半日值，
+ * 两者不可比（实测同一时点「板块合计 ÷ 两市」= 35.6%，而完整日为 98.5%），故必须整表按同一日截面计算。
+ */
+export const MAINLINE_BENCHMARK_COVERAGE_RATIO = 0.85;
+
+/**
+ * 当日数据「落定」时刻（本地时间，当日 0 点起的分钟数）
+ *
+ * 收盘 15:00 后上游年 K 与成交额还需落定，取 15:30 作缓冲：早于该时刻扫描时，
+ * **当日 bar 一律不写入历史**（半日 bar 一旦落库就会污染占比分位序列，且不会自愈）。
+ */
+export const MAINLINE_SETTLE_MINUTES = 15 * 60 + 30;
 
 /** 元 → 亿元 的换算基数（展示用） */
 export const YUAN_PER_YI = 1e8;
@@ -86,6 +151,15 @@ export const MAINLINE_SHORT_WINDOW = 5;
 
 /** 中期量能窗口（交易日）：近 20 日成交额均值 */
 export const MAINLINE_LONG_WINDOW = 20;
+
+/**
+ * 量能倍数分母的滞后长度（交易日）
+ *
+ * 现行量能倍数 = 近 5 日均额 ÷ 近 20 日均额，**分母含分子** → 比值被近期自身水平拉动，
+ * 板块越放量比值越被低估，同一阈值对不同板块不等价（实测同一天半导体 +16.9%、
+ * 通信设备 −9.6%、通用设备 +11.8% 的口径差）。故改用「前 20 日（不含最近 5 日）」作分母。
+ */
+export const MAINLINE_AMOUNT_BASELINE_LAG = 5;
 
 /** 价格分位窗口（交易日） */
 export const MAINLINE_PRICE_WINDOW = 60;
@@ -108,8 +182,13 @@ export const MANIA_MIN_CHANGE20 = 15;
 /** 瓦解期：成交占比历史分位下线（%）—— 高位放量下跌 */
 export const COLLAPSE_MIN_SHARE_PERCENTILE = 70;
 
-/** 瓦解期：成交占比容量门槛（%）—— 同狂热期，过滤微板块噪声 */
-export const COLLAPSE_MIN_TURNOVER_SHARE = 0.5;
+/**
+ * 瓦解期：成交占比容量门槛（%）
+ *
+ * 原值 0.5% 与真实分布不匹配（全板块占比中位数就是 0.55%，等于不过滤），
+ * 与狂热期对齐取 1%，让容量真正起「噪声过滤」作用。
+ */
+export const COLLAPSE_MIN_TURNOVER_SHARE = 1;
 
 /** 瓦解期：价格分位下线（%）—— 「高位」下跌才叫瓦解，低位下跌只是弱 */
 export const COLLAPSE_MIN_PRICE_PERCENTILE = 50;
@@ -117,14 +196,32 @@ export const COLLAPSE_MIN_PRICE_PERCENTILE = 50;
 /** 瓦解期：近 5 日累计涨幅上限（%） */
 export const COLLAPSE_MAX_CHANGE5 = -5;
 
-/** 确认期：量能倍数（5 日均额 / 20 日均额）下线 */
-export const CONFIRMED_MIN_AMOUNT_RATIO = 1.2;
+/**
+ * 确认期：量能倍数下线（滞后口径：近 5 日均额 ÷ 前 20 日均额）
+ *
+ * 口径从「窗口重叠」改为「滞后」后需要重标：按实测 5 个板块的新旧差异（+5.8% ~ +16.9%）
+ * 反推，旧口径 1.2 约等于新口径 1.35。**该阈值属一次性标定，待累积 20+ 个交易日的
+ * 结构序列后应用真实分位回测复核**（界面同时展示新旧两套倍数供观察）。
+ */
+export const CONFIRMED_MIN_AMOUNT_RATIO = 1.35;
 
 /** 确认期：收盘价需站上 60 日高点的比例（0.97 = 距高点 3% 以内） */
 export const CONFIRMED_NEAR_HIGH_RATIO = 0.97;
 
-/** 萌芽期：量能倍数的异常抬升下线 —— 低位放量是萌芽的核心特征 */
-export const GERMINATION_MIN_AMOUNT_RATIO = 1.5;
+/**
+ * 确认期：板块内涨停家数下限
+ *
+ * 「抱团主线」必须有个股层面的涨停参与 —— 只有价格强、内部无涨停的板块，
+ * 更可能是权重股拉抬（假确认）。取 1 是**极宽**的门槛，只否决「完全没有涨停」的极端情形；
+ * 更严的结构门槛需回测后再定。
+ */
+export const CONFIRMED_MIN_LIMIT_UP = 1;
+
+/** 确认期：板块宽度下限（%），涨停家数为 0 时的替代条件（上涨家数占比） */
+export const CONFIRMED_MIN_BREADTH_PERCENT = 60;
+
+/** 萌芽期：量能倍数的异常抬升下线（滞后口径）—— 低位放量是萌芽的核心特征 */
+export const GERMINATION_MIN_AMOUNT_RATIO = 1.7;
 
 /** 萌芽期：成交占比分位上限（%），超过就不是「低位」了 */
 export const GERMINATION_MAX_SHARE_PERCENTILE = 50;
@@ -135,8 +232,21 @@ export const GERMINATION_MAX_CHANGE5 = 15;
 /** 主线候选：成交占比分位下线（%）—— 命中即标「主线候选」 */
 export const CANDIDATE_MIN_SHARE_PERCENTILE = 70;
 
-/** 主线候选：量能倍数下线 */
-export const CANDIDATE_MIN_AMOUNT_RATIO = 1.5;
+/** 主线候选：量能倍数下线（滞后口径） */
+export const CANDIDATE_MIN_AMOUNT_RATIO = 1.7;
+
+// ---------- 结构指标阈值（涨停 / 宽度 / 净流入） ----------
+
+/**
+ * 情绪加速：板块内最高连板数下限
+ *
+ * 3 板是「连板梯队成型」的经验分界（今日实测全市场最高 4 板、2 板及以上 10 家）。
+ * 命中只**追加风险提示与展示标记**，不改变阶段判定 —— 只有一天的结构样本不足以定阶段门槛。
+ */
+export const MANIA_MIN_STREAK = 3;
+
+/** 情绪加速：涨停占比下限（%），连板高度的替代条件 */
+export const MANIA_MIN_LIMIT_UP_RATIO = 2;
 
 // ---------- 阶段标签 ----------
 
@@ -256,6 +366,9 @@ export const MAINLINE_COLUMN_LABEL = {
   sharePercentile: '占比分位',
   amountRatio: '量能倍数',
   pricePercentile: '价格分位',
+  limitUp: '涨停',
+  breadth: '宽度',
+  netInflow: '净流入',
 } as const;
 
 /** 明细区小标题 */
@@ -264,6 +377,7 @@ export const MAINLINE_DETAIL_TITLE = '指标明细';
 /** 明细区字段标签 */
 export const MAINLINE_DETAIL_LABEL = {
   asOf: '数据截止',
+  benchmark: '基准交易日',
   historyDays: '历史样本',
   latestChange: '当日涨跌',
   change5: '近 5 日累计',
@@ -271,8 +385,17 @@ export const MAINLINE_DETAIL_LABEL = {
   amount: '当日成交额',
   turnoverShare: '当日成交占比',
   sharePercentile: '成交占比历史分位',
-  amountRatio: '量能倍数（5日/20日）',
+  amountRatio: '量能倍数（5日/前20日）',
+  amountRatioOverlap: '量能倍数（旧口径 5日/20日）',
   pricePercentile: '价格分位（60 日）',
+  limitUpCount: '涨停家数',
+  maxStreak: '最高连板',
+  sealFund: '封板资金合计',
+  limitUpRatio: '涨停占比',
+  riseFall: '上涨 / 下跌家数',
+  breadth: '板块宽度',
+  netInflow: '主力净流入',
+  leader: '领涨股',
   confidence: '置信度',
 } as const;
 
@@ -280,6 +403,8 @@ export const MAINLINE_DETAIL_LABEL = {
 export const MAINLINE_DETAIL_UNIT = {
   days: '个交易日',
   times: '×',
+  houses: '家',
+  boards: '板',
 } as const;
 
 /** 缺失输入标题与说明（不静默：缺什么明说） */
@@ -287,10 +412,22 @@ export const MAINLINE_MISSING_TITLE = '本期未接入的输入';
 
 /** 缺失输入条目（数据现实：这些指标免费源拿不到或本期未实现） */
 export const MAINLINE_MISSING_INPUTS = [
-  '公募基金板块持仓分位（免费源无干净接口，需人工/自建序列）',
-  '板块 PE/PB 估值分位（需累积日度快照或人工序列）',
-  '龙头连续两季业绩验证（东财 datacenter 接口本期未接入）',
-  '北向持股环比方向（季度频率，本期未接入）',
+  '公募基金板块持仓分位（免费源无干净接口，需按报告期自建季度序列）',
+  '板块 PE/PB 估值分位（东财板块快照 PE 实测返回空、PB 仅有当日值，需每日累积快照后给分位）',
+  '龙头连续两季业绩验证（东财 datacenter 可按行业取，本期未接入）',
+  '北向持股环比方向（实测最新披露日为 2026-06-30，属季度频率，日频环比不可得）',
+] as const;
+
+/** 已接入输入清单（与「未接入」对照展示，避免用户以为结构指标也没接） */
+export const MAINLINE_CONNECTED_TITLE = '本期已接入的输入';
+
+/** 已接入输入条目 */
+export const MAINLINE_CONNECTED_INPUTS = [
+  '成交占比历史分位（同花顺行业板块成交额 ÷ 沪深两市总成交额，按基准日截面）',
+  '量能倍数（近 5 日均额 ÷ 前 20 日均额，已改滞后口径；界面同时给出旧口径对照）',
+  '价格分位（收盘价在近 60 日区间中的分位）',
+  '板块内涨停家数 / 最高连板 / 封板资金合计（东财涨停池按行业归属聚合）',
+  '板块宽度（上涨 ÷ 上涨+下跌）与主力净流入（同花顺行业清单页快照）',
 ] as const;
 
 /** 置信度文案 */
@@ -309,9 +446,15 @@ export const MAINLINE_CONFIDENCE_HIGH_DAYS = 120;
 /** 样本中等所需交易日数（低于低档阈值即 low） */
 export const MAINLINE_CONFIDENCE_MEDIUM_DAYS = 60;
 
-/** 免责声明 */
+/**
+ * 免责声明
+ *
+ * 三条实测口径必须写明，否则用户会把「12.58%」直接读成全市场占比：
+ * 板块合计 ≈ 全市场 98.5%（实测 9/15~9/17 为 0.984~0.986，缺口为取数失败板块与口径差）；
+ * 指标一律取**最近完整交易日**截面（盘中不落半日 bar）；结构指标来自榜单快照与涨停池。
+ */
 export const MAINLINE_DISCLAIMER =
-  '仅历史统计规则下的状态判定，是概率工具而非预言，不构成投资建议，不含任何买卖或仓位指令。成交占比口径为「同花顺行业板块成交额 ÷ 沪深两市总成交额」，板块口径与全市场口径存在少量重叠差异。';
+  '仅历史统计规则下的状态判定，是概率工具而非预言，不构成投资建议，不含任何买卖或仓位指令。成交占比口径为「同花顺行业板块成交额 ÷ 沪深两市总成交额」，板块合计约为全市场成交额的 98.5%（实测 9/15~9/17 为 98.4%~98.6%），故占比存在约 1.5% 的系统性低估，但分位是同一基准下的相对位置、不受该缺口影响。全部指标一律取**最近完整交易日**截面：盘中扫描不写入当日半日数据，避免污染占比分位序列。涨停家数、连板高度、封板资金来自东财涨停池（按行业归属聚合，未归属家数在页头如实列出）；上涨/下跌家数、主力净流入来自同花顺行业清单页。';
 
 /** 风险提示区标题 */
 export const MAINLINE_WARNING_TITLE = '风险提示';
@@ -319,5 +462,106 @@ export const MAINLINE_WARNING_TITLE = '风险提示';
 /** 主线候选徽标文案 */
 export const MAINLINE_CANDIDATE_BADGE = '主线候选';
 
+/**
+ * 数据滞后徽标文案模板
+ * @param days 滞后交易日数
+ * @returns 徽标文案
+ */
+export const MAINLINE_STALE_BADGE = (days: number): string => `滞后${days}日`;
+
+/** 情绪加速徽标文案 */
+export const MAINLINE_STRUCTURE_HOT_BADGE = '情绪加速';
+
 /** 表格行 key 前缀（板块代码本身唯一，保留前缀便于将来区分来源） */
 export const MAINLINE_ROW_KEY_PREFIX = 'ths-';
+
+// ---------- 页头说明文案 ----------
+
+/** 页头字段标签 */
+export const MAINLINE_HEADER_LABEL = {
+  benchmark: '基准交易日',
+  coverage: '覆盖板块',
+  boardCount: '板块总数',
+  marketAmount: '两市成交额',
+  scannedAt: '上次扫描',
+  limitUp: '基准日涨停',
+  structure: '结构指标',
+} as const;
+
+/**
+ * 基准日覆盖率文案模板（如「88 / 90 个板块」）
+ * @param coverage 基准日有行情的板块数
+ * @param total 板块总数
+ * @returns 文案
+ */
+export const MAINLINE_COVERAGE_TEXT = (coverage: number, total: number): string =>
+  `${coverage} / ${total} 个板块`;
+
+/**
+ * 结构指标采集说明模板（涨停家数 + 未归属家数）
+ * @param total 基准日全市场涨停家数
+ * @param unmapped 未能归属到板块的涨停家数
+ * @returns 文案
+ */
+export const MAINLINE_LIMIT_UP_TEXT = (total: number, unmapped: number): string =>
+  unmapped > 0 ? `全市场 ${total} 家（未归属板块 ${unmapped} 家）` : `全市场 ${total} 家`;
+
+/** 结构指标未采集文案 */
+export const MAINLINE_STRUCTURE_UNAVAILABLE = '未采集（本次取数失败）';
+
+/**
+ * 盘中未落定提示模板（说明当日 bar 为何没写入）
+ * @param date 被排除的日期
+ * @param benchmark 实际采用的基准交易日
+ * @returns 文案
+ */
+export const MAINLINE_INTRADAY_NOTICE = (date: string, benchmark: string): string =>
+  `${date} 当日数据尚未落定（盘中为半日值），本次未写入当日行情；全部指标按最近完整交易日 ${benchmark} 计算。`;
+
+/**
+ * 基准日覆盖率不足提示模板（连完整交易日都凑不齐覆盖率时的降级说明）
+ * @param benchmark 实际采用的基准交易日
+ * @returns 文案
+ */
+export const MAINLINE_DEGRADED_NOTICE = (benchmark: string): string =>
+  `未找到覆盖率达标的交易日，已退回覆盖最全的 ${benchmark}；该日部分板块行情缺失，横截面比较需谨慎。`;
+
+// ---------- 判定层动态文案 ----------
+
+/**
+ * 滞后板块的风险提示模板
+ * @param days 滞后交易日数
+ * @returns 提示文案
+ */
+export const MAINLINE_WARNING_STALE = (days: number): string =>
+  `该板块行情滞后基准日 ${days} 个交易日，指标非同一截面，本行不参与阶段判定（等取数恢复后自动回到正常判定）。`;
+
+/** 结构指标缺失时的风险提示 */
+export const MAINLINE_WARNING_NO_STRUCTURE =
+  '本期未采集到板块内涨停与宽度数据，结构门槛未参与本次判定。';
+
+/**
+ * 确认期被结构门槛否决时的提示模板
+ * @param limitUpCount 板块内涨停家数
+ * @param breadth 板块宽度（%）
+ * @returns 提示文案
+ */
+export const MAINLINE_WARNING_STRUCTURE_FAIL = (limitUpCount: number, breadth: number): string =>
+  `量价与拥挤度特征具备，但板块内涨停 ${limitUpCount} 家、宽度 ${breadth.toFixed(1)}%，内部结构不支持抱团主线，故不判「确认」。`;
+
+/**
+ * 情绪加速的风险提示模板
+ * @param maxStreak 板块内最高连板数
+ * @param limitUpRatio 涨停占比（%）
+ * @returns 提示文案
+ */
+export const MAINLINE_WARNING_STRUCTURE_HOT = (maxStreak: number, limitUpRatio: number): string =>
+  `板块内最高 ${maxStreak} 板、涨停占比 ${limitUpRatio.toFixed(1)}%，个股层面已进入情绪加速段，波动通常同步放大。`;
+
+/**
+ * 确认期板块无涨停的提示模板
+ * @param breadth 板块宽度（%）
+ * @returns 提示文案
+ */
+export const MAINLINE_WARNING_NO_LIMIT_UP = (breadth: number): string =>
+  `板块内无涨停个股（宽度 ${breadth.toFixed(1)}%），确认期的个股参与度偏弱，需继续观察。`;

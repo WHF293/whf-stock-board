@@ -14,11 +14,18 @@ import {
   MAINLINE_CANDIDATE_BADGE,
   MAINLINE_COLUMN_LABEL,
   MAINLINE_CONFIDENCE_LABEL,
+  MAINLINE_CONNECTED_INPUTS,
+  MAINLINE_CONNECTED_TITLE,
+  MAINLINE_COVERAGE_TEXT,
+  MAINLINE_DEGRADED_NOTICE,
   MAINLINE_DETAIL_LABEL,
   MAINLINE_DETAIL_TITLE,
   MAINLINE_DETAIL_UNIT,
   MAINLINE_DISCLAIMER,
   MAINLINE_EMPTY_TEXT,
+  MAINLINE_HEADER_LABEL,
+  MAINLINE_INTRADAY_NOTICE,
+  MAINLINE_LIMIT_UP_TEXT,
   MAINLINE_MENU_ICON,
   MAINLINE_METRIC_PLACEHOLDER,
   MAINLINE_MISSING_INPUTS,
@@ -33,7 +40,11 @@ import {
   MAINLINE_SCAN_FAILED,
   MAINLINE_SCAN_PROGRESS_SUFFIX,
   MAINLINE_SCAN_RUNNING,
+  MAINLINE_STALE_BADGE,
+  MAINLINE_STRUCTURE_HOT_BADGE,
+  MAINLINE_STRUCTURE_UNAVAILABLE,
   MAINLINE_WARNING_TITLE,
+  MANIA_MIN_STREAK,
   YI_UNIT,
   YUAN_PER_YI,
 } from './constants';
@@ -45,11 +56,12 @@ import type { TableColumn } from '../../types/table.types';
  * 股票主线看板（插件 dsh-mainline 的页面）
  *
  * 界面按技能要求**分成两块**（不让用户盲信自动判定）：
- * ① 原始指标面板：成交占比分位 / 量能倍数 / 价格分位 / 成交额等；
- * ② 自动阶段标签 + 风险提示 + 本期未接入的输入清单。
+ * ① 原始指标面板：成交占比分位 / 量能倍数（新旧口径）/ 价格分位 / 涨停结构 / 宽度 / 净流入；
+ * ② 自动阶段标签 + 风险提示 + 已接入与未接入输入清单。
  *
- * 取数是**点击触发**的重接口（约 90 次请求，并发 3 + 同上游 500ms 间隔），
- * 结果落插件表；再次进入页面直接读库重算标签，不联网。
+ * 取数是**点击触发**的重接口（约 90 次板块请求 + 清单页 1 次 + 涨停池 1 次，
+ * 并发 3 + 同上游 500ms 间隔），结果按**基准交易日**截面落插件表；
+ * 再次进入页面直接读库重算标签，不联网。
  */
 const props = defineProps<{
   /** 主线快照仓储（由插件注入，已建表并水合） */
@@ -81,6 +93,9 @@ const rows = computed<MainlineVerdict[]>(() =>
 /** 扫描元信息 */
 const meta = computed(() => props.repo.snapshot().meta);
 
+/** 基准日覆盖率是否降级（没有任何交易日达到覆盖率门槛，已退回覆盖最全的一天） */
+const degraded = computed(() => meta.value?.degraded === true);
+
 /** 各阶段数量统计（看板顶部速览） */
 const phaseSummary = computed(() =>
   (Object.keys(MAINLINE_PHASE_LABEL) as MainlineVerdict['phase'][]).map((phase) => ({
@@ -101,6 +116,9 @@ const columns: TableColumn<MainlineVerdict>[] = [
   { key: 'sharePercentile', label: MAINLINE_COLUMN_LABEL.sharePercentile, align: 'right', sortable: true, sortValue: (row) => row.metrics.sharePercentile },
   { key: 'amountRatio', label: MAINLINE_COLUMN_LABEL.amountRatio, align: 'right', sortable: true, sortValue: (row) => row.metrics.amountRatio },
   { key: 'pricePercentile', label: MAINLINE_COLUMN_LABEL.pricePercentile, align: 'right', sortable: true, sortValue: (row) => row.metrics.pricePercentile },
+  { key: 'limitUp', label: MAINLINE_COLUMN_LABEL.limitUp, align: 'right', sortable: true, sortValue: (row) => row.metrics.limitUpCount },
+  { key: 'breadth', label: MAINLINE_COLUMN_LABEL.breadth, align: 'right', sortable: true, sortValue: (row) => row.metrics.breadth },
+  { key: 'netInflow', label: MAINLINE_COLUMN_LABEL.netInflow, align: 'right', sortable: true, sortValue: (row) => row.metrics.netInflow },
 ];
 
 /**
@@ -118,6 +136,14 @@ const rowKey = (row: MainlineVerdict): string => `${MAINLINE_ROW_KEY_PREFIX}${ro
 const changeClass = (value: number): string => TREND_TEXT_CLASS[getTrendByChangePercent(value)];
 
 /**
+ * 金额文案样式（净流入等带方向的金额）
+ * @param value 金额（元）
+ * @returns 文本色类名
+ */
+const amountClass = (value: number | null): string =>
+  value === null || value === 0 ? 'text-text-secondary' : TREND_TEXT_CLASS[value > 0 ? 'up' : 'down'];
+
+/**
  * 格式化分位（分位不可得时给「无样本」而不是 0）
  * @param value 分位（0-100）
  * @returns 文案
@@ -126,6 +152,14 @@ const formatPercentile = (value: number | null): string => {
   if (value === null || !Number.isFinite(value)) return MAINLINE_NO_SAMPLE_TEXT;
   return `${value.toFixed(1)}%`;
 };
+
+/**
+ * 格式化百分比（占比 / 宽度 / 涨停占比）
+ * @param value 百分比值
+ * @returns 文案
+ */
+const formatPercentValue = (value: number | null): string =>
+  value === null || !Number.isFinite(value) ? MAINLINE_METRIC_PLACEHOLDER : `${value.toFixed(1)}%`;
 
 /**
  * 格式化成交占比（%）
@@ -146,14 +180,48 @@ const formatRatio = (value: number | null): string =>
     : `${value.toFixed(2)}${MAINLINE_DETAIL_UNIT.times}`;
 
 /**
- * 格式化成交额（元 → 亿元）
+ * 格式化成交额（元 → 亿元，保留一位）
  * @param value 成交额（元）
  * @returns 文案
  */
 const formatYuanToYi = (value: number | null): string =>
   value === null || !Number.isFinite(value)
     ? MAINLINE_METRIC_PLACEHOLDER
-    : `${(value / YUAN_PER_YI).toFixed(0)}${YI_UNIT}`;
+    : `${(value / YUAN_PER_YI).toFixed(1)}${YI_UNIT}`;
+
+/**
+ * 格式化净流入（元 → 亿元，带正负号）
+ * @param value 净流入（元）
+ * @returns 文案
+ */
+const formatNetInflow = (value: number | null): string => {
+  if (value === null || !Number.isFinite(value)) return MAINLINE_METRIC_PLACEHOLDER;
+  const yi = value / YUAN_PER_YI;
+  return `${yi > 0 ? '+' : ''}${yi.toFixed(1)}${YI_UNIT}`;
+};
+
+/**
+ * 格式化涨停列（家数，连板高度到档时补注）
+ * @param row 判定结论
+ * @returns 文案
+ */
+const formatLimitUp = (row: MainlineVerdict): string => {
+  const { limitUpCount, maxStreak } = row.metrics;
+  if (limitUpCount === null) return MAINLINE_METRIC_PLACEHOLDER;
+  if (maxStreak !== null && maxStreak >= MANIA_MIN_STREAK) {
+    return `${limitUpCount}${MAINLINE_DETAIL_UNIT.houses}（${maxStreak}${MAINLINE_DETAIL_UNIT.boards}）`;
+  }
+  return `${limitUpCount}${MAINLINE_DETAIL_UNIT.houses}`;
+};
+
+/**
+ * 格式化家数对（上涨 / 下跌）
+ * @param rise 上涨家数
+ * @param fall 下跌家数
+ * @returns 文案
+ */
+const formatRiseFall = (rise: number | null, fall: number | null): string =>
+  rise === null && fall === null ? MAINLINE_METRIC_PLACEHOLDER : `${rise ?? MAINLINE_METRIC_PLACEHOLDER} / ${fall ?? MAINLINE_METRIC_PLACEHOLDER}`;
 
 /**
  * 扫描时间文案
@@ -190,9 +258,18 @@ const onScan = async (): Promise<void> => {
         progress.value = next;
       },
     );
+    const notices: string[] = [];
     if (result.failures.length > 0) {
-      scanNotice.value = `有 ${result.failures.length} 个板块取数失败（已保留本地旧数据）：${result.failures.join('、')}`;
+      notices.push(`有 ${result.failures.length} 个板块取数失败（已保留本地旧数据）：${result.failures.join('、')}`);
     }
+    if (result.structureFailed) {
+      notices.push(
+        `结构指标（涨停 / 宽度 / 净流入）本期未采集完整${
+          result.unmappedIndustries.length > 0 ? `，未归属行业：${result.unmappedIndustries.join('、')}` : ''
+        }`,
+      );
+    }
+    scanNotice.value = notices.join('；');
   } catch (error) {
     scanNotice.value = `${MAINLINE_SCAN_FAILED}：${error instanceof Error ? error.message : String(error)}`;
   } finally {
@@ -225,12 +302,42 @@ const onScan = async (): Promise<void> => {
         </div>
       </div>
 
+      <!-- 口径信息：基准交易日是全部指标的截面日，覆盖率与结构采集情况一并如实给出 -->
       <div class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-text-tertiary">
-        <span>数据截止：{{ meta?.asOf || MAINLINE_METRIC_PLACEHOLDER }}</span>
-        <span>板块数：{{ meta?.boardCount ?? 0 }}</span>
-        <span>全市场成交额：{{ formatYuanToYi(meta?.marketAmount ?? null) }}</span>
-        <span v-if="meta">上次扫描：{{ formatScannedAt(meta.scannedAt) }}</span>
+        <span>
+          {{ MAINLINE_HEADER_LABEL.benchmark }}：{{ meta?.asOf || MAINLINE_METRIC_PLACEHOLDER }}
+        </span>
+        <span>
+          {{ MAINLINE_HEADER_LABEL.coverage }}：{{
+            meta ? MAINLINE_COVERAGE_TEXT(meta.coverage, meta.boardCount) : MAINLINE_METRIC_PLACEHOLDER
+          }}
+        </span>
+        <span>{{ MAINLINE_HEADER_LABEL.boardCount }}：{{ meta?.boardCount ?? 0 }}</span>
+        <span>
+          {{ MAINLINE_HEADER_LABEL.marketAmount }}：{{ formatYuanToYi(meta?.marketAmount ?? null) }}
+        </span>
+        <span>
+          {{ MAINLINE_HEADER_LABEL.limitUp }}：{{
+            meta && meta.limitUpTotal !== null
+              ? MAINLINE_LIMIT_UP_TEXT(meta.limitUpTotal, meta.limitUpUnmapped ?? 0)
+              : MAINLINE_STRUCTURE_UNAVAILABLE
+          }}
+        </span>
+        <span v-if="meta">{{ MAINLINE_HEADER_LABEL.scannedAt }}：{{ formatScannedAt(meta.scannedAt) }}</span>
       </div>
+
+      <p
+        v-if="meta && meta.excludedDate"
+        class="mt-2 rounded-lg bg-flat-weak px-2 py-1.5 text-xs leading-relaxed text-text-secondary"
+      >
+        {{ MAINLINE_INTRADAY_NOTICE(meta.excludedDate, meta.asOf) }}
+      </p>
+      <p
+        v-if="meta && degraded"
+        class="mt-2 rounded-lg bg-primary-weak px-2 py-1.5 text-xs leading-relaxed text-primary"
+      >
+        {{ MAINLINE_DEGRADED_NOTICE(meta.asOf) }}
+      </p>
 
       <p v-if="scanNotice" class="mt-2 rounded-lg bg-primary-weak px-2 py-1.5 text-xs text-primary">
         {{ scanNotice }}
@@ -271,7 +378,7 @@ const onScan = async (): Promise<void> => {
         :row-clickable="true"
         :expandable="true"
         :expanded-keys="expandedKeys"
-        min-width="720px"
+        min-width="1080px"
         @row-click="onToggleExpand"
         @toggle-expand="onToggleExpand"
       >
@@ -283,6 +390,18 @@ const onScan = async (): Promise<void> => {
               class="rounded bg-primary-weak px-1 py-0.5 text-[10px] text-primary"
             >
               {{ MAINLINE_CANDIDATE_BADGE }}
+            </span>
+            <span
+              v-if="row.structureHot"
+              class="rounded bg-primary-weak px-1 py-0.5 text-[10px] text-primary"
+            >
+              {{ MAINLINE_STRUCTURE_HOT_BADGE }}
+            </span>
+            <span
+              v-if="row.metrics.stale"
+              class="rounded bg-flat-weak px-1 py-0.5 text-[10px] text-text-tertiary"
+            >
+              {{ MAINLINE_STALE_BADGE(row.metrics.staleDays) }}
             </span>
           </span>
         </template>
@@ -316,6 +435,13 @@ const onScan = async (): Promise<void> => {
         <template #pricePercentile="{ row }">
           {{ formatPercentile(row.metrics.pricePercentile) }}
         </template>
+        <template #limitUp="{ row }">{{ formatLimitUp(row) }}</template>
+        <template #breadth="{ row }">{{ formatPercentValue(row.metrics.breadth) }}</template>
+        <template #netInflow="{ row }">
+          <span :class="amountClass(row.metrics.netInflow)">
+            {{ formatNetInflow(row.metrics.netInflow) }}
+          </span>
+        </template>
 
         <template #expanded="{ row }">
           <div class="space-y-3">
@@ -325,6 +451,12 @@ const onScan = async (): Promise<void> => {
               <div>
                 <dt class="text-text-tertiary">{{ MAINLINE_DETAIL_LABEL.asOf }}</dt>
                 <dd class="tabular-nums text-text">{{ row.metrics.asOf || '—' }}</dd>
+              </div>
+              <div>
+                <dt class="text-text-tertiary">{{ MAINLINE_DETAIL_LABEL.benchmark }}</dt>
+                <dd class="tabular-nums text-text">
+                  {{ row.metrics.benchmarkDate || '—' }}
+                </dd>
               </div>
               <div>
                 <dt class="text-text-tertiary">{{ MAINLINE_DETAIL_LABEL.historyDays }}</dt>
@@ -351,6 +483,12 @@ const onScan = async (): Promise<void> => {
                 <dd class="tabular-nums text-text">{{ formatRatio(row.metrics.amountRatio) }}</dd>
               </div>
               <div>
+                <dt class="text-text-tertiary">{{ MAINLINE_DETAIL_LABEL.amountRatioOverlap }}</dt>
+                <dd class="tabular-nums text-text-tertiary">
+                  {{ formatRatio(row.metrics.amountRatioOverlap) }}
+                </dd>
+              </div>
+              <div>
                 <dt class="text-text-tertiary">{{ MAINLINE_DETAIL_LABEL.pricePercentile }}</dt>
                 <dd class="tabular-nums text-text">
                   {{ formatPercentile(row.metrics.pricePercentile) }}
@@ -360,6 +498,54 @@ const onScan = async (): Promise<void> => {
                 <dt class="text-text-tertiary">{{ MAINLINE_DETAIL_LABEL.change20 }}</dt>
                 <dd class="tabular-nums" :class="changeClass(row.metrics.change20)">
                   {{ formatPercent(row.metrics.change20) }}
+                </dd>
+              </div>
+              <div>
+                <dt class="text-text-tertiary">{{ MAINLINE_DETAIL_LABEL.limitUpCount }}</dt>
+                <dd class="tabular-nums text-text">
+                  {{ formatLimitUp(row) }}
+                </dd>
+              </div>
+              <div>
+                <dt class="text-text-tertiary">{{ MAINLINE_DETAIL_LABEL.maxStreak }}</dt>
+                <dd class="tabular-nums text-text">
+                  {{
+                    row.metrics.maxStreak === null
+                      ? MAINLINE_METRIC_PLACEHOLDER
+                      : `${row.metrics.maxStreak}${MAINLINE_DETAIL_UNIT.boards}`
+                  }}
+                </dd>
+              </div>
+              <div>
+                <dt class="text-text-tertiary">{{ MAINLINE_DETAIL_LABEL.sealFund }}</dt>
+                <dd class="tabular-nums text-text">{{ formatYuanToYi(row.metrics.sealFund) }}</dd>
+              </div>
+              <div>
+                <dt class="text-text-tertiary">{{ MAINLINE_DETAIL_LABEL.limitUpRatio }}</dt>
+                <dd class="tabular-nums text-text">
+                  {{ formatPercentValue(row.metrics.limitUpRatio) }}
+                </dd>
+              </div>
+              <div>
+                <dt class="text-text-tertiary">{{ MAINLINE_DETAIL_LABEL.riseFall }}</dt>
+                <dd class="tabular-nums text-text">
+                  {{ formatRiseFall(row.metrics.riseCount, row.metrics.fallCount) }}
+                </dd>
+              </div>
+              <div>
+                <dt class="text-text-tertiary">{{ MAINLINE_DETAIL_LABEL.breadth }}</dt>
+                <dd class="tabular-nums text-text">{{ formatPercentValue(row.metrics.breadth) }}</dd>
+              </div>
+              <div>
+                <dt class="text-text-tertiary">{{ MAINLINE_DETAIL_LABEL.netInflow }}</dt>
+                <dd class="tabular-nums" :class="amountClass(row.metrics.netInflow)">
+                  {{ formatNetInflow(row.metrics.netInflow) }}
+                </dd>
+              </div>
+              <div>
+                <dt class="text-text-tertiary">{{ MAINLINE_DETAIL_LABEL.leader }}</dt>
+                <dd class="truncate text-text">
+                  {{ row.metrics.leaderName || MAINLINE_METRIC_PLACEHOLDER }}
                 </dd>
               </div>
               <div>
@@ -384,6 +570,19 @@ const onScan = async (): Promise<void> => {
           </div>
         </template>
       </BaseTable>
+    </BaseCard>
+
+    <BaseCard :title="MAINLINE_CONNECTED_TITLE">
+      <ul class="space-y-1">
+        <li
+          v-for="(item, index) in MAINLINE_CONNECTED_INPUTS"
+          :key="index"
+          class="flex gap-1.5 text-xs leading-relaxed text-text-secondary"
+        >
+          <span class="text-text-tertiary">•</span>
+          <span>{{ item }}</span>
+        </li>
+      </ul>
     </BaseCard>
 
     <BaseCard :title="MAINLINE_MISSING_TITLE">

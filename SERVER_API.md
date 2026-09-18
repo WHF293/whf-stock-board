@@ -37,7 +37,7 @@
 | `fetchUsSectorPanorama` | `api/panorama.api.ts` | `push2delay.eastmoney.com/api/qt/ulist.np/get` | GET | 美股行业 ETF（按 `secids` 精确查询） |
 | 更新检查 | `constants/app-info.constants.ts` + `views/SettingsView.vue` | `api.github.com/repos/WHF293/whf-stock-board/releases/latest` | GET | 检查更新（非行情数据） |
 | 连通性探针 | `views/SettingsView.vue` | `qt.gtimg.cn/q=sh000001` | GET | 设置页「网络诊断」用腾讯源直连测连通性 |
-| `fetchThsBoardList` | `plugins/mainline/ths-data.ts` | `q.10jqka.com.cn/thshy/` | GET | 同花顺行业板块清单（**GBK HTML**）。按 `detail/code/88xxxx` 锚点正则抽取后去重（页面含同一板块多份重复链接），只留 `88` 开头的行业板块。带 `Referer: q.10jqka.com.cn` |
+| `fetchThsBoardPage` | `plugins/mainline/ths-data.ts` | 清单页 `q.10jqka.com.cn/thshy/` + 分页 `q.10jqka.com.cn/thshy/index/field/199112/order/desc/page/<n>/ajax/1/` | GET | 同花顺行业板块清单 + **当日结构快照**（**GBK HTML**）。首页锚点正则抽 `detail/code/88xxxx` 得**全部 90 个**行业板块；表格行解析得 `涨跌幅 / 总成交额(亿元) / 净流入(亿元) / 上涨家数 / 下跌家数 / 均价 / 领涨股`。⚠️ **表格每页只有 50 行**（90 个板块分布在 2 页：50 + 40，第 2 页须走 ajax 形态），两页并集与锚点集合实测完全一致。带 `Referer: q.10jqka.com.cn` |
 | `fetchThsBoardKline` | `plugins/mainline/ths-data.ts` | `d.10jqka.com.cn/v6/line/48_<板块码>/<复权>/<年>.js` | GET(JSONP) | 同花顺板块**年 K**（含成交额）：剥 JSONP 壳后 `data` 为 `日期,开,高,低,收,量,额,…` 逐日分号分隔。⚠️ **复权口径必须回退**：部分板块 `01`（前复权）年文件被上游网关拒（502）、另一些仅 `00`（不复权）可用 → 按「当年 01 → 当年 00 → 去年 01 → 去年 00」逐个尝试，首个有数据者胜出。带 `Referer` |
 
 ---
@@ -54,7 +54,7 @@
 | `fetchConceptBoards` | `api/board.api.ts` | `sdk.board.concept.list()` | 东财 | 概念板块列表 |
 | `fetchIndustryConstituents` | `api/board.api.ts` | `sdk.board.industry.constituents(symbol)` | 东财 | 行业板块成分股（点击触发，重接口） |
 | `fetchConceptConstituents` | `api/board.api.ts` | `sdk.board.concept.constituents(symbol)` | 东财 | 概念板块成分股（点击/选股器触发） |
-| `fetchZtPool` | `api/event.api.ts` | `sdk.marketEvent.ztPool(type)` | 东财 | 涨停/跌停等股池 |
+| `fetchZtPool` | `api/event.api.ts` | `sdk.marketEvent.ztPool(type, date?)` | 东财 | 涨停/跌停等股池。**`date` 参数生效**（可取指定交易日，实测同一只票连板数逐日递进：9/15 = 1 板 → 9/16 = 2 板 → 9/17 = 3 板），但**只覆盖近端**（约一个月前的日期返回空池）；`qdate` 字段恒为当日，不代表实际请求日，不要用它判断日期。字段 `hybk`(行业，长名**被截断到 4 个汉字**)、`lbc`(连板数)、`fund`(封板资金)、`zttj`(N 天 M 板) |
 | `fetchStockChanges` | `api/event.api.ts` | `sdk.marketEvent.stockChanges('all')` | 东财 | 全市场盘口异动（滚动时间轴） |
 | `fetchBoardChanges` | `api/event.api.ts` | `sdk.marketEvent.boardChanges()` | 东财 | 板块异动汇总 |
 | `fetchMarketFundFlow` | `api/flow.api.ts` | `sdk.fundFlow.market()` | 东财 | 大盘资金流向历史（总览「资金速览」） |
@@ -92,9 +92,14 @@
 - **选股器 `ScreenerView`**：`runScreener` · `runMaCrossBacktest` · 信号扫描 / 尾盘选股（`analysis.api`）
 - **热点新闻 `HotNewsView`**：`fetchSinaHotNews` · `fetchEastmoneyHotNews` · `fetchThsHotNews` · `fetchThepaperHotNews`
 - **个股详情（停靠面板）`StockDetailPanel`**：`fetchSinaKline`(K线) · `fetchTodayTimeline`(分时) · `fetchIndividualFundFlow` · `fetchKlineWithIndicators` · `fetchKlineSignals`
-- **股票主线（侧栏插件 `dsh-mainline`）**：`fetchThsBoardList` · `fetchThsBoardKline` · `fetchMarketTurnover`(复用宿主，算成交占比分母)
+- **股票主线（侧栏插件 `dsh-mainline`）**：`fetchThsBoardPage`(清单+结构快照，含 1 次分页) · `fetchThsBoardKline`(×90) · `fetchMarketTurnover`(复用宿主，算成交占比分母) · `fetchZtPool('zt', 基准日)`(涨停结构)
   ⚠️ 只由用户点击「扫描主线」触发、**不轮询**；同上游并发 3 + 连续间隔 500ms（`MAINLINE_SCAN_CONCURRENCY` / `MAINLINE_SCAN_DELAY_MS`）。
-  板块日 K 落插件自有表（`ctx.db` 的 `plugin_dsh-mainline_board_history`），日常查看看板只读库不联网。
+  单次扫描请求数 ≈ **94**（清单首页 1 + 分页 1 + 板块年 K 90 + 两市成交额 1 + 涨停池 1）。
+  **口径（必须遵守，否则指标会错）**：
+  - 全部指标取**基准交易日截面** —— 基准日 = 最近一个「有行情的板块数 ≥ 清单总数 × 85%」的交易日，且**当日数据未落定（本地 < 15:30）时排除当日**（盘中分子是半日混合、分母是半日全市场，实测占比仅 35.6% 而完整日为 98.5%）；
+  - 未落定日的半日 bar **不写入历史**（写入会覆盖同日、永久污染占比分位序列）；
+  - 板块当天没有基准日 bar → 记 `stale` 并**排除出阶段判定**（界面显示「滞后 N 日」），不静默当最新用。
+  板块日 K 与结构字段落插件自有表（`ctx.db` 的 `plugin_dsh-mainline_board_history`，结构字段在 `days` JSON 列内），日常查看看板只读库不联网。
 - **搜索**：`searchStocks`
 
 ---
