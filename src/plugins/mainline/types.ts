@@ -187,6 +187,14 @@ export interface BoardMetrics {
   leaderName: string;
 }
 
+/** 看板筛选条件（阶段徽标与「主线候选」开关的共同描述） */
+export interface MainlineFilterOptions {
+  /** 是否只看主线候选 */
+  candidateOnly: boolean;
+  /** 选中的阶段（空数组 = 不按阶段筛选；多选按并集，不是「且」） */
+  phases: readonly MainlinePhase[];
+}
+
 /** 单板块判定结论（阶段标签 + 风险提示 + 指标面板） */
 export interface MainlineVerdict {
   /** 板块代码 */

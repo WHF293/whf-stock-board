@@ -8,6 +8,7 @@ import MenuIcon from '../../components/ui/MenuIcon.vue';
 import { getTrendByChangePercent } from '../../constants/trend.constants';
 import { TREND_TEXT_CLASS } from '../../constants/stock-colors.constants';
 import { formatPercent } from '../../utils/format-percent';
+import { countByPhase, filterVerdicts, isFilterActive, togglePhase } from './filter';
 import { judgeAll } from './judge';
 import { runMainlineScan, type MainlineScanProgress } from './scan';
 import {
@@ -29,6 +30,9 @@ import {
   MAINLINE_EM_UNMAPPED_TEXT,
   MAINLINE_FALLBACK_NOTICE,
   MAINLINE_FALLBACK_REASON_LABEL,
+  MAINLINE_FILTER_CLEAR,
+  MAINLINE_FILTER_EMPTY_TEXT,
+  MAINLINE_FILTER_SUMMARY,
   MAINLINE_HEADER_LABEL,
   MAINLINE_INTRADAY_NOTICE,
   MAINLINE_LIMIT_UP_TEXT,
@@ -41,7 +45,9 @@ import {
   MAINLINE_PAGE_SUBTITLE,
   MAINLINE_PAGE_TITLE,
   MAINLINE_PHASE_BADGE_CLASS,
+  MAINLINE_PHASE_FILTER_HINT,
   MAINLINE_PHASE_LABEL,
+  MAINLINE_PHASE_LIST,
   MAINLINE_REFS_SOURCE,
   MAINLINE_REFS_SOURCE_LABEL,
   MAINLINE_SCAN_BUTTON,
@@ -61,8 +67,9 @@ import {
   YUAN_PER_YI,
   mainlineRowKey,
 } from './constants';
+import type { MainlinePhase } from './constants';
 import type { MainlineRepo } from './storage';
-import type { MainlineVerdict } from './types';
+import type { MainlineFilterOptions, MainlineVerdict } from './types';
 import type { TableColumn } from '../../types/table.types';
 
 /** 页头数据源提示（tone 决定提示条配色：primary = 需要用户注意的口径变化） */
@@ -97,6 +104,8 @@ const progress = ref<MainlineScanProgress | null>(null);
 const scanNotice = ref('');
 /** 是否只看主线候选 */
 const candidateOnly = ref(false);
+/** 选中的阶段（多选；空数组 = 不按阶段筛选） */
+const activePhases = ref<MainlinePhase[]>([]);
 /** 当前展开的板块代码（受控展开行） */
 const expandedKeys = ref<string[]>([]);
 
@@ -106,10 +115,41 @@ const verdicts = computed<MainlineVerdict[]>(() => {
   return judgeAll(snapshot.boards, snapshot.market);
 });
 
-/** 表格行（按候选过滤后） */
-const rows = computed<MainlineVerdict[]>(() =>
-  candidateOnly.value ? verdicts.value.filter((verdict) => verdict.candidate) : verdicts.value,
+/** 当前筛选条件（候选开关 + 选中阶段） */
+const filterOptions = computed<MainlineFilterOptions>(() => ({
+  candidateOnly: candidateOnly.value,
+  phases: activePhases.value,
+}));
+
+/** 只应用「候选」这一个条件的结论（作为阶段计数的基数） */
+const candidateFiltered = computed<MainlineVerdict[]>(() =>
+  filterVerdicts(verdicts.value, { candidateOnly: candidateOnly.value, phases: [] }),
 );
+
+/**
+ * 表格行（候选 + 阶段筛选后）
+ *
+ * 阶段计数以 `candidateFiltered` 为基数，所以**徽标上的数字就是点下去后的行数**，
+ * 不会出现「显示 39 点进去只剩 12」这种对不上的情况。
+ */
+const rows = computed<MainlineVerdict[]>(() => filterVerdicts(verdicts.value, filterOptions.value));
+
+/** 是否有任一筛选条件生效（决定是否露出「清除筛选」与行数提示） */
+const filterActive = computed(() => isFilterActive(filterOptions.value));
+
+/**
+ * 切换某个阶段的筛选态（多选：再点一次取消该阶段）
+ * @param phase 阶段取值
+ */
+const onTogglePhase = (phase: MainlinePhase): void => {
+  activePhases.value = togglePhase(activePhases.value, phase);
+};
+
+/** 清除全部筛选（候选 + 阶段），与「再点一次取消」互为兜底 */
+const onClearFilters = (): void => {
+  candidateOnly.value = false;
+  activePhases.value = [];
+};
 
 /** 扫描元信息 */
 const meta = computed(() => props.repo.snapshot().meta);
@@ -163,15 +203,20 @@ const sourceNotices = computed<SourceNotice[]>(() => {
   return notices;
 });
 
-/** 各阶段数量统计（看板顶部速览） */
-const phaseSummary = computed(() =>
-  (Object.keys(MAINLINE_PHASE_LABEL) as MainlineVerdict['phase'][]).map((phase) => ({
+/**
+ * 各阶段数量统计（看板顶部速览，同时充当阶段筛选开关）
+ *
+ * 计数基数 = 候选过滤后的结论（不含阶段筛选），这样徽标数字 = 点它之后的行数。
+ */
+const phaseSummary = computed(() => {
+  const counts = countByPhase(candidateFiltered.value);
+  return MAINLINE_PHASE_LIST.map((phase) => ({
     phase,
     label: MAINLINE_PHASE_LABEL[phase],
     badgeClass: MAINLINE_PHASE_BADGE_CLASS[phase],
-    count: verdicts.value.filter((verdict) => verdict.phase === phase).length,
-  })),
-);
+    count: counts[phase],
+  }));
+});
 
 /** 表格列配置 */
 const columns: TableColumn<MainlineVerdict>[] = [
@@ -453,23 +498,53 @@ const onScan = async (): Promise<void> => {
         {{ scanNotice }}
       </p>
 
-      <div v-if="verdicts.length > 0" class="mt-3 flex flex-wrap items-center gap-1.5">
-        <span
-          v-for="item in phaseSummary"
-          :key="item.phase"
-          class="rounded-md px-1.5 py-0.5 text-[11px] tabular-nums"
-          :class="item.badgeClass"
-        >
-          {{ item.label }} {{ item.count }}
-        </span>
-        <button
-          type="button"
-          class="pressable ml-1 rounded-md px-1.5 py-0.5 text-[11px] active:scale-95"
-          :class="candidateOnly ? 'bg-primary-weak text-primary' : 'bg-flat-weak text-text-secondary'"
-          @click="candidateOnly = !candidateOnly"
-        >
-          {{ MAINLINE_CANDIDATE_BADGE }}{{ candidateOnly ? '（已筛选）' : ` ${verdicts.filter((item) => item.candidate).length}` }}
-        </button>
+      <!-- 阶段徽标即筛选开关：数字是「点下去后的行数」，多选，再点一次取消 -->
+      <div v-if="verdicts.length > 0" class="mt-3">
+        <div class="flex flex-wrap items-center gap-1.5">
+          <button
+            v-for="item in phaseSummary"
+            :key="item.phase"
+            type="button"
+            class="pressable rounded-md px-1.5 py-0.5 text-[11px] tabular-nums transition active:scale-95"
+            :class="[
+              item.badgeClass,
+              activePhases.includes(item.phase)
+                ? 'ring-1 ring-current font-medium'
+                : filterActive
+                  ? 'opacity-50'
+                  : '',
+            ]"
+            :aria-pressed="activePhases.includes(item.phase)"
+            :title="`${MAINLINE_PHASE_FILTER_HINT}：${item.label}`"
+            @click="onTogglePhase(item.phase)"
+          >
+            {{ item.label }} {{ item.count }}
+          </button>
+          <button
+            type="button"
+            class="pressable ml-1 rounded-md px-1.5 py-0.5 text-[11px] active:scale-95"
+            :class="candidateOnly ? 'bg-primary-weak text-primary' : 'bg-flat-weak text-text-secondary'"
+            :aria-pressed="candidateOnly"
+            @click="candidateOnly = !candidateOnly"
+          >
+            {{ MAINLINE_CANDIDATE_BADGE }}{{ candidateOnly ? '（已筛选）' : ` ${verdicts.filter((item) => item.candidate).length}` }}
+          </button>
+        </div>
+
+        <div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-text-tertiary">
+          <span v-if="filterActive" class="tabular-nums">
+            {{ MAINLINE_FILTER_SUMMARY(rows.length, verdicts.length) }}
+          </span>
+          <button
+            v-if="filterActive"
+            type="button"
+            class="pressable rounded px-1 py-0.5 text-primary active:scale-95"
+            @click="onClearFilters"
+          >
+            {{ MAINLINE_FILTER_CLEAR }}
+          </button>
+          <span v-else>{{ MAINLINE_PHASE_FILTER_HINT }}</span>
+        </div>
       </div>
     </BaseCard>
 
@@ -478,7 +553,19 @@ const onScan = async (): Promise<void> => {
         <span class="text-xs text-text-tertiary">点行首箭头看原始指标与风险提示</span>
       </template>
 
-      <BaseEmpty v-if="rows.length === 0" :text="MAINLINE_EMPTY_TEXT" />
+      <!-- 空态分两种原因：还没扫描 / 筛没了（后者要给回退出口，别让用户以为数据丢了） -->
+      <div v-if="rows.length === 0">
+        <BaseEmpty :text="verdicts.length === 0 ? MAINLINE_EMPTY_TEXT : MAINLINE_FILTER_EMPTY_TEXT" />
+        <p v-if="verdicts.length > 0 && filterActive" class="pb-4 text-center">
+          <button
+            type="button"
+            class="pressable rounded-md bg-primary-weak px-2 py-1 text-xs text-primary active:scale-95"
+            @click="onClearFilters"
+          >
+            {{ MAINLINE_FILTER_CLEAR }}
+          </button>
+        </p>
+      </div>
 
       <BaseTable
         v-else

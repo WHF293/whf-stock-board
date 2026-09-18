@@ -641,6 +641,13 @@ export const MAINLINE_PHASE_LABEL = {
   insufficient_data: '数据不足',
 } as const satisfies Record<MainlinePhase, string>;
 
+/**
+ * 全部阶段取值（顺序 = 看板徽标的展示顺序，直接取标签表的键序）
+ *
+ * 单一事实源：新增阶段只往 `MAINLINE_PHASE_LABEL` 加一项即可，徽标与统计自动跟上。
+ */
+export const MAINLINE_PHASE_LIST = Object.keys(MAINLINE_PHASE_LABEL) as readonly MainlinePhase[];
+
 /** 阶段徽标样式（宿主 token：涨红跌绿，狂热用主色提示风险） */
 export const MAINLINE_PHASE_BADGE_CLASS = {
   germination: 'bg-flat-weak text-text-secondary',
@@ -709,6 +716,28 @@ export const MAINLINE_SCAN_PROGRESS_SUFFIX = '个板块';
 /** 首次空态文案 */
 export const MAINLINE_EMPTY_TEXT =
   '还没有主线快照，点「扫描主线」拉取行业板块与成交额历史（板块数据优先同花顺，整体不可用时自动切东财兜底）';
+
+/** 筛选后无匹配行的空态文案（与「还没扫描」区分开，别让用户以为数据丢了） */
+export const MAINLINE_FILTER_EMPTY_TEXT = '当前筛选条件下没有匹配的板块，换个阶段或清除筛选看看';
+
+/** 清除筛选按钮文案 */
+export const MAINLINE_FILTER_CLEAR = '清除筛选';
+
+/**
+ * 筛选生效时的行数提示模板
+ * @param shown 已筛出的行数
+ * @param total 全部结论行数
+ * @returns 提示文案
+ */
+export const MAINLINE_FILTER_SUMMARY = (shown: number, total: number): string =>
+  `筛选后 ${shown}/${total} 个板块`;
+
+/**
+ * 阶段徽标的筛选提示（放在徽标行尾，告知可点）
+ *
+ * 阶段徽标本身就是筛选开关（多选，再点一次取消），这里只给一句轻提示。
+ */
+export const MAINLINE_PHASE_FILTER_HINT = '点阶段徽标可多选筛选';
 
 /** 无历史样本提示（表格内） */
 export const MAINLINE_NO_SAMPLE_TEXT = '无样本';
