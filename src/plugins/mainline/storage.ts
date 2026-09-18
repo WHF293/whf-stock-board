@@ -121,18 +121,23 @@ export const createMainlineRepo = async (db: PluginDatabase): Promise<MainlineRe
   });
   for (const row of boardRows) {
     if (!row.board_code) continue;
+    // ⚠️ 主键登记必须与 upsert 的查找键同形（`${table}:${key}`）：
+    // 早前这里记的是裸板块代码，导致重启后首次扫描查不到已有行、把 90 个板块
+    // 整批重复插入（表行数翻倍，水合出的快照也出现重复板块）。
+    rowIds.set(`${MAINLINE_BOARD_TABLE}:${row.board_code}`, row.id);
     boards.value.push({
       code: row.board_code,
       name: row.board_name || row.board_code,
       days: parseDays(row.days),
     });
-    rowIds.set(row.board_code, row.id);
   }
 
   const metaRows = await db.select<MetaRow>(MAINLINE_META_TABLE, {
     orderBy: { column: 'meta_key' },
   });
   for (const row of metaRows) {
+    // 同样登记主键：不登记的话每次重启后首扫会再插一份元信息行（读时靠后写覆盖，属垃圾行）
+    rowIds.set(`${MAINLINE_META_TABLE}:${row.meta_key}`, row.id);
     if (row.meta_key === MAINLINE_META_KEY && row.meta_value && typeof row.meta_value === 'object') {
       meta.value = row.meta_value as MainlineScanMeta;
     }
