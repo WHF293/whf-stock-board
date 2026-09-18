@@ -31,8 +31,12 @@ import {
 } from '../constants/heatmap.constants';
 import { YUAN_PER_YI } from '../constants/format.constants';
 import {
+  TURNOVER_CHART_METRIC,
+  TURNOVER_CHART_METRIC_DEFAULT,
+  TURNOVER_CHART_METRIC_OPTIONS,
   TURNOVER_RANGE_DEFAULT,
   TURNOVER_RANGE_TAB_OPTIONS,
+  type TurnoverChartMetric,
   type TurnoverRange,
 } from '../constants/turnover.constants';
 import { POLLING_INTERVAL } from '../constants/polling.constants';
@@ -256,6 +260,9 @@ const turnoverViewMode = ref<typeof VIEW_MODE[keyof typeof VIEW_MODE]>(VIEW_MODE
 /** 成交额当前交易日窗口 */
 const turnoverRange = ref<TurnoverRange>(TURNOVER_RANGE_DEFAULT);
 
+/** 成交额图表量纲口径（成交量 / 相对成交量；仅图表视图消费，切表格不重置） */
+const turnoverChartMetric = ref<TurnoverChartMetric>(TURNOVER_CHART_METRIC_DEFAULT);
+
 /** 交易日窗口按钮组 v-model 适配：BaseTabs 要求字符串 value，窗口存 number */
 const turnoverRangeModel = computed<string>({
   get: () => String(turnoverRange.value),
@@ -288,9 +295,19 @@ onMounted(() => {
   void fetchTurnoverHistory();
 });
 
-/** 当前窗口内的成交额序列（升序，供折线图） */
+/** 当前窗口内的成交额序列（升序，供折线图与表格） */
 const turnoverRows = computed(() =>
   turnoverHistory.value.slice(-turnoverRange.value),
+);
+
+/**
+ * 图表数据源：相对成交量口径在窗口前多取 1 天基准日，
+ * 使首个可见交易日的「较上日差额」有前值可比；成交量口径即窗口切片
+ */
+const turnoverChartDays = computed(() =>
+  turnoverChartMetric.value === TURNOVER_CHART_METRIC.RELATIVE
+    ? turnoverHistory.value.slice(-(turnoverRange.value + 1))
+    : turnoverRows.value,
 );
 
 /** 当前窗口内的成交额表格行（升序算较上日变化，再倒序展示 + 亿元换算） */
@@ -526,6 +543,12 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
     <BaseCard title="成交额">
       <template #extra>
         <div class="flex items-center gap-2">
+          <!-- 量纲口径：仅图表视图展示（表格本身已含绝对额与较上日两列） -->
+          <BaseTabs
+            v-if="turnoverViewMode === VIEW_MODE.CHART"
+            v-model="turnoverChartMetric"
+            :options="TURNOVER_CHART_METRIC_OPTIONS"
+          />
           <BaseTabs v-model="turnoverRangeModel" :options="TURNOVER_RANGE_TAB_OPTIONS" />
           <BaseTabs v-model="turnoverViewMode" :options="VIEW_MODE_OPTIONS" />
         </div>
@@ -559,7 +582,8 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
       <!-- 图表视图 -->
       <TurnoverTrendChart
         v-else-if="turnoverViewMode === VIEW_MODE.CHART"
-        :days="turnoverRows"
+        :days="turnoverChartDays"
+        :metric="turnoverChartMetric"
       />
       <!-- 表格视图 -->
       <BaseTable

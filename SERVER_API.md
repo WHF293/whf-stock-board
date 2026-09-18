@@ -12,9 +12,12 @@
 - **代理白名单**：`src/constants/proxy.constants.ts` 的 `STOCK_PROXY_ALLOWED_HOSTS`（后缀匹配）：
   `eastmoney.com`、`gtimg.cn`、`sina.com.cn`、`sina.cn`、`sinajs.cn`、`10jqka.com.cn`、`thepaper.cn`、`cls.cn`、`linkdiary.cn`。
   新增域名需同步改这里（浏览器）与 capability（Tauri）。
-- **本机关键约束（踩坑结论，2026-09-14 实测复现）**：
-  - ⚠️ **东财行情域 `push2his.eastmoney.com` 与 `push2.eastmoney.com` 在本机被 TCP 层封禁**（`fetch failed` / `UND_ERR_SOCKET`，即 AGENTS 里记的「东财封 IP」）。**带数字前缀的镜像域同样不可达**（实测 `1./13./45.push2his`、`1./7./20./45./91.push2` 全部失败）→ `stock-sdk` 的 `sdk.kline.*` / `sdk.batch.cn` 等走东财行情域的方法也随之失败。
-  - 同属东财但**实测可达**的域：`push2delay.eastmoney.com`（快照列表 / 分时 `trends2`）、`push2ex`（涨停池）、`datacenter-web`、`np-listapi`（7×24 快讯）。
+- **本机关键约束（踩坑结论，2026-09-18 复测更新；curl 与 node 两套栈结论一致）**：
+  - ⚠️ **`push2.eastmoney.com` 仍被 TCP 层封禁**（`http=000`，带数字镜像同样不可达）→ `stock-sdk` 的 clist / ulist.np 等地址继续经 `src/api/eastmoney-reroute.ts` 改道到 push2delay。
+  - ✅ **`push2his.eastmoney.com` 及数字镜像已恢复可达**（`1.` / `33.` 均 200）。**资金流历史必须走它**：`/api/qt/stock/fflow/daykline/get` 同参数下 push2his 返回 **121 条**（自 2026-03-27 起），而 **push2delay 只返回当日 1 条**（`lmt=0` 也一样）。
+    - 因此 `fflow` 路径**已从改道清单剔除**（2026-09-18）。改道清单只保留 push2delay 确实同构的路径：`clist` / `ulist.np` / `stock.get` / `trends2`。
+    - ⚠️ 回归症状：把 fflow 放回改道清单 → 「主力净流入（近10日）」图表只 1 个点、表格只 1 行，且**不报错**。
+  - 同属东财但**实测可达**的域：`push2his`（行情历史 / 资金流 / 分时）、`push2delay`（快照列表 / 分时 `trends2`）、`push2ex`（涨停池）、`datacenter-web`、`np-listapi`（7×24 快讯）。
   - ⚠️ **`push2delay` 不提供历史 K 线**：`/api/qt/stock/kline/get` 返回 **HTTP 200 但 `data` 为 null / `klines` 为空**。调用方若把「200 但无数据」当成功，会静默返回空数组 —— 表现为**图表空白、列表为空且没有任何错误提示**（本模块曾踩此坑）。解析上游必须校验「拿到非空数据」才算成功。
   - **指数日 K 成交额因此改走腾讯** `web.ifzq.gtimg.cn/appstock/app/newfqkline/get`（见 §1 `fetchMarketTurnover`）。该域已在代理白名单 `gtimg.cn` 与 Tauri capability `https://*.gtimg.cn/*` 内，无需新增配置。
   - 新浪 `quotes.sina.cn` K 线**无成交金额字段**（仅 `volume` 成交量），且 `volume×收盘价` 对指数不成立（实测约为真实成交额的 235 倍），故成交额不依赖新浪推算。
@@ -44,7 +47,7 @@
 
 ## 2. stock-sdk 方法调用（`sdk` 单例，`src/api/sdk.ts`）
 
-`stock-sdk` 内部按方法路由到腾讯 / 东方财富不同域。**走东财行情域（`push2` / `push2his`）的方法在本机不可用**（已被 TCP 层封禁，见 §0），走腾讯源的方法（`quotes` / `calendar` / `search` / `timeline`）正常；「个股详情」的日 K 已改走新浪（见 §1）。
+`stock-sdk` 内部按方法路由到腾讯 / 东方财富不同域。**走东财 `push2` 的方法在本机不可用**（TCP 层封禁，改道 push2delay，见 §0）；**`push2his` 已于 2026-09-18 恢复可达**（资金流历史依赖它，不要再改道）；走腾讯源的方法（`quotes` / `calendar` / `search` / `timeline`）正常；「个股详情」的日 K 仍走新浪（复权口径原因，见 §1）。
 
 | 封装函数 | 文件 | SDK 方法 | 上游域（实测） | 说明 |
 | --- | --- | --- | --- | --- |
@@ -57,8 +60,8 @@
 | `fetchZtPool` | `api/event.api.ts` | `sdk.marketEvent.ztPool(type)` | 东财 | 涨停/跌停等股池 |
 | `fetchStockChanges` | `api/event.api.ts` | `sdk.marketEvent.stockChanges('all')` | 东财 | 全市场盘口异动（滚动时间轴） |
 | `fetchBoardChanges` | `api/event.api.ts` | `sdk.marketEvent.boardChanges()` | 东财 | 板块异动汇总 |
-| `fetchMarketFundFlow` | `api/flow.api.ts` | `sdk.fundFlow.market()` | 东财 | 大盘资金流向历史（总览「资金速览」） |
-| `fetchIndividualFundFlow` | `api/flow.api.ts` | `sdk.fundFlow.individual(symbol)` | 东财 | 个股资金流历史（详情页） |
+| `fetchMarketFundFlow` | `api/flow.api.ts` | `sdk.fundFlow.market()` | 东财 **push2his（直连，勿改道）** | 大盘资金流向历史（总览「资金速览 / 主力净流入（近10日）」）。`lmt=0` 实测返回 **121 条**，前端 `slice(-10)` 取近 10 日 |
+| `fetchIndividualFundFlow` | `api/flow.api.ts` | `sdk.fundFlow.individual(symbol)` | 东财 **push2his（直连，勿改道）** | 个股资金流历史（详情页）。同上述 fflow 域约束 |
 | `fetchFundFlowRank` | `api/flow.api.ts` | `sdk.fundFlow.rank({indicator:'today'})` | 东财 | 个股主力资金流排名 |
 | `fetchSectorFundFlowRank` | `api/flow.api.ts` | `sdk.fundFlow.sectorRank({sectorType:'industry'})` | 东财 | 板块资金流排名 |
 | `fetchNorthboundHoldingRank` | `api/flow.api.ts` | `sdk.northbound.holdingRank({market:'all',period:'today'})` | 东财 | 北向持股排名 |
@@ -101,7 +104,7 @@
 
 ## 4. 取数失败排查清单
 
-1. **先看是不是东财行情域**：`push2` / `push2his`（含数字前缀镜像）在本机全封，凡走这些域的请求都会 `fetch failed` / TCP RST。指数成交额走 §1 腾讯 `newfqkline`；个股日 K 走新浪 `fetchSinaKline`。
+1. **先看是不是东财行情域**：`push2` 在本机仍全封（含数字前缀镜像，`fetch failed` / TCP RST），`push2his` 已恢复可达（2026-09-18）→ **不要因为「历史上封过」就把 fflow / 分时也改道到 push2delay**（资金流历史在 push2delay 上只有当日 1 条，见 §0）。指数成交额走 §1 腾讯 `newfqkline`；个股日 K 仍走新浪 `fetchSinaKline`（复权口径决定，与封禁无关）。
 2. **HTTP 200 不等于有数据**：`push2delay` 的 kline 返回 200 但 `klines` 空。解析前必须校验拿到非空数据，否则会把「上游无数据」当成成功，页面表现为**空白且无报错**。
 3. **新域名 403 FORBIDDEN_TARGET**：补 `proxy.constants.ts` 白名单（浏览器）+ capability scope（Tauri）。
 4. **403 / 空数据**：检查 `Referer`（新浪/同花顺需带），或上游换了字段（参考 `.ai/` 下的新浪接口文档、新浪新闻接口文档）。

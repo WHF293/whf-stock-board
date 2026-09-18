@@ -12,6 +12,7 @@ import NoticeBar from "../components/ui/NoticeBar.vue";
 import BaseTag from "../components/ui/BaseTag.vue";
 import PluginManageModal from "../components/plugin/PluginManageModal.vue";
 import PluginInstallModal from "../components/plugin/PluginInstallModal.vue";
+import FirstRunSetupModal from "../components/business/FirstRunSetupModal.vue";
 import { pluginKernel } from "../plugin";
 import { usePlugins } from "../composables/use-plugins";
 import { sdk } from "../api/sdk";
@@ -23,8 +24,6 @@ import {
   REFRESH_INTERVAL_OPTIONS,
 } from "../constants/polling.constants";
 import type { TableColumn } from "../types/table.types";
-import { THEME_COLOR_OPTIONS } from "../constants/theme-color.constants";
-import { TREND_THEME_OPTIONS } from "../constants/trend-theme.constants";
 import { WEBLOG_RETENTION_DAYS } from "../constants/weblog.constants";
 import {
   APP_VERSION,
@@ -75,6 +74,11 @@ const onClearCaches = (): void => {
   sdk.clearCaches();
   window.alert("SDK 缓存已清空，下次请求将重新拉取");
 };
+
+// ---------- 主题设置（外观） ----------
+
+/** 主题设置弹窗显隐（复用首次启动引导版式；mode=settings 只换文案，不写「引导已完成」标记） */
+const themeSetupOpen = ref(false);
 
 // ---------- 侧栏导航顺序编排 ----------
 
@@ -703,72 +707,25 @@ const onProbeProxy = async (): Promise<void> => {
       </div>
     </BaseCard>
 
-    <BaseCard title="主题色">
-      <div class="flex flex-wrap gap-3" role="radiogroup" aria-label="主题色">
-        <button
-          v-for="option in THEME_COLOR_OPTIONS"
-          :key="option.value"
-          type="button"
-          role="radio"
-          :aria-checked="settingsStore.themeColor === option.value"
-          data-track="THEME_COLOR_CHANGE"
-          :data-track-detail="option.label"
-          class="pressable flex items-center gap-2 rounded-full py-1 pl-1 pr-3 text-xs font-medium active:scale-95"
-          :class="
-            settingsStore.themeColor === option.value
-              ? 'bg-flat-weak text-text ring-1 ring-primary'
-              : 'bg-flat-weak text-text-secondary hover:text-text'
-          "
-          @click="settingsStore.setThemeColor(option.value)"
+    <!-- 外观：选项收进「主题设置」弹窗（与首次启动引导同一组件，避免两处各维护一份选项） -->
+    <BaseCard title="外观">
+      <div class="flex items-center justify-between gap-4">
+        <div class="min-w-0">
+          <p class="text-sm text-text">界面外观</p>
+          <p class="mt-0.5 text-xs leading-relaxed text-text-tertiary">
+            明暗模式、系统主题色与涨跌配色，统一在主题设置里调整
+          </p>
+        </div>
+        <BaseButton
+          variant="ghost"
+          data-track="THEME_SETUP_OPEN"
+          @click="themeSetupOpen = true"
         >
-          <span
-            class="h-5 w-5 rounded-full"
-            :style="{ backgroundColor: option.swatch }"
-          />
-          {{ option.label }}
-        </button>
+          主题设置
+        </BaseButton>
       </div>
-      <p class="mt-2 text-xs text-text-tertiary">
-        主色即时生效并记住选择，暗色模式自动适配
-      </p>
-
-      <p class="my-4 text-sm text-text">涨跌颜色</p>
-      <div class="flex flex-wrap gap-3" role="radiogroup" aria-label="涨跌配色">
-        <button
-          v-for="option in TREND_THEME_OPTIONS"
-          :key="option.value"
-          type="button"
-          role="radio"
-          :aria-checked="settingsStore.trendTheme === option.value"
-          data-track="TREND_THEME_CHANGE"
-          :data-track-detail="option.label"
-          class="pressable flex items-center gap-2 rounded-full py-1 pl-1 pr-3 text-xs font-medium active:scale-95"
-          :class="
-            settingsStore.trendTheme === option.value
-              ? 'bg-flat-weak text-text ring-1 ring-primary'
-              : 'bg-flat-weak text-text-secondary hover:text-text'
-          "
-          @click="settingsStore.setTrendTheme(option.value)"
-        >
-          <!-- 预览色块：固定展示该选项自身的标识色（左涨右跌），不随当前主题变化 -->
-          <span class="flex items-center gap-0.5 pl-1">
-            <span
-              class="inline-block h-5 w-5 rounded-full"
-              :style="{ backgroundColor: option.upSwatch }"
-            />
-            -
-            <span
-              class="inline-block h-5 w-5 rounded-full"
-              :style="{ backgroundColor: option.downSwatch }"
-            />
-          </span>
-          {{ option.label }}
-        </button>
-      </div>
-      <p class="mt-2 text-xs text-text-tertiary">
-        左侧色块为涨、右侧为跌；全站文本与图表即时跟随
-      </p>
     </BaseCard>
+
 
     <!-- 水印开关 + 快捷键说明（合并一卡） -->
     <BaseCard title="水印 & 快捷键">
@@ -1124,5 +1081,9 @@ const onProbeProxy = async (): Promise<void> => {
         </BaseButton>
       </template>
     </BaseConfirmModal>
+
+    <!-- 主题设置弹窗：复用首次启动引导版式，从「外观」卡片手动唤起
+         （纯受控组件，关闭时不会改动 settings.setupCompleted） -->
+    <FirstRunSetupModal v-model:open="themeSetupOpen" mode="settings" />
   </div>
 </template>

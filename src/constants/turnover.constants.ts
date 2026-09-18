@@ -35,6 +35,30 @@ export const TURNOVER_RANGE_TAB_OPTIONS: readonly { label: string; value: string
 /** 默认交易日窗口（近 30 日） */
 export const TURNOVER_RANGE_DEFAULT: TurnoverRange = TURNOVER_RANGE.D30;
 
+/** 成交额图表的量纲口径（仅图表视图可切） */
+export const TURNOVER_CHART_METRIC = {
+  /** 成交量：各市场当日成交额（亿元） */
+  AMOUNT: 'amount',
+  /** 相对成交量：当日成交额 − 上一交易日成交额（差额，放量正 / 缩量负） */
+  RELATIVE: 'relative',
+} as const;
+
+/** 量纲口径类型 */
+export type TurnoverChartMetric =
+  (typeof TURNOVER_CHART_METRIC)[keyof typeof TURNOVER_CHART_METRIC];
+
+/** 量纲口径切换选项（BaseTabs；图表视图下展示） */
+export const TURNOVER_CHART_METRIC_OPTIONS: readonly {
+  label: string;
+  value: TurnoverChartMetric;
+}[] = [
+  { label: '成交量', value: TURNOVER_CHART_METRIC.AMOUNT },
+  { label: '相对成交量', value: TURNOVER_CHART_METRIC.RELATIVE },
+];
+
+/** 量纲口径默认值（成交量） */
+export const TURNOVER_CHART_METRIC_DEFAULT: TurnoverChartMetric = TURNOVER_CHART_METRIC.AMOUNT;
+
 /** 成交额表格行（派生展示字段；供 BaseTable 渲染） */
 export interface TurnoverTableRow extends TurnoverDayItem {
   /** 总成交额（亿元，保留 2 位） */

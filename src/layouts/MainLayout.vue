@@ -6,6 +6,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import TitleBar from "./TitleBar.vue";
 import HeaderTools from "./HeaderTools.vue";
 import StockSearchModal from "../components/business/StockSearchModal.vue";
+import FirstRunSetupModal from "../components/business/FirstRunSetupModal.vue";
 import BaseDrawer from "../components/ui/BaseDrawer.vue";
 import SettingsView from "../views/SettingsView.vue";
 import DockPanel from "../components/dock/DockPanel.vue";
@@ -53,6 +54,19 @@ const { isDark, toggleDark } = useTheme();
 const marketStatusStore = useMarketStatusStore();
 const settingsStore = useSettingsStore();
 const { openSidebar, toContextList } = useStockOpen();
+
+/**
+ * 初始设置引导弹窗显隐（派生自 settings.setupCompleted，以 store 为唯一事实源）
+ *
+ * 用可写 computed 而非一次性 ref：弹窗组件是纯受控的，关闭时只 emit update:open(false)，
+ * 「首次启动那次关闭即视为完成引导」这条语义由这里落库（设置页复用的那次不落，见组件说明）。
+ */
+const firstRunSetupOpen = computed({
+  get: () => !settingsStore.setupCompleted,
+  set: (value: boolean) => {
+    if (!value) settingsStore.completeSetup();
+  },
+});
 
 /** 是否 Tauri 桌面端（决定是否渲染自绘标题栏 + 侧栏品牌区是否上移；浏览器 false） */
 const isTauriDesktop = isTauri();
@@ -604,6 +618,9 @@ void marketStatusStore.refresh();
       @close="searchModalOpen = false"
       @select="onHeaderSearchSelect"
     />
+
+    <!-- 初始设置引导（仅首次启动展示一次） -->
+    <FirstRunSetupModal v-model:open="firstRunSetupOpen" />
 
     <!-- 设置抽屉（右侧滑入，宽 2/3 视口） -->
     <BaseDrawer v-model:open="settingsOpen" title="设置">

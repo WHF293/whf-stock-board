@@ -83,6 +83,8 @@ export const WEBLOG_ACTIONS = {
   REFRESH_INTERVAL_CHANGE: { category: 'business', label: '刷新间隔变更' },
   THEME_COLOR_CHANGE: { category: 'business', label: '主题色变更' },
   TREND_THEME_CHANGE: { category: 'business', label: '涨跌配色变更' },
+  THEME_SETUP_OPEN: { category: 'business', label: '打开主题设置' },
+  APPEARANCE_MODE_CHANGE: { category: 'business', label: '切换明暗模式（主题设置内）' },
   WATERMARK_TOGGLE: { category: 'business', label: '水印开关' },
   MENU_ORDER_EDIT: { category: 'business', label: '侧栏顺序编排' },
   MENU_ORDER_RESET: { category: 'business', label: '侧栏顺序重置' },
