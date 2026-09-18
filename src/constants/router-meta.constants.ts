@@ -68,7 +68,8 @@ export const MENU_ITEMS = [
 /**
  * 默认侧栏顺序（= MENU_ITEMS 声明顺序的 path 数组）
  *
- * 供设置页「重置」与主布局兜底使用；用户自定义顺序存于 settings.menuOrder
+ * 供设置页编排弹窗的「恢复默认」与 store 的兜底（初始值 / resetMenuOrder）使用；
+ * 用户自定义顺序存于 settings.menuOrder
  */
 export const MENU_DEFAULT_ORDER: readonly string[] = MENU_ITEMS.map(
   (item) => item.path,

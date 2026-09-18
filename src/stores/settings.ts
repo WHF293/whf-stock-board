@@ -30,6 +30,18 @@ import type { BoardCalendarHeatBasis, BoardCalendarRange } from '../types/board-
 import type { BoardDetailRange } from '../types/board-detail.types';
 import { BOARD_DEFAULT_ORDER, normalizeBoardHidden, normalizeBoardOrder } from '../utils/board-order';
 
+/**
+ * 初始设置引导的默认完成态
+ *
+ * 判定依据：localStorage 里已存在设置持久化包 → 升级老用户（引导只面向新用户），
+ * 默认 true 不弹出；全新安装无包 → false，首次启动弹引导。
+ * 老包里没有 setupCompleted 字段，pinia persist 水合只覆盖已有键、保留该默认值；
+ * 完成引导后写入 true 持久化，此后与普通设置项同生命周期。
+ * @returns true 视为已完成引导（不弹出）
+ */
+const resolveSetupCompletedDefault = (): boolean =>
+  appStorage.getItem(STORAGE_NS_SETTINGS) !== null;
+
 /** 设置 store 状态 */
 interface SettingsState {
   /** 轮询总开关：关闭后全部 usePolling 暂停 */
@@ -78,6 +90,8 @@ interface SettingsState {
   weblogEnabled: boolean;
   /** Agent 分析 · 仅股票问答开关（开启时使用仅股票系统提示词；关闭后移除话题限制） */
   agentStockOnly: boolean;
+  /** 初始设置引导是否已完成（首次打开软件时弹出引导弹窗，完成 / 关闭后不再出现） */
+  setupCompleted: boolean;
 }
 
 /**
@@ -108,6 +122,7 @@ export const useSettingsStore = defineStore('settings', {
     detailChartPeriod: CHART_PERIOD_DEFAULT,
     weblogEnabled: WEBLOG_ENABLED_DEFAULT,
     agentStockOnly: true,
+    setupCompleted: resolveSetupCompletedDefault(),
   }),
 
   actions: {
@@ -306,14 +321,19 @@ export const useSettingsStore = defineStore('settings', {
       this.weblogEnabled = enabled;
     },
 
-    /**
-     * 设置 Agent 分析仅股票问答开关
-     * @param enabled true 仅股票问答（默认），false 移除话题限制
-     */
-    setAgentStockOnly(enabled: boolean): void {
-      this.agentStockOnly = enabled;
-    },
+  /**
+   * 设置 Agent 分析仅股票问答开关
+   * @param enabled true 仅股票问答（默认），false 移除话题限制
+   */
+  setAgentStockOnly(enabled: boolean): void {
+    this.agentStockOnly = enabled;
   },
+
+  /** 标记初始设置引导已完成（无论用户点了「开始使用」还是直接关闭，都不再弹出） */
+  completeSetup(): void {
+    this.setupCompleted = true;
+  },
+},
 
   persist: {
     key: STORAGE_NS_SETTINGS,

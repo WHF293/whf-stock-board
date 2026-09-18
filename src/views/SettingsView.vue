@@ -12,6 +12,7 @@ import NoticeBar from "../components/ui/NoticeBar.vue";
 import BaseTag from "../components/ui/BaseTag.vue";
 import PluginManageModal from "../components/plugin/PluginManageModal.vue";
 import PluginInstallModal from "../components/plugin/PluginInstallModal.vue";
+import FirstRunSetupModal from "../components/business/FirstRunSetupModal.vue";
 import { pluginKernel } from "../plugin";
 import { usePlugins } from "../composables/use-plugins";
 import { sdk } from "../api/sdk";
@@ -23,8 +24,6 @@ import {
   REFRESH_INTERVAL_OPTIONS,
 } from "../constants/polling.constants";
 import type { TableColumn } from "../types/table.types";
-import { THEME_COLOR_OPTIONS } from "../constants/theme-color.constants";
-import { TREND_THEME_OPTIONS } from "../constants/trend-theme.constants";
 import { WEBLOG_RETENTION_DAYS } from "../constants/weblog.constants";
 import {
   APP_VERSION,
@@ -76,6 +75,11 @@ const onClearCaches = (): void => {
   window.alert("SDK 缓存已清空，下次请求将重新拉取");
 };
 
+// ---------- 主题设置（外观） ----------
+
+/** 主题设置弹窗显隐（复用首次启动引导版式；mode=settings 只换文案，不写「引导已完成」标记） */
+const themeSetupOpen = ref(false);
+
 // ---------- 侧栏导航顺序编排 ----------
 
 /** 编排弹窗显隐 */
@@ -108,11 +112,6 @@ interface MenuOrderDraftItem {
 
 /** 编排草稿（打开弹窗时按当前顺序初始化；未点「确认」前仅本地改动，不落盘） */
 const menuOrderDraft = ref<MenuOrderDraftItem[]>([]);
-
-/** 宿主菜单的 path 集合（区分默认顺序比较口径用） */
-const HOST_MENU_PATHS: ReadonlySet<string> = new Set(
-  MENU_ITEMS.map((item) => item.path as string),
-);
 
 /**
  * 全部可编排的菜单项（宿主 + 已挂载插件贡献的），按当前持久化顺序排好
@@ -157,18 +156,40 @@ const orderedMenuItems = computed<MenuOrderDraftItem[]>(() => {
 });
 
 /**
- * 当前宿主菜单顺序是否为默认（插件菜单不参与比较；用于禁用「重置」按钮）
+ * 默认顺序的草稿（宿主项按 MENU_DEFAULT_ORDER 排、插件项追加末尾，且全部显示）
  *
- * 显隐集合也要算进来：「重置」承诺「重新显示全部页面」，若只隐藏了页面
- * （顺序未动）也必须允许一键恢复，否则按钮禁用与文案自相矛盾。
+ * 供弹窗内「恢复默认」使用：只重排草稿，是否落盘仍由「确认」决定。
  */
-const isDefaultMenuOrder = computed(
-  () =>
-    settingsStore.hiddenMenus.length === 0 &&
-    settingsStore.menuOrder
-      .filter((path) => HOST_MENU_PATHS.has(path))
-      .join(",") === MENU_DEFAULT_ORDER.join(","),
-);
+const defaultMenuDraft = computed<MenuOrderDraftItem[]>(() => {
+  const byPath = new Map(orderedMenuItems.value.map((item) => [item.path, item]));
+  const ordered: MenuOrderDraftItem[] = [];
+  for (const path of MENU_DEFAULT_ORDER) {
+    const item = byPath.get(path);
+    if (item) {
+      ordered.push({ ...item, visible: true });
+      byPath.delete(path);
+    }
+  }
+  for (const item of orderedMenuItems.value) {
+    if (byPath.has(item.path)) ordered.push({ ...item, visible: true });
+  }
+  return ordered;
+});
+
+/**
+ * 草稿是否已是默认（顺序一致 + 全部显示；用于禁用弹窗内「恢复默认」）
+ *
+ * 逐项比对而非只比宿主项：插件项被拖到中间同样算「已改动」，
+ * 否则按钮会被误判为不可用、点了没反应。
+ */
+const isDefaultMenuDraft = computed(() => {
+  const draft = menuOrderDraft.value;
+  const target = defaultMenuDraft.value;
+  if (draft.length !== target.length) return false;
+  return draft.every(
+    (item, index) => item.visible && item.path === target[index].path,
+  );
+});
 
 /** 打开编排弹窗：以当前顺序 + 显隐状态初始化草稿 */
 const openMenuOrderModal = (): void => {
@@ -188,9 +209,9 @@ const onConfirmMenuOrder = (): void => {
   );
 };
 
-/** 重置侧栏：顺序恢复默认 + 全部页面重新显示 */
-const onResetMenuOrder = (): void => {
-  settingsStore.resetMenuOrder();
+/** 恢复默认：仅重排草稿（顺序复原 + 全部页面重新显示），点「确认」才写回 */
+const resetMenuOrderDraft = (): void => {
+  menuOrderDraft.value = defaultMenuDraft.value.map((item) => ({ ...item }));
 };
 
 // ---------- 顶栏工具顺序编排 ----------
@@ -214,11 +235,6 @@ interface HeaderOrderDraftItem {
 
 /** 编排草稿（打开弹窗时按当前顺序初始化；未点「确认」前仅本地改动，不落盘） */
 const headerOrderDraft = ref<HeaderOrderDraftItem[]>([]);
-
-/** 宿主自带顶栏条目的键集合（区分默认顺序比较口径用） */
-const HOST_HEADER_KEYS: ReadonlySet<string> = new Set(
-  HOST_HEADER_ITEMS.map((item) => item.id),
-);
 
 /**
  * 全部可编排的顶栏条目（宿主自带 + 已挂载插件贡献的），按当前持久化顺序排好
@@ -264,18 +280,40 @@ const orderedHeaderItems = computed<HeaderOrderDraftItem[]>(() => {
 });
 
 /**
- * 当前顶栏顺序是否为默认（插件条目不参与比较；用于禁用「重置」按钮）
+ * 默认顺序的草稿（宿主条目按 HEADER_DEFAULT_ORDER 排、插件条目追加末尾，且全部显示）
  *
- * 显隐集合也要算进来：「重置」承诺「重新显示全部条目」，若只隐藏了条目
- * （顺序未动）也必须允许一键恢复，否则按钮禁用与文案自相矛盾。
+ * 供弹窗内「恢复默认」使用：只重排草稿，是否落盘仍由「确认」决定。
  */
-const isDefaultHeaderOrder = computed(
-  () =>
-    settingsStore.hiddenHeaderItems.length === 0 &&
-    settingsStore.headerOrder
-      .filter((key) => HOST_HEADER_KEYS.has(key))
-      .join(",") === HEADER_DEFAULT_ORDER.join(","),
-);
+const defaultHeaderDraft = computed<HeaderOrderDraftItem[]>(() => {
+  const byKey = new Map(orderedHeaderItems.value.map((item) => [item.key, item]));
+  const ordered: HeaderOrderDraftItem[] = [];
+  for (const key of HEADER_DEFAULT_ORDER) {
+    const item = byKey.get(key);
+    if (item) {
+      ordered.push({ ...item, visible: true });
+      byKey.delete(key);
+    }
+  }
+  for (const item of orderedHeaderItems.value) {
+    if (byKey.has(item.key)) ordered.push({ ...item, visible: true });
+  }
+  return ordered;
+});
+
+/**
+ * 草稿是否已是默认（顺序一致 + 全部显示；用于禁用弹窗内「恢复默认」）
+ *
+ * 逐项比对而非只比宿主条目：插件条目被拖到中间同样算「已改动」，
+ * 否则按钮会被误判为不可用、点了没反应。
+ */
+const isDefaultHeaderDraft = computed(() => {
+  const draft = headerOrderDraft.value;
+  const target = defaultHeaderDraft.value;
+  if (draft.length !== target.length) return false;
+  return draft.every(
+    (item, index) => item.visible && item.key === target[index].key,
+  );
+});
 
 /** 打开编排弹窗：以当前顺序 + 显隐状态初始化草稿 */
 const openHeaderOrderModal = (): void => {
@@ -295,9 +333,9 @@ const onConfirmHeaderOrder = (): void => {
   );
 };
 
-/** 重置顶栏：顺序恢复默认 + 全部条目重新显示 */
-const onResetHeaderOrder = (): void => {
-  settingsStore.resetHeaderOrder();
+/** 恢复默认：仅重排草稿（顺序复原 + 全部条目重新显示），点「确认」才写回 */
+const resetHeaderOrderDraft = (): void => {
+  headerOrderDraft.value = defaultHeaderDraft.value.map((item) => ({ ...item }));
 };
 
 // ---------- 检查更新 ----------
@@ -669,72 +707,25 @@ const onProbeProxy = async (): Promise<void> => {
       </div>
     </BaseCard>
 
-    <BaseCard title="主题色">
-      <div class="flex flex-wrap gap-3" role="radiogroup" aria-label="主题色">
-        <button
-          v-for="option in THEME_COLOR_OPTIONS"
-          :key="option.value"
-          type="button"
-          role="radio"
-          :aria-checked="settingsStore.themeColor === option.value"
-          data-track="THEME_COLOR_CHANGE"
-          :data-track-detail="option.label"
-          class="pressable flex items-center gap-2 rounded-full py-1 pl-1 pr-3 text-xs font-medium active:scale-95"
-          :class="
-            settingsStore.themeColor === option.value
-              ? 'bg-flat-weak text-text ring-1 ring-primary'
-              : 'bg-flat-weak text-text-secondary hover:text-text'
-          "
-          @click="settingsStore.setThemeColor(option.value)"
+    <!-- 外观：选项收进「主题设置」弹窗（与首次启动引导同一组件，避免两处各维护一份选项） -->
+    <BaseCard title="外观">
+      <div class="flex items-center justify-between gap-4">
+        <div class="min-w-0">
+          <p class="text-sm text-text">界面外观</p>
+          <p class="mt-0.5 text-xs leading-relaxed text-text-tertiary">
+            明暗模式、系统主题色与涨跌配色，统一在主题设置里调整
+          </p>
+        </div>
+        <BaseButton
+          variant="ghost"
+          data-track="THEME_SETUP_OPEN"
+          @click="themeSetupOpen = true"
         >
-          <span
-            class="h-5 w-5 rounded-full"
-            :style="{ backgroundColor: option.swatch }"
-          />
-          {{ option.label }}
-        </button>
+          主题设置
+        </BaseButton>
       </div>
-      <p class="mt-2 text-xs text-text-tertiary">
-        主色即时生效并记住选择，暗色模式自动适配
-      </p>
-
-      <p class="my-4 text-sm text-text">涨跌颜色</p>
-      <div class="flex flex-wrap gap-3" role="radiogroup" aria-label="涨跌配色">
-        <button
-          v-for="option in TREND_THEME_OPTIONS"
-          :key="option.value"
-          type="button"
-          role="radio"
-          :aria-checked="settingsStore.trendTheme === option.value"
-          data-track="TREND_THEME_CHANGE"
-          :data-track-detail="option.label"
-          class="pressable flex items-center gap-2 rounded-full py-1 pl-1 pr-3 text-xs font-medium active:scale-95"
-          :class="
-            settingsStore.trendTheme === option.value
-              ? 'bg-flat-weak text-text ring-1 ring-primary'
-              : 'bg-flat-weak text-text-secondary hover:text-text'
-          "
-          @click="settingsStore.setTrendTheme(option.value)"
-        >
-          <!-- 预览色块：固定展示该选项自身的标识色（左涨右跌），不随当前主题变化 -->
-          <span class="flex items-center gap-0.5 pl-1">
-            <span
-              class="inline-block h-5 w-5 rounded-full"
-              :style="{ backgroundColor: option.upSwatch }"
-            />
-            -
-            <span
-              class="inline-block h-5 w-5 rounded-full"
-              :style="{ backgroundColor: option.downSwatch }"
-            />
-          </span>
-          {{ option.label }}
-        </button>
-      </div>
-      <p class="mt-2 text-xs text-text-tertiary">
-        左侧色块为涨、右侧为跌；全站文本与图表即时跟随
-      </p>
     </BaseCard>
+
 
     <!-- 水印开关 + 快捷键说明（合并一卡） -->
     <BaseCard title="水印 & 快捷键">
@@ -767,26 +758,10 @@ const onProbeProxy = async (): Promise<void> => {
         <div>
           <p class="text-sm text-text">路由顺序编排</p>
           <p class="mt-0.5 text-xs text-text-tertiary">
-            拖拽调整左侧导航顺序（含插件菜单），并可控制各页面是否显示
+            拖拽调整左侧导航顺序（含插件菜单），并可控制各页面是否显示；弹窗内可一键恢复默认
           </p>
         </div>
         <BaseButton variant="ghost" data-track="MENU_ORDER_EDIT" @click="openMenuOrderModal">编排</BaseButton>
-      </div>
-      <div class="mt-4 flex items-center justify-between gap-4 border-t border-flat-weak pt-4">
-        <div>
-          <p class="text-sm text-text">重置顺序</p>
-          <p class="mt-0.5 text-xs text-text-tertiary">
-            恢复默认的侧栏导航顺序，并重新显示全部页面
-          </p>
-        </div>
-        <BaseButton
-          variant="ghost"
-          :disabled="isDefaultMenuOrder"
-          data-track="MENU_ORDER_RESET"
-          @click="onResetMenuOrder"
-        >
-          重置
-        </BaseButton>
       </div>
     </BaseCard>
 
@@ -795,27 +770,11 @@ const onProbeProxy = async (): Promise<void> => {
         <div>
           <p class="text-sm text-text">右上角工具编排</p>
           <p class="mt-0.5 text-xs text-text-tertiary">
-            拖拽调整顶栏条目顺序（含插件条目），并可控制各条目是否显示
+            拖拽调整顶栏条目顺序（含插件条目），并可控制各条目是否显示；弹窗内可一键恢复默认
           </p>
         </div>
         <BaseButton variant="ghost" data-track="HEADER_ORDER_EDIT" @click="openHeaderOrderModal">
           编排
-        </BaseButton>
-      </div>
-      <div class="mt-4 flex items-center justify-between gap-4 border-t border-flat-weak pt-4">
-        <div>
-          <p class="text-sm text-text">重置顺序</p>
-          <p class="mt-0.5 text-xs text-text-tertiary">
-            恢复默认的顶栏顺序，并重新显示全部条目
-          </p>
-        </div>
-        <BaseButton
-          variant="ghost"
-          :disabled="isDefaultHeaderOrder"
-          data-track="HEADER_ORDER_RESET"
-          @click="onResetHeaderOrder"
-        >
-          重置
         </BaseButton>
       </div>
     </BaseCard>
@@ -880,10 +839,6 @@ const onProbeProxy = async (): Promise<void> => {
     </BaseCard>
 
     <BaseCard title="系统">
-      <div class="mb-4 flex items-center justify-between gap-4">
-        <div class="text-sm text-text">作者</div>
-        <div class="mt-0.5 text-xs text-text-tertiary">WHF293</div>
-      </div>
       <div class="mb-4 flex items-center justify-between gap-4">
         <div class="min-w-0">
           <p class="text-sm text-text">GitHub 仓库</p>
@@ -1024,7 +979,7 @@ const onProbeProxy = async (): Promise<void> => {
       @ok="onConfirmMenuOrder"
     >
       <p class="mb-3 text-xs text-text-tertiary">
-        拖拽调整顺序；开关控制该页是否显示在左侧栏（隐藏后路由仍可达）。点「确认」保存并立即刷新侧栏
+        拖拽调整顺序；开关控制该页是否显示在左侧栏（隐藏后路由仍可达）。「恢复默认」复原默认顺序并重新显示全部页面，点「确认」保存并立即刷新侧栏
       </p>
       <VueDraggable
         v-model="menuOrderDraft"
@@ -1059,6 +1014,16 @@ const onProbeProxy = async (): Promise<void> => {
           />
         </li>
       </VueDraggable>
+      <template #footer-extra>
+        <BaseButton
+          variant="ghost"
+          :disabled="isDefaultMenuDraft"
+          data-track="MENU_ORDER_RESET"
+          @click="resetMenuOrderDraft"
+        >
+          恢复默认
+        </BaseButton>
+      </template>
     </BaseConfirmModal>
     <!-- 顶栏工具编排弹窗：拖拽调整顺序，确认后持久化并即时生效 -->
     <BaseConfirmModal
@@ -1070,7 +1035,7 @@ const onProbeProxy = async (): Promise<void> => {
       @ok="onConfirmHeaderOrder"
     >
       <p class="mb-3 text-xs text-text-tertiary">
-        拖拽调整顺序（从右到左依次排列）；开关控制该条目是否显示在顶栏。点「确认」保存并立即生效
+        拖拽调整顺序（从右到左依次排列）；开关控制该条目是否显示在顶栏。「恢复默认」复原默认顺序并重新显示全部条目，点「确认」保存并立即生效
       </p>
       <VueDraggable
         v-model="headerOrderDraft"
@@ -1105,6 +1070,20 @@ const onProbeProxy = async (): Promise<void> => {
           />
         </li>
       </VueDraggable>
+      <template #footer-extra>
+        <BaseButton
+          variant="ghost"
+          :disabled="isDefaultHeaderDraft"
+          data-track="HEADER_ORDER_RESET"
+          @click="resetHeaderOrderDraft"
+        >
+          恢复默认
+        </BaseButton>
+      </template>
     </BaseConfirmModal>
+
+    <!-- 主题设置弹窗：复用首次启动引导版式，从「外观」卡片手动唤起
+         （纯受控组件，关闭时不会改动 settings.setupCompleted） -->
+    <FirstRunSetupModal v-model:open="themeSetupOpen" mode="settings" />
   </div>
 </template>

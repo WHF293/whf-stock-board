@@ -22,6 +22,8 @@ import type { FullQuote } from '../../types/stock-quote.types';
  * - stacked 模式（窄栏场景，如详情页右栏）：现价块与指标网格上下堆叠，
  *   指标网格占满整行宽度，避免格内长数值溢出重叠
  * - metricsOnly 模式（名称/代码/现价/涨跌/自选按钮由页面顶栏承载时用）：只渲染指标网格
+ * - compact 模式（详情页右栏收起态，配合 metricsOnly）：只渲染 高/低/开/收 四字段，
+ *   两列排布（其余市值/流通等 5 项指标收起时不展示，为 K 线让宽度）
  */
 const props = defineProps<{
   /** 完整报价；为 null 时展示骨架屏 */
@@ -32,6 +34,8 @@ const props = defineProps<{
   stacked?: boolean;
   /** 仅指标模式：只渲染 3x3 指标网格 */
   metricsOnly?: boolean;
+  /** 收起态紧凑指标：只渲染 高/低/开/收 四字段（需配合 metricsOnly） */
+  compact?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -72,14 +76,33 @@ const metrics = computed<CompactMetric[]>(() => {
     { label: '市盈', value: quote.pe === null ? '--' : formatPrice(quote.pe) },
   ];
 });
+
+/**
+ * 收起态紧凑指标（高 / 低 / 开 / 收）：收 = 现价；
+ * 高 / 低沿用完整态的趋势色口径（相对昨收）
+ */
+const ohlcMetrics = computed<CompactMetric[]>(() => {
+  const quote = props.quote;
+  if (!quote) return [];
+  return [
+    { label: '高', value: formatPrice(quote.high), tone: getTrendByChangePercent((quote.high ?? 0) - quote.prevClose) },
+    { label: '低', value: formatPrice(quote.low), tone: getTrendByChangePercent((quote.low ?? 0) - quote.prevClose) },
+    { label: '开', value: formatPrice(quote.open) },
+    { label: '收', value: formatPrice(quote.price) },
+  ];
+});
 </script>
 
 <template>
   <BaseSkeleton v-if="!quote" />
-  <!-- 仅指标模式：只渲染指标网格 -->
-  <dl v-else-if="metricsOnly" class="grid w-full grid-cols-3 gap-x-2 gap-y-1 text-[10px]">
+  <!-- 仅指标模式：完整态 3 列指标网格 / 收起态（compact）高/低/开/收 两列 -->
+  <dl
+    v-else-if="metricsOnly"
+    class="grid w-full gap-x-2 gap-y-1 text-[10px]"
+    :class="compact ? 'grid-cols-2' : 'grid-cols-3'"
+  >
     <div
-      v-for="metric in metrics"
+      v-for="metric in compact ? ohlcMetrics : metrics"
       :key="metric.label"
       class="flex min-w-0 items-center justify-end gap-1 tabular-nums"
     >

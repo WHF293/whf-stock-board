@@ -1,13 +1,20 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import MenuIcon from "../ui/MenuIcon.vue";
 import { useStockSearch } from '../../composables/use-stock-search';
+import { useStockSearchHistoryStore } from '../../stores/stock-search-history';
+import { SEARCH_HISTORY_TITLE } from '../../constants/search.constants';
 import type { SearchResult } from '../../types/stock-quote.types';
 
 /**
  * 标的搜索弹窗（Vue 官网 DocSearch 风格）：
  * 居中大输入框 + 结果列表，↑/↓ 键切换选中项，Enter 确认，Esc 关闭；
  * 点击遮罩关闭；打开时自动聚焦输入框
+ *
+ * 全站唯一的标的搜索入口（顶栏 / 自选股添加 / 速记关联股票复用同一组件），
+ * 因此它同时是**搜索历史的唯一记录点**：每次确认（点击 / Enter）都会写入
+ * `stores/stock-search-history.ts`（去重前置顶，最多 SEARCH_HISTORY_MAX 条）。
+ * 打开弹窗且输入框为空时，列表区展示「上次搜索」，点击即再次确认该标的。
  */
 const props = defineProps<{
   /** 弹窗显隐 */
@@ -17,17 +24,29 @@ const props = defineProps<{
 const emit = defineEmits<{
   /** 关闭弹窗（遮罩 / × / Esc） */
   close: [];
-  /** 选中某个搜索结果 */
-  select: [result: SearchResult, results: SearchResult[]];
+  /** 确认某个标的：result 为选中项，list 为当时展示的标的列表（供详情页来源列表） */
+  select: [result: SearchResult, list: SearchResult[]];
 }>();
 
 const { keyword, results, searching } = useStockSearch();
+const historyStore = useStockSearchHistoryStore();
 
 /** 输入框引用（打开时自动聚焦） */
 const inputRef = ref<HTMLInputElement | null>(null);
 
-/** 当前键盘选中的结果下标 */
+/** 当前键盘选中的下标（作用于当前展示的列表） */
 const activeIndex = ref(0);
+
+/** 是否处于「未输入」态：此时列表区展示上次搜索 */
+const isIdle = computed(() => keyword.value.trim().length === 0);
+
+/** 上次搜索（仅在未输入时展示，store 已按上限裁剪） */
+const historyItems = computed<SearchResult[]>(() => (isIdle.value ? historyStore.items : []));
+
+/** 当前展示的列表：未输入看历史，有输入看搜索结果 */
+const visibleItems = computed<SearchResult[]>(() =>
+  isIdle.value ? historyItems.value : results.value,
+);
 
 // 打开时聚焦并重置；关闭时清空搜索状态
 watch(
@@ -43,8 +62,8 @@ watch(
   },
 );
 
-// 结果变化时选中项回到首位
-watch(results, () => {
+// 展示列表变化时选中项回到首位
+watch(visibleItems, () => {
   activeIndex.value = 0;
 });
 
@@ -53,17 +72,18 @@ watch(results, () => {
  * @param delta 步进（+1 下移 / -1 上移）
  */
 const moveActive = (delta: number): void => {
-  const total = results.value.length;
+  const total = visibleItems.value.length;
   if (total === 0) return;
   activeIndex.value = (activeIndex.value + delta + total) % total;
 };
 
 /**
- * 确认选中当前项
- * @param result 搜索结果
+ * 确认选中当前项：先写入搜索历史，再上报并关闭
+ * @param result 选中的标的
  */
 const select = (result: SearchResult): void => {
-  emit('select', result, results.value);
+  historyStore.remember(result);
+  emit('select', result, visibleItems.value);
   emit('close');
 };
 
@@ -81,7 +101,7 @@ const onInputKeydown = (event: KeyboardEvent): void => {
     moveActive(-1);
   } else if (event.key === 'Enter') {
     event.preventDefault();
-    const result = results.value[activeIndex.value];
+    const result = visibleItems.value[activeIndex.value];
     if (result) {
       select(result);
     }
@@ -131,44 +151,52 @@ const onInputKeydown = (event: KeyboardEvent): void => {
           </button>
         </div>
 
-        <!-- 结果列表 -->
+        <!-- 列表区：未输入展示「上次搜索」，有输入展示搜索结果 -->
         <ul class="max-h-[50vh] space-y-1 overflow-auto p-2">
           <li
-            v-if="keyword.trim().length > 0 && searching"
+            v-if="!isIdle && searching"
             class="px-3 py-2 text-xs text-text-tertiary"
           >
             搜索中...
           </li>
           <li
-            v-else-if="results.length === 0"
+            v-else-if="visibleItems.length === 0"
             class="px-3 py-6 text-center text-xs text-text-tertiary"
           >
-            {{ keyword.trim().length > 0 ? '未找到匹配标的' : '输入代码 / 名称 / 拼音开始搜索' }}
+            {{ isIdle ? '输入代码 / 名称 / 拼音开始搜索' : '未找到匹配标的' }}
           </li>
-          <li v-for="(result, index) in results" v-else :key="result.code">
-            <button
-              type="button"
-              class="w-full rounded-xl px-3 py-2.5 text-left transition-colors"
-              :class="
-                index === activeIndex
-                  ? 'bg-primary-weak ring-1 ring-primary'
-                  : 'hover:bg-flat-weak'
-              "
-              @mouseenter="activeIndex = index"
-              @click="select(result)"
+          <template v-else>
+            <li
+              v-if="isIdle"
+              class="px-3 pb-0.5 pt-1 text-xs text-text-tertiary"
             >
-              <div class="flex items-center justify-between gap-2">
-                <span class="text-sm font-medium text-text">{{ result.name }}</span>
-                <MenuIcon
-                  v-if="index === activeIndex"
-                  name="arrowLeft"
-                  :size="14"
-                  class="shrink-0 rotate-180 text-primary"
-                />
-              </div>
-              <p class="mt-0.5 text-xs text-text-tertiary">{{ result.code }}</p>
-            </button>
-          </li>
+              {{ SEARCH_HISTORY_TITLE }}
+            </li>
+            <li v-for="(result, index) in visibleItems" :key="result.code">
+              <button
+                type="button"
+                class="w-full rounded-xl px-3 py-2.5 text-left transition-colors"
+                :class="
+                  index === activeIndex
+                    ? 'bg-primary-weak ring-1 ring-primary'
+                    : 'hover:bg-flat-weak'
+                "
+                @mouseenter="activeIndex = index"
+                @click="select(result)"
+              >
+                <div class="flex items-center justify-between gap-2">
+                  <span class="text-sm font-medium text-text">{{ result.name }}</span>
+                  <MenuIcon
+                    v-if="index === activeIndex"
+                    name="arrowLeft"
+                    :size="14"
+                    class="shrink-0 rotate-180 text-primary"
+                  />
+                </div>
+                <p class="mt-0.5 text-xs text-text-tertiary">{{ result.code }}</p>
+              </button>
+            </li>
+          </template>
         </ul>
 
         <!-- 底部快捷键提示 -->

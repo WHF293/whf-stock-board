@@ -25,11 +25,15 @@ export const parseColorScheme = (raw: unknown): boolean | null => {
  * @returns isDark 当前是否暗色；toggleDark 切换函数
  */
 export const useTheme = () => {
+  // ⚠️ 必须在调用 useDark 之前读，且只判「键不存在」：
+  // 1. useDark 初始化会往 storage 落值，之后就无法区分「用户没选过」和「用户选过」；
+  // 2. 'auto' 是**有效偏好**（vueuse 在「用户所选项恰好等于系统偏好」时会写 'auto'，
+  //    见 useDark 的 setter），不能当作「无偏好」覆盖成暗色 ——
+  //    否则在系统为浅色的机器上，用户选「白天模式」会被下一次 useTheme() 强行拉回黑暗。
+  const noStoredPreference = appStorage.getItem(STORAGE_NS_COLOR_SCHEME) === null;
   const isDark = useDark({ storageKey: STORAGE_NS_COLOR_SCHEME, storage: appStorage });
-  // 首次访问（无用户显式偏好）默认进入黑暗模式
-  // ⚠️ useDark 初始化时 writeDefaults 会把初始值 'auto' 立即写入 storage，
-  // 所以不能只判 null —— 已存的 'auto' 同样视为「无用户偏好」
-  if (parseColorScheme(appStorage.getItem(STORAGE_NS_COLOR_SCHEME)) === null) {
+  // 首次访问（storage 里完全没有该键）默认进入黑暗模式
+  if (noStoredPreference) {
     isDark.value = true;
   }
   const toggleDark = useToggle(isDark);

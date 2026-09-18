@@ -84,6 +84,7 @@ dependencies = [
  "tauri-plugin-log",
  "tauri-plugin-opener",
  "tauri-plugin-sql",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

@@ -3,21 +3,16 @@ import { computed, ref } from 'vue';
 import BaseButton from '../../components/ui/BaseButton.vue';
 import BaseEmpty from '../../components/ui/BaseEmpty.vue';
 import MenuIcon from '../../components/ui/MenuIcon.vue';
+import StockSearchModal from '../../components/business/StockSearchModal.vue';
 import { formatRelativeTime } from '../../utils/format-relative-time';
 import { toBareCode } from '../../utils/to-bare-code';
 import { usePluginPanelHost } from '../../plugin/panel-host';
-import { useWatchlistStore } from '../../stores/watchlist';
 import { useDockPanelStore } from '../../stores/dock-panel';
-import { useStockSearch } from '../../composables/use-stock-search';
+import type { SearchResult } from '../../types/stock-quote.types';
 import {
   QUICK_NOTE_ASSOCIATE_BUTTON,
   QUICK_NOTE_ASSOCIATE_CLEAR_ARIA,
   QUICK_NOTE_ASSOCIATED_TITLE,
-  QUICK_NOTE_SEARCH_PLACEHOLDER,
-  QUICK_NOTE_SEARCH_RESULT_TITLE,
-  QUICK_NOTE_SEARCHING,
-  QUICK_NOTE_WATCHLIST_EMPTY,
-  QUICK_NOTE_WATCHLIST_TITLE,
 } from './constants';
 import { QUICK_NOTE_MAX_LENGTH, type NoteStockRef, type QuickNoteRepo } from './service';
 
@@ -28,7 +23,7 @@ import { QUICK_NOTE_MAX_LENGTH, type NoteStockRef, type QuickNoteRepo } from './
  * 这也是 `mode: 'drawer'` 存在的意义。数据来自插件自己提供的 `note:repo` 服务，
  * 面板组件与数据源由插件内部绑定，宿主完全不参与。
  *
- * v1.1.0：保存时可关联一只股票 —— 自选股快选，或输入关键词搜全市场；
+ * v1.1.0：保存时可关联一只股票 —— 打开全站统一的标的搜索弹窗（顶栏搜索同款）挑一只，
  * 关联后的速记会出现在该股的个股详情面板（扩展区）里。
  */
 const props = defineProps<{
@@ -36,7 +31,6 @@ const props = defineProps<{
   repo: QuickNoteRepo;
 }>();
 
-const watchlistStore = useWatchlistStore();
 const dockPanel = useDockPanelStore();
 
 /** 面板宿主上下文（drawer 形态下用于「保存并关闭」） */
@@ -52,40 +46,19 @@ const notes = computed(() => props.repo.list());
 const hasNotes = computed(() => notes.value.length > 0);
 
 // ---------- 股票关联选择器 ----------
-/** 选择器是否展开 */
-const pickerOpen = ref(false);
+/** 关联弹窗是否展开（复用全站统一的标的搜索弹窗，样式与顶栏搜索一致） */
+const associateModalOpen = ref(false);
 
 /** 当前选中的关联股票（null = 不关联） */
 const pickedStock = ref<NoteStockRef | null>(null);
 
-/** 自选股去重快选列表（跨分组去重，按加入时间） */
-const watchlistStocks = computed<NoteStockRef[]>(() => {
-  const seen = new Set<string>();
-  const stocks: NoteStockRef[] = [];
-  for (const group of watchlistStore.groups) {
-    for (const stock of group.stocks) {
-      if (seen.has(stock.symbol)) continue;
-      seen.add(stock.symbol);
-      stocks.push({ symbol: stock.symbol, name: stock.name });
-    }
-  }
-  return stocks;
-});
-
-/** 全市场搜索（防抖 300ms，关键词 >= 2 字符才发请求） */
-const { keyword, results, searching } = useStockSearch();
-
-/** 关键词是否处于搜索态（有输入且达到最小长度） */
-const isSearching = computed(() => keyword.value.trim().length >= 2);
-
 /**
- * 选中一只股票作为关联（并收起选择器、清空搜索）
- * @param stock 目标股票
+ * 在搜索弹窗里确认一只股票作为关联（并收起弹窗）
+ * @param result 搜索结果
  */
-const onPickStock = (stock: NoteStockRef): void => {
-  pickedStock.value = stock;
-  pickerOpen.value = false;
-  keyword.value = '';
+const onPickStock = (result: SearchResult): void => {
+  pickedStock.value = { symbol: result.code, name: result.name };
+  associateModalOpen.value = false;
 };
 
 /** 清除当前关联 */
@@ -146,14 +119,14 @@ const onKeydown = (event: KeyboardEvent): void => {
         @keydown="onKeydown"
       />
 
-      <!-- 股票关联：选择器（自选快选 + 全市场搜索） -->
+      <!-- 股票关联：打开全站统一的标的搜索弹窗（与顶栏搜索同一组件，含「上次搜索」） -->
       <div class="mt-2">
         <div v-if="pickedStock" class="flex items-center gap-2">
           <button
             type="button"
             class="pressable flex items-center gap-1.5 rounded-full bg-primary-weak px-2.5 py-1 text-xs text-primary active:scale-95"
             :title="QUICK_NOTE_ASSOCIATED_TITLE"
-            @click="pickerOpen = !pickerOpen"
+            @click="associateModalOpen = true"
           >
             <MenuIcon name="pencil" :size="12" />
             <span class="max-w-[180px] truncate">
@@ -173,80 +146,11 @@ const onKeydown = (event: KeyboardEvent): void => {
           v-else
           type="button"
           class="pressable flex items-center gap-1.5 rounded-full border border-flat-weak px-2.5 py-1 text-xs text-text-tertiary hover:border-primary hover:text-primary active:scale-95"
-          @click="pickerOpen = !pickerOpen"
+          @click="associateModalOpen = true"
         >
           <MenuIcon name="plus" :size="12" />
           {{ QUICK_NOTE_ASSOCIATE_BUTTON }}
         </button>
-
-        <!-- 下拉：全屏透明点击层负责「点外面关闭」，卡片内自选 + 搜索两段 -->
-        <Teleport to="body">
-          <div v-if="pickerOpen" class="fixed inset-0 z-40" @click="pickerOpen = false" />
-          <div
-            v-if="pickerOpen"
-            class="fixed z-50 w-72 rounded-card border border-flat-weak bg-surface p-3 shadow-2xl"
-            style="left: 50%; top: 50%; transform: translate(-50%, -50%)"
-            @click.stop
-          >
-            <input
-              v-model="keyword"
-              type="text"
-              :placeholder="QUICK_NOTE_SEARCH_PLACEHOLDER"
-              class="w-full rounded-lg border border-flat-weak bg-surface px-2 py-1.5 text-sm text-text outline-none focus:border-primary"
-            />
-            <div class="mt-2 max-h-64 space-y-2 overflow-y-auto">
-              <!-- 关键词达到最小长度：只看搜索结果；否则展示自选快选 -->
-              <template v-if="isSearching">
-                <p class="mb-1 text-xs font-medium text-text-secondary">
-                  {{ QUICK_NOTE_SEARCH_RESULT_TITLE }}
-                </p>
-                <p v-if="searching" class="px-1 py-1 text-xs text-text-tertiary">
-                  {{ QUICK_NOTE_SEARCHING }}
-                </p>
-                <BaseEmpty v-else-if="results.length === 0" text="没有匹配的标的" />
-                <template v-else>
-                  <button
-                    v-for="result in results"
-                    :key="result.code"
-                    type="button"
-                    class="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-flat-weak"
-                    @click="onPickStock({ symbol: result.code, name: result.name })"
-                  >
-                    <span class="min-w-0 flex-1 truncate text-sm text-text">
-                      {{ result.name }}
-                    </span>
-                    <span class="shrink-0 text-xs tabular-nums text-text-tertiary">
-                      {{ toBareCode(result.code) }}
-                    </span>
-                  </button>
-                </template>
-              </template>
-              <template v-else>
-                <p class="mb-1 text-xs font-medium text-text-secondary">
-                  {{ QUICK_NOTE_WATCHLIST_TITLE }}
-                </p>
-                <p
-                  v-if="watchlistStocks.length === 0"
-                  class="px-1 py-1 text-xs text-text-tertiary"
-                >
-                  {{ QUICK_NOTE_WATCHLIST_EMPTY }}
-                </p>
-                <button
-                  v-for="stock in watchlistStocks"
-                  :key="stock.symbol"
-                  type="button"
-                  class="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-flat-weak"
-                  @click="onPickStock(stock)"
-                >
-                  <span class="min-w-0 flex-1 truncate text-sm text-text">{{ stock.name }}</span>
-                  <span class="shrink-0 text-xs tabular-nums text-text-tertiary">
-                    {{ toBareCode(stock.symbol) }}
-                  </span>
-                </button>
-              </template>
-            </div>
-          </div>
-        </Teleport>
       </div>
 
       <div class="mt-2 flex items-center justify-between gap-3">
@@ -312,5 +216,12 @@ const onKeydown = (event: KeyboardEvent): void => {
         </li>
       </ul>
     </div>
+
+    <!-- 关联股票搜索弹窗（全站统一组件，确认后落为 pickedStock） -->
+    <StockSearchModal
+      :open="associateModalOpen"
+      @close="associateModalOpen = false"
+      @select="onPickStock"
+    />
   </div>
 </template>
