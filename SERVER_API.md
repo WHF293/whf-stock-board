@@ -94,7 +94,8 @@
 - **个股详情（停靠面板）`StockDetailPanel`**：`fetchSinaKline`(K线) · `fetchTodayTimeline`(分时) · `fetchIndividualFundFlow` · `fetchKlineWithIndicators` · `fetchKlineSignals`
 - **股票主线（侧栏插件 `dsh-mainline`）**：`fetchThsBoardPage`(清单+结构快照，含 1 次分页) · `fetchThsBoardKline`(×90) · `fetchMarketTurnover`(复用宿主，算成交占比分母) · `fetchZtPool('zt', 基准日)`(涨停结构)
   ⚠️ 只由用户点击「扫描主线」触发、**不轮询**；同上游并发 3 + 连续间隔 500ms（`MAINLINE_SCAN_CONCURRENCY` / `MAINLINE_SCAN_DELAY_MS`）。
-  单次扫描请求数 ≈ **94**（清单首页 1 + 分页 1 + 板块年 K 90 + 两市成交额 1 + 涨停池 1）。
+  单次扫描请求数 ≈ **94**（清单首页 1 + 分页 1 + 板块年 K 90 + 两市成交额 1 + 涨停池 1；板块失败补采轮另计）。
+  **可靠性（2026-09-18 实测）**：`d.10jqka.com.cn` 的 openresty 网关会**瞬时 502 且呈突发簇** —— 同一代码 `01/2026` 连续 502、同代码 `00/2026` 立即 200，稍后重试部分自愈。对策：① 同一候选 URL 对 5xx 原地重试一次（`THS_BOARD_KLINE_URL_ATTEMPTS`）；② 整轮跑完隔 2s 对失败板块**补采一轮**（`MAINLINE_SCAN_RETRY_DELAY_MS`），两轮都失败才记 failures 并提示。
   **口径（必须遵守，否则指标会错）**：
   - 全部指标取**基准交易日截面** —— 基准日 = 最近一个「有行情的板块数 ≥ 清单总数 × 85%」的交易日，且**当日数据未落定（本地 < 15:30）时排除当日**（盘中分子是半日混合、分母是半日全市场，实测占比仅 35.6% 而完整日为 98.5%）；
   - 未落定日的半日 bar **不写入历史**（写入会覆盖同日、永久污染占比分位序列）；

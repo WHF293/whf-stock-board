@@ -22,6 +22,7 @@ import {
   MAINLINE_SCAN_DELAY_MS,
   THS_BOARD_KLINE_ADJUST_FALLBACK,
   THS_BOARD_KLINE_ADJUST_PRIMARY,
+  THS_BOARD_KLINE_URL_ATTEMPTS,
   THS_BOARD_KLINE_URL_BASE,
   THS_BOARD_KLINE_URL_MIDDLE,
   THS_BOARD_KLINE_YEAR_FALLBACK,
@@ -30,6 +31,7 @@ import {
   THS_BOARD_LIST_PAGE_URL_BASE,
   THS_BOARD_LIST_PAGE_URL_SUFFIX,
   THS_BOARD_LIST_URL,
+  THS_HTTP_SERVER_ERROR_MIN,
   THS_INDUSTRY_CODE_PREFIX,
   THS_REFERER,
   YUAN_PER_YI,
@@ -384,17 +386,29 @@ export const fetchThsBoardKline = async (code: string, year: number): Promise<Bo
   let lastError = '';
   for (const candidate of candidates) {
     const url = `${THS_BOARD_KLINE_URL_BASE}${code}${THS_BOARD_KLINE_URL_MIDDLE}${candidate.adjust}/${candidate.year}.js`;
-    try {
-      const response = await proxyFetch(url, { headers: { Referer: THS_REFERER } });
-      if (!response.ok) {
-        lastError = `HTTP ${response.status}`;
-        continue;
+    // 网关会瞬时 5xx（实测同代码换复权参数立即 200），同一候选先原地小步重试再换下一个
+    for (let attempt = 0; attempt < THS_BOARD_KLINE_URL_ATTEMPTS; attempt += 1) {
+      try {
+        const response = await proxyFetch(url, { headers: { Referer: THS_REFERER } });
+        if (!response.ok) {
+          lastError = `HTTP ${response.status}`;
+          const retryable =
+            response.status >= THS_HTTP_SERVER_ERROR_MIN &&
+            attempt + 1 < THS_BOARD_KLINE_URL_ATTEMPTS;
+          if (retryable) {
+            await delay(MAINLINE_SCAN_DELAY_MS);
+            continue;
+          }
+          break;
+        }
+        const days = parseKlineJsonp(decodeGbk(await response.arrayBuffer()));
+        if (days.length > 0) return days;
+        lastError = '空数据';
+        break;
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error);
+        break;
       }
-      const days = parseKlineJsonp(decodeGbk(await response.arrayBuffer()));
-      if (days.length > 0) return days;
-      lastError = '空数据';
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error);
     }
   }
   throw new Error(`同花顺板块日K不可用：${code}（${lastError}）`);

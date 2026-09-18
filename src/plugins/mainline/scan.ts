@@ -16,7 +16,7 @@
  */
 import { delay } from '../../utils/delay';
 import { fetchMarketTurnover } from '../../api/turnover.api';
-import { MAINLINE_SCAN_CONCURRENCY, MAINLINE_SCAN_DELAY_MS } from './constants';
+import { MAINLINE_SCAN_CONCURRENCY, MAINLINE_SCAN_DELAY_MS, MAINLINE_SCAN_RETRY_DELAY_MS } from './constants';
 import { resolveBenchmark, trimAfter } from './benchmark';
 import { enrichBenchmarkDay, mergeDays, type BenchmarkStructure } from './board-merge';
 import { aggregateLimitUp, fetchLimitUpPool } from './limit-up';
@@ -67,10 +67,13 @@ const EMPTY_LIMIT_UP: LimitUpAggregate = {
 
 /**
  * 并发拉取全部板块的年度日 K（带并发上限与同上游间隔）
+ *
+ * 网关 502 呈「突发簇」分布：整轮跑完等 `MAINLINE_SCAN_RETRY_DELAY_MS` 再对失败板块
+ * **补采一轮**（轮内间隔更稀疏），实测自愈率显著更高；两轮都失败才记入 failures。
  * @param refs 板块清单
  * @param year 年份
  * @param existingByCode 本地已有序列（按代码索引，用于增量合并）
- * @param onProgress 进度回调
+ * @param onProgress 进度回调（只按首轮计数；补采轮不再推进进度条）
  * @returns 合并后的序列与失败清单
  */
 const fetchAllBoardSeries = async (
@@ -79,36 +82,58 @@ const fetchAllBoardSeries = async (
   existingByCode: ReadonlyMap<string, BoardSeries>,
   onProgress?: (progress: MainlineScanProgress) => void,
 ): Promise<{ boards: BoardSeries[]; failures: string[] }> => {
-  const boards: BoardSeries[] = [];
-  const failures: string[] = [];
-  let cursor = 0;
+  const results = new Map<string, BoardSeries>();
+  const failed = new Set<string>();
   let done = 0;
 
-  const worker = async (): Promise<void> => {
-    while (cursor < refs.length) {
-      const ref = refs[cursor];
-      cursor += 1;
-      try {
-        const incoming = await fetchThsBoardKline(ref.code, year);
-        const existing = existingByCode.get(ref.code)?.days ?? [];
-        boards.push({ code: ref.code, name: ref.name, days: mergeDays(existing, incoming) });
-      } catch (error) {
-        // 单个板块失败不中断整轮：保留本地旧序列，代码记进 failures 由界面提示
-        failures.push(ref.code);
-        const existing = existingByCode.get(ref.code);
-        if (existing) boards.push(existing);
-        console.warn(`[plugin] dsh-mainline 板块取数失败：${ref.code}`, error);
+  const runPass = async (
+    passRefs: readonly ThsBoardRef[],
+    delayMs: number,
+    reportProgress: boolean,
+  ): Promise<void> => {
+    let cursor = 0;
+    const worker = async (): Promise<void> => {
+      while (cursor < passRefs.length) {
+        const ref = passRefs[cursor];
+        cursor += 1;
+        try {
+          const incoming = await fetchThsBoardKline(ref.code, year);
+          const existing = existingByCode.get(ref.code)?.days ?? [];
+          results.set(ref.code, {
+            code: ref.code,
+            name: ref.name,
+            days: mergeDays(existing, incoming),
+          });
+          failed.delete(ref.code);
+        } catch (error) {
+          // 单个板块失败不中断整轮：代码记进 failed，两轮都失败才由界面提示
+          failed.add(ref.code);
+          console.warn(`[plugin] dsh-mainline 板块取数失败：${ref.code}`, error);
+        }
+        done += 1;
+        if (reportProgress) onProgress?.({ done, total: refs.length });
+        await delay(delayMs);
       }
-      done += 1;
-      onProgress?.({ done, total: refs.length });
-      await delay(MAINLINE_SCAN_DELAY_MS);
-    }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(MAINLINE_SCAN_CONCURRENCY, passRefs.length) }, () => worker()),
+    );
   };
 
-  await Promise.all(
-    Array.from({ length: Math.min(MAINLINE_SCAN_CONCURRENCY, refs.length) }, () => worker()),
-  );
-  return { boards, failures };
+  await runPass(refs, MAINLINE_SCAN_DELAY_MS, true);
+  if (failed.size > 0) {
+    const retryRefs = refs.filter((ref) => failed.has(ref.code));
+    await delay(MAINLINE_SCAN_RETRY_DELAY_MS);
+    await runPass(retryRefs, MAINLINE_SCAN_RETRY_DELAY_MS, false);
+  }
+
+  const boards = [...results.values()];
+  // 补采仍失败的板块兜底本地旧序列（界面照旧展示，只是数据变旧）
+  for (const code of failed) {
+    const existing = existingByCode.get(code);
+    if (existing) boards.push(existing);
+  }
+  return { boards, failures: [...failed] };
 };
 
 /**

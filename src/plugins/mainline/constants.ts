@@ -70,6 +70,19 @@ export const THS_BOARD_KLINE_ADJUST_FALLBACK = '00';
 /** 复权与年份都取不到时，向前回退的年数（去年文件兜底） */
 export const THS_BOARD_KLINE_YEAR_FALLBACK = 1;
 
+/**
+ * 同一候选 URL 对 5xx 网关错误的尝试次数（含首次）
+ *
+ * 实测（2026-09-18）：`d.10jqka.com.cn` 的 openresty 网关会**瞬时 502** ——
+ * 同一代码 `01/2026` 连续 502，而同代码的 `00/2026` 立即 200，稍后重试部分自愈；
+ * 一次 90 板块的扫描曾因此 14 个整板失败（四个候选 URL 恰好全撞上）。
+ * 对 5xx 在原 URL 上小步重试一次，仍在频率红线内（间隔 ≥ `MAINLINE_SCAN_DELAY_MS`）。
+ */
+export const THS_BOARD_KLINE_URL_ATTEMPTS = 2;
+
+/** 5xx 起始状态码（含）—— 视为可重试的网关瞬时错误 */
+export const THS_HTTP_SERVER_ERROR_MIN = 500;
+
 /** 同花顺要求带 Referer，否则可能被拒 */
 export const THS_REFERER = 'https://q.10jqka.com.cn/';
 
@@ -101,6 +114,12 @@ export const MAINLINE_INDUSTRY_ALIAS: Readonly<Record<string, string>> = {
   '非白酒': '饮料制造',
   '铁路公路': '公路铁路运输',
   '冶钢原料': '钢铁',
+  // 2026-09-18 真实涨停池实测补齐（申万二级名 → 同花顺板块）：
+  // 航运港口 与 港口航运 属词序颠倒，前后缀匹配都救不了，必须显式别名
+  '商用车': '汽车整车',
+  '焦炭Ⅱ': '煤炭开采加工',
+  '玻璃玻纤': '建筑材料',
+  '航运港口': '港口航运',
 };
 
 /** 东财涨停池类型（主线只取涨停池） */
@@ -111,6 +130,14 @@ export const MAINLINE_SCAN_CONCURRENCY = 3;
 
 /** 同上游连续请求间隔（毫秒，频率红线） */
 export const MAINLINE_SCAN_DELAY_MS = 500;
+
+/**
+ * 扫描第二轮补采的间隔（毫秒）
+ *
+ * 502 网关错误呈「突发簇」分布（一轮扫描里集中出现），整轮跑完等一小段时间
+ * 再补采失败板块的自愈率显著更高；第二轮轮内同上游间隔也用该值（比首轮更稀疏）。
+ */
+export const MAINLINE_SCAN_RETRY_DELAY_MS = 2000;
 
 /** 每板块保留的最大历史交易日数（约一年，够算分位又不过度膨胀） */
 export const MAINLINE_MAX_HISTORY_DAYS = 260;
