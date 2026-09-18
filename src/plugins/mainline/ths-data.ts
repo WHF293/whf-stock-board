@@ -7,12 +7,16 @@
  * 数据源与编码（实测）：
  * - 清单页 `q.10jqka.com.cn/thshy/` 是 **GBK** HTML，链接形如
  *   `…/thshy/detail/code/881121/`；必须按 GBK 解码，否则板块名全是乱码。
- *   该页第一页即含**全部 90 个行业板块**（第二页实测为空），且表格自带
+ *   该页锚点含**全部 90 个行业板块**，表格自带
  *   `涨跌幅 / 总成交额(亿元) / 净流入(亿元) / 上涨家数 / 下跌家数 / 均价 / 领涨股`，
- *   于是「板块宽度 + 资金流」是零增量请求拿到的。
- * - 板块年 K `d.10jqka.com.cn/v6/line/48_<code>/01/<year>.js` 是 JSONP 文
+ *   于是「板块宽度 + 资金流」是零增量请求拿到的；⚠️ **表格每页只有 50 行**，
+ *   90 个板块分布在两页（50 + 40，第二页须走 ajax 形态），取完要数行数。
+ * - 板块日 K `d.10jqka.com.cn/v6/line/48_<code>/<复权>/<file>.js` 是 JSONP 文
  *   `quotebridge_v6_line_48_881121_01_2026({"data":"日期,开,高,低,收,量,额,…;…"})`，
  *   行内字段序为 `日期,开,高,低,收,成交量(股),成交额(元),…`。
+ *   文件有**三种形态**，按 `buildKlineCandidates` 的顺序回退：当年 → 近端 `last`
+ *   → 去年，每种都试前复权 `01` 与不复权 `00`。近端 `last.js`（≈140 个交易日）
+ *   与年 K 同源同口径、重叠日期数值逐日一致，是 502 的主要救援手段。
  * - 两处都要带同花顺 Referer；请求统一经 `proxyFetch`（Tauri 走 Rust 直连 /
  *   浏览器走同源 `/stock-proxy`，域名 `10jqka.com.cn` 已在白名单内）。
  */
@@ -22,6 +26,7 @@ import {
   MAINLINE_SCAN_DELAY_MS,
   THS_BOARD_KLINE_ADJUST_FALLBACK,
   THS_BOARD_KLINE_ADJUST_PRIMARY,
+  THS_BOARD_KLINE_FILE_LAST,
   THS_BOARD_KLINE_URL_ATTEMPTS,
   THS_BOARD_KLINE_URL_BASE,
   THS_BOARD_KLINE_URL_MIDDLE,
@@ -362,30 +367,55 @@ export const fetchThsBoardPage = async (): Promise<{
   return { refs: refs.length > 0 ? refs : rows.map((row) => ({ code: row.code, name: row.name })), rows };
 };
 
+/** 年 K 候选文件（`file` 为年份数字串或近端文件段 `last`） */
+export interface ThsKlineCandidate {
+  /** 文件名段：`2026` 或 `last` */
+  file: string;
+  /** 复权段：`01` 前复权 / `00` 不复权 */
+  adjust: string;
+}
+
+/**
+ * 构造板块日 K 的候选 URL 段（纯函数，便于冒烟断言回退顺序）
+ *
+ * 顺序：当年 01 → 当年 00 → **近端 01/last → 近端 00/last** → 去年 01 → 去年 00。
+ * 近端文件排在去年之前：它是同源同口径的热点文件，实测能救回「年文件 502」的板块，
+ * 且近半年数据对 5/20 日量能与 60 日价格分位比去年的旧数据更有用。
+ * @param year 年份（如 2026）
+ * @returns 候选列表（按尝试优先级）
+ */
+export const buildKlineCandidates = (year: number): ThsKlineCandidate[] => {
+  const candidates: ThsKlineCandidate[] = [];
+  const pushFile = (file: string): void => {
+    candidates.push(
+      { file, adjust: THS_BOARD_KLINE_ADJUST_PRIMARY },
+      { file, adjust: THS_BOARD_KLINE_ADJUST_FALLBACK },
+    );
+  };
+
+  pushFile(String(year));
+  pushFile(THS_BOARD_KLINE_FILE_LAST);
+  for (let back = 1; back <= THS_BOARD_KLINE_YEAR_FALLBACK; back += 1) {
+    pushFile(String(year - back));
+  }
+  return candidates;
+};
+
 /**
  * 拉取单个板块的年度日 K（同花顺）
  *
- * 回退链：当年 前复权 → 当年 不复权 → 去年 前复权 → 去年 不复权，
- * 首个解析出行的胜出（`01` / `00` 各自都有取不到的板块，实测见 constants 注释）。
+ * 回退链见 `buildKlineCandidates`（当年/近端/去年的前复权与不复权共 6 个候选），
+ * 首个解析出行的胜出；同一候选 URL 遇 5xx 网关错误会在原地小步重试一次。
  * @param code 板块代码（88xxxx）
  * @param year 年份（如 2026）
  * @returns 逐日行情（升序）；全部候选都取不到时抛错
  */
 export const fetchThsBoardKline = async (code: string, year: number): Promise<BoardDaily[]> => {
-  const candidates: { year: number; adjust: string }[] = [
-    { year, adjust: THS_BOARD_KLINE_ADJUST_PRIMARY },
-    { year, adjust: THS_BOARD_KLINE_ADJUST_FALLBACK },
-  ];
-  for (let back = 1; back <= THS_BOARD_KLINE_YEAR_FALLBACK; back += 1) {
-    candidates.push(
-      { year: year - back, adjust: THS_BOARD_KLINE_ADJUST_PRIMARY },
-      { year: year - back, adjust: THS_BOARD_KLINE_ADJUST_FALLBACK },
-    );
-  }
+  const candidates = buildKlineCandidates(year);
 
   let lastError = '';
   for (const candidate of candidates) {
-    const url = `${THS_BOARD_KLINE_URL_BASE}${code}${THS_BOARD_KLINE_URL_MIDDLE}${candidate.adjust}/${candidate.year}.js`;
+    const url = `${THS_BOARD_KLINE_URL_BASE}${code}${THS_BOARD_KLINE_URL_MIDDLE}${candidate.adjust}/${candidate.file}.js`;
     // 网关会瞬时 5xx（实测同代码换复权参数立即 200），同一候选先原地小步重试再换下一个
     for (let attempt = 0; attempt < THS_BOARD_KLINE_URL_ATTEMPTS; attempt += 1) {
       try {

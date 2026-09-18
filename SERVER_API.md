@@ -13,7 +13,8 @@
   `eastmoney.com`、`gtimg.cn`、`sina.com.cn`、`sina.cn`、`sinajs.cn`、`10jqka.com.cn`、`thepaper.cn`、`cls.cn`、`linkdiary.cn`。
   新增域名需同步改这里（浏览器）与 capability（Tauri）。
 - **本机关键约束（踩坑结论，2026-09-14 实测复现）**：
-  - ⚠️ **东财行情域 `push2his.eastmoney.com` 与 `push2.eastmoney.com` 在本机被 TCP 层封禁**（`fetch failed` / `UND_ERR_SOCKET`，即 AGENTS 里记的「东财封 IP」）。**带数字前缀的镜像域同样不可达**（实测 `1./13./45.push2his`、`1./7./20./45./91.push2` 全部失败）→ `stock-sdk` 的 `sdk.kline.*` / `sdk.batch.cn` 等走东财行情域的方法也随之失败。
+  - ⚠️ **东财行情域 `push2his.eastmoney.com` 与 `push2.eastmoney.com` 在本机长期表现为被 TCP 层封禁**（`fetch failed` / `UND_ERR_SOCKET`，即 AGENTS 里记的「东财封 IP」）。**带数字前缀的镜像域同样不可达**（实测 `1./13./45.push2his`、`1./7./20./45./91.push2` 全部失败）→ `stock-sdk` 的 `sdk.kline.*` / `sdk.batch.cn` 等走东财行情域的方法也随之失败。
+  - 📌 **2026-09-18 补充实测（口径修正：突发限速，不是永久封禁）**：该域**间隔 ≥1s 时可用**——`push2his/api/qt/stock/kline/get?secid=90.BKxxxx`（板块指数日 K，含成交额）与 `push2/api/qt/clist/get`（板块快照）均返回 200 且数据非空；但**短时间连发会立刻拒连**（curl `000`），停顿约 20s 后自动恢复。**结论：可作兜底源，但必须严格低频（点击触发、串行 + ≥1s 间隔），不能当稳定主源或轮询源。**
   - 同属东财但**实测可达**的域：`push2delay.eastmoney.com`（快照列表 / 分时 `trends2`）、`push2ex`（涨停池）、`datacenter-web`、`np-listapi`（7×24 快讯）。
   - ⚠️ **`push2delay` 不提供历史 K 线**：`/api/qt/stock/kline/get` 返回 **HTTP 200 但 `data` 为 null / `klines` 为空**。调用方若把「200 但无数据」当成功，会静默返回空数组 —— 表现为**图表空白、列表为空且没有任何错误提示**（本模块曾踩此坑）。解析上游必须校验「拿到非空数据」才算成功。
   - **指数日 K 成交额因此改走腾讯** `web.ifzq.gtimg.cn/appstock/app/newfqkline/get`（见 §1 `fetchMarketTurnover`）。该域已在代理白名单 `gtimg.cn` 与 Tauri capability `https://*.gtimg.cn/*` 内，无需新增配置。
@@ -38,7 +39,7 @@
 | 更新检查 | `constants/app-info.constants.ts` + `views/SettingsView.vue` | `api.github.com/repos/WHF293/whf-stock-board/releases/latest` | GET | 检查更新（非行情数据） |
 | 连通性探针 | `views/SettingsView.vue` | `qt.gtimg.cn/q=sh000001` | GET | 设置页「网络诊断」用腾讯源直连测连通性 |
 | `fetchThsBoardPage` | `plugins/mainline/ths-data.ts` | 清单页 `q.10jqka.com.cn/thshy/` + 分页 `q.10jqka.com.cn/thshy/index/field/199112/order/desc/page/<n>/ajax/1/` | GET | 同花顺行业板块清单 + **当日结构快照**（**GBK HTML**）。首页锚点正则抽 `detail/code/88xxxx` 得**全部 90 个**行业板块；表格行解析得 `涨跌幅 / 总成交额(亿元) / 净流入(亿元) / 上涨家数 / 下跌家数 / 均价 / 领涨股`。⚠️ **表格每页只有 50 行**（90 个板块分布在 2 页：50 + 40，第 2 页须走 ajax 形态），两页并集与锚点集合实测完全一致。带 `Referer: q.10jqka.com.cn` |
-| `fetchThsBoardKline` | `plugins/mainline/ths-data.ts` | `d.10jqka.com.cn/v6/line/48_<板块码>/<复权>/<年>.js` | GET(JSONP) | 同花顺板块**年 K**（含成交额）：剥 JSONP 壳后 `data` 为 `日期,开,高,低,收,量,额,…` 逐日分号分隔。⚠️ **复权口径必须回退**：部分板块 `01`（前复权）年文件被上游网关拒（502）、另一些仅 `00`（不复权）可用 → 按「当年 01 → 当年 00 → 去年 01 → 去年 00」逐个尝试，首个有数据者胜出。带 `Referer` |
+| `fetchThsBoardKline` | `plugins/mainline/ths-data.ts` | `d.10jqka.com.cn/v6/line/48_<板块码>/<复权>/<文件>.js` | GET(JSONP) | 同花顺板块**日 K**（含成交额）：剥 JSONP 壳后 `data` 为 `日期,开,高,低,收,量,额,…` 逐日分号分隔。**三文件 × 两复权 = 6 个候选按序回退**（`buildKlineCandidates`）：当年 `2026` → 近端 `last` → 去年 `2025`，各试 `01` 前复权/`00` 不复权；同一候选遇 5xx 原地重试一次。⚠️ 近端 `last.js` 是**同源同口径**的第二份数据（≈140 个交易日，与年 K 重叠日期数值逐日一致，实测 140/140 全等）→ 是年文件 502 的主要救援手段。带 `Referer` |
 
 ---
 
@@ -95,7 +96,8 @@
 - **股票主线（侧栏插件 `dsh-mainline`）**：`fetchThsBoardPage`(清单+结构快照，含 1 次分页) · `fetchThsBoardKline`(×90) · `fetchMarketTurnover`(复用宿主，算成交占比分母) · `fetchZtPool('zt', 基准日)`(涨停结构)
   ⚠️ 只由用户点击「扫描主线」触发、**不轮询**；同上游并发 3 + 连续间隔 500ms（`MAINLINE_SCAN_CONCURRENCY` / `MAINLINE_SCAN_DELAY_MS`）。
   单次扫描请求数 ≈ **94**（清单首页 1 + 分页 1 + 板块年 K 90 + 两市成交额 1 + 涨停池 1；板块失败补采轮另计）。
-  **可靠性（2026-09-18 实测）**：`d.10jqka.com.cn` 的 openresty 网关会**瞬时 502 且呈突发簇** —— 同一代码 `01/2026` 连续 502、同代码 `00/2026` 立即 200，稍后重试部分自愈。对策：① 同一候选 URL 对 5xx 原地重试一次（`THS_BOARD_KLINE_URL_ATTEMPTS`）；② 整轮跑完隔 2s 对失败板块**补采一轮**（`MAINLINE_SCAN_RETRY_DELAY_MS`），两轮都失败才记 failures 并提示。
+  **可靠性（2026-09-18 实测）**：`d.10jqka.com.cn` 的 openresty 网关会**瞬时 502 且按文件发生** —— 同一板块年文件 `2026.js` 502 而 `last.js` 200。三层兜底：① 回退链含近端 `last.js`（同源同口径，与年 K 重叠日期数值逐日一致）；② 同一候选 URL 对 5xx 原地重试一次（`THS_BOARD_KLINE_URL_ATTEMPTS`）；③ 整轮跑完隔 2s 对失败板块**补采一轮**（`MAINLINE_SCAN_RETRY_DELAY_MS`）。三层全失败才记 failures 并提示（保留本地旧数据）。
+  **未实现的兜底（评估完成、待决策）**：跨源兜底（东财板块日 K `secid=90.BKxxxx` + 东财板块快照 `clist m:90+t:2` 的 f104/f105/f62）——技术可达，但东财行业分类与同花顺不同源（名称映射实测 62/90 直接命中、剥罗马数字后缀后 71/90），**混排会污染量能/占比序列**，只能「整段降级 + 标记来源」，见 `.ai/开发方案/2026-09-18-数据源兜底方案.md`。
   **口径（必须遵守，否则指标会错）**：
   - 全部指标取**基准交易日截面** —— 基准日 = 最近一个「有行情的板块数 ≥ 清单总数 × 85%」的交易日，且**当日数据未落定（本地 < 15:30）时排除当日**（盘中分子是半日混合、分母是半日全市场，实测占比仅 35.6% 而完整日为 98.5%）；
   - 未落定日的半日 bar **不写入历史**（写入会覆盖同日、永久污染占比分位序列）；
@@ -112,6 +114,6 @@
 3. **新域名 403 FORBIDDEN_TARGET**：补 `proxy.constants.ts` 白名单（浏览器）+ capability scope（Tauri）。
 4. **403 / 空数据**：检查 `Referer`（新浪/同花顺需带），或上游换了字段（参考 `.ai/` 下的新浪接口文档、新浪新闻接口文档）。
 5. **JSONP 源乱码**：确保 `proxyFetch` 按 `arrayBuffer` 透传、腾讯源由 SDK 按 GBK 解码，不要自行转码。
-6. **同花顺板块年 K 502 / 空**：不是封禁，而是该板块在该复权口径下不可用 → 按回退链换口径/年份；若四种组合全空才记该板块取数失败（扫描结果里会计入失败数，不静默）。
+6. **同花顺板块日 K 502 / 空**：分两种——① **瞬时 502**（openresty 网关，**按文件**发生且呈突发簇：同一板块年文件 502 而 `last.js` 200）→ 回退链已含近端 `last.js`、同一候选对 5xx 原地重试一次、扫描整轮跑完再补采一轮，三层叠加后仍失败才记该板块失败；② 该板块在该复权口径下确实无数据 → 继续沿回退链换文件/复权，6 个候选全空才记失败（扫描结果里计入失败数，不静默）。
 7. **封 IP**：东财高频 → 全域名 TCP RST 数十分钟；重接口严格错峰、低并发（≤3）、不轮询。
 8. **境外财经站（已评估否决，勿重复尝试）**：**华尔街日报中文版 `cn.wsj.com` 不可接入**——境内 DNS 污染（解析到 108.160.169.55 / 31.13.69.245 等无关段）+ TCP 443 全超时；走本机代理（Clash 7897）或 DoH 取真实 Akamai IP 后，仍被 **DataDome 反爬**挡回 `401`（响应含 `set-cookie: datadome=…`，正文是「Please enable JS and disable any ad blocker」）→ **纯 HTTP 抓取永远拿不到 HTML，必须能执行 JS 的真浏览器**；存档站 `archive.org` 整域不可达，三方中转（allorigins / corsproxy / codetabs / r.jina.ai）全灭；WSJ 官方 RSS（`feeds.a.dj.com`）**已停更**（冻结在 2025-01-27）。同集团 MarketWatch 的 `feeds.content.dowjones.io/public/rss/mw_topstories`、`mw_bulletins` 实测**实时可达**（英文），是唯一可用的道琼斯系替代源。财联社 `www.cls.cn` 同理：站点下发 Next.js 壳、正文靠客户端再拉，需 `sign = md5(sha1(sortedQuery))`，暂缓。
