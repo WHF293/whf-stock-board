@@ -1,4 +1,4 @@
-//! 触控板三指手势（最大化 / 最小化）兼容层
+//! 触控板三指手势（最大化 / 最小化）兼容层 + 拖拽 / 激活后键盘焦点归还
 //!
 //! 背景：主窗口 `decorations: false`（自绘标题栏）后是 WS_POPUP 无边框窗口，
 //! 缺少 WS_SYSMENU / WS_MINIMIZEBOX / WS_MAXIMIZEBOX 样式位。触摸板驱动实现
@@ -11,6 +11,13 @@
 //! 2. 子类化窗口过程，显式接住 WM_SYSCOMMAND 的 SC_MINIMIZE / SC_MAXIMIZE /
 //!    SC_RESTORE，直接 ShowWindow 执行（等价原生标题栏按钮行为），
 //!    其余消息原样交回原窗口过程（tao 自身的无边框命中测试不受影响）。
+//!
+//! 焦点归还（键盘事件失效的修复）：无边框窗口上拖拽标题栏（进入系统 NC 拖拽
+//! 循环）或经任务栏 / Alt+Tab 切回后，系统把键盘焦点落在主窗口 HWND，而
+//! WebView2 的输入走自己的子 HWND（Chrome_WidgetWin_1）——焦点没到子窗口时
+//! 页面收不到任何键盘事件（Shift+Tab 切页、搜索快捷键等全部失效），直到再次
+//! 点击内容区。因此在 WM_EXITSIZEMOVE（拖拽 / 缩放结束）与 WM_ACTIVATE
+//! （窗口被激活）时机显式把焦点设回 WebView2 子窗口。
 
 #[cfg(windows)]
 mod imp {
@@ -18,10 +25,12 @@ mod imp {
   use std::sync::Mutex;
 
   use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+  use windows_sys::Win32::UI::Input::KeyboardAndMouse::SetFocus;
   use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CallWindowProcW, DefWindowProcW, GetWindowLongPtrW, SetWindowLongPtrW, ShowWindow, GWL_STYLE,
-    GWLP_WNDPROC, SC_MAXIMIZE, SC_MINIMIZE, SC_RESTORE, SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE,
-    WM_SYSCOMMAND, WNDPROC, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_SYSMENU,
+    CallWindowProcW, DefWindowProcW, FindWindowExW, GetWindowLongPtrW, SetWindowLongPtrW,
+    ShowWindow, GWL_STYLE, GWLP_WNDPROC, SC_MAXIMIZE, SC_MINIMIZE, SC_RESTORE, SW_MAXIMIZE,
+    SW_MINIMIZE, SW_RESTORE, WM_ACTIVATE, WM_EXITSIZEMOVE, WM_SYSCOMMAND, WNDPROC, WS_MAXIMIZEBOX,
+    WS_MINIMIZEBOX, WS_SYSMENU,
   };
 
   /// 原窗口过程表：hwnd 地址（isize）→ 子类化前的窗口过程，用于消息回传。
@@ -31,7 +40,20 @@ mod imp {
   /// 原生窗口过程签名（windows-sys 的 WNDPROC 是 Option 包装，回传前需还原）
   type RawWndProc = unsafe extern "system" fn(HWND, u32, WPARAM, LPARAM) -> LRESULT;
 
-  /// 子类化窗口过程：接住 WM_SYSCOMMAND 的最小化 / 最大化 / 还原，其余回传原过程
+  /// 把键盘焦点还给 WebView2 子窗口（Chrome_WidgetWin_1）
+  ///
+  /// 只把焦点移到 WebView2 的顶层 interop 窗口，WebView2 内部会恢复自己
+  /// 上次的焦点元素；找不到子窗口（runtime 差异）时保持现状不报错。
+  unsafe fn focus_webview(parent: HWND) {
+    let class: Vec<u16> = "Chrome_WidgetWin_1\0".encode_utf16().collect();
+    let child = FindWindowExW(parent, std::ptr::null_mut(), class.as_ptr(), std::ptr::null_mut());
+    if !child.is_null() {
+      SetFocus(child);
+    }
+  }
+
+  /// 子类化窗口过程：接住 WM_SYSCOMMAND 的最小化 / 最大化 / 还原，
+  /// 并在拖拽结束 / 窗口激活时把焦点还给 WebView2，其余回传原过程
   unsafe extern "system" fn syscmd_wndproc(
     hwnd: HWND,
     msg: u32,
@@ -50,6 +72,12 @@ mod imp {
         ShowWindow(hwnd, show_cmd);
         return 0;
       }
+    }
+    // 拖拽 / 缩放结束、或窗口被激活（含最小化还原、任务栏 / Alt+Tab 切回）：
+    // 系统此时把焦点给主窗口而非 WebView2 子窗口，显式归还，否则页面收不到键盘事件。
+    // WM_ACTIVATE 的 wParam 低字为 0（WA_INACTIVE）表示窗口失活，跳过。
+    if msg == WM_EXITSIZEMOVE || (msg == WM_ACTIVATE && (wparam & 0xFFFF) != 0) {
+      focus_webview(hwnd);
     }
     let original = ORIGINAL_PROCS
       .lock()
