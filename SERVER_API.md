@@ -64,6 +64,7 @@
 | `fetchIndividualFundFlow` | `api/flow.api.ts` | `sdk.fundFlow.individual(symbol)` | 东财 **push2his（直连，勿改道）** | 个股资金流历史（详情页）。同上述 fflow 域约束 |
 | `fetchFundFlowRank` | `api/flow.api.ts` | `sdk.fundFlow.rank({indicator:'today'})` | 东财 | 个股主力资金流排名 |
 | `fetchSectorFundFlowRank` | `api/flow.api.ts` | `sdk.fundFlow.sectorRank({sectorType:'industry'})` | 东财 | 板块资金流排名 |
+| `fetchSectorFlowCurve(s)` | `api/sector-flow-curve.api.ts` | 直连 `push2delay.eastmoney.com/api/qt/stock/fflow/kline/get?secid=90.BKxxxx&klt=1&lmt=0` | 东财 **push2delay（直连，勿走 push2his）** | 行业板块**当日分时**资金流曲线（klt=1 分钟线，每分钟累计主力净流入，241 点；实测 2026-09-19）。⚠️ 与 fflow/daykline 口径相反：daykline 在 push2delay 只回 1 条被剔除改道，但 kline 分时在 push2delay 完整、在 push2his 反而返回空 klines；批量并发 3（市场榜单「板块净流入」页签的曲线视图，进视图触发一次不轮询） |
 | `fetchNorthboundHoldingRank` | `api/flow.api.ts` | `sdk.northbound.holdingRank({market:'all',period:'today'})` | 东财 | 北向持股排名 |
 | `fetchIsTradingDay` | `api/calendar.api.ts` | `sdk.calendar.isTradingDay()` | 腾讯日历 | 是否 A 股交易日（异步，带缓存） |
 | `getMarketStatus` | `api/calendar.api.ts` | `sdk.calendar.marketStatus(market)` | 同步 | 当前市场状态（盘前/交易中/午休/盘后/休市，不识假） |

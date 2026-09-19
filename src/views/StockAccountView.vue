@@ -124,11 +124,16 @@ const onTradeImportConfirm = async (payload: TradeImportPayload): Promise<void> 
 </script>
 
 <template>
-  <div class="space-y-4">
-    <NoticeBar text="当前仅支持导入同花顺导出的「对账单」与「交割单」文件（CSV / XLSX / XLS）" />
+  <!-- 定高 flex 列（与市场榜单等整页单表页同款高度链）：
+       NoticeBar / tab 条保持内容高，卡片吃剩余高度，表格滚动不外溢到 main -->
+  <div class="flex h-[calc(100dvh-6.5rem)] min-h-0 flex-col gap-4">
+    <NoticeBar
+      class="shrink-0"
+      text="当前仅支持导入同花顺导出的「对账单」与「交割单」文件（CSV / XLSX / XLS）"
+    />
 
     <!-- 账户 tab 条（tab + 右侧控制区） -->
-    <div class="flex items-end border-b border-flat-weak">
+    <div class="flex shrink-0 items-end border-b border-flat-weak">
       <!-- 左侧：账户 tab（active 主题色字 + 下划线，溢出横向滚动） -->
       <div
         class="min-w-0 flex-1 overflow-x-auto overflow-y-hidden [scrollbar-width:thin]"
@@ -203,7 +208,7 @@ const onTradeImportConfirm = async (payload: TradeImportPayload): Promise<void> 
     <!-- 导入提示横幅（解析入库待实现期间的占位反馈） -->
     <p
       v-if="importHint"
-      class="rounded-lg bg-primary-weak px-3 py-2 text-sm text-primary"
+      class="shrink-0 rounded-lg bg-primary-weak px-3 py-2 text-sm text-primary"
       role="status"
     >
       {{ importHint }}
@@ -217,7 +222,7 @@ const onTradeImportConfirm = async (payload: TradeImportPayload): Promise<void> 
     </BaseCard>
 
     <!-- 内容区：成交流水（对账单/交割单切换 + 分组展示 + 导出） -->
-    <BaseCard v-else :title="`账户-${activeAccount.name}`">
+    <BaseCard v-else fill class="min-h-0 flex-1" :title="`账户-${activeAccount.name}`">
       <template #extra>
         <button
           type="button"

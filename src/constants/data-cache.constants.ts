@@ -19,6 +19,8 @@ export const DATA_CACHE_KEY = {
   FUNDS_SECTOR_RANK: 'funds.sectorRank',
   FUNDS_STOCK_RANK: 'funds.stockRank',
   FUNDS_NORTH_RANK: 'funds.northRank',
+  /** 行业资金曲线（含归属交易日，会话内复用） */
+  FUNDS_SECTOR_CURVE: 'funds.sectorCurve',
   /** 股池（前缀 + 池类型） */
   EVENT_POOL_PREFIX: 'event.pool.',
   EVENT_STOCK_CHANGES: 'event.stockChanges',

@@ -33,6 +33,12 @@ export const STORAGE_NS_STOCK_SEARCH = 'stockSearch';
 /** 页面 tabs 配置命名空间（各页面 tab 显隐 + 顺序，按页面 key 分桶） */
 export const STORAGE_NS_TAB_CONFIG = 'tabConfig';
 
+/** 市场榜单页 - 行业资金曲线已选行业命名空间（BK 编号列表） */
+export const STORAGE_NS_MARKET_RANK_CURVE = 'marketRank.curve';
+
+/** 市场榜单页 - 板块净流入视图模式命名空间（曲线 / 列表） */
+export const STORAGE_NS_MARKET_RANK_SECTOR_VIEW = 'marketRank.sectorView';
+
 /** 插件系统命名空间（禁用黑名单 + 侧栏面板折叠态） */
 export const STORAGE_NS_PLUGIN = 'plugin';
 

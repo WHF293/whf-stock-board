@@ -231,9 +231,10 @@ const onExportSummary = (): void => {
 </script>
 
 <template>
-  <div class="space-y-3">
+  <!-- 卡片 fill 模式下的内容列：工具条内容高，表格区吃剩余高度（高度链见 theme.css table-scroll-fill） -->
+  <div class="flex min-h-0 flex-1 flex-col gap-3">
     <!-- 一级：数据来源 / 二级：展示模式 -->
-    <div class="flex flex-wrap items-center justify-between gap-2">
+    <div class="flex shrink-0 flex-wrap items-center justify-between gap-2">
       <BaseTabs
         v-model="recordKind" :options="[
           { label: '对账单', value: 'statement' },
@@ -263,29 +264,28 @@ const onExportSummary = (): void => {
       :text="`暂无${recordKind === 'trade' ? '交割单' : '对账单'}数据：点击上方「导入」按钮上传同花顺导出文件`"
     />
 
-    <!-- 全部：明细平铺 -->
+    <!-- 全部：明细平铺（单滚动容器：表格自己吃满剩余高度，滚动不外溢） -->
     <template v-else-if="viewMode === VIEW_MODE.ALL">
-      <div class="table-scroll -mx-1 px-1" style="max-height: 60vh">
-        <BaseTable
-          :columns="detailColumns"
-          :rows="records"
-          :row-key="recordKey"
-          min-width="1200px"
-          scroll-class="table-scroll"
-        >
-          <template #quantity="{ row }">
-            <span :class="row.quantity >= 0 ? 'text-up' : 'text-down'">
-              {{ row.quantity }}
-            </span>
-          </template>
-        </BaseTable>
-      </div>
+      <BaseTable
+        :columns="detailColumns"
+        :rows="records"
+        :row-key="recordKey"
+        min-width="1200px"
+        scroll-class="table-scroll-fill"
+      >
+        <template #quantity="{ row }">
+          <span :class="row.quantity >= 0 ? 'text-up' : 'text-down'">
+            {{ row.quantity }}
+          </span>
+        </template>
+      </BaseTable>
     </template>
 
-    <!-- 汇总视图：单卡片紧凑列表（分组头行 + 展开的组内明细表），行距比普通表格略高 -->
+    <!-- 汇总视图：单卡片紧凑列表（分组头行 + 展开的组内明细表），行距比普通表格略高；
+         列表自身吃满卡片剩余高度并滚动，页面不出滚动条 -->
     <template v-else>
-      <BaseCard class="p-0">
-        <div class="divide-y divide-flat-weak">
+      <BaseCard fill class="min-h-0 flex-1 overflow-hidden p-0">
+        <div class="table-scroll-fill divide-y divide-flat-weak">
           <div v-for="group in activeGroups" :key="group.key">
             <!-- 分组头：汇总行（整行可点） -->
             <button
