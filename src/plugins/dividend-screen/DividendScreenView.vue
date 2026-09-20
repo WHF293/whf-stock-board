@@ -1043,21 +1043,14 @@ const onScan = async (): Promise<void> => {
           {{ searchNotice }}
         </p>
 
-        <!-- 预览：快照命中直接渲染；样本池外按需拉取（口径与扫描同源，不落库） -->
+        <!-- 预览：快照命中直接渲染；样本池外按需拉取（口径与扫描同源，不落库）。
+             自选是用户主动加入的清单，不参与筛选 tab 的规则判定，故预览不带规则徽标 -->
         <div v-if="previewResult" class="mt-2 rounded-lg border border-flat-weak bg-flat-weak/40 p-3">
           <div class="flex flex-wrap items-center gap-2">
             <span class="text-sm font-medium text-text">
               {{ WATCH_PREVIEW_TITLE }}：{{ previewResult.name || previewResult.code }}
             </span>
             <span class="tabular-nums text-[11px] text-text-tertiary">{{ previewResult.code }}</span>
-            <span
-              v-if="effectivePreviewRow"
-              class="inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] leading-none"
-              :class="ruleBadgeClass(effectivePreviewRow)"
-              :title="ruleReasonText(effectivePreviewRow)"
-            >
-              {{ hasEnabledRules ? ruleBadgeText(effectivePreviewRow) : RULE_NO_ACTIVE_HINT }}
-            </span>
             <button
               type="button"
               class="pressable ml-auto rounded px-1 text-xs text-text-tertiary hover:text-text active:scale-95"
