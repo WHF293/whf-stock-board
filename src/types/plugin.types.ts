@@ -14,6 +14,7 @@
 import type { Component } from 'vue';
 import type { BuiltinMcpServer } from '../agent/mcp/types';
 import type { NotifyService } from './notify.types';
+import type { SearchResult } from './stock-quote.types';
 import type { HEADER_MARQUEE_TONE, PLUGIN_ORIGIN, PLUGIN_STATUS } from '../constants/plugin.constants';
 
 /** 可逆副作用句柄：调用 `dispose()` 撤销一次注册（幂等） */
@@ -690,6 +691,21 @@ export interface AppEventMap {
 }
 
 /**
+ * 标的搜索服务契约（`app:stock-search`）
+ *
+ * 宿主把 stock-sdk 的腾讯搜索（代码 / 名称 / 拼音）封装成无 UI 的通用 API：
+ * 插件自建搜索输入框与结果展示，不依赖宿主的搜索弹窗组件。
+ */
+export interface StockSearchService {
+  /**
+   * 模糊搜索标的
+   * @param keyword 关键词（建议 ≥2 字符，**由调用方防抖**，避免上游被无效请求轰炸）
+   * @returns 搜索结果列表（code 为 `sh600519` 完整形态，含指数 / 港美股，调用方自行按 category / market 过滤）
+   */
+  search: (keyword: string) => Promise<SearchResult[]>;
+}
+
+/**
  * 应用服务契约表
  *
  * 插件用模块扩展声明自己的服务即可获得类型安全的 provide / consume：
@@ -720,6 +736,8 @@ export interface AppServiceMap {
    * 因此「盯盘阈值告警」这类要长期生效的提醒不会因为面板被折叠就失效。
    */
   'app:notify': NotifyService;
+  /** 标的搜索（代码 / 名称 / 拼音，腾讯源；宿主封装 stock-sdk，调用方自行防抖与过滤非 A 股） */
+  'app:stock-search': StockSearchService;
 }
 
 /** 内核运行时只读视图（供插件自省，不暴露挂载 / 卸载能力） */

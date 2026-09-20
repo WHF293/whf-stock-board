@@ -24,6 +24,7 @@ import {
 } from '../constants/router-meta.constants';
 import { orderSidebarMenu } from '../utils/order-sidebar-menu';
 import { resolveRouteFallback } from '../utils/resolve-route-fallback';
+import { searchStocks } from '../api/search.api';
 import { BUILTIN_PLUGINS } from '../plugins';
 import { pluginKernel } from './index';
 import { mountUserPluginRecord } from './user-plugin-loader';
@@ -139,6 +140,8 @@ export const installPlugins = (pinia?: Pinia): void => {
   pluginKernel.services.provide('app:navigate', (path: string): void => {
     void router.push(path);
   });
+  // 标的搜索：宿主封装 stock-sdk 的腾讯搜索，插件自建 UI 消费（调用方自行防抖）
+  pluginKernel.services.provide('app:stock-search', { search: searchStocks });
   pluginKernel.services.provide('panel:open', openPanelByKey);
 
   // 应用级浮窗：插件发起、宿主渲染（承载组件在 MainLayout，与插件面板挂载状态无关）
