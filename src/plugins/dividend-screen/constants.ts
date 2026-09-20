@@ -463,9 +463,6 @@ export const WATCH_EMPTY_TEXT =
 
 /** 自选 tab 的表格卡片标题 */
 export const WATCH_CARD_TITLE = '股息自选';
-/** 自选里全部股票都不在最新扫描快照时的提示 */
-export const WATCH_ALL_MISSING_TEXT =
-  '自选的股票都不在最新一次扫描的样本里（扩大样本池重新扫描后可见指标）';
 
 /**
  * 自选计数文案模板

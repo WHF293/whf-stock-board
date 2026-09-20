@@ -72,7 +72,6 @@ import {
   RULE_SAVE_FAILED,
   RULE_SHOW_FAILED,
   WATCH_ADD_LABEL,
-  WATCH_ALL_MISSING_TEXT,
   WATCH_BULK_ADD,
   WATCH_CARD_TITLE,
   WATCH_COUNT_TEXT,
@@ -194,16 +193,57 @@ const watchSet = computed(() => new Set(watchedItems.value.map((item) => item.co
 /** 快照行按代码索引（自选 join 快照用） */
 const rowsByCode = computed(() => new Map(allRows.value.map((row) => [row.code, row])));
 
-/** 自选 ∩ 最新快照：有指标数据的自选行 */
+/**
+ * 快照外自选的占位展示行（纯函数；指标全部未知，扫描覆盖该股后自动补全）
+ * @param item 自选条目
+ * @returns 占位展示行
+ */
+const createPlaceholderRow = (item: DividendWatchItem): DividendScreenRow => ({
+  code: item.code,
+  name: item.name,
+  industry: '',
+  price: null,
+  changePercent: null,
+  marketCap: null,
+  pb: null,
+  peTtm: null,
+  totalShares: null,
+  ttmYield: null,
+  dpsLast: 0,
+  dividendTotalLast: null,
+  netProfitFyLast: null,
+  payoutLast: null,
+  netProfitH1: null,
+  netProfitH1Last: null,
+  netProfitYoY: null,
+  revenueYoY: null,
+  growthH1: null,
+  projectedNetProfit: null,
+  projectedDps: null,
+  projectedYield: null,
+  yieldLast: null,
+  interimDps: null,
+  dividendYears: null,
+  ocfPerShareLast: null,
+  cashCoverLast: null,
+  debtRatio: null,
+  status: DIVIDEND_PROJECT_STATUS.NO_REPORT,
+});
+
+/**
+ * 自选展示行：快照命中的显示完整指标；快照外的合成占位行也进列表
+ * （自选是用户主动清单，不该因为样本池没覆盖就从列表里消失）
+ */
 const watchRows = computed<DividendScreenRow[]>(() =>
-  watchedItems.value
-    .map((item) => rowsByCode.value.get(item.code))
-    .filter((row): row is DividendScreenRow => row !== undefined),
+  watchedItems.value.map((item) => rowsByCode.value.get(item.code) ?? createPlaceholderRow(item)),
 );
 
-/** 自选里已不在最新快照的条目（扫描覆盖范围变化导致，列表外单独提示） */
-const watchMissing = computed(() =>
-  watchedItems.value.filter((item) => !rowsByCode.value.has(item.code)),
+/** 快照外自选的代码集合（占位行不显示「中报未披露」状态徽标，避免误导） */
+const watchMissingCodes = computed(
+  () =>
+    new Set(
+      watchedItems.value.filter((item) => !rowsByCode.value.has(item.code)).map((item) => item.code),
+    ),
 );
 
 /**
@@ -234,17 +274,6 @@ const onAddAllToWatch = (): void => {
 const bulkAddableCount = computed(
   () => rows.value.filter((row) => !watchSet.value.has(row.code)).length,
 );
-
-/**
- * 按代码移出自选（自选 tab 缺失条目的清理入口）
- * @param code 6 位裸代码
- */
-const onRemoveWatchByCode = (code: string): void => {
-  watchNotice.value = '';
-  props.repo.removeWatch([code]).catch((error: unknown) => {
-    watchNotice.value = `${WATCH_SAVE_FAILED}：${error instanceof Error ? error.message : String(error)}`;
-  });
-};
 
 // ---------- 自选 tab · 个股搜索与预览（消费宿主 app:stock-search 服务） ----------
 
@@ -519,9 +548,7 @@ const tableRows = computed<DividendScreenRow[]>(() =>
 
 /** 当前 tab 的空态文案 */
 const emptyText = computed(() => {
-  if (activeTab.value === DIVIDEND_TAB_WATCHLIST) {
-    return watchedItems.value.length === 0 ? WATCH_EMPTY_TEXT : WATCH_ALL_MISSING_TEXT;
-  }
+  if (activeTab.value === DIVIDEND_TAB_WATCHLIST) return WATCH_EMPTY_TEXT;
   return allRows.value.length === 0 ? DIVIDEND_EMPTY_TEXT : '';
 });
 
@@ -1119,29 +1146,6 @@ const onScan = async (): Promise<void> => {
         </div>
       </div>
 
-      <!-- 自选中已不在最新扫描快照的条目：名单提示 + 逐个清理 -->
-      <div
-        v-if="activeTab === DIVIDEND_TAB_WATCHLIST && watchMissing.length > 0"
-        class="mb-3 flex flex-wrap items-center gap-1.5"
-      >
-        <span class="text-xs text-text-tertiary">以下 {{ watchMissing.length }} 只不在最新扫描快照里：</span>
-        <span
-          v-for="item in watchMissing"
-          :key="item.code"
-          class="flex items-center gap-1 rounded-full bg-flat-weak px-2 py-0.5 text-[11px] text-text-secondary"
-        >
-          {{ item.name || item.code }}
-          <button
-            type="button"
-            class="pressable text-text-tertiary hover:text-up active:scale-90"
-            :aria-label="WATCH_REMOVE_LABEL"
-            @click="onRemoveWatchByCode(item.code)"
-          >
-            ✕
-          </button>
-        </span>
-      </div>
-
       <!-- 空态分三种原因：还没扫描 / 被规则全挡了 / 快捷筛选筛没了 -->
       <div v-if="tableRows.length === 0">
         <BaseEmpty :text="emptyText" />
@@ -1190,7 +1194,7 @@ const onScan = async (): Promise<void> => {
             <span class="text-text">{{ row.name }}</span>
             <span class="tabular-nums text-[11px] text-text-tertiary">{{ row.code }}</span>
             <span
-              v-if="row.status !== DIVIDEND_PROJECT_STATUS.OK"
+              v-if="row.status !== DIVIDEND_PROJECT_STATUS.OK && !watchMissingCodes.has(row.code)"
               class="rounded px-1 py-0.5 text-[10px]"
               :class="DIVIDEND_PROJECT_STATUS_BADGE_CLASS[row.status]"
             >
@@ -1271,7 +1275,10 @@ const onScan = async (): Promise<void> => {
           <div class="space-y-3">
             <p class="text-xs leading-relaxed text-text-secondary">{{ DIVIDEND_FORMULA_TEXT }}</p>
 
-            <div v-if="!ruleMatches.get(row.code)?.pass" class="rounded-lg bg-flat-weak px-2 py-1.5">
+            <div
+              v-if="ruleMatches.has(row.code) && !ruleMatches.get(row.code)?.pass"
+              class="rounded-lg bg-flat-weak px-2 py-1.5"
+            >
               <p class="text-xs font-medium text-text-secondary">
                 {{ DIVIDEND_DETAIL_LABEL.ruleMatch }}
               </p>
