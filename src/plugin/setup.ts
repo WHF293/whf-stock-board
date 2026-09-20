@@ -11,6 +11,7 @@
  * `usePlugins()` 会直接调 `pluginKernel.setEnabled()`，内核即时卸载 / 重挂。
  */
 import { APP_VERSION } from '../constants/app-info.constants';
+import { NOT_FOUND_ROUTE_NAME } from '../constants/router-meta.constants';
 import { BUILTIN_PLUGINS } from '../plugins';
 import { pluginKernel } from './index';
 import { mountUserPluginRecord } from './user-plugin-loader';
@@ -122,9 +123,9 @@ export const installPlugins = (pinia?: Pinia): void => {
  * 异步挂载全部用户插件，并在必要时还原「直接刷新到插件路由」的启动路径
  *
  * 动态 import 无法同步完成，因此首个导航发生时用户插件路由可能还没注册，
- * 直刷 `/xxx`（插件页面）会被 404 兜底重定向走。挂载完成后用启动时快照的
+ * 直刷 `/xxx`（插件页面）会先落到 404 兜底页。挂载完成后用启动时快照的
  * 路径重解析一次：解析结果与快照完全一致（排除重定向路由）且当前不在这条
- * 路径上，才 replace 回去——普通启动路径不受影响。
+ * 路径上（含正停在 404 兜底页的情况），才 replace 回去——普通启动路径不受影响。
  * @param userPluginsStore 用户插件 store（持久化记录）
  * @param pluginStore 插件偏好 store（黑名单判定）
  */
@@ -147,9 +148,12 @@ const mountUserPluginsLater = async (
   }
 
   const resolved = router.resolve(bootPath);
+  // 404 兜底页与目标路径同 path（catch-all 匹配），此时 fullPath 判定失效，
+  // 需按路由 name 识别「正停在兜底页」
+  const onNotFoundRoute = router.currentRoute.value.name === NOT_FOUND_ROUTE_NAME;
   if (
     resolved.href === bootPath
-    && router.currentRoute.value.fullPath !== bootPath
+    && (onNotFoundRoute || router.currentRoute.value.fullPath !== bootPath)
   ) {
     void router.replace(bootPath);
   }

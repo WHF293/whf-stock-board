@@ -58,7 +58,7 @@ const emit = defineEmits<{
 }>();
 
 // 页签显隐 + 顺序可配置（持久化）；激活值被隐藏时自动回退首个可见 tab
-// （仅独立访问时生效；被父级 MarketMoodView 接管时以父级配置为准）
+// （仅独立访问时生效；被父级市场榜单页接管时以父级页签为准）
 const { visibleOptions: viewTabOptions, activeValue: internalTab } = useTabConfig(
   "dragon-tiger",
   VIEW_TAB_OPTIONS,

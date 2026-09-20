@@ -7,19 +7,25 @@ import type { SectorFlowHistoryEntry } from '../../api/sector-flow-history.api';
 /**
  * 板块历史净流入 · 逐日双向条形卡（参考 coooapi 逐日明细卡的纯 CSS 实现）：
  * 每交易日一行，净流入条从中线向左、净流出条向右，长度按卡片内最大绝对值归一
- * （中线两侧各 48%，下限 2%）；行 hover 用原生 title 展示数值
+ * （中线两侧各 48%，下限 2%），最新交易日排最上；行 hover 用原生 title 展示数值。
+ * missing（历史拉取失败）时正文渲染异常占位提示，头部累计额显示 --
  */
-const { code, name, points } = defineProps<{
+const { code, name, points, missing } = defineProps<{
   /** 板块代码（BK 编号） */
   code: string;
   /** 板块名称 */
   name: string;
   /** 逐日主力净流入（日期升序） */
   points: SectorFlowHistoryEntry['points'];
+  /** 是否无历史数据（拉取失败占位态：正文显示提示而非条形） */
+  missing?: boolean;
 }>();
 
 /** 卡片内最大绝对值（条长归一基准；全空时兜底 1 防除零） */
 const cardMaxAbs = computed(() => Math.max(1, ...points.map((row) => Math.abs(row.net))));
+
+/** 逐日行倒序展示（最新的交易日排最上，进页不用滚动即可见当日） */
+const descPoints = computed(() => [...points].reverse());
 
 /** 历史累计净额（元） */
 const netSum = computed(() => points.reduce((sum, row) => sum + row.net, 0));
@@ -62,10 +68,23 @@ const dateLabelOf = (date: string): string => date.slice(5);
 </script>
 
 <template>
-  <section class="rounded-card bg-surface p-3 shadow-card" :data-board-code="code">
-    <header class="mb-2 flex items-center justify-between gap-2">
-      <h3 class="min-w-0 truncate text-sm font-semibold text-text" :title="name">{{ name }}</h3>
+  <section
+    class="flex h-full min-h-0 flex-col rounded-card bg-surface p-3 shadow-card"
+    :data-board-code="code"
+  >
+    <header class="mb-2 flex shrink-0 items-center justify-between gap-2">
+      <h3 class="min-w-0 truncate text-sm font-semibold text-text" :title="`${name}（${code}）`">
+        {{ name }}（{{ code }}）
+      </h3>
       <span
+        v-if="missing"
+        class="shrink-0 text-sm font-medium text-text-tertiary"
+        title="历史数据拉取失败"
+      >
+        --
+      </span>
+      <span
+        v-else
         class="shrink-0 text-sm font-semibold tabular-nums"
         :class="netSum >= 0 ? 'text-up' : 'text-down'"
         title="历史累计主力净流入"
@@ -74,9 +93,17 @@ const dateLabelOf = (date: string): string => date.slice(5);
       </span>
     </header>
 
-    <div class="flex max-h-96 flex-col gap-1 overflow-y-auto">
+    <!-- 拉取失败占位：不出条形，给异常提示（数据源限流居多，稍后可刷新重试） -->
+    <div
+      v-if="missing"
+      class="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 text-center"
+    >
+      <span class="text-xs text-text-tertiary">历史拉取失败</span>
+      <span class="text-[10px] text-text-tertiary">稍后点「刷新」重试</span>
+    </div>
+    <div v-else class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
       <div
-        v-for="row in points"
+        v-for="row in descPoints"
         :key="row.date"
         class="flex items-center gap-1.5"
         :title="rowTitleOf(row)"

@@ -9,6 +9,8 @@ import BaseTable from '../components/ui/BaseTable.vue';
 import BaseTabs from '../components/ui/BaseTabs.vue';
 import TabConfigButton from '../components/ui/TabConfigButton.vue';
 import SectorFlowCurveChart from '../components/charts/SectorFlowCurveChart.vue';
+import MarketEventView from './MarketEventView.vue';
+import DragonTigerView from './DragonTigerView.vue';
 import { useTabConfig } from '../composables/use-tab-config';
 import { useRouter } from 'vue-router';
 import type { TableColumn } from '../types/table.types';
@@ -16,6 +18,7 @@ import { sdk } from '../api/sdk';
 import { usePolling } from '../composables/use-polling';
 import { useDataCacheStore } from '../stores/data-cache';
 import { useMarketStatusStore } from '../stores/market-status';
+import { useTabConfigStore } from '../stores/tab-config';
 import { useStockOpen } from '../composables/use-stock-open';
 import { DATA_CACHE_KEY } from '../constants/data-cache.constants';
 import { POLLING_INTERVAL } from '../constants/polling.constants';
@@ -26,7 +29,6 @@ import {
 import { STORAGE_NS_MARKET_RANK_CURVE, STORAGE_NS_MARKET_RANK_SECTOR_VIEW } from '../constants/storage-key.constants';
 import {
   fetchFundFlowRank,
-  fetchNorthboundHoldingRank,
   fetchSectorFundFlowRank,
 } from '../api/flow.api';
 import {
@@ -46,7 +48,6 @@ import type { FullQuote } from '../types/stock-quote.types';
 import { appStorage } from '../utils/app-local-storage';
 import type {
   FundFlowRankItem,
-  NorthboundHoldingRankItem,
   SectorFundFlowItem,
 } from '../types/flow.types';
 import type { SectorFlowCurve, SectorFlowCurveView } from '../types/sector-flow-curve.types';
@@ -54,10 +55,13 @@ import type { IndustryBoardConstituent } from '../types/board.types';
 import { delay } from '../utils/delay';
 
 /**
- * 市场榜单：全 A 股行情按指定列排序（涨跌幅 / 涨跌额 / 成交量 / 换手率），
- * 数据源 stock-sdk `getAllAShareQuotes`（上游东方财富 push2.eastmoney.com，代理通道）。
+ * 市场榜单（原「市场异动」页已并入为页签）：
+ * 资金两榜（板块净流入 / 个股主力，板块净流入含 曲线 / 列表 双视图）
+ * → 涨停 / 异动 / 龙虎榜 / 大宗交易（自管数据，重接口不轮询）
+ * → 全 A 报价排序榜（涨跌幅 / 成交额 / 换手率）。
  *
- * 一次拉取全市场报价（约 5k+ 只），在前端按 sortKey 排序展示前 N 条；
+ * 报价排序榜数据源 stock-sdk `getAllAShareQuotes`（上游东方财富 push2，代理通道）：
+ * 一次拉取全市场报价（约 5k+ 只），前端按 sortKey 排序展示前 N 条，
  * 默认轮询 30 秒（与市场宽度一致）；行点击打开右侧个股详情
  */
 const { openSidebar, openPage, toContextList } = useStockOpen();
@@ -73,16 +77,47 @@ const dataCache = useDataCacheStore();
 /** 列表展示条数（Top N） */
 const DISPLAY_COUNT = 100;
 
-  /** 页签：板块净流入（资金视角主入口）默认排第一，其余为全 A 报价排序榜与资金流榜单（自管数据；板块净流入内含 曲线 / 列表 双视图） */
+  /**
+   * 页签：资金两榜 → 涨停 / 异动 / 龙虎榜 / 大宗交易（原「市场异动」页并入）
+   * → 全 A 报价排序榜（自管数据；板块净流入内含 曲线 / 列表 双视图；
+   * 北向持股已下线——上游长期无数据，接口仍保留给 Agent MCP 工具）
+   */
 const SORT_TAB_OPTIONS = [
   { label: '板块净流入', value: 'sector' },
+  { label: '个股主力', value: 'stock' },
+  { label: '涨停', value: 'event' },
+  { label: '异动', value: 'events' },
+  { label: '龙虎榜', value: 'dragon-tiger' },
+  { label: '大宗交易', value: 'block-trade' },
   { label: '涨幅榜', value: 'changePercent' },
   { label: '跌幅榜', value: 'changePercentDesc' },
   { label: '成交额榜', value: 'amount' },
   { label: '换手率榜', value: 'turnoverRate' },
-  { label: '个股主力', value: 'stock' },
-  { label: '北向持股', value: 'north' },
 ] as const;
+
+/** 原市场异动页并入的四个页签值（页签配置迁移用） */
+const MOOD_TAB_VALUES: readonly string[] = [
+  'event',
+  'events',
+  'dragon-tiger',
+  'block-trade',
+];
+
+// 旧「市场异动」页（market-mood）的页签自定义并入本页（一次性迁移；
+// 旧键保留不清理，读取侧永远走 market-rank，无害）
+const tabConfigStore = useTabConfigStore();
+const moodStored = tabConfigStore.configs['market-mood'];
+if (moodStored) {
+  const rankStored = tabConfigStore.configs['market-rank'];
+  const moodOrder = moodStored.order.filter((value) => MOOD_TAB_VALUES.includes(value));
+  const moodHidden = moodStored.hidden.filter((value) => MOOD_TAB_VALUES.includes(value));
+  const rankOrder = (rankStored?.order ?? []).filter((value) => !MOOD_TAB_VALUES.includes(value));
+  const rankHidden = (rankStored?.hidden ?? []).filter((value) => !MOOD_TAB_VALUES.includes(value));
+  tabConfigStore.setConfig('market-rank', {
+    order: [...rankOrder, ...moodOrder],
+    hidden: [...rankHidden, ...moodHidden],
+  });
+}
 
 /** 页签值 */
 type RankTab = (typeof SORT_TAB_OPTIONS)[number]['value'];
@@ -95,7 +130,20 @@ const { visibleOptions: sortTabOptions, activeValue: sortKey } = useTabConfig<Ra
 
 /** 是否为资金流榜单类页签 */
 const isFlowTab = computed(() =>
-  sortKey.value === 'sector' || sortKey.value === 'stock' || sortKey.value === 'north',
+  sortKey.value === 'sector' || sortKey.value === 'stock',
+);
+
+/** 是否为原「市场异动」类页签（涨停 / 异动 / 龙虎榜 / 大宗；自管数据，重接口不轮询） */
+const isMoodTab = computed(() =>
+  sortKey.value === 'event' ||
+  sortKey.value === 'events' ||
+  sortKey.value === 'dragon-tiger' ||
+  sortKey.value === 'block-trade',
+);
+
+/** 龙虎榜受控页签（大宗交易复用同一视图组件，切换时隐藏其龙虎榜子页） */
+const dragonTab = computed<'dragon-tiger' | 'block-trade'>(() =>
+  sortKey.value === 'block-trade' ? 'block-trade' : 'dragon-tiger',
 );
 
 // ---------- 板块净流入视图切换（模块内「曲线 / 列表」按钮组） ----------
@@ -163,7 +211,7 @@ usePolling({
   tradingAware: true,
 });
 
-// ---------- 资金流三榜单（板块净流入 / 个股主力 / 北向持股；自管数据，进页拉一次） ----------
+// ---------- 资金流两榜单（板块净流入 / 个股主力；自管数据，进页拉一次） ----------
 /** 各接口请求间隔（毫秒）：对同一上游串行错峰 */
 const FLOW_REQUEST_GAP_MS = 500;
 
@@ -175,9 +223,6 @@ const sectorRank = ref<SectorFundFlowItem[]>(
 );
 const stockRank = ref<FundFlowRankItem[]>(
   dataCache.get<FundFlowRankItem[]>(DATA_CACHE_KEY.FUNDS_STOCK_RANK) ?? [],
-);
-const northRank = ref<NorthboundHoldingRankItem[]>(
-  dataCache.get<NorthboundHoldingRankItem[]>(DATA_CACHE_KEY.FUNDS_NORTH_RANK) ?? [],
 );
 const isFlowLoading = ref(false);
 const flowError = ref(false);
@@ -230,7 +275,7 @@ const sectorConstituentColumns: TableColumn<IndustryBoardConstituent>[] = [
 ];
 
 /**
- * 拉取资金流三榜单（串行错峰；成功写快照）。
+ * 拉取资金流两榜单（串行错峰；成功写快照）。
  * 进行中调用共享同一任务（板块净流入页签与曲线视图可能同帧各触发一次，防重复拉取）
  */
 let flowRanksTask: Promise<void> | null = null;
@@ -245,9 +290,6 @@ const loadFlowRanks = (): Promise<void> => {
         await delay(FLOW_REQUEST_GAP_MS);
         stockRank.value = await fetchFundFlowRank();
         dataCache.set(DATA_CACHE_KEY.FUNDS_STOCK_RANK, stockRank.value);
-        await delay(FLOW_REQUEST_GAP_MS);
-        northRank.value = await fetchNorthboundHoldingRank();
-        dataCache.set(DATA_CACHE_KEY.FUNDS_NORTH_RANK, northRank.value);
       } catch (error) {
         flowError.value = sectorRank.value.length === 0;
         console.error('[market-rank] flow', error);
@@ -522,10 +564,27 @@ watch(
   },
 );
 
-/** 打开板块历史净流入详情页（带上当前已选行业作为展示顺序） */
+/**
+ * 打开板块历史净流入详情页（带上当前已选行业作为展示顺序；
+ * 顺带带上 BK 编号 → 名称映射，历史页对拉取失败的板块渲染占位卡时需要名称）
+ */
 const goSectorFlowHistory = (): void => {
   const codes = selectedCurveCodes.value.join(',');
-  void router.push(codes ? `${ROUTE_PATH.SECTOR_FLOW_HISTORY}?codes=${codes}` : ROUTE_PATH.SECTOR_FLOW_HISTORY);
+  if (!codes) {
+    void router.push(ROUTE_PATH.SECTOR_FLOW_HISTORY);
+    return;
+  }
+  const nameByCode = new Map(sectorRank.value.map((item) => [item.code, item.name]));
+  const names = selectedCurveCodes.value
+    .map((code) => {
+      const name = nameByCode.get(code);
+      return name ? `${code}:${name}` : '';
+    })
+    .filter(Boolean)
+    .join('|');
+  void router.push(
+    `${ROUTE_PATH.SECTOR_FLOW_HISTORY}?codes=${codes}${names ? `&names=${names}` : ''}`,
+  );
 };
 
 
@@ -567,8 +626,7 @@ const displayedRows = computed<FullQuote[]>(() => {
 /** 当前资金流榜单数据 */
 const currentFlowItems = computed<FlowRow[]>(() => {
   if (sortKey.value === 'sector') return sectorRank.value;
-  if (sortKey.value === 'stock') return stockRank.value;
-  return northRank.value;
+  return stockRank.value;
 });
 
 /** 当前资金流榜单列配置（行对象按联合类型宽松消费） */
@@ -577,8 +635,7 @@ type FlowRow = any;
 
 const currentFlowColumns = computed<TableColumn<FlowRow>[]>(() => {
   if (sortKey.value === 'sector') return sectorColumns;
-  if (sortKey.value === 'stock') return stockColumns;
-  return northColumns;
+  return stockColumns;
 });
 
 /** 表格列（按当前排序维度动态决定涨跌着色） */
@@ -656,13 +713,6 @@ const stockColumns: TableColumn<FundFlowRankItem>[] = [
   },
 ];
 
-/** 北向持股排名列配置 */
-const northColumns: TableColumn<NorthboundHoldingRankItem>[] = [
-  { key: 'name', label: '个股' },
-  { key: 'holdMarketValue', label: '持股市值', align: 'right' },
-  { key: 'holdRatioFloat', label: '占流通比' },
-];
-
 /**
  * 个股代码跳详情（6 位纯代码 -> 完整符号）
  * @param code 个股 6 位代码
@@ -676,21 +726,18 @@ const openDetail = (code: string): void => {
 <template>
   <div class="flex h-[calc(100dvh-6.5rem)] min-h-0 flex-col gap-4">
     <!-- 排序维度切换（与行情全景一致的 underline 风格） -->
-    <div class="flex shrink-0 items-center justify-between gap-2">
-      <div class="flex items-center gap-1">
-        <BaseTabs v-model="sortKey" :options="sortTabOptions" variant="underline" />
-        <TabConfigButton page-id="market-rank" :options="SORT_TAB_OPTIONS" />
-      </div>
-      <span v-if="isCurveMode" class="text-xs text-text-tertiary">
-        行业当日累计主力净流入 · 收盘后为全天曲线
-      </span>
-      <span v-else class="text-xs text-text-tertiary">
-        共 {{ allQuotes.length }} 只 · 前 {{ displayedRows.length }} 名 · 30 秒自动刷新
-      </span>
+    <div class="flex shrink-0 items-center gap-1">
+      <BaseTabs v-model="sortKey" :options="sortTabOptions" variant="underline" />
+      <TabConfigButton page-id="market-rank" :options="SORT_TAB_OPTIONS" />
     </div>
 
+    <!-- 原市场异动页签：涨停 / 异动 / 龙虎榜 / 大宗交易（自管数据，重接口不轮询） -->
+    <MarketEventView v-if="sortKey === 'event'" mode="zt" class="min-h-0 flex-1" />
+    <MarketEventView v-else-if="sortKey === 'events'" mode="events" class="min-h-0 flex-1" />
+    <DragonTigerView v-else-if="isMoodTab" v-model="dragonTab" class="min-h-0 flex-1" />
+
     <!-- 资金流榜单（板块净流入页签内可切换 曲线 / 列表 视图） -->
-    <BaseCard v-if="isFlowTab" fill class="min-h-0 flex-1">
+    <BaseCard v-else-if="isFlowTab" fill class="min-h-0 flex-1">
       <!-- 板块净流入模块工具条：曲线 / 列表切换 + 曲线专属操作 -->
       <div v-if="sortKey === 'sector'" class="mb-2 flex shrink-0 flex-wrap items-center justify-between gap-2">
         <div class="text-xs text-text-tertiary">
@@ -777,12 +824,6 @@ const openDetail = (code: string): void => {
             >
               {{ formatYuanWithSign(row.mainNetInflow) }}
             </span>
-          </template>
-          <template #holdMarketValue="{ row }: { row: FlowRow }">
-            <span class="text-text-secondary">{{ formatYuanWithSign(row.holdMarketValue) }}</span>
-          </template>
-          <template #holdRatioFloat="{ row }: { row: FlowRow }">
-            <span class="text-text-secondary">{{ formatPercentUnsigned(row.holdRatioFloat) }}</span>
           </template>
 
           <!-- 扩展行（仅板块净流入）：成分股表格 -->

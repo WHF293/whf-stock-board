@@ -34,7 +34,7 @@ const toRouteRecord = (route: RegisteredRoute): RouteRecordRaw => {
  * 把插件路由挂到 router 上，并持续跟随注册表增删
  *
  * 已挂载的路由按 key 记账；注册表里消失的 key 会调用 `addRoute` 返回的撤销函数，
- * 因此「禁用插件」＝「它的页面路径立刻 404 兜底回总览」。
+ * 因此「禁用插件」＝「它的页面路径立刻落到 404 兜底页」。
  * @param router vue-router 实例
  * @returns 停止同步的撤销函数（仅测试 / 热更新场景需要）
  */

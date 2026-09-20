@@ -118,7 +118,7 @@ let ensureTask: Promise<Record<string, SectorFlowHistoryEntry>> | null = null;
 
 /**
  * 确保板块历史就绪：按交易状态决定「拉新合并」还是「直接读库」（详见模块头注释）
- * @param codes 目标板块代码列表（BK 编号，通常为曲线视图已选行业，上限 26）
+ * @param codes 目标板块代码列表（BK 编号，曲线视图已选行业；详情页无 codes 时为库内全部）
  * @param options 交易状态入参
  * @returns 最新板块历史（含未拉取板块的存量数据）
  */
