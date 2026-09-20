@@ -2,20 +2,21 @@ import { createRouter, createWebHistory } from 'vue-router';
 import NProgress from 'nprogress';
 import 'nprogress/nprogress.css';
 import MainLayout from '../layouts/MainLayout.vue';
-import { LAYOUT_ROUTE_NAME, ROUTE_PATH, MENU_ITEMS } from '../constants/router-meta.constants';
+import { LAYOUT_ROUTE_NAME, NOT_FOUND_ROUTE_NAME, ROUTE_PATH, MENU_ITEMS } from '../constants/router-meta.constants';
 import DashboardView from '../views/DashboardView.vue';
 import WatchlistView from '../views/WatchlistView.vue';
 import PanoramaView from '../views/PanoramaView.vue';
 import BoardCalendarView from '../views/BoardCalendarView.vue';
 import BoardCalendarDetailView from '../views/BoardCalendarDetailView.vue';
-import MarketMoodView from '../views/MarketMoodView.vue';
 import ScreenerView from '../views/ScreenerView.vue';
 import HotNewsView from '../views/HotNewsView.vue';
 import StockAccountView from '../views/StockAccountView.vue';
 import AgentAnalysisView from '../views/AgentAnalysisView.vue';
 import MarketRankView from '../views/MarketRankView.vue';
+import SectorFlowHistoryView from '../views/SectorFlowHistoryView.vue';
 import StockDetailView from '../views/StockDetailView.vue';
 import SystemLogView from '../views/SystemLogView.vue';
+import NotFoundView from '../views/NotFoundView.vue';
 import WhitepaperView from '../views/WhitepaperView.vue';
 
 /** 路由切换顶部进度条：钩子在路由表定义后立即挂载 */
@@ -32,7 +33,7 @@ const ROUTE_TITLE_BY_PATH: Record<string, string> = {
  * 路由表：根路径挂 MainLayout。
  * 桌面端（Tauri）页面资源随安装包本地加载，无网络传输成本，
  * 因此不做路由懒加载 / 分包，统一静态导入，消除切换时的 chunk 请求与白屏。
- * `/` 重定向到市场总览，未匹配路径（404）兜底回市场总览
+ * `/` 重定向到市场总览，未匹配路径（404）落到 NotFound 兜底页
  */
 const routes = [
   {
@@ -68,16 +69,14 @@ const routes = [
         component: BoardCalendarDetailView,
         meta: { title: '板块详情' },
       },
-      // 资金动向已并入市场榜单（旧路径重定向）
-      { path: '/funds', redirect: ROUTE_PATH.MARKET_RANK },
+      // 市场异动已并入市场榜单（涨停 / 异动 / 龙虎榜 / 大宗为其页签）；
+      // 历史合并产生的旧路径（/funds、/market-mood、/market-event、/dragon-tiger、
+      // /trade-import、/settings）不再重定向，统一由 404 兜底页承接
       {
-        path: ROUTE_PATH.MARKET_MOOD,
-        component: MarketMoodView,
-        meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.MARKET_MOOD] },
+        path: ROUTE_PATH.MARKET_RANK,
+        component: MarketRankView,
+        meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.MARKET_RANK] },
       },
-      // 旧路径重定向（历史收藏 / 外链兼容）
-      { path: ROUTE_PATH.MARKET_EVENT, redirect: ROUTE_PATH.MARKET_MOOD },
-      { path: '/dragon-tiger', redirect: ROUTE_PATH.MARKET_MOOD },
       {
         path: ROUTE_PATH.SCREENER,
         component: ScreenerView,
@@ -93,15 +92,12 @@ const routes = [
         component: StockAccountView,
         meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.STOCK_ACCOUNT] },
       },
-      // 交割单导入已并入股票账户页（历史收藏 / 旧路径兼容）
-      { path: '/trade-import', redirect: ROUTE_PATH.STOCK_ACCOUNT },
+      // 板块历史净流入：市场榜单-板块净流入「查看历史净流入」进入；不入左侧导航
       {
-        path: ROUTE_PATH.MARKET_RANK,
-        component: MarketRankView,
-        meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.MARKET_RANK] },
+        path: ROUTE_PATH.SECTOR_FLOW_HISTORY,
+        component: SectorFlowHistoryView,
+        meta: { title: '板块历史净流入' },
       },
-      // 设置已改为侧栏底部入口的右侧抽屉（历史收藏 / 旧路径兼容）
-      { path: ROUTE_PATH.SETTINGS, redirect: ROUTE_PATH.DASHBOARD },
       // 系统日志：由设置抽屉「查看系统日志」进入，不入左侧导航
       {
         path: ROUTE_PATH.SYSTEM_LOG,
@@ -130,7 +126,13 @@ const routes = [
     props: { standalone: true },
     meta: { title: 'Agent 分析' },
   },
-  { path: '/:pathMatch(.*)*', redirect: ROUTE_PATH.DASHBOARD },
+  // 404 兜底页：未匹配路径与已下线旧路径统一落这里（name 供插件启动路径还原判定用）
+  {
+    path: '/:pathMatch(.*)*',
+    name: NOT_FOUND_ROUTE_NAME,
+    component: NotFoundView,
+    meta: { title: '页面不存在' },
+  },
 ];
 
 // 独立窗口启动引导：WebviewWindow 用 `index.html?page=/agent-window` 打开（规避

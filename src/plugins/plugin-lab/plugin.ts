@@ -7,6 +7,9 @@
  * 页面里消费两个宿主 / 其他插件提供的服务：
  * - `kernel:runtime`（宿主提供）：内核运行时只读句柄；
  * - `note:repo`（由 dsh-quick-note 提供，可缺省）：跨插件服务消费示例。
+ *
+ * 另外本页声明为**兜底落点**（`fallbackLanding`）：用户停在其他插件页面上时
+ * 关掉那个插件，宿主会把他送到这里（本页自己也关掉时自然退到侧栏第一个菜单）。
  */
 import PluginLabView from './PluginLabView.vue';
 import { PLUGIN_LAB_PATH } from './constants';
@@ -23,7 +26,8 @@ export const pluginLabPlugin: PluginDefinition = {
   name: '插件工坊',
   version: '1.0.0',
   description:
-    '在左侧导航新增「插件工坊」页面：查看已挂载插件、贡献点清单、生效服务与最近内核事件，用于自省插件体系。',
+    '在左侧导航新增「插件工坊」页面：查看已挂载插件、贡献点清单、生效服务与最近内核事件，用于自省插件体系。'
+    + '同时作为「插件页随插件撤销」的兜底落点。',
   author: '内置',
   apply: (ctx) => {
     ctx.menu.add({
@@ -31,6 +35,8 @@ export const pluginLabPlugin: PluginDefinition = {
       title: '插件工坊',
       icon: 'plug',
       component: PluginLabView,
+      // 兜底落点：别的插件页面随插件消失时，宿主优先把用户带到这里
+      fallbackLanding: true,
       props: {
         // 可缺省消费：速记插件被禁用时这里是 undefined，页面自行降级
         noteRepo: ctx.consume('note:repo'),

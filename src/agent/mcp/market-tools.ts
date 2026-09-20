@@ -36,8 +36,10 @@ import {
   fetchThsHotThemes,
 } from '../../api/news.api';
 import { fetchGlobalIndexQuotes, fetchUsSectorPanorama } from '../../api/panorama.api';
-import { fetchFlowCycleHistories } from '../../plugins/dsh-flow-cycle/api';
-import { buildFlowCycleSummary } from '../../plugins/dsh-flow-cycle/judge';
+import {
+  buildBoardFlowSummary,
+  fetchBoardFlowHistories,
+} from '../../api/board-flow-history.api';
 import { fetchFullQuotes } from '../../api/quotes.api';
 import { fetchSectorFlowCurves } from '../../api/sector-flow-curve.api';
 import { fetchMarketTurnover } from '../../api/turnover.api';
@@ -346,9 +348,9 @@ export const MARKET_DATA_MCP_SERVER: BuiltinMcpServer = {
       }),
       run: async (input) => {
         const { bkCodes, days } = input as { bkCodes: string[]; days: number };
-        const histories = await fetchFlowCycleHistories(bkCodes);
-        // 复用插件的区间聚合纯函数：对齐交易日轴 + 合计 + 完整度
-        const summary = buildFlowCycleSummary(
+        const histories = await fetchBoardFlowHistories(bkCodes);
+        // 复用 api 层的区间聚合纯函数：对齐交易日轴 + 合计 + 完整度
+        const summary = buildBoardFlowSummary(
           histories,
           new Map(
             histories.map((history) => [

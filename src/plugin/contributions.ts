@@ -198,6 +198,8 @@ export class MenuRegistry {
       pluginId,
       icon: item.icon,
       order,
+      /** 兜底落点归一化成布尔：消费方（宿主收尾逻辑）不必再判 undefined */
+      fallbackLanding: item.fallbackLanding === true,
     };
     const key = record.key;
     const existing = this.items.findIndex((entry) => entry.key === key);

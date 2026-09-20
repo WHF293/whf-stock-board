@@ -176,3 +176,25 @@ export const USER_PLUGIN_BLOB_MIME = 'text/javascript';
 
 /** 用户插件缺省作者文案（定义里没写 author 时展示用） */
 export const USER_PLUGIN_AUTHOR_LABEL = '用户安装';
+
+/** 「插件页随插件撤销」浮窗的来源标签（宿主收尾时提示用户页面为什么变了） */
+export const PLUGIN_VANISHED_NOTICE_SOURCE = '插件管理';
+
+/**
+ * 「插件页随插件撤销」浮窗标题
+ * @param pluginName 消失页面所属的插件名
+ * @returns 标题文案
+ */
+export const PLUGIN_VANISHED_NOTICE_TITLE = (pluginName: string): string =>
+  `插件「${pluginName}」已不可用`;
+
+/**
+ * 「插件页随插件撤销」浮窗说明（原页面已撤销 + 用户被送到哪）
+ * @param pageTitle 消失的页面标题（缺省时退化为「当前页」）
+ * @param targetTitle 跳转目标页标题
+ * @returns 说明文案
+ */
+export const PLUGIN_VANISHED_NOTICE_BODY = (
+  pageTitle: string,
+  targetTitle: string,
+): string => `页面「${pageTitle || '当前页'}」已撤销，已转到「${targetTitle}」`;

@@ -27,6 +27,7 @@ type GuideBlock =
   | { type: 'steps'; items: string[] }
   | { type: 'defs'; items: { term: string; desc: string }[] }
   | { type: 'tip'; text: string }
+  | { type: 'code'; text: string }
   | { type: 'table'; head: string[]; rows: string[][] };
 
 /** 白皮书章节 */
@@ -44,6 +45,28 @@ interface GuideChapter {
   /** 内容块 */
   blocks: GuideBlock[];
 }
+
+/** 用户插件最小模板（与安装弹窗内置示例一致：预构建 ESM JS + 渲染函数组件） */
+const USER_PLUGIN_TEMPLATE = `import { defineComponent, h } from 'vue';
+
+export default {
+  id: 'my-plugin',
+  name: '我的插件',
+  version: '1.0.0',
+  description: '示例：往左侧栏加一个面板',
+  apply(ctx) {
+    ctx.sidebar.add({
+      id: 'main',
+      title: '我的插件',
+      mode: 'inline',
+      position: 'nav',
+      order: 300,
+      component: defineComponent({
+        render: () => h('div', { class: 'p-3 text-xs' }, 'Hello 插件'),
+      }),
+    });
+  },
+};`;
 
 /** 白皮书章节内容（顺序即阅读顺序） */
 const GUIDE_CHAPTERS: GuideChapter[] = [
@@ -84,11 +107,11 @@ const GUIDE_CHAPTERS: GuideChapter[] = [
         items: [
           {
             term: '左侧导航',
-            desc: '全站页面入口（市场总览、市场榜单、行情全景、板块日历、市场异动、自选股、选股器、热点新闻、账户管理）。底部是「设置」入口，点开为右侧抽屉。',
+            desc: '全站页面入口（市场总览、市场榜单、行情全景、板块日历、自选股、选股器、热点新闻、账户管理）。底部是「设置」入口，点开为右侧抽屉。插件也会往这里加页面（「插件工坊」「股票主线」就是插件贡献的，见「插件体系与开放接口」章节）。',
           },
           {
             term: '顶栏',
-            desc: '左侧是当前页面标题；右侧依次为市场状态徽标、亮/暗切换、搜索个股、Agent 分析、软件白皮书。',
+            desc: '左侧是当前页面标题；右侧依次为市场状态徽标、亮/暗切换、搜索个股、Agent 分析、软件白皮书。插件还可注册顶栏工具条目（如「自选盯盘」轮播），显隐与顺序在设置里编排。',
           },
           {
             term: '内容区',
@@ -194,10 +217,10 @@ const GUIDE_CHAPTERS: GuideChapter[] = [
   },
   {
     id: 'market-rank',
-    title: '市场榜单：个股与资金排行',
+    title: '市场榜单：资金、行情与市场异动',
     tag: '看盘',
     icon: 'rank',
-    intro: '定位：用排行榜快速找到当日最强、最活跃与资金最集中的标的。',
+    intro: '定位：用排行榜快速找到当日最强、最活跃与资金最集中的标的，并一站式查看涨停、盘口异动、龙虎榜与大宗交易（原「市场异动」页已并入为本页页签）。',
     blocks: [
       {
         type: 'defs',
@@ -207,12 +230,28 @@ const GUIDE_CHAPTERS: GuideChapter[] = [
             desc: '取自全 A 股快照，各自按对应维度取前 100 名。点表头可排序的列：涨跌幅、涨跌额、成交量、成交额、换手率（最新价不可排序）。',
           },
           {
-            term: '板块净流入 / 个股主力 / 北向持股',
-            desc: '资金流三榜，各取前 15；板块净流入默认排在第一个页签（此前自定义过页签顺序的，可在页签配置里调整或恢复默认）。板块净流入行可展开成分股表格，继续查看板块内部结构。',
+            term: '板块净流入 / 个股主力',
+            desc: '资金流两榜，各取前 15；板块净流入默认排在第一个页签（此前自定义过页签顺序的，可在页签配置里调整或恢复默认）。板块净流入行可展开成分股表格，继续查看板块内部结构。北向持股页签已下线（上游长期无数据）。',
           },
           {
             term: '板块净流入 · 曲线 / 列表',
             desc: '板块净流入模块内的「曲线 / 列表」切换按钮，默认展示曲线：曲线把多个行业板块的当日「累计主力净流入」分时曲线同屏叠加（默认净流入前 8 + 净流出前 8，可自选，上限 26 个），按收盘净流入正负着涨跌两色，悬停可对比同一时刻各行业的资金量，提供「选择行业」（确认后只补拉新增行业）与「刷新」（整场重拉）；列表即主力净流入榜单。视图选择会被记住——手动切到列表后，下次进入保持列表。',
+          },
+          {
+            term: '查看历史净流入',
+            desc: '板块净流入模块工具条上的入口，打开「板块历史净流入」页：两行布满、左右横向滑动的卡片流（同热点新闻页），展示板块严格跟随「选择行业」的当前勾选——勾几个展示几个（上限 26）。每板块一张逐日主力净流入双向条形卡，最新交易日排最上，红条向左为净流入、绿条向右为净流出，悬停可看当日数值，卡片头部为历史累计净额，卡内逐日上下滚动。历史数据在本机随使用自动累积——进入本页即为勾选行业确保数据就绪（未入库的一次补齐完整历史），盘中进入板块净流入页签或本页时增量更新，收盘后与非交易日直接读本地不再请求；每板块最多保留约一年（250 个交易日）。「刷新」按钮可强制更新当日数据；若有行业的历史拉取失败（多为数据源限流封禁），统计处会提示缺失数量，等几十分钟风控解除后再点「刷新」补齐即可。',
+          },
+          {
+            term: '涨停（原市场异动页签）',
+            desc: '连板梯队按连板数分组展示当日涨停股，3 板及以上高亮，用于一眼判断情绪高度；另有六个股池：涨停池（默认）、昨日涨停、强势股、次新股、炸板股、跌停池，表格含现价、涨跌幅、连板数、首次封板时间、封单、换手率、所属行业。',
+          },
+          {
+            term: '异动（原市场异动页签）',
+            desc: '盘口异动按时间轴列出（最多 50 条），类型包括火箭发射、大笔买入、大单扫货、封涨停板、向上缺口、60 日新高等；板块异动给出行情涨跌幅、主力净流入、异动次数与最频繁个股。',
+          },
+          {
+            term: '龙虎榜 / 大宗交易（原市场异动页签）',
+            desc: '龙虎榜：日期下拉（近 7 日）+「涨 / 跌」切换，列出收盘价、涨跌幅、龙虎榜净买额、净买占比、上榜原因、上榜后 5 日表现。大宗交易：日期下拉，列出成交价、成交量、成交额、溢价率、买方营业部、卖方营业部。',
           },
           {
             term: '页签配置',
@@ -225,6 +264,9 @@ const GUIDE_CHAPTERS: GuideChapter[] = [
         items: [
           '涨幅榜前排看题材强度与跟风广度，跌幅榜用来识别杀跌方向、避免逆势加仓。',
           '成交额榜看资金承接与主流焦点，换手率榜看活跃度与分歧程度（过高的换手往往伴随剧烈波动）。',
+          '涨停页的连板梯队是情绪体温计：梯队断层（高位只剩一两只）通常先于情绪退潮出现；炸板股与跌停池数量上升说明承接转弱，「昨日涨停」今天的溢价高低直接反映接力意愿。',
+          '龙虎榜看席位性质与净买额：机构席位偏中期、游资席位偏短线，「上榜后 5 日」可用于校准跟风节奏；大宗交易溢价率为正是接盘方愿意溢价拿货，大幅折价则要留意减持压力。',
+          '盘口异动适合盘中跟踪：「大单扫货」「封涨停板」密集出现时，再看一眼板块与资金是否同向确认。',
           '「板块净流入 + 板块上涨」同向说明有真金白银介入；「涨幅高但板块净流出」则有拉高派发嫌疑。',
           '板块净流入行展开成分股，可确认上涨是否由少数龙头撑起（龙头拉、多数绿 = 内部不齐心）。',
           '板块净流入切到曲线视图看资金的日内节奏：全程抬升 = 持续吸筹；冲高回落 = 尾盘兑现；尾盘陡拉 = 抢筹博弈次日。收盘后打开即为全天完整曲线。',
@@ -232,53 +274,7 @@ const GUIDE_CHAPTERS: GuideChapter[] = [
       },
       {
         type: 'tip',
-        text: '行情类榜单在交易时段每 30 秒刷新一次；资金流类为重接口，进入页签只拉一次（板块净流入的曲线视图同理，不自动轮询，换行业或点「刷新」才会再请求）。表头排序只作用于已加载的前 100 / 15 条数据，不等价于全市场排序。',
-      },
-    ],
-  },
-  {
-    id: 'flow-cycle',
-    title: '资金周期：板块资金持续性复盘',
-    tag: '看盘',
-    icon: 'calendar',
-    intro: '定位：把「板块资金是持续流入还是一轮游」从感觉变成逐日数据。热点板块（行业 + 概念混排）× 交易日的每日主力净流入拆解。',
-    blocks: [
-      {
-        type: 'defs',
-        items: [
-          {
-            term: '热点板块名单',
-            desc: '取近 10 日主力净流入排名靠前的板块（行业与概念板块合并排序），固定 30 个；与下方期间切换无关（名单是「近期热点」口径，期间只改变展示窗口）。',
-          },
-          {
-            term: '期间切换（5日 / 10日 / 20日）',
-            desc: '每张卡片展示最近 N 个交易日的每日主力净流入；切换只重算视图，不重新请求。',
-          },
-          {
-            term: '逐日明细卡',
-            desc: '每板块一张卡：每天一行，净流入条从中线向左、净流出条向右，长度按该卡片内最大单日净额归一；标题右侧为区间净额合计。悬停某行可看当日数值。',
-          },
-          {
-            term: '区间总览',
-            desc: '各板块区间净额的横向对比表，可按净额 / 涨跌幅排序，可按数据完整度筛选。',
-          },
-          {
-            term: '数据完整度（完整 / 部分）',
-            desc: '「部分」表示该板块历史不足或区间内有缺日（如次新板块）；区间净额合计只统计「完整」板块，避免不同窗口混加。',
-          },
-        ],
-      },
-      {
-        type: 'list',
-        items: [
-          '连续多日同向净流入 = 资金持续吸筹；单日脉冲后转流出 = 一轮游，追高需谨慎。',
-          '结合当日涨跌幅看：净流入但下跌多为承接盘，上涨但净流出多为派发。',
-          '顶部热点 chips 点击可滚动定位到对应板块的逐日卡片，快速对照。',
-        ],
-      },
-      {
-        type: 'tip',
-        text: '资金周期为重接口（每板块 1 次请求），进入页面自动拉取一次，之后仅点「刷新」才重新请求，不自动轮询；个别板块取数失败时统计卡会提示数量，刷新即可重试。期间切换与视图切换不产生新请求。',
+        text: '行情类榜单在交易时段每 30 秒刷新一次；资金流类为重接口，进入页签只拉一次（板块净流入的曲线视图同理，不自动轮询，换行业或点「刷新」才会再请求）。涨停 / 异动 / 龙虎榜 / 大宗为近 7 日快照，同样不参与轮询，需要最新数据可切走页签再切回。表头排序只作用于已加载的前 100 / 15 条数据，不等价于全市场排序。',
       },
     ],
   },
@@ -390,58 +386,6 @@ const GUIDE_CHAPTERS: GuideChapter[] = [
       {
         type: 'tip',
         text: '数据来自本地数据库并逐日累积：交易日在 15:00 后当日数据定稿，历史回补窗口约 20 个交易日。桌面客户端才会持续累积；浏览器开发模式只保留当日。',
-      },
-    ],
-  },
-  {
-    id: 'market-mood',
-    title: '市场异动：涨停、盘口、龙虎榜与大宗',
-    tag: '看盘',
-    icon: 'flame',
-    intro: '定位：看市场情绪温度与资金进出痕迹，共四个页签。数据范围为近 7 日，属重接口，进入页面拉取一次。',
-    blocks: [
-      {
-        type: 'defs',
-        items: [
-          {
-            term: '涨停页 · 连板梯队',
-            desc: '按连板数分组展示当日涨停股，3 板及以上高亮，用于一眼判断情绪高度。',
-          },
-          {
-            term: '涨停页 · 六个股池',
-            desc: '涨停池（默认）、昨日涨停、强势股、次新股、炸板股、跌停池。表格含现价、涨跌幅、连板数、首次封板时间、封单、换手率、所属行业。',
-          },
-          {
-            term: '异动页 · 盘口异动',
-            desc: '按时间轴列出盘口异动（最多 50 条），类型包括火箭发射、大笔买入、大单扫货、封涨停板、向上缺口、60 日新高等。',
-          },
-          {
-            term: '异动页 · 板块异动',
-            desc: '板块维度的异动统计：涨跌幅、主力净流入、异动次数、最频繁个股。',
-          },
-          {
-            term: '龙虎榜',
-            desc: '日期下拉（近 7 日）+「涨 / 跌」切换；列出收盘价、涨跌幅、龙虎榜净买额、净买占比、上榜原因、上榜后 5 日表现。',
-          },
-          {
-            term: '大宗交易',
-            desc: '日期下拉；列出成交价、成交量、成交额、溢价率、买方营业部、卖方营业部。',
-          },
-        ],
-      },
-      {
-        type: 'list',
-        items: [
-          '连板梯队的高度与数量是情绪体温计：梯队断层（高位只剩一两只）通常先于情绪退潮出现。',
-          '炸板股与跌停池数量上升，说明承接转弱；「昨日涨停」今天的溢价高低直接反映接力意愿。',
-          '龙虎榜看席位性质与净买额：机构席位偏中期、游资席位偏短线；「上榜后 5 日」可用于校准自己的跟风节奏。',
-          '大宗交易溢价率为正，说明接盘方愿意溢价拿货；大幅折价成交则要留意减持压力。',
-          '盘口异动适合盘中跟踪，「大单扫货」「封涨停板」密集出现时再看一眼板块与资金是否同向确认。',
-        ],
-      },
-      {
-        type: 'tip',
-        text: '涨停与异动为「近 7 日」快照，龙虎榜与大宗为近 7 自然日；这些接口不参与轮询，需要最新数据可切走页面再重新进入。表格为分批加载（每批 50 行）。',
       },
     ],
   },
@@ -753,6 +697,173 @@ const GUIDE_CHAPTERS: GuideChapter[] = [
     ],
   },
   {
+    id: 'plugins',
+    title: '插件体系与开放接口：能力从哪来',
+    tag: '进阶',
+    icon: 'plug',
+    intro:
+      '本应用的很多能力不是写死在主程序里的，而是由内置插件贡献；行情与数据能力又经 MCP 开放给 AI Agent。这一章说清能力从哪来、怎么管理，并记录插件与开放接口的迭代。',
+    blocks: [
+      {
+        type: 'defs',
+        items: [
+          {
+            term: '一切皆插件',
+            desc: '顶栏工具、左侧导航页面、侧栏面板、快捷键命令、个股详情扩展区、Agent 数据工具，全部由插件注册。插件可在设置里随时停用 / 启用：停用后它贡献的入口与能力立即消失，重新启用即恢复。',
+          },
+          {
+            term: '插件管理',
+            desc: '设置 →「插件」卡片：按插件逐个启停；启动失败的插件可手动重试。插件各自的入口、数据互不干扰，停用一个不影响其他功能。',
+          },
+          {
+            term: '插件数据',
+            desc: '每个插件有独立的存储空间：速记、盯盘候选、主线快照这类插件数据都只存本机，与主程序数据分开存放。',
+          },
+        ],
+      },
+      {
+        type: 'table',
+        head: ['内置插件', '贡献的入口与能力'],
+        rows: [
+          [
+            '自选盯盘',
+            '顶栏「自选盯盘」条目：收起态轮播盯盘标的的最新价与涨跌幅，展开下拉看候选池明细；支持到价 / 涨跌幅阈值提醒（触发后右下角浮窗提醒）。候选与阈值在自选股表格「操作」列的「盯盘」按钮设置，盯盘引擎不依赖下拉是否展开，收起后照常工作。',
+          ],
+          [
+            '速记',
+            '侧栏底部「速记」入口（抽屉形态）：随手记一条，随写随存，可关联一只股票（自选快选或全市场搜索），关联后的速记展示在该股的个股详情里；快捷键 Ctrl + Alt + N 打开。',
+          ],
+          [
+            '股票主线',
+            '左侧导航「股票主线」页面：用行业板块成交占比分位、量能倍数、价格分位与板块内涨停结构（涨停家数 / 最高连板 / 封板资金）、板块宽度、主力净流入做抱团主线四阶段判定（萌芽 / 确认 / 狂热 / 瓦解），只给阶段标签与风险提示，不含买卖指令。所有指标统一取「最近完整交易日」截面（盘中不写入当日半日数据），板块行情滞后基准日的行会标「滞后 N 日」并排除出阶段判定；扫描结果落本机库，重进页面不重新联网。',
+          ],
+          [
+            '插件工坊',
+            '左侧导航「插件工坊」页面：查看已挂载插件、各自贡献了什么入口、生效中的服务与最近的内核事件，是插件体系的自省窗口。',
+          ],
+        ],
+      },
+      {
+        type: 'defs',
+        items: [
+          {
+            term: 'Agent 数据接口（MCP）',
+            desc: 'Agent 的数据全部来自内置 MCP 服务器：「应用接口」（读写本机功能数据）、「stock-sdk」（行情原始查询）、「市场数据」（现成口径工具：市场概览、资金流、板块涨跌、涨停池、涨跌分布、龙虎榜、大宗交易、全球指数、美股板块、热点新闻等）。插件也可以给 Agent 贡献自己的数据工具，停用插件其工具立即对模型不可见；如何接入外部服务见「开发者指南」章节。',
+          },
+          {
+            term: '工具调用可核对',
+            desc: 'Agent 每次取数都会生成工具调用卡片，可展开核对调用的工具、来源与入参——数字来自本软件的数据通道，而不是模型自行编造。哪些 Agent 能用哪些工具，见「AI Agent」章节的「资源授权」。',
+          },
+        ],
+      },
+      {
+        type: 'table',
+        head: ['版本', '插件与开放接口迭代'],
+        rows: [
+          [
+            '待发版（开发线）',
+            '股票主线插件（dsh-mainline）指标口径重做：全部指标改为按「基准交易日」截面计算（盘中不写入当日半日数据，板块无基准日行情则标「滞后 N 日」并排除出阶段判定）；量能倍数改滞后口径（近 5 日均额 ÷ 前 20 日均额）并保留旧口径对照；新增板块内涨停家数 / 最高连板 / 封板资金（东财涨停池按行业归属聚合，实测覆盖率 98% 以上，未归属家数在页头如实展示）与板块宽度 / 主力净流入（同花顺行业清单页，零额外请求）；确认期增设内部结构门槛；仓储修复「重启后整批重复插入」并自动清理历史重复行。数据通道侧同步记录：同花顺清单页表格分页（每页 50 行，90 个板块取两页）、涨停池支持按指定交易日取数（仅覆盖近端）、单次扫描请求数约 94。',
+          ],
+          [
+            'v2.5.0',
+            'Agent 新增「市场数据」内置 MCP（18 个行情 / 资金 / 异动口径工具）；MCP 与 Skill 新增「访问设置」资源授权（可逐 Agent 精确授权，全不勾选即整体停用）；新增 K 线历史数据本地缓存层（落库复用，减少重复请求）；新增板块详情矩阵页与明细接口；内置 Skill 与子 Agent 清单大幅扩充。',
+          ],
+        ],
+      },
+      {
+        type: 'tip',
+        text: '本章只记录插件体系与开放接口相关的迭代；完整版本变化可在设置 →「系统」里查看当前版本并对照 GitHub Releases。',
+      },
+    ],
+  },
+  {
+    id: 'dev',
+    title: '开发者指南：接入开放接口与第三方插件',
+    tag: '开发者',
+    icon: 'cpu',
+    intro:
+      '本应用有两条不改主程序代码的扩展路径：把外部数据服务接入 AI Agent（远端 MCP，填个地址就能用），或开发插件（往应用里加界面与能力）。这一章面向开发者，说清接入方式与插件格式。',
+    blocks: [
+      {
+        type: 'defs',
+        items: [
+          {
+            term: '路径一：远端 MCP',
+            desc: '不动应用代码：把支持 MCP 协议的外部服务接入 AI Agent，其工具随会话合入模型可用集。适合接入自建数据服务、内部接口等。',
+          },
+          {
+            term: '路径二：插件',
+            desc: '一个符合插件规范的 JS 模块：通过「贡献点」往应用里注册面板、页面、顶栏条目、快捷键、Agent 工具等，卸载即自动撤销，应用主程序零改动。',
+          },
+        ],
+      },
+      {
+        type: 'steps',
+        items: [
+          '准备插件代码：单个预构建 ESM JS 模块（export default { … } 导出插件定义；组件用 Vue 渲染函数编写，生产构建不含运行时模板编译器）。',
+          '打开 设置 →「插件」卡片 →「安装插件」。',
+          '粘贴代码或选择本地 .js 文件 → 点「解析预览」做结构校验（id 不能与内置或已安装插件重复）。',
+          '点「确认安装」：代码持久化到本机，面板 / 菜单 / 路由即时生效，下次启动自动挂载。',
+          '到「插件工坊」页面核对贡献点与生效服务；设置 →「插件」里可随时停用 / 启用，失败可重试。',
+        ],
+      },
+      {
+        type: 'code',
+        text: USER_PLUGIN_TEMPLATE,
+      },
+      {
+        type: 'text',
+        text: '插件与应用同权限运行，只安装来源可信的插件；插件数据存放在插件自己的命名空间里，停用 / 卸载不影响其他插件与主程序数据。',
+      },
+      {
+        type: 'table',
+        head: ['贡献点', '注册的能力'],
+        rows: [
+          ['ctx.sidebar.add', '左侧栏面板（inline 内嵌 / drawer 抽屉两种形态）'],
+          ['ctx.menu.add', '左侧导航页面（带 component 自动注册路由）'],
+          ['ctx.router.add', '无菜单入口的隐藏页面'],
+          ['ctx.dock.add', '右侧停靠面板'],
+          ['ctx.header.add', '顶栏工具条目（可附轮播数据源）'],
+          ['ctx.command.add', '命令与全局快捷键（如 Ctrl + Alt + N）'],
+          ['ctx.stockRow.add', '自选股表格「操作」列按钮（如「盯盘」）'],
+          ['ctx.stockDetail.add', '个股详情底部的扩展卡片'],
+          ['ctx.agent.addServer', '给 AI Agent 注册 MCP 数据工具（与内置同权）'],
+          ['ctx.storage / ctx.db', '插件专属存储：KV 偏好数据 / 结构化记录，插件之间互相隔离'],
+        ],
+      },
+      {
+        type: 'defs',
+        items: [
+          {
+            term: '可逆副作用',
+            desc: '所有贡献点的 add 都由内核登记撤销句柄：插件卸载 / 停用 = 贡献全量撤销。插件里禁止直接改宿主状态（如往全局状态里塞数据），必须走贡献点或服务。',
+          },
+          {
+            term: '服务依赖',
+            desc: '插件之间用 ctx.provide / ctx.consume 按服务名协作（如速记插件提供 note:repo），不靠 import 顺序；依赖未就绪时插件挂起（pending）而不报错，就绪后自动挂载。',
+          },
+          {
+            term: '类型化事件',
+            desc: 'ctx.on / ctx.emit 订阅与广播事件，订阅随插件卸载自动退订；保存速记后的 note:saved 就是插件间事件协作的例子。',
+          },
+        ],
+      },
+      {
+        type: 'steps',
+        items: [
+          '打开「AI Agent」分析页 →「MCP 管理」。',
+          '点「添加 MCP 服务器」：手动填写名称、传输方式（Streamable HTTP 或 SSE）、URL、可选请求头（如鉴权头）；或直接粘贴 { "mcpServers": { … } } 格式的 JSON 一键导入。',
+          '启用后，下一次 Agent 运行即连接并合入其工具；连接失败只跳过该服务器，不影响其他工具。',
+          '内置 MCP（应用接口 / stock-sdk / 市场数据）可直接开关，或用右侧设置限定只给部分 Agent 使用。',
+        ],
+      },
+      {
+        type: 'tip',
+        text: '安全边界：MCP 界面卡片在沙箱 iframe 中渲染，能反向调用的工具受「资源声明 ∧ 工具声明」双重白名单限制，写库类工具一律不允许由界面触发；哪些 Agent 能用哪些工具见「AI Agent」章节的资源授权。远端 MCP 只接入可信服务，请求头中的密钥仅存本机。',
+      },
+    ],
+  },
+  {
     id: 'settings',
     title: '设置与全局开关',
     tag: '配置',
@@ -812,7 +923,7 @@ const GUIDE_CHAPTERS: GuideChapter[] = [
         type: 'list',
         items: [
           '全局开关（本页）：行情自动刷新、刷新间隔、主题色、涨跌颜色、全局水印、日志采集、侧栏顺序。',
-          '页面级开关（各页面自己的工具条）：页签显隐与排序（市场榜单、行情全景、市场异动、账户标签）、图表/列表切换、TopN 或 Top 条数、板块热力展示形式、板块日历的热门口径与展示范围、板块过滤器、新闻源设置、选股条件与股票池、K 线指标配置等。',
+          '页面级开关（各页面自己的工具条）：页签显隐与排序（市场榜单、行情全景、账户标签）、图表/列表切换、TopN 或 Top 条数、板块热力展示形式、板块日历的热门口径与展示范围、板块过滤器、新闻源设置、选股条件与股票池、K 线指标配置等。',
           '页面级配置多数是「草稿模式」：在弹窗内改动后必须点「确认」才保存。',
         ],
       },
@@ -829,9 +940,9 @@ const GUIDE_CHAPTERS: GuideChapter[] = [
         type: 'steps',
         items: [
           '盘前（09:15–09:25）：市场总览看全球指数与昨日资金方向；热点新闻扫快讯与热搜，确认隔夜消息；板块日历看最近 3~5 个交易日哪条线持续偏多。',
-          '早盘（09:30–10:00）：市场异动的盘口异动看资金第一时间冲向哪里；市场榜单的涨幅榜与成交额榜确认题材强度；自选股盯持仓与关注池的开盘表现。',
+          '早盘（09:30–10:00）：市场榜单的盘口异动看资金第一时间冲向哪里，再用涨幅榜与成交额榜确认题材强度；自选股盯持仓与关注池的开盘表现。',
           '盘中（10:00–14:30）：行情全景 A 股全景筛「涨幅＞3%」看主升方向、筛「跌幅＞3%」看杀跌方向；板块日历当日列看板块内的涨停扩散；个股详情面板看分时与五档决定买卖点。',
-          '尾盘（14:30–15:00）：选股器尾盘选股按分时强度挑隔夜候选；市场异动看涨停池与连板梯队判断情绪能否延续到次日。',
+          '尾盘（14:30–15:00）：选股器尾盘选股按分时强度挑隔夜候选；市场榜单的涨停页看涨停池与连板梯队判断情绪能否延续到次日。',
           '盘后：龙虎榜与大宗交易看资金去向；板块日历当日数据在 15:00 后定稿，用于复盘；账户管理导入当日交割单，核对成交与费用。',
         ],
       },
@@ -839,7 +950,7 @@ const GUIDE_CHAPTERS: GuideChapter[] = [
         type: 'list',
         items: [
           '消息 → 板块 → 个股：热点新闻（原因）→ 行情全景概念板块排行（资金回应）→ 市场榜单涨幅榜（龙头与跟风）。',
-          '情绪 → 接力：市场异动的连板梯队与炸板股数量（情绪与承接）→ 昨日涨停今日表现（接力意愿）。',
+          '情绪 → 接力：市场榜单涨停页的连板梯队与炸板股数量（情绪与承接）→ 昨日涨停今日表现（接力意愿）。',
           '资金 → 结构：市场总览涨跌分布与主力净流入（整体结构）→ 板块日历得分率（板块内部强度）→ 个股五档与分时强度（个体强弱）。',
           '结论 → 验证：选股器给出的只是候选清单，必须回到板块方向与资金流上再确认一次。',
           '风格匹配：短线看分时、涨停池、盘口异动与龙虎榜；中线看板块日历、主力净流入与周 K、月 K 位置。',
@@ -1005,6 +1116,8 @@ const buildSearchDocs = (): GuideSearchDoc[] => {
         block.items.forEach((item, i) => push(`步骤 ${i + 1}`, item));
       } else if (block.type === 'defs') {
         block.items.forEach((item) => push(`名词 · ${item.term}`, `${item.term}：${item.desc}`));
+      } else if (block.type === 'code') {
+        push('代码', block.text);
       } else if (block.type === 'tip') {
         push('提示', block.text);
       } else {
@@ -1198,6 +1311,9 @@ watch([showSearchPanel, () => flatHits.value.length], () => {
 /** 当前高亮的章节 id（目录高亮 + 点击后立即反馈） */
 const activeChapterId = ref<string>(GUIDE_CHAPTERS[0]?.id ?? '');
 
+/** 正文滚动容器（宽屏一屏约束下章节在它内部滚动，作为观察器 root） */
+const contentRef = ref<HTMLElement | null>(null);
+
 /** 章节滚动观察器（视口相交驱动目录高亮） */
 let chapterObserver: IntersectionObserver | null = null;
 
@@ -1213,6 +1329,8 @@ const scrollToChapter = (id: string): void => {
 onMounted(() => {
   window.addEventListener('resize', syncPanelMaxHeight);
   if (typeof IntersectionObserver === 'undefined') return;
+  // root 用正文滚动容器：宽屏一屏约束下章节在它内部滚动，视口 root 感知不到内部位移
+  //（窄屏没有内部滚动容器，root 为 null 时浏览器回退视口，行为与旧版一致）
   chapterObserver = new IntersectionObserver(
     (entries) => {
       for (const entry of entries) {
@@ -1220,7 +1338,7 @@ onMounted(() => {
       }
     },
     // 上边距内缩、下边距大幅内缩：以「章节标题刚进入上部可视区」为判定点
-    { rootMargin: '-72px 0px -70% 0px', threshold: 0 },
+    { root: contentRef.value, rootMargin: '-72px 0px -70% 0px', threshold: 0 },
   );
   for (const chapter of GUIDE_CHAPTERS) {
     const element = document.getElementById(chapter.id);
@@ -1240,9 +1358,14 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="space-y-4">
+  <!--
+    一屏约束（宽屏）：高度 = 100dvh − 顶栏 56px（h-14）− 主区内边距 48px（p-6 双侧）= 100dvh − 6.5rem。
+    文档头 / 提示条固定，目录与正文占满剩余高度、各自内部滚动 —— 正文不再把整页撑成长滚动；
+    窄屏（<lg）不约束高度，保持原有的整页滚动阅读。
+  -->
+  <div class="flex flex-col gap-4 lg:h-[calc(100dvh-6.5rem)]">
     <!-- 文档头：标题 + 版本 + 阅读建议 -->
-    <BaseCard>
+    <BaseCard class="shrink-0">
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div class="min-w-0">
           <h2 class="text-base font-semibold text-text">软件白皮书</h2>
@@ -1256,13 +1379,14 @@ onBeforeUnmount(() => {
     </BaseCard>
 
     <NoticeBar
+      class="shrink-0"
       text="本文档描述的是当前版本的实际行为。行情数据来自公开接口，可能存在延迟或缺失；软件只提供数据与统计口径，不构成投资建议。"
     />
 
-    <div class="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start">
+    <div class="grid gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-[220px_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)]">
       <!-- 目录：宽屏固定左侧，窄屏隐藏（正文按顺序阅读即可） -->
-      <nav class="hidden lg:block">
-        <div class="sticky top-0 z-20 space-y-1 rounded-card bg-surface p-3 shadow-card">
+      <nav class="hidden lg:block lg:min-h-0">
+        <div class="flex h-full flex-col rounded-card bg-surface p-3 shadow-card">
           <!-- 关键字搜索：结果面板浮在目录之上，最大高度贴着视口底，超出面板内滚动 -->
           <div class="relative" @focusin="searchFocused = true" @focusout="searchFocused = false">
             <MenuIcon
@@ -1347,32 +1471,35 @@ onBeforeUnmount(() => {
           </div>
 
           <!--
-            目录列表在搜索态下**不卸载**：这 17 个按钮 v-if 增删会让左列高度突变，
+            目录列表在搜索态下**不卸载**：这 19 个按钮 v-if 增删会让列表高度突变，
             实测会打断跳转时的平滑滚动（滚到半路停住）。故只切换下面这行文案。
+            列表自身内部滚动（flex-1 + overflow）：章节数增长不再撑破一屏约束。
           -->
-          <p class="px-2 pb-1 pt-1 text-xs font-medium text-text-tertiary">
+          <p class="shrink-0 px-2 pb-1 pt-1 text-xs font-medium text-text-tertiary">
             {{ isSearching ? `${searchHitCount} 条结果 · Esc 退出搜索` : '目录' }}
           </p>
-          <button
-            v-for="chapter in GUIDE_CHAPTERS"
-            :key="chapter.id"
-            type="button"
-            class="pressable flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs active:scale-[0.98]"
-            :class="
-              activeChapterId === chapter.id
-                ? 'bg-primary-weak font-medium text-primary'
-                : 'text-text-secondary hover:bg-flat-weak hover:text-text'
-            "
-            @click="scrollToChapter(chapter.id)"
-          >
-            <MenuIcon :name="chapter.icon" :size="14" class="shrink-0" />
-            <span class="truncate">{{ chapter.title }}</span>
-          </button>
+          <div class="min-h-0 flex-1 space-y-1 overflow-y-auto">
+            <button
+              v-for="chapter in GUIDE_CHAPTERS"
+              :key="chapter.id"
+              type="button"
+              class="pressable flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs active:scale-[0.98]"
+              :class="
+                activeChapterId === chapter.id
+                  ? 'bg-primary-weak font-medium text-primary'
+                  : 'text-text-secondary hover:bg-flat-weak hover:text-text'
+              "
+              @click="scrollToChapter(chapter.id)"
+            >
+              <MenuIcon :name="chapter.icon" :size="14" class="shrink-0" />
+              <span class="truncate">{{ chapter.title }}</span>
+            </button>
+          </div>
         </div>
       </nav>
 
-      <!-- 正文：章节卡片 -->
-      <div class="space-y-4">
+      <!-- 正文：章节卡片（宽屏在此列内部滚动，是目录高亮 IntersectionObserver 的 root） -->
+      <div ref="contentRef" class="min-h-0 space-y-4 pb-1 lg:overflow-y-auto">
         <BaseCard
           v-for="chapter in GUIDE_CHAPTERS"
           :id="chapter.id"
@@ -1466,6 +1593,13 @@ onBeforeUnmount(() => {
                 <MenuIcon name="info" :size="14" class="mt-0.5 shrink-0 text-primary" />
                 <p>{{ block.text }}</p>
               </div>
+
+              <!-- 代码块（开发者指南）：等宽字体，横向滚动防溢出 -->
+              <pre
+                v-else-if="block.type === 'code'"
+                :id="blockAnchorId(chapter.id, index)"
+                class="scroll-mt-16 overflow-x-auto rounded-lg border border-flat-weak bg-surface px-3 py-2.5 font-mono text-xs leading-relaxed text-text"
+              >{{ block.text }}</pre>
 
               <!-- 表格 -->
               <div v-else :id="blockAnchorId(chapter.id, index)" class="scroll-mt-16 overflow-x-auto">

@@ -189,9 +189,16 @@ watch(
   },
 );
 
-onClickOutside(rootRef, () => {
-  open.value = false;
-});
+// 「外部点击收起下拉」必须忽略 Teleport 到 body 的弹窗层（role="dialog"）：
+// 弹窗里的输入框 / 按钮在 DOM 上都在条目以外，不忽略的话，点一下弹窗正文
+// 就会把下拉收起 —— 下拉一卸载，弹窗作为它的子组件也跟着消失。
+onClickOutside(
+  rootRef,
+  () => {
+    open.value = false;
+  },
+  { ignore: ['[role="dialog"]'] },
+);
 
 /**
  * ESC 关闭下拉
