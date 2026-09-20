@@ -990,7 +990,7 @@ const onProbeProxy = async (): Promise<void> => {
         fallback-class="sortable-fallback bg-surface shadow-lg ring-1 ring-flat-weak"
         ghost-class="opacity-40"
         chosen-class="bg-flat-weak"
-        class="max-h-[55vh] space-y-1 overflow-y-auto"
+        class="space-y-1"
       >
         <li
           v-for="item in menuOrderDraft"
@@ -1046,7 +1046,7 @@ const onProbeProxy = async (): Promise<void> => {
         fallback-class="sortable-fallback bg-surface shadow-lg ring-1 ring-flat-weak"
         ghost-class="opacity-40"
         chosen-class="bg-flat-weak"
-        class="max-h-[55vh] space-y-1 overflow-y-auto"
+        class="space-y-1"
       >
         <li
           v-for="item in headerOrderDraft"
