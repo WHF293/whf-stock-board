@@ -5,6 +5,8 @@
  * 全部逻辑无副作用，冒烟测试用真实上游数值断言（荣晟环保 2026 中报实测案）。
  *
  * 推算模型（用户口径：**保留去年分红率**）：
+ * - 去年分红 = 去年财务年度内宣派的全部方案合计（中期 + 末期 + 季度；只取年报期会
+ *   低估一年多次分红的个股 —— 招商银行 2026-09 实测漏一半）；
  * - 去年分红率 = 去年分红总额 ÷ 去年全年归母净利（可为 >100% 的特别分红，照算并标记）；
  * - 增长系数 = 今年中报净利 ÷ 去年中报净利（去年基数缺失或 ≤0 → 不可比，不推算）；
  * - 预计今年净利 = 去年全年净利 × 增长系数（线性外推，季节性行业会失真，页面明示）；
@@ -16,9 +18,12 @@
  * - 现金流覆盖倍数 = 每股经营现金流 ÷ 每股分红（每股比值等价于总额比值）；
  * - 负债率：取最新已披露报告期（扫描层已择新）。
  *
+ * TTM 股息率：自算 = 近 12 个月内除权除息的每股派息合计 ÷ 现价（同花顺同口径）；
+ * 东财 f133（≈ 最新年报期分红 ÷ 现价）只用于选样本池，分红史未采集时才回退。
+ *
  * 状态判定按顺序短路：中报未披露 → 中报亏损 → 增长不可比 → 无可比分红率 → 可推算。
  */
-import { DIVIDEND_PROJECT_STATUS } from './constants';
+import { DIVIDEND_PROJECT_STATUS, TTM_WINDOW_DAYS } from './constants';
 import type { ProjectStatus } from './constants';
 import type {
   DebtSnapshot,
@@ -38,17 +43,90 @@ export interface ScreenRowInputs {
   h1Last?: PerfRow | undefined;
   /** 去年年报业绩（分红率分母、全年净利基数与每股经营现金流来源） */
   fyLast?: PerfRow | undefined;
-  /** 去年年度分红聚合（undefined = 去年无现金分红方案） */
+  /** 去年财务年度分红聚合（中期 + 末期 + 季度合计；undefined = 去年无现金分红方案） */
   divLast?: DividendAggregate | undefined;
   /** 今年中期分红聚合（信息展示用） */
   divInterim?: DividendAggregate | undefined;
-  /** 近 5 个年度 + 中期的分红聚合（键 = `YYYY-MM-DD`；undefined = 未采集分红史） */
+  /** 近 5 个年度 + 各期中报的分红聚合（键 = `YYYY-MM-DD`；undefined = 未采集分红史） */
   fyDividends?: Map<string, DividendAggregate> | undefined;
   /** 去年年报的报告期（连续分红年数的起数锚点，如 `2025-12-31`） */
   fyLastDate?: string | undefined;
   /** 最新负债率快照（undefined = 未采集） */
   debt?: DebtSnapshot | undefined;
+  /** 当前日期（`YYYY-MM-DD`，TTM 窗口锚点；缺省取系统当天，冒烟测试注入固定值） */
+  today?: string | undefined;
 }
+
+/**
+ * ISO 日期（`YYYY-MM-DD`）平移 N 天（纯函数；闰年边界由 Date 自行消化）
+ * @param iso 基准日期
+ * @param days 平移天数（负数 = 往前）
+ * @returns 平移后的日期
+ */
+const shiftIsoDate = (iso: string, days: number): string => {
+  const date = new Date(`${iso}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+};
+
+/**
+ * 把一个财务年度内的分红聚合合并成单一年度聚合（纯函数）
+ *
+ * 「去年分红」的正确口径是**去年财务年度内宣派的全部方案**：一年多次分红的个股
+ * （如招商银行 2025 年度中期 10 派 10.13 + 末期 10 派 10.03）只取年报期会低估一半
+ * （2026-09-20 实测）。股本优先取年报期记录（最接近分红率分母的时点），缺席退中期等。
+ * @param byDate 报告期 → 聚合（可 undefined = 无任何分红记录）
+ * @param fiscalYear 财务年（如 `2025`，匹配该年全部报告期键）
+ * @returns 合并后的年度聚合；该年无记录为 undefined
+ */
+export const mergeFiscalYearDividends = (
+  byDate: Map<string, DividendAggregate> | undefined,
+  fiscalYear: string,
+): DividendAggregate | undefined => {
+  if (!byDate) return undefined;
+  let merged: DividendAggregate | undefined;
+  for (const [reportDate, aggregate] of byDate) {
+    if (!reportDate.startsWith(`${fiscalYear.slice(0, 4)}-`)) continue;
+    if (!merged) {
+      merged = { ...aggregate };
+      continue;
+    }
+    merged = {
+      code: merged.code,
+      dps: merged.dps + aggregate.dps,
+      // 年报期（`-12-31`）的股本最接近分红率分母时点，优先于其他期
+      totalShares:
+        reportDate.endsWith('-12-31') && aggregate.totalShares !== null
+          ? aggregate.totalShares
+          : (merged.totalShares ?? aggregate.totalShares),
+      exDate: merged.exDate ?? aggregate.exDate,
+    };
+  }
+  return merged;
+};
+
+/**
+ * 计算近 12 个月已实施的每股派息合计（纯函数，TTM 股息率的分子）
+ *
+ * 按除权除息日归集（现金流的真实时点），与同花顺「股息(TTM)」同口径；
+ * 东财 `f133` 只算最新年报期分红，一年多次分红的个股会被低估（招行实测漏一半）。
+ * @param byDate 报告期 → 聚合（undefined = 分红史未采集）
+ * @param today 当前日期（`YYYY-MM-DD`）
+ * @returns TTM 每股派息；分红史未采集或全部方案未实施为 null（不可计算）
+ */
+export const computeTtmDps = (
+  byDate: Map<string, DividendAggregate> | undefined,
+  today: string,
+): number | null => {
+  if (!byDate) return null;
+  const windowStart = shiftIsoDate(today, -TTM_WINDOW_DAYS);
+  let total: number | null = null;
+  for (const aggregate of byDate.values()) {
+    if (!aggregate.exDate || aggregate.exDate <= windowStart || aggregate.exDate > today) continue;
+    total = (total ?? 0) + aggregate.dps;
+  }
+  return total;
+};
 
 /**
  * 解析推算状态（纯函数，判定顺序即优先级）
@@ -104,12 +182,12 @@ export const countConsecutiveDividendYears = (
  */
 export const buildScreenRow = (inputs: ScreenRowInputs): DividendScreenRow => {
   const { base, h1, h1Last, fyLast, divLast, divInterim, fyDividends, fyLastDate, debt } = inputs;
+  const today = inputs.today ?? new Date().toISOString().slice(0, 10);
 
   // 去年每股分红：无记录 = 0（真实业务值，不是缺失）
   const dpsLast = divLast?.dps ?? 0;
   // 去年分红总额：优先用分红方案公告时的股本（与每股口径同源），缺股本时退排行快照的现值
-  const dividendShares = divLast?.totalShares ?? base.totalShares;
-  const dividendTotalLast =
+  const dividendShares = divLast?.totalShares ?? base.totalShares;  const dividendTotalLast =
     divLast !== undefined && dividendShares !== null ? dpsLast * dividendShares : null;
 
   const netProfitFyLast = fyLast?.netProfit ?? null;
@@ -148,6 +226,12 @@ export const buildScreenRow = (inputs: ScreenRowInputs): DividendScreenRow => {
   const yieldLast =
     base.price !== null && base.price > 0 ? (dpsLast / base.price) * 100 : null;
 
+  // TTM 股息率：自算（近 12 个月除权除息的派息合计 ÷ 现价，同花顺同口径）；
+  // 分红史未采集或全部方案未实施时回退东财 f133（选样本池用的字段，口径偏差已知）
+  const ttmDps = computeTtmDps(fyDividends, today);
+  const ttmYieldSelf =
+    ttmDps !== null && base.price !== null && base.price > 0 ? (ttmDps / base.price) * 100 : null;
+
   // 规则引擎指标：连续分红年数 / 现金流覆盖（每股比值，股本约掉）
   const dividendYears = countConsecutiveDividendYears(fyDividends, fyLastDate);
   const ocfPerShareLast = fyLast?.ocfPerShare ?? null;
@@ -164,7 +248,7 @@ export const buildScreenRow = (inputs: ScreenRowInputs): DividendScreenRow => {
     pb: base.pb,
     peTtm: base.peTtm,
     totalShares: base.totalShares,
-    ttmYield: base.ttmYield,
+    ttmYield: ttmYieldSelf ?? base.ttmYield,
     dpsLast,
     dividendTotalLast,
     netProfitFyLast,

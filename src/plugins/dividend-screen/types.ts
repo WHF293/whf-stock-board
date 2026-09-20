@@ -25,7 +25,12 @@ export interface RankBaseRow {
   totalShares: number | null;
   /** 市盈率 TTM */
   peTtm: number | null;
-  /** 股息率（%，东财 TTM 口径：近 12 个月已实施派息 ÷ 现价） */
+  /**
+   * 股息率（%，东财 `f133` 字段）。
+   * ⚠️ 实测口径并非「近 12 个月」：f133 = 最新年报期分红 ÷ 现价（招商银行 2026-09-20 实测，
+   * f133=2.47% 只含 2025 年度末期 10 派 10.03，漏掉除息日在近 12 个月内的中期 10 派 10.13）。
+   * 一年多次分红的个股会被系统性低估 → 本字段只用于**选样本池**，展示口径由本插件自算。
+   */
   ttmYield: number | null;
 }
 
@@ -55,6 +60,8 @@ export interface DividendEvent {
   totalShares: number | null;
   /** 方案所属报告期（`YYYY-MM-DD`，多期合并查询后按期分组用） */
   reportDate: string;
+  /** 除权除息日（`YYYY-MM-DD`；未实施为 null —— TTM 归集的锚点字段） */
+  exDate: string | null;
 }
 
 /** 分红明细按（代码 × 报告期）聚合后的结果（单报告期） */
@@ -65,6 +72,8 @@ export interface DividendAggregate {
   dps: number;
   /** 最后一条方案公告时的总股本（股） */
   totalShares: number | null;
+  /** 实施日（除权除息日，`YYYY-MM-DD`；多条方案取最新，全部未实施为 null） */
+  exDate: string | null;
 }
 
 /** 资产负债表摘要一行（负债率） */
@@ -97,7 +106,12 @@ export interface DividendScreenRow {
   peTtm: number | null;
   /** 总股本（股，取排行快照的现值） */
   totalShares: number | null;
-  /** 股息率（%，东财 TTM 口径） */
+  /**
+   * TTM 股息率（%，自算 = 近 12 个月内除权除息的每股派息合计 ÷ 现价）。
+   * 与同花顺「股息率(TTM)」同口径；东财 f133（最新年报期分红 ÷ 现价）只用于选样本池，
+   * 一年多次分红的个股（如招商银行 2025 年度中期 + 末期各派一次）f133 会低估一半。
+   * 分红史未采集时回退 f133 值。
+   */
   ttmYield: number | null;
   /** 去年每股分红（元；无分红记录为 0） */
   dpsLast: number;

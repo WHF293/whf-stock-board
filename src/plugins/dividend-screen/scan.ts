@@ -2,7 +2,8 @@
  * 插件 dsh-dividend-screen（股息筛选）· 扫描编排
  *
  * 一次扫描 = 股息率排行前 N（push2delay clist）→ 三个报告期业绩（datacenter 业绩报表，
- * `in` 代码分块）→ 多期分红合并查询（5 个年度 + 今年中期，一个 `in` 过滤一次查完）
+ * `in` 代码分块）→ 多期分红合并查询（5 个年度 × 4 个季度报告期，一个 `in` 过滤一次查完；
+ * 年报期数连续分红年数，中期 / 季度期供「去年分红合计」与 TTM 除息日归集）
  * → 两个报告期的负债率摘要 → 推算合成（含连续分红年数 / 现金流覆盖等规则指标）→ 全量落库。
  *
  * 报告期随当前年份自适应：今年中报 = `${今年}-06-30`，去年中报 / 去年年报同理；
@@ -12,7 +13,7 @@
  * （业绩 3 + 分红 1 + 负债 1；样本池 200 时约 12 次）；只由用户点击触发，不轮询。
  */
 import { chunkCodes, fetchDebtRatioByCodes, fetchDividendRank, fetchDividendsByCodes, fetchPerfByCodes, fetchRankRowByCode } from './em-data';
-import { buildScreenRow, sortScreenRows } from './project';
+import { buildScreenRow, mergeFiscalYearDividends, sortScreenRows } from './project';
 import { DIVIDEND_HISTORY_YEARS, DIVIDEND_PROJECT_STATUS } from './constants';
 import type { DividendRepo } from './storage';
 import type { DividendScanMeta, DividendScanProgress, DividendScreenRow } from './types';
@@ -41,15 +42,22 @@ export const resolveReportPeriods = (): DividendScanMeta['periods'] => {
 
 /**
  * 生成连续分红年数的回看年度清单（锚年 = 去年年报，往前 `DIVIDEND_HISTORY_YEARS` 年）
+ *
+ * 每年取**全部四个季度报告期**：年报期给连续分红年数用；中期 / 季度期给「去年分红
+ * 合计」（一年多次分红个股只取年报期会低估一半，招行 2026-09 实测）与 TTM
+ * （按除权除息日归集，回看窗口可能落在中期 / 季度方案的除息日上）用。
+ * 同一个 `in` 过滤一次查完，多日期零额外请求。
  * @param fyLast 去年年报报告期（如 `2025-12-31`）
- * @returns 年度报告期清单（含锚年，升序不保证；`in` 过滤不关心顺序）
+ * @returns 报告期清单（含锚年各期；`in` 过滤不关心顺序）
  */
 export const resolveDividendHistoryDates = (fyLast: string): string[] => {
   const anchorYear = Number(fyLast.slice(0, 4));
-  return Array.from(
-    { length: DIVIDEND_HISTORY_YEARS },
-    (_, index) => `${anchorYear - index}-12-31`,
-  );
+  const dates: string[] = [];
+  for (let offset = 0; offset < DIVIDEND_HISTORY_YEARS; offset += 1) {
+    const year = anchorYear - offset;
+    dates.push(`${year}-12-31`, `${year}-09-30`, `${year}-06-30`, `${year}-03-31`);
+  }
+  return dates;
 };
 
 /**
@@ -92,7 +100,7 @@ export const runDividendScan = async (
   const perfH1Last = await fetchPerfByCodes(codes, periods.h1Last, tick);
   const perfFyLast = await fetchPerfByCodes(codes, periods.fyLast, tick);
 
-  // 3) 多期分红一次查：5 个年度（连续分红年数）+ 去年年度 + 今年中期
+  // 3) 多期分红一次查：5 个年度 × 4 季度期（连续分红年数 + 去年分红合计 + TTM 除息日）
   const divAll = await fetchDividendsByCodes(
     codes,
     [...resolveDividendHistoryDates(periods.fyLast), periods.interim],
@@ -102,7 +110,7 @@ export const runDividendScan = async (
   // 4) 负债率：今年中报优先、去年年报兜底（覆盖中报披露进度差），逐代码取最新
   const debtAll = await fetchDebtRatioByCodes(codes, [periods.h1, periods.fyLast], tick);
 
-  // 5) 推算合成 + 默认排序
+  // 5) 推算合成 + 默认排序（去年分红 = 去年财务年度内全部方案合计，见 mergeFiscalYearDividends）
   const rows = sortScreenRows(
     rank.rows.map((base) =>
       buildScreenRow({
@@ -110,7 +118,7 @@ export const runDividendScan = async (
         h1: perfH1.get(base.code),
         h1Last: perfH1Last.get(base.code),
         fyLast: perfFyLast.get(base.code),
-        divLast: divAll.get(base.code)?.get(periods.fyLast),
+        divLast: mergeFiscalYearDividends(divAll.get(base.code), periods.fyLast),
         divInterim: divAll.get(base.code)?.get(periods.interim),
         fyDividends: divAll.get(base.code),
         fyLastDate: periods.fyLast,
@@ -163,7 +171,7 @@ export const fetchScreenRowByCode = async (code: string): Promise<DividendScreen
     h1: perfH1.get(code),
     h1Last: perfH1Last.get(code),
     fyLast: perfFyLast.get(code),
-    divLast: divAll.get(code)?.get(periods.fyLast),
+    divLast: mergeFiscalYearDividends(divAll.get(code), periods.fyLast),
     divInterim: divAll.get(code)?.get(periods.interim),
     fyDividends: divAll.get(code),
     fyLastDate: periods.fyLast,

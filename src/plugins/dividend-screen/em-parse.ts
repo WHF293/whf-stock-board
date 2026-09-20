@@ -155,13 +155,27 @@ export const parseDividendEvents = (text: string): DividendEvent[] => {
       dps: perTen / SHARES_PER_TEN_BONUS,
       totalShares: toNumber(row[EM_DIVIDEND_FIELD.TOTAL_SHARES]),
       reportDate,
+      exDate: toText(row[EM_DIVIDEND_FIELD.EX_DATE]).slice(0, 10) || null,
     });
   }
   return events;
 };
 
 /**
- * 按（代码 × 报告期）分组聚合分红事件（纯函数；同代码同报告期多条方案求和）
+ * 取两条实施日中最新的非空值（纯函数；同报告期多条方案时除息日可能不同）
+ * @param a 现有聚合的实施日（可为 null）
+ * @param b 新事件实施日（可为 null）
+ * @returns 较新的非空实施日；两者皆空为 null
+ */
+const latestExDate = (a: string | null, b: string | null): string | null => {
+  if (!a) return b ?? null;
+  if (!b) return a;
+  return a > b ? a : b;
+};
+
+/**
+ * 按（代码 × 报告期）分组聚合分红事件（纯函数；同代码同报告期多条方案求和，
+ * 实施日取最新非空 —— TTM 归集按实施日锚定）
  * @param events 分红事件行
  * @returns 代码 → 报告期（`YYYY-MM-DD`）→ 聚合结果
  */
@@ -181,12 +195,14 @@ export const groupDividendEventsByDate = (
         code: event.code,
         dps: current.dps + event.dps,
         totalShares: event.totalShares ?? current.totalShares,
+        exDate: latestExDate(current.exDate ?? null, event.exDate ?? null),
       });
     } else {
       byDate.set(event.reportDate, {
         code: event.code,
         dps: event.dps,
         totalShares: event.totalShares,
+        exDate: event.exDate ?? null,
       });
     }
   }
