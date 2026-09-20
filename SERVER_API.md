@@ -17,7 +17,8 @@
   - ✅ **`push2his.eastmoney.com` 及数字镜像已恢复可达**（`1.` / `33.` 均 200）。**资金流历史必须走它**：`/api/qt/stock/fflow/daykline/get` 同参数下 push2his 返回 **121 条**（自 2026-03-27 起），而 **push2delay 只返回当日 1 条**（`lmt=0` 也一样）。
     - 因此 `fflow` 路径**已从改道清单剔除**（2026-09-18）。改道清单只保留 push2delay 确实同构的路径：`clist` / `ulist.np` / `stock.get` / `trends2`。
     - ⚠️ 回归症状：把 fflow 放回改道清单 → 「主力净流入（近10日）」图表只 1 个点、表格只 1 行，且**不报错**。
-  - 同属东财但**实测可达**的域：`push2his`（行情历史 / 资金流 / 分时）、`push2delay`（快照列表 / 分时 `trends2`）、`push2ex`（涨停池）、`datacenter-web`、`np-listapi`（7×24 快讯）。
+    - ⚠️ **2026-09-20 复测：push2his API 路径再次对本机 TCP RST**（`http=000`，数字镜像 `1.` / `33.` 同封；根路径仍返回 404，即按 IP+路径封禁）。诱因是 30 板块 daykline 连发无间隔（现已在 `api/board-flow-history.api.ts` 落实并发 3 + 每请求 500ms 错峰）；push2delay 的 clist 同时段正常。**仍勿改道**（push2delay 的 daykline 只有当日 1 条）。
+  - 同属东财但**实测可达**的域：`push2his`（行情历史 / 资金流 / 分时；⚠️ 间歇性被临时封禁，见上）、`push2delay`（快照列表 / 分时 `trends2`）、`push2ex`（涨停池）、`datacenter-web`、`np-listapi`（7×24 快讯）。
   - ⚠️ **`push2delay` 不提供历史 K 线**：`/api/qt/stock/kline/get` 返回 **HTTP 200 但 `data` 为 null / `klines` 为空**。调用方若把「200 但无数据」当成功，会静默返回空数组 —— 表现为**图表空白、列表为空且没有任何错误提示**（本模块曾踩此坑）。解析上游必须校验「拿到非空数据」才算成功。
   - **指数日 K 成交额因此改走腾讯** `web.ifzq.gtimg.cn/appstock/app/newfqkline/get`（见 §1 `fetchMarketTurnover`）。该域已在代理白名单 `gtimg.cn` 与 Tauri capability `https://*.gtimg.cn/*` 内，无需新增配置。
   - 新浪 `quotes.sina.cn` K 线**无成交金额字段**（仅 `volume` 成交量），且 `volume×收盘价` 对指数不成立（实测约为真实成交额的 235 倍），故成交额不依赖新浪推算。
@@ -42,12 +43,13 @@
 | 连通性探针 | `views/SettingsView.vue` | `qt.gtimg.cn/q=sh000001` | GET | 设置页「网络诊断」用腾讯源直连测连通性 |
 | `fetchThsBoardList` | `plugins/mainline/ths-data.ts` | `q.10jqka.com.cn/thshy/` | GET | 同花顺行业板块清单（**GBK HTML**）。按 `detail/code/88xxxx` 锚点正则抽取后去重（页面含同一板块多份重复链接），只留 `88` 开头的行业板块。带 `Referer: q.10jqka.com.cn` |
 | `fetchThsBoardKline` | `plugins/mainline/ths-data.ts` | `d.10jqka.com.cn/v6/line/48_<板块码>/<复权>/<年>.js` | GET(JSONP) | 同花顺板块**年 K**（含成交额）：剥 JSONP 壳后 `data` 为 `日期,开,高,低,收,量,额,…` 逐日分号分隔。⚠️ **复权口径必须回退**：部分板块 `01`（前复权）年文件被上游网关拒（502）、另一些仅 `00`（不复权）可用 → 按「当年 01 → 当年 00 → 去年 01 → 去年 00」逐个尝试，首个有数据者胜出。带 `Referer` |
+| `fetchBoardFlowHistories` / `fetchBoardFlowHotBoards` | `api/board-flow-history.api.ts` | `push2his.eastmoney.com/api/qt/stock/fflow/daykline/get`（逐日历史）+ `push2delay.eastmoney.com/api/qt/clist/get`（热点名单 f174 排行） | GET | 板块（行业/概念）**逐日主力净流入历史**。消费方：Agent MCP `get_board_flow_history` + 市场榜单「板块净流入 → 查看历史净流入」页。历史在本机渐进累积（`localStorage['whf:sector-flow-history']`，独立 key 防整包写放大）：盘中进页拉新合并（同日 5 分钟节流）、盘后 / 非交易日只读本地、首次一次拉全量，每板块保留 250 交易日。**并发 3 + 每请求 500ms 错峰**（⚠️ 30 连发无间隔是 push2his 对本机 IP 封禁诱因之一，见 §0 2026-09-20 记录） |
 
 ---
 
 ## 2. stock-sdk 方法调用（`sdk` 单例，`src/api/sdk.ts`）
 
-`stock-sdk` 内部按方法路由到腾讯 / 东方财富不同域。**走东财 `push2` 的方法在本机不可用**（TCP 层封禁，改道 push2delay，见 §0）；**`push2his` 已于 2026-09-18 恢复可达**（资金流历史依赖它，不要再改道）；走腾讯源的方法（`quotes` / `calendar` / `search` / `timeline`）正常；「个股详情」的日 K 仍走新浪（复权口径原因，见 §1）。
+`stock-sdk` 内部按方法路由到腾讯 / 东方财富不同域。**走东财 `push2` 的方法在本机不可用**（TCP 层封禁，改道 push2delay，见 §0）；**`push2his` 资金流历史依赖它，不要再改道**（2026-09-18 恢复过，2026-09-20 又被临时封禁，间歇性，恢复后即用，见 §0）；走腾讯源的方法（`quotes` / `calendar` / `search` / `timeline`）正常；「个股详情」的日 K 仍走新浪（复权口径原因，见 §1）。
 
 | 封装函数 | 文件 | SDK 方法 | 上游域（实测） | 说明 |
 | --- | --- | --- | --- | --- |

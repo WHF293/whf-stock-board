@@ -14,6 +14,7 @@ import HotNewsView from '../views/HotNewsView.vue';
 import StockAccountView from '../views/StockAccountView.vue';
 import AgentAnalysisView from '../views/AgentAnalysisView.vue';
 import MarketRankView from '../views/MarketRankView.vue';
+import SectorFlowHistoryView from '../views/SectorFlowHistoryView.vue';
 import StockDetailView from '../views/StockDetailView.vue';
 import SystemLogView from '../views/SystemLogView.vue';
 import WhitepaperView from '../views/WhitepaperView.vue';
@@ -99,6 +100,12 @@ const routes = [
         path: ROUTE_PATH.MARKET_RANK,
         component: MarketRankView,
         meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.MARKET_RANK] },
+      },
+      // 板块历史净流入：市场榜单-板块净流入「查看历史净流入」进入；不入左侧导航
+      {
+        path: ROUTE_PATH.SECTOR_FLOW_HISTORY,
+        component: SectorFlowHistoryView,
+        meta: { title: '板块历史净流入' },
       },
       // 设置已改为侧栏底部入口的右侧抽屉（历史收藏 / 旧路径兼容）
       { path: ROUTE_PATH.SETTINGS, redirect: ROUTE_PATH.DASHBOARD },

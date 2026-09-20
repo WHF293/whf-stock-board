@@ -13,6 +13,7 @@ export const ROUTE_PATH = {
   SCREENER: "/screener",
   HOT_NEWS: "/hot-news",
   MARKET_RANK: "/market-rank",
+  SECTOR_FLOW_HISTORY: "/sector-flow-history", // 板块历史净流入（市场榜单-板块净流入 → 「查看历史净流入」，不入菜单）
   STOCK_ACCOUNT: "/stock-account",
   AGENT_WINDOW: "/agent-window", // Agent 分析独立 WebviewWindow（standalone 布局，不入菜单）
   SYSTEM_LOG: "/system-log", // 系统日志页（设置页入口进入，不入菜单）

@@ -10,13 +10,16 @@ import BaseTabs from '../components/ui/BaseTabs.vue';
 import TabConfigButton from '../components/ui/TabConfigButton.vue';
 import SectorFlowCurveChart from '../components/charts/SectorFlowCurveChart.vue';
 import { useTabConfig } from '../composables/use-tab-config';
+import { useRouter } from 'vue-router';
 import type { TableColumn } from '../types/table.types';
 import { sdk } from '../api/sdk';
 import { usePolling } from '../composables/use-polling';
 import { useDataCacheStore } from '../stores/data-cache';
+import { useMarketStatusStore } from '../stores/market-status';
 import { useStockOpen } from '../composables/use-stock-open';
 import { DATA_CACHE_KEY } from '../constants/data-cache.constants';
 import { POLLING_INTERVAL } from '../constants/polling.constants';
+import { ROUTE_PATH } from '../constants/router-meta.constants';
 import {
   SECTOR_CURVE_MAX_COUNT,
 } from '../constants/sector-flow-curve.constants';
@@ -30,6 +33,7 @@ import {
   fetchSectorFlowCurves,
   pickDefaultCurveCodes,
 } from '../api/sector-flow-curve.api';
+import { ensureSectorFlowHistories } from '../api/sector-flow-history.api';
 import { fetchIndustryConstituents } from '../api/board.api';
 import { getTrendByChangePercent } from '../constants/trend.constants';
 import { TREND_PILL_CLASS, TREND_TEXT_CLASS } from '../constants/stock-colors.constants';
@@ -477,6 +481,53 @@ const refreshCurves = (): void => {
   void loadSectorCurves(selectedCurveCodes.value);
 };
 
+// ---------- 板块历史净流入（本地渐进累积；详见 sector-flow-history.api） ----------
+const router = useRouter();
+const marketStatus = useMarketStatusStore();
+
+/**
+ * 已选行业的逐日净流入历史入库：盘中拉新合并、盘后与非交易日只读本地、首次补全量。
+ * 后台静默执行（不阻塞页签渲染），触发点 = 进入板块净流入页签 / 交易日历就绪
+ */
+const ensureFlowHistory = (): void => {
+  if (selectedCurveCodes.value.length === 0) {
+    return;
+  }
+  void ensureSectorFlowHistories(selectedCurveCodes.value, {
+    isTradingDay: marketStatus.isTradingDay === true,
+    inPollingWindow: marketStatus.isASharePollingWindow,
+  }).catch((error: unknown) => console.error('[market-rank] flow history', error));
+};
+
+// 进入板块净流入页签即触发（immediate 覆盖冷启动直接落在页签的场景；
+// 重复触发由 api 层任务共享 + 节流防重入）
+watch(sortKey, (tab) => {
+  if (tab === 'sector') {
+    ensureFlowHistory();
+  }
+}, { immediate: true });
+// 已选行业变化（确认弹窗 / 曲线视图补默认勾选）后同步入库新勾选板块
+watch(selectedCurveCodes, () => {
+  if (sortKey.value === 'sector') {
+    ensureFlowHistory();
+  }
+});
+// 交易日历异步就绪后补一次判定（冷启动 isTradingDay 初始为 null，避免误判非交易日漏拉）
+watch(
+  () => marketStatus.isTradingDay,
+  (value, previous) => {
+    if (sortKey.value === 'sector' && value !== null && previous === null) {
+      ensureFlowHistory();
+    }
+  },
+);
+
+/** 打开板块历史净流入详情页（带上当前已选行业作为展示顺序） */
+const goSectorFlowHistory = (): void => {
+  const codes = selectedCurveCodes.value.join(',');
+  void router.push(codes ? `${ROUTE_PATH.SECTOR_FLOW_HISTORY}?codes=${codes}` : ROUTE_PATH.SECTOR_FLOW_HISTORY);
+};
+
 
 /**
  * 当前排序维度的可比数值（null 视为 -Infinity 排到末尾）
@@ -652,6 +703,7 @@ const openDetail = (code: string): void => {
         </div>
         <div class="flex items-center gap-2">
           <BaseTabs v-model="sectorViewMode" :options="SECTOR_VIEW_OPTIONS" aria-label="板块净流入视图" />
+          <BaseButton variant="ghost" @click="goSectorFlowHistory">查看历史净流入</BaseButton>
           <template v-if="sectorViewMode === 'curve'">
             <BaseButton variant="ghost" @click="openCurvePicker">
               选择行业 {{ selectedCurveCodes.length }}/{{ SECTOR_CURVE_MAX_COUNT }}
@@ -875,7 +927,7 @@ const openDetail = (code: string): void => {
           </button>
         </div>
       </template>
-      <div class="grid grid-cols-1 gap-1 @2xl:grid-cols-2">
+      <div class="grid grid-cols-2 gap-1">
         <label
           v-for="item in sectorRank"
           :key="item.code"
