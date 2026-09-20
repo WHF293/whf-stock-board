@@ -27,6 +27,8 @@ import type {
   PluginOrigin,
   PluginRuntimeInfo,
   PluginRuntimeReader,
+  PluginSettingsDeclaration,
+  PluginSettingsStore,
   PluginStatus,
 } from '../types/plugin.types';
 
@@ -46,6 +48,20 @@ interface PluginEntry {
   disposedEffects: number;
   /** 挂载失败原因 */
   error: string;
+  /** 本次挂载的设置存取句柄（仅挂载成功后存在；宿主设置弹窗经此读写） */
+  settingsStore?: PluginSettingsStore | undefined;
+}
+
+/** 设置弹窗用的插件设置条目（已挂载且声明了 settings 的插件） */
+export interface PluginSettingsEntry {
+  /** 插件 id */
+  id: string;
+  /** 插件名 */
+  name: string;
+  /** 设置声明（清单 settings 字段） */
+  declaration: PluginSettingsDeclaration;
+  /** 设置存取句柄 */
+  store: PluginSettingsStore;
 }
 
 /** 挂载选项 */
@@ -213,6 +229,27 @@ export class PluginKernel {
   }
 
   /**
+   * 列出「已挂载且声明了设置」的插件（宿主「插件设置」弹窗的数据源）
+   * @returns 设置条目（按 id 升序）
+   */
+  listSettingsPlugins(): readonly PluginSettingsEntry[] {
+    return [...this.entries.values()]
+      .filter(
+        (entry): entry is PluginEntry & { settingsStore: PluginSettingsStore } =>
+          entry.status === PLUGIN_STATUS.MOUNTED
+          && entry.definition.settings !== undefined
+          && entry.settingsStore !== undefined,
+      )
+      .map((entry) => ({
+        id: entry.definition.id,
+        name: entry.definition.name,
+        declaration: entry.definition.settings as PluginSettingsDeclaration,
+        store: entry.settingsStore,
+      }))
+      .sort((left, right) => left.id.localeCompare(right.id));
+  }
+
+  /**
    * 收敛挂载状态：反复比对「启用状态 + 依赖状态 → 目标状态」直到不再变化
    *
    * 用不动点循环而不是拓扑排序的原因：插件可以在运行期被禁用 / 重试，
@@ -291,6 +328,7 @@ export class PluginKernel {
       this.events,
       this.services,
       writers,
+      definition.settings,
     );
 
     /**
@@ -300,6 +338,7 @@ export class PluginKernel {
       entry.bag = bag;
       entry.status = PLUGIN_STATUS.MOUNTED;
       entry.error = '';
+      entry.settingsStore = context.settings;
       this.bumpRevision();
       this.events.emit('plugin:mounted', [this.toRuntimeInfo(entry)], 'kernel');
       this.reconcileSiblings();
@@ -343,6 +382,7 @@ export class PluginKernel {
     entry.disposedEffects += entry.bag.size;
     entry.bag.disposeAll();
     entry.bag = new DisposableBag();
+    entry.settingsStore = undefined;
     return wasMounted;
   }
 

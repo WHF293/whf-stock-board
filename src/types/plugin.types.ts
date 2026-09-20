@@ -857,6 +857,84 @@ export interface PluginContributionCount {
 /** 插件配置：随插件定义一起下发的只读参数（对标 dsh 的配置层） */
 export type PluginConfig = Record<string, unknown>;
 
+/** 插件设置字段的类型（通用表单渲染器按类型分派控件） */
+export type PluginSettingFieldType = 'boolean' | 'number' | 'text' | 'select';
+
+/** select 类型字段的可选项 */
+export interface PluginSettingFieldOption {
+  /** 存储值 */
+  value: string | number;
+  /** 展示文案 */
+  label: string;
+}
+
+/**
+ * 插件设置字段声明（清单式 schema，宿主据此渲染通用设置表单）
+ *
+ * 复杂交互（如表格列显隐排序）用 `PluginSettingsDeclaration.component` 自定义，
+ * 简单键值配置用 fields 由宿主统一渲染，插件零 UI 代码。
+ */
+export interface PluginSettingField {
+  /** 配置键（存进 settings JSON 的字段名） */
+  key: string;
+  /** 展示名 */
+  label: string;
+  /** 一句话说明（字段下方的小字提示） */
+  description?: string;
+  /** 控件类型 */
+  type: PluginSettingFieldType;
+  /** 默认值（用户未配置时的生效值） */
+  default?: string | number | boolean;
+  /** number 类型的最小值 */
+  min?: number;
+  /** number 类型的最大值 */
+  max?: number;
+  /** number 类型的步长 */
+  step?: number;
+  /** select 类型的可选项 */
+  options?: readonly PluginSettingFieldOption[];
+}
+
+/**
+ * 插件设置声明（挂在插件清单 `settings` 字段上）
+ *
+ * 二选一或混用：
+ * - `fields`：声明式 schema，宿主渲染通用表单（改动即时生效）；
+ * - `component`：插件自带设置组件，宿主渲染时注入 `settings`（PluginSettingsStore）prop，
+ *   组件自行读写 settings 并负责自己的交互（适合列编辑器这类复杂 UI）。
+ */
+export interface PluginSettingsDeclaration {
+  /** 设置区标题（缺省用插件名） */
+  title?: string;
+  /** 设置区说明（弹窗里渲染在标题下的小字） */
+  description?: string;
+  /** 声明式字段（宿主通用表单渲染） */
+  fields?: readonly PluginSettingField[];
+  /** 自定义设置组件（props 注入 settings: PluginSettingsStore） */
+  component?: Component;
+}
+
+/** 插件设置存取句柄（值持久化在插件 storage 的 `settings` 键下，即插件 JSON 的 settings 字段） */
+export interface PluginSettingsStore {
+  /** 当前生效值（响应式对象，已并入声明默认值；computed 可直接依赖） */
+  readonly values: Record<string, unknown>;
+  /**
+   * 读一个设置值
+   * @param key 配置键
+   * @param fallback 未配置时的回退值
+   * @returns 当前值
+   */
+  get: <T>(key: string, fallback: T) => T;
+  /**
+   * 写一个设置值（即时持久化 + 响应式生效）
+   * @param key 配置键
+   * @param value 新值（可序列化）
+   */
+  set: (key: string, value: unknown) => void;
+  /** 清空全部已保存设置，回到声明默认值 */
+  reset: () => void;
+}
+
 /**
  * 插件定义（插件包的唯一出口）
  *
@@ -880,6 +958,11 @@ export interface PluginDefinition {
   /** 插件配置（等价 dsh 的配置层：不改源码即可换实现 / 调参数） */
   config?: PluginConfig;
   /**
+   * 插件设置声明（清单的 settings 字段：宿主据此渲染通用设置弹窗，
+   * 运行时值经 `ctx.settings` 读写并持久化在插件 storage 的 `settings` 键下）
+   */
+  settings?: PluginSettingsDeclaration;
+  /**
    * 挂载入口：所有贡献点都在这里经 `ctx` 声明
    *
    * 内核在调用前自动清理该插件的副作用作用域，因此 apply 抛错不会留下半挂载状态。
@@ -902,6 +985,8 @@ export interface PluginContext {
   readonly logger: PluginLogger;
   /** 插件自有持久化（命名空间隔离） */
   readonly storage: PluginStorage;
+  /** 插件设置（清单 settings 字段的运行时存取，值持久化在 storage 的 `settings` 键下） */
+  readonly settings: PluginSettingsStore;
   /** 插件通用数据库（每插件独立表，见 PluginDatabase） */
   readonly db: PluginDatabase;
 

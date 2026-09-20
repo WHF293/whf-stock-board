@@ -14,6 +14,7 @@ import {
 } from '../api/plugin-storage-db.api';
 import { createDisposable } from './disposable';
 import { createPluginDatabase } from './database';
+import { createPluginSettingsStore } from './settings';
 import type { DisposableBag } from './disposable';
 import type { PluginEventBus } from './events';
 import type { PluginServiceContainer } from './services';
@@ -26,6 +27,8 @@ import type {
   PluginContext,
   PluginDatabase,
   PluginLogger,
+  PluginSettingsDeclaration,
+  PluginSettingsStore,
   PluginStorage,
 } from '../types/plugin.types';
 
@@ -127,6 +130,9 @@ export class PluginContextImpl implements PluginContext {
   /** 插件自有持久化 */
   readonly storage: PluginStorage;
 
+  /** 插件设置（清单 settings 字段的运行时存取） */
+  readonly settings: PluginSettingsStore;
+
   /** 插件通用数据库（每插件独立表，插件永不直接访问 SQL） */
   readonly db: PluginDatabase;
 
@@ -152,6 +158,7 @@ export class PluginContextImpl implements PluginContext {
    * @param events 事件总线
    * @param services 服务容器
    * @param contributions 贡献点写入器集合
+   * @param settingsDeclaration 清单里的设置声明（缺省视为无可配置项）
    */
   constructor(
     pluginId: string,
@@ -160,6 +167,7 @@ export class PluginContextImpl implements PluginContext {
     events: PluginEventBus,
     services: PluginServiceContainer,
     contributions: PluginContributorSet,
+    settingsDeclaration?: PluginSettingsDeclaration,
   ) {
     this.pluginId = pluginId;
     this.config = config;
@@ -168,6 +176,7 @@ export class PluginContextImpl implements PluginContext {
     this.services = services;
     this.contributions = contributions;
     this.storage = createPluginStorage(pluginId);
+    this.settings = createPluginSettingsStore(this.storage, settingsDeclaration?.fields ?? []);
     this.db = createPluginDatabase(pluginId);
     this.logger = createLogger(pluginId);
   }
