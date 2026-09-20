@@ -14,7 +14,8 @@ import { formatPercent } from '../../utils/format-percent';
 import { toFullSymbol } from '../../utils/to-full-symbol';
 import { useStockOpen } from '../../composables/use-stock-open';
 import type { SearchResult } from '../../types/stock-quote.types';
-import type { StockSearchService } from '../../types/plugin.types';
+import type { PluginSettingsStore, StockSearchService } from '../../types/plugin.types';
+import { normalizeDividendColumnConfig, visibleDividendColumns } from './column-config';
 import { fetchScreenRowByCode, runDividendScan } from './scan';
 import {
   createDefaultRules,
@@ -29,10 +30,12 @@ import type { RuleConfig, RuleGroup, RuleMatchResult } from './types';
 import type { DividendScanProgress, DividendScreenRow } from './types';
 import {
   DIVIDEND_COLUMN_LABEL,
+  DIVIDEND_CONFIGURABLE_COLUMN_KEYS,
   DIVIDEND_DETAIL_LABEL,
   DIVIDEND_DETAIL_TITLE,
   DIVIDEND_DISCLAIMER,
   DIVIDEND_EMPTY_TEXT,
+  DIVIDEND_SETTINGS_COLUMN_KEY,
   EM_DATACENTER_DELAY_MS,
   DIVIDEND_FILTER_CLEAR,
   DIVIDEND_FILTER_GROWING,
@@ -108,6 +111,8 @@ const props = defineProps<{
   repo: DividendRepo;
   /** 宿主通用搜索服务（`app:stock-search`；未提供时隐藏搜索入口，页面其余功能不受影响） */
   stockSearch?: StockSearchService | null;
+  /** 插件设置存取句柄（表头显隐 / 顺序配置存在 settings 的 columns 键下） */
+  settings: PluginSettingsStore;
 }>();
 
 const { openSidebar, toContextList } = useStockOpen();
@@ -548,22 +553,35 @@ const deltaValue = (row: DividendScreenRow): number | null =>
     ? row.projectedYield - row.yieldLast
     : null;
 
-/** 表格基础列（两个 tab 共用；星标列在行尾做加入/移出自选） */
-const baseColumns: TableColumn<DividendScreenRow>[] = [
-  { key: 'name', label: DIVIDEND_COLUMN_LABEL.name },
-  { key: 'industry', label: DIVIDEND_COLUMN_LABEL.industry },
-  { key: 'price', label: DIVIDEND_COLUMN_LABEL.price, align: 'right', sortable: true, sortValue: (row) => row.price },
-  { key: 'ttmYield', label: DIVIDEND_COLUMN_LABEL.ttmYield, align: 'right', sortable: true, sortValue: (row) => row.ttmYield },
-  { key: 'projectedYield', label: DIVIDEND_COLUMN_LABEL.projectedYield, align: 'right', sortable: true, sortValue: (row) => row.projectedYield },
-  { key: 'projectedDelta', label: DIVIDEND_COLUMN_LABEL.projectedDelta, align: 'right', sortable: true, sortValue: (row) => deltaValue(row) },
-  { key: 'yieldLast', label: DIVIDEND_COLUMN_LABEL.yieldLast, align: 'right', sortable: true, sortValue: (row) => row.yieldLast },
-  { key: 'payoutLast', label: DIVIDEND_COLUMN_LABEL.payoutLast, align: 'right', sortable: true, sortValue: (row) => row.payoutLast },
-  { key: 'dividendYears', label: DIVIDEND_COLUMN_LABEL.dividendYears, align: 'right', sortable: true, sortValue: (row) => row.dividendYears },
-  { key: 'netProfitH1', label: DIVIDEND_COLUMN_LABEL.netProfitH1, align: 'right', sortable: true, sortValue: (row) => row.netProfitH1 },
-  { key: 'netProfitYoY', label: DIVIDEND_COLUMN_LABEL.netProfitYoY, align: 'right', sortable: true, sortValue: (row) => row.netProfitYoY },
-  { key: 'debtRatio', label: DIVIDEND_COLUMN_LABEL.debtRatio, align: 'right', sortable: true, sortValue: (row) => row.debtRatio },
-  { key: 'peTtm', label: DIVIDEND_COLUMN_LABEL.peTtm, align: 'right', sortable: true, sortValue: (row) => row.peTtm },
-];
+/** 全部可配置数据列的完整定义（key → 列定义；顺序即默认顺序，与配置清单一致） */
+const columnDefByKey: Record<string, TableColumn<DividendScreenRow>> = {
+  name: { key: 'name', label: DIVIDEND_COLUMN_LABEL.name },
+  industry: { key: 'industry', label: DIVIDEND_COLUMN_LABEL.industry },
+  price: { key: 'price', label: DIVIDEND_COLUMN_LABEL.price, align: 'right', sortable: true, sortValue: (row) => row.price },
+  ttmYield: { key: 'ttmYield', label: DIVIDEND_COLUMN_LABEL.ttmYield, align: 'right', sortable: true, sortValue: (row) => row.ttmYield },
+  projectedYield: { key: 'projectedYield', label: DIVIDEND_COLUMN_LABEL.projectedYield, align: 'right', sortable: true, sortValue: (row) => row.projectedYield },
+  projectedDelta: { key: 'projectedDelta', label: DIVIDEND_COLUMN_LABEL.projectedDelta, align: 'right', sortable: true, sortValue: (row) => deltaValue(row) },
+  yieldLast: { key: 'yieldLast', label: DIVIDEND_COLUMN_LABEL.yieldLast, align: 'right', sortable: true, sortValue: (row) => row.yieldLast },
+  payoutLast: { key: 'payoutLast', label: DIVIDEND_COLUMN_LABEL.payoutLast, align: 'right', sortable: true, sortValue: (row) => row.payoutLast },
+  dividendYears: { key: 'dividendYears', label: DIVIDEND_COLUMN_LABEL.dividendYears, align: 'right', sortable: true, sortValue: (row) => row.dividendYears },
+  netProfitH1: { key: 'netProfitH1', label: DIVIDEND_COLUMN_LABEL.netProfitH1, align: 'right', sortable: true, sortValue: (row) => row.netProfitH1 },
+  netProfitYoY: { key: 'netProfitYoY', label: DIVIDEND_COLUMN_LABEL.netProfitYoY, align: 'right', sortable: true, sortValue: (row) => row.netProfitYoY },
+  debtRatio: { key: 'debtRatio', label: DIVIDEND_COLUMN_LABEL.debtRatio, align: 'right', sortable: true, sortValue: (row) => row.debtRatio },
+  peTtm: { key: 'peTtm', label: DIVIDEND_COLUMN_LABEL.peTtm, align: 'right', sortable: true, sortValue: (row) => row.peTtm },
+};
+
+/** 表头配置（插件设置里编辑的显隐 + 顺序；依赖 settings.values，改配置即重算） */
+const columnConfig = computed(() =>
+  normalizeDividendColumnConfig(
+    props.settings.values[DIVIDEND_SETTINGS_COLUMN_KEY],
+    DIVIDEND_CONFIGURABLE_COLUMN_KEYS,
+  ),
+);
+
+/** 表格基础列（按用户配置的显隐与顺序出列；两个 tab 共用） */
+const baseColumns = computed<TableColumn<DividendScreenRow>[]>(
+  () => visibleDividendColumns(columnConfig.value).map((key) => columnDefByKey[key]),
+);
 
 /** 最左操作列：加入 / 移出自选按钮（行内显式操作，替代原行尾星标） */
 const actionColumn: TableColumn<DividendScreenRow> = { key: 'action', label: DIVIDEND_COLUMN_LABEL.action };
@@ -571,10 +589,10 @@ const actionColumn: TableColumn<DividendScreenRow> = { key: 'action', label: DIV
 /** 当前 tab 的表格列（操作列固定最左；自选 tab 不展示规则列——自选本身已是筛选的结果） */
 const tableColumns = computed<TableColumn<DividendScreenRow>[]>(() =>
   activeTab.value === DIVIDEND_TAB_WATCHLIST
-    ? [actionColumn, ...baseColumns]
+    ? [actionColumn, ...baseColumns.value]
     : [
         actionColumn,
-        ...baseColumns,
+        ...baseColumns.value,
         { key: 'ruleResult', label: DIVIDEND_COLUMN_LABEL.ruleResult },
       ],
 );

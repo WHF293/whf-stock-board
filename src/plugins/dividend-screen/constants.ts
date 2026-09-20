@@ -362,6 +362,36 @@ export const DIVIDEND_COLUMN_LABEL = {
   ruleResult: '规则',
 } as const;
 
+/**
+ * 可配置数据列（键 + 展示名；顺序即默认列顺序）
+ *
+ * 「操作」列固定最左、「规则」列固定最右（且只在筛选 tab 出现），均不参与配置；
+ * 其余 13 个数据列都可由用户在插件设置里控制显隐与顺序。
+ */
+export const DIVIDEND_CONFIGURABLE_COLUMNS = [
+  { key: 'name', label: DIVIDEND_COLUMN_LABEL.name },
+  { key: 'industry', label: DIVIDEND_COLUMN_LABEL.industry },
+  { key: 'price', label: DIVIDEND_COLUMN_LABEL.price },
+  { key: 'ttmYield', label: DIVIDEND_COLUMN_LABEL.ttmYield },
+  { key: 'projectedYield', label: DIVIDEND_COLUMN_LABEL.projectedYield },
+  { key: 'projectedDelta', label: DIVIDEND_COLUMN_LABEL.projectedDelta },
+  { key: 'yieldLast', label: DIVIDEND_COLUMN_LABEL.yieldLast },
+  { key: 'payoutLast', label: DIVIDEND_COLUMN_LABEL.payoutLast },
+  { key: 'dividendYears', label: DIVIDEND_COLUMN_LABEL.dividendYears },
+  { key: 'netProfitH1', label: DIVIDEND_COLUMN_LABEL.netProfitH1 },
+  { key: 'netProfitYoY', label: DIVIDEND_COLUMN_LABEL.netProfitYoY },
+  { key: 'debtRatio', label: DIVIDEND_COLUMN_LABEL.debtRatio },
+  { key: 'peTtm', label: DIVIDEND_COLUMN_LABEL.peTtm },
+] as const;
+
+/** 可配置列的键列表（归一化的全集参数） */
+export const DIVIDEND_CONFIGURABLE_COLUMN_KEYS = DIVIDEND_CONFIGURABLE_COLUMNS.map(
+  (column) => column.key,
+);
+
+/** settings 里表头配置的键名 */
+export const DIVIDEND_SETTINGS_COLUMN_KEY = 'columns';
+
 /** 快捷筛选：仅已披露中报 */
 export const DIVIDEND_FILTER_PUBLISHED = '仅已披露中报';
 

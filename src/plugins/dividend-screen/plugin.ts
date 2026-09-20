@@ -9,6 +9,7 @@
  * 扫描一次后重进页面只读库渲染、零联网（避免重复查询触发上游限速）；
  * 重接口只在用户点击「扫描排行」时触发。
  */
+import DividendColumnSettings from './DividendColumnSettings.vue';
 import DividendScreenView from './DividendScreenView.vue';
 import {
   DIVIDEND_MENU_ICON,
@@ -29,6 +30,11 @@ export const dividendScreenPlugin: PluginDefinition = {
   description:
     '左侧导航新增「股息筛选」看板：TTM 股息率排行（东财口径）+ 保留去年分红率、按中报净利增速推算今年股息率；结果落本地插件库，重进页面不联网。',
   author: '内置',
+  settings: {
+    title: '表格列配置',
+    description: '控制结果表格显示哪些列、按什么顺序显示；改动对两个 tab 即时生效。',
+    component: DividendColumnSettings,
+  },
   apply: async (ctx) => {
     // 建表 + 水合快照完成后才注册页面（页面首屏即可直接读库渲染）
     const repo = await createDividendRepo(ctx.db);
@@ -44,7 +50,7 @@ export const dividendScreenPlugin: PluginDefinition = {
       title: DIVIDEND_MENU_TITLE,
       icon: DIVIDEND_MENU_ICON,
       component: DividendScreenView,
-      props: { repo, stockSearch },
+      props: { repo, stockSearch, settings: ctx.settings },
     });
 
     ctx.logger.info('已注册「股息筛选」导航项与看板页面');
