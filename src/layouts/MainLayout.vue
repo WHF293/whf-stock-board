@@ -5,6 +5,7 @@ import { useRoute, useRouter } from "vue-router";
 import { isTauri } from "@tauri-apps/api/core";
 import TitleBar from "./TitleBar.vue";
 import HeaderTools from "./HeaderTools.vue";
+import PluginSettingsModal from "../components/plugin/PluginSettingsModal.vue";
 import StockSearchModal from "../components/business/StockSearchModal.vue";
 import FirstRunSetupModal from "../components/business/FirstRunSetupModal.vue";
 import BaseDrawer from "../components/ui/BaseDrawer.vue";
@@ -318,6 +319,9 @@ const parsedCommands = computed<{ command: RegisteredCommand; parsed: ParsedComm
 /** 头部搜索弹窗开关 */
 const searchModalOpen = ref(false);
 
+/** 插件设置弹窗开关（顶栏齿轮入口，列出声明了 settings 的已挂载插件） */
+const pluginSettingsOpen = ref(false);
+
 /** 设置抽屉显隐（设置不再是路由页，改为右侧抽屉） */
 const settingsOpen = ref(false);
 
@@ -561,15 +565,28 @@ void marketStatusStore.refresh();
             </h1>
           </div>
           <!-- 顶栏工具条：桌面端全部条目（宿主 + 插件）已移入自绘 TitleBar，此处为空；
-               浏览器无标题栏，全部条目都留在页内 -->
-          <HeaderTools
-            :items="inPageHeaderItems"
-            :is-dark="isDark"
-            @toggle-theme="toggleDark()"
-            @open-search="searchModalOpen = true"
-            @open-agent="openAgentAnalysis"
-            @open-whitepaper="openWhitepaper"
-          />
+               浏览器无标题栏，全部条目都留在页内。右侧恒置「插件设置」齿轮
+               （盯盘条目入 TitleBar 前所在的页内 header 位置，用户指定） -->
+          <div class="flex items-center gap-1">
+            <HeaderTools
+              :items="inPageHeaderItems"
+              :is-dark="isDark"
+              @toggle-theme="toggleDark()"
+              @open-search="searchModalOpen = true"
+              @open-agent="openAgentAnalysis"
+              @open-whitepaper="openWhitepaper"
+            />
+            <button
+              type="button"
+              class="pressable rounded-lg p-1.5 text-text-tertiary hover:bg-flat-weak hover:text-text active:scale-90"
+              aria-label="插件设置"
+              title="插件设置"
+              data-track="PLUGIN_SETTINGS_OPEN"
+              @click="pluginSettingsOpen = true"
+            >
+              <MenuIcon name="settings" :size="15" />
+            </button>
+          </div>
         </header>
         <main class="flex-1 overflow-y-auto">
           <!-- 内容上限 1600px：报价卡片栅格（quote-card-grid）在上限内按列宽公式排布 -->
@@ -600,6 +617,9 @@ void marketStatusStore.refresh();
       @close="searchModalOpen = false"
       @select="onHeaderSearchSelect"
     />
+
+    <!-- 插件设置弹窗（顶栏齿轮入口） -->
+    <PluginSettingsModal v-model:open="pluginSettingsOpen" />
 
     <!-- 初始设置引导（仅首次启动展示一次） -->
     <FirstRunSetupModal v-model:open="firstRunSetupOpen" />
