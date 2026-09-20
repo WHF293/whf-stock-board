@@ -2,8 +2,11 @@
 import { useIntervalFn } from "@vueuse/core";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import MarketStatusBadge from "../components/business/MarketStatusBadge.vue";
+import { isTauri } from "@tauri-apps/api/core";
+import TitleBar from "./TitleBar.vue";
+import HeaderTools from "./HeaderTools.vue";
 import StockSearchModal from "../components/business/StockSearchModal.vue";
+import FirstRunSetupModal from "../components/business/FirstRunSetupModal.vue";
 import BaseDrawer from "../components/ui/BaseDrawer.vue";
 import SettingsView from "../views/SettingsView.vue";
 import DockPanel from "../components/dock/DockPanel.vue";
@@ -13,7 +16,6 @@ import NotificationHost from "../components/ui/NotificationHost.vue";
 import SidebarPanelHost from "../components/plugin/SidebarPanelHost.vue";
 import SidebarPanelEntry from "../components/plugin/SidebarPanelEntry.vue";
 import PluginPanelDrawer from "../components/plugin/PluginPanelDrawer.vue";
-import HeaderItemHost from "../components/plugin/HeaderItemHost.vue";
 import { pluginKernel } from "../plugin";
 import { matchesCommandKeys, parseCommandKeys } from "../plugin/command-keys";
 import { useTheme } from "../composables/use-theme";
@@ -27,13 +29,10 @@ import { useMarketStatusStore } from "../stores/market-status";
 import { useSettingsStore } from "../stores/settings";
 import { trackAction } from "../weblog/weblogActions";
 import type { SearchResult } from "../types/stock-quote.types";
+import type { HeaderRenderItem } from "../types/header.types";
 import type { ParsedCommandKeys } from "../plugin/command-keys";
 import type { SidebarMenuEntry } from "../utils/order-sidebar-menu";
-import type {
-  RegisteredCommand,
-  RegisteredHeaderItem,
-  RegisteredSidebarPanel,
-} from "../types/plugin.types";
+import type { RegisteredCommand, RegisteredSidebarPanel } from "../types/plugin.types";
 
 /**
  * 主布局：左侧导航（桌面固定 / 窄屏抽屉）+ 右侧路由内容区 + 右侧停靠面板（默认收起）
@@ -45,6 +44,11 @@ import type {
  * 插件体系：左侧栏的面板与菜单项、顶栏条目均由插件内核贡献（见 `src/plugin/`），
  * 本布局只负责渲染注册表 + 分发插件命令快捷键，不关心具体是哪个插件；
  * 宿主自带顶栏项的声明顺序与插件条目合并后，统一由设置页「顶栏工具」编排顺序与显隐。
+ *
+ * 标题栏：Tauri 桌面端主窗口去掉了系统原生标题栏（tauri.conf 的 decorations: false），
+ * 顶部渲染自绘 TitleBar（品牌区 + 侧栏收起/展开开关 + 窗口控制按钮，颜色跟随应用明暗主题），
+ * 品牌区与侧栏开关随之从侧栏顶部上移（桌面端侧栏不再有顶部块）；
+ * 浏览器模式无窗口概念，不渲染标题栏、品牌区与开关留在侧栏顶部。
  */
 const route = useRoute();
 const router = useRouter();
@@ -52,6 +56,22 @@ const { isDark, toggleDark } = useTheme();
 const marketStatusStore = useMarketStatusStore();
 const settingsStore = useSettingsStore();
 const { openSidebar, toContextList } = useStockOpen();
+
+/**
+ * 初始设置引导弹窗显隐（派生自 settings.setupCompleted，以 store 为唯一事实源）
+ *
+ * 用可写 computed 而非一次性 ref：弹窗组件是纯受控的，关闭时只 emit update:open(false)，
+ * 「首次启动那次关闭即视为完成引导」这条语义由这里落库（设置页复用的那次不落，见组件说明）。
+ */
+const firstRunSetupOpen = computed({
+  get: () => !settingsStore.setupCompleted,
+  set: (value: boolean) => {
+    if (!value) settingsStore.completeSetup();
+  },
+});
+
+/** 是否 Tauri 桌面端（决定是否渲染自绘标题栏 + 侧栏品牌区是否上移；浏览器 false） */
+const isTauriDesktop = isTauri();
 
 /**
  * 打开 Agent 分析：Tauri 开独立 WebviewWindow（已开则聚焦），
@@ -191,20 +211,6 @@ const footerDrawerPanels = computed(() => pickPanels('footer', 'drawer'));
 
 // ---------- 顶栏（右上角工具条） ----------
 
-/** 顶栏渲染项：宿主自带项（`panel` 为 null，按 id 分支渲染）与插件条目（渲染 HeaderItemHost） */
-interface HeaderRenderItem {
-  /** 唯一键（宿主项 = 项 id；插件条目 = `<pluginId>#<id>`，也是设置页持久化的键） */
-  key: string;
-  /** 宿主项 id 或插件条目全局键 */
-  id: string;
-  /** 条目名 */
-  title: string;
-  /** 图标 key */
-  icon: string;
-  /** 插件条目（宿主自带项为 null） */
-  panel: RegisteredHeaderItem | null;
-}
-
 /** 宿主自带顶栏条目（声明顺序即默认顺序） */
 const hostHeaderItems: HeaderRenderItem[] = HOST_HEADER_ITEMS.map((item) => ({
   key: item.id,
@@ -252,6 +258,41 @@ const headerItems = computed<HeaderRenderItem[]>(() => {
   }
   return ordered;
 });
+
+/** 桌面端进自绘 TitleBar 的条目：仅宿主自带项（市场状态 / 明暗 / 搜索 / Agent / 白皮书） */
+const titleBarHeaderItems = computed<HeaderRenderItem[]>(() =>
+  headerItems.value.filter((item) => item.panel === null),
+);
+
+/**
+ * 固定在 TitleBar 左侧（侧栏开关之后）的宿主条目，数组顺序即渲染顺序：
+ * Agent 分析在前、交易状态徽标在后——王总指定的常驻左位，不随右侧工具编排移动
+ */
+const TITLE_BAR_LEADING_ORDER: readonly string[] = [
+  HOST_HEADER_ITEM.AGENT,
+  HOST_HEADER_ITEM.MARKET_STATUS,
+];
+
+/** TitleBar 左侧工具位（Agent 分析 + 交易状态），按上面的固定顺序 */
+const titleBarLeadingItems = computed<HeaderRenderItem[]>(() => {
+  const rank = new Map(TITLE_BAR_LEADING_ORDER.map((id, index) => [id, index]));
+  return titleBarHeaderItems.value
+    .filter((item) => rank.has(item.id))
+    .sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0));
+});
+
+/** TitleBar 右侧工具条（明暗 / 搜索 / 白皮书，窗口控制按钮左侧） */
+const titleBarTrailingItems = computed<HeaderRenderItem[]>(() =>
+  titleBarHeaderItems.value.filter((item) => !TITLE_BAR_LEADING_ORDER.includes(item.id)),
+);
+
+/**
+ * 页面 header 渲染的条目：浏览器 = 全部（无标题栏，宿主项留在页内）；
+ * 桌面端 = 仅插件条目（宿主项已移入 TitleBar，插件下拉如盯盘清单留在页内）
+ */
+const inPageHeaderItems = computed<HeaderRenderItem[]>(() =>
+  isTauriDesktop ? headerItems.value.filter((item) => item.panel !== null) : headerItems.value,
+);
 
 /**
  * 插件命令的快捷键表
@@ -378,184 +419,177 @@ void marketStatusStore.refresh();
 </script>
 
 <template>
-  <div class="flex h-screen overflow-hidden">
-    <!-- 左侧导航：常驻侧栏 -->
-    <aside
-      class="flex shrink-0 flex-col border-r border-flat-weak bg-surface transition-all duration-200"
-      :class="sidebarWidthClass"
-    >
-      <div
-        class="flex items-center gap-2 py-5"
-        :class="effectiveCollapsed ? 'justify-center px-2' : 'justify-between px-4'"
+  <div class="flex h-screen flex-col overflow-hidden">
+    <!-- 自绘标题栏（仅 Tauri 桌面端）：品牌区 + 侧栏开关 + 左侧工具（交易状态/Agent）
+         + 右侧工具（明暗/搜索/白皮书）+ 窗口控制 -->
+    <TitleBar v-if="isTauriDesktop">
+      <template #leading-tools>
+        <HeaderTools
+          :items="titleBarLeadingItems"
+          :is-dark="isDark"
+          @toggle-theme="toggleDark()"
+          @open-search="searchModalOpen = true"
+          @open-agent="openAgentAnalysis"
+          @open-whitepaper="openWhitepaper"
+        />
+      </template>
+      <template #tools>
+        <HeaderTools
+          :items="titleBarTrailingItems"
+          :is-dark="isDark"
+          @toggle-theme="toggleDark()"
+          @open-search="searchModalOpen = true"
+          @open-agent="openAgentAnalysis"
+          @open-whitepaper="openWhitepaper"
+        />
+      </template>
+    </TitleBar>
+
+    <div class="flex min-h-0 flex-1 overflow-hidden">
+      <!-- 左侧导航：常驻侧栏（桌面端品牌区与收起/展开开关均已上移至标题栏，
+           顶部不再有头部块，导航加顶部留白；浏览器模式保留原头部块） -->
+      <aside
+        class="flex shrink-0 flex-col border-r border-flat-weak bg-surface transition-all duration-200"
+        :class="sidebarWidthClass"
       >
-        <div class="flex min-w-0 items-center gap-2">
-          <!-- 品牌 logo：与客户端安装图标同源（public/favicon.svg）；收起时尺寸对齐菜单图标 -->
-          <img
-            src="/favicon.svg"
-            alt="股票看板"
-            class="shrink-0"
-            :class="effectiveCollapsed ? 'h-4 w-4 rounded' : 'h-8 w-8 rounded-lg'"
+        <!-- 浏览器模式头部：品牌 + 收起/展开开关（Tauri 桌面端整块移入 TitleBar，不渲染） -->
+        <div
+          v-if="!isTauriDesktop"
+          class="flex items-center py-4"
+          :class="effectiveCollapsed ? 'justify-center px-2' : 'justify-between px-4'"
+        >
+          <div class="flex min-w-0 items-center gap-2">
+            <!-- 品牌 logo：与客户端安装图标同源（public/favicon.svg）；收起时尺寸对齐菜单图标 -->
+            <img
+              src="/favicon.svg"
+              alt="股票看板"
+              class="shrink-0"
+              :class="effectiveCollapsed ? 'h-4 w-4 rounded' : 'h-8 w-8 rounded-lg'"
+            />
+            <span v-if="!effectiveCollapsed" class="truncate text-base font-semibold text-text">股票看板</span>
+          </div>
+          <!-- 收起/展开按钮：持久化在 settings；panelLeft 形状与桌面端标题栏开关统一 -->
+          <button
+            type="button"
+            class="pressable flex shrink-0 items-center justify-center rounded-md p-1 text-text-tertiary hover:bg-flat-weak hover:text-text active:scale-90"
+            :aria-label="effectiveCollapsed ? '展开侧栏' : '收起侧栏'"
+            data-track="NAV_SIDEBAR_TOGGLE"
+            @click="toggleSidebar"
+          >
+            <MenuIcon name="panelLeft" :size="16" />
+            <BaseTooltip v-if="effectiveCollapsed" :text="effectiveCollapsed ? '展开侧栏' : '收起侧栏'" />
+          </button>
+        </div>
+        <!-- overflow-x-clip：收起态图标的 BaseTooltip（left-full）会横向溢出 nav，
+             而 overflow-y:auto 会把 overflow-x 计算成 auto → 底部出现横向滚动条；clip 掐掉 -->
+        <nav
+          class="flex-1 space-y-1 overflow-x-clip overflow-y-auto px-2"
+          :class="isTauriDesktop ? 'pt-3' : ''"
+        >
+          <RouterLink
+            v-for="item in menuItems"
+            :key="item.path"
+            :to="item.path"
+            data-track="NAV_MENU_CLICK"
+            :data-track-detail="item.title"
+            class="group relative pressable flex items-center gap-3 rounded-lg py-2 text-sm active:scale-[0.98]"
+            :class="[
+              effectiveCollapsed ? 'justify-center px-2' : 'px-3',
+              isActive(item.path)
+                ? 'bg-primary-weak font-medium text-primary'
+                : 'text-text-secondary hover:bg-flat-weak',
+            ]"
+          >
+            <MenuIcon :name="item.icon" :size="16" />
+            <span v-if="!effectiveCollapsed" class="truncate">{{ item.title }}</span>
+            <BaseTooltip v-if="effectiveCollapsed" :text="item.title" />
+          </RouterLink>
+
+          <!-- 插件贡献：导航区面板（inline 直接渲染 / drawer 只放入口） -->
+          <SidebarPanelHost
+            v-for="panel in navInlinePanels"
+            :key="panel.key"
+            :panel="panel"
           />
-          <span v-if="!effectiveCollapsed" class="truncate text-base font-semibold text-text">股票看板</span>
+          <SidebarPanelEntry
+            v-for="panel in navDrawerPanels"
+            :key="panel.key"
+            :panel="panel"
+            :collapsed="effectiveCollapsed"
+          />
+        </nav>
+        <!-- 侧栏底部：插件面板（footer 区）+ 设置入口（收起时仅显示图标） -->
+        <div class="space-y-2 border-t border-flat-weak py-3" :class="effectiveCollapsed ? 'px-2' : 'px-4'">
+          <SidebarPanelHost
+            v-for="panel in footerInlinePanels"
+            :key="panel.key"
+            :panel="panel"
+          />
+          <SidebarPanelEntry
+            v-for="panel in footerDrawerPanels"
+            :key="panel.key"
+            :panel="panel"
+            :collapsed="effectiveCollapsed"
+          />
+          <button
+            type="button"
+            class="group relative pressable flex items-center gap-2 rounded-lg py-1 text-xs active:scale-[0.98] text-text-secondary hover:text-text"
+            :class="effectiveCollapsed ? 'justify-center px-1' : 'px-1'"
+            aria-label="打开设置"
+            data-track="NAV_SETTINGS_OPEN"
+            @click="settingsOpen = true"
+          >
+            <MenuIcon name="settings" :size="14" />
+            <span v-if="!effectiveCollapsed">设置</span>
+            <BaseTooltip v-if="effectiveCollapsed" text="设置" />
+          </button>
         </div>
-        <!-- 收起/展开按钮：持久化在 settings -->
-        <button
-          type="button"
-          class="pressable flex shrink-0 items-center justify-center rounded-md p-1 text-text-tertiary hover:bg-flat-weak hover:text-text active:scale-90"
-          :aria-label="effectiveCollapsed ? '展开侧栏' : '收起侧栏'"
-          data-track="NAV_SIDEBAR_TOGGLE"
-          @click="toggleSidebar"
-        >
-          <MenuIcon :name="effectiveCollapsed ? 'chevronRight' : 'chevronLeft'" :size="16" />
-          <BaseTooltip v-if="effectiveCollapsed" :text="effectiveCollapsed ? '展开侧栏' : '收起侧栏'" />
-        </button>
-      </div>
-      <nav class="flex-1 space-y-1 overflow-y-auto px-2">
-        <RouterLink
-          v-for="item in menuItems"
-          :key="item.path"
-          :to="item.path"
-          data-track="NAV_MENU_CLICK"
-          :data-track-detail="item.title"
-          class="group relative pressable flex items-center gap-3 rounded-lg py-2 text-sm active:scale-[0.98]"
-          :class="[
-            effectiveCollapsed ? 'justify-center px-2' : 'px-3',
-            isActive(item.path)
-              ? 'bg-primary-weak font-medium text-primary'
-              : 'text-text-secondary hover:bg-flat-weak',
-          ]"
-        >
-          <MenuIcon :name="item.icon" :size="16" />
-          <span v-if="!effectiveCollapsed" class="truncate">{{ item.title }}</span>
-          <BaseTooltip v-if="effectiveCollapsed" :text="item.title" />
-        </RouterLink>
+      </aside>
 
-        <!-- 插件贡献：导航区面板（inline 直接渲染 / drawer 只放入口） -->
-        <SidebarPanelHost
-          v-for="panel in navInlinePanels"
-          :key="panel.key"
-          :panel="panel"
-        />
-        <SidebarPanelEntry
-          v-for="panel in navDrawerPanels"
-          :key="panel.key"
-          :panel="panel"
-          :collapsed="effectiveCollapsed"
-        />
-      </nav>
-      <!-- 侧栏底部：插件面板（footer 区）+ 设置入口（收起时仅显示图标） -->
-      <div class="space-y-2 border-t border-flat-weak py-3" :class="effectiveCollapsed ? 'px-2' : 'px-4'">
-        <SidebarPanelHost
-          v-for="panel in footerInlinePanels"
-          :key="panel.key"
-          :panel="panel"
-        />
-        <SidebarPanelEntry
-          v-for="panel in footerDrawerPanels"
-          :key="panel.key"
-          :panel="panel"
-          :collapsed="effectiveCollapsed"
-        />
-        <button
-          type="button"
-          class="group relative pressable flex items-center gap-2 rounded-lg py-1 text-xs active:scale-[0.98] text-text-secondary hover:text-text"
-          :class="effectiveCollapsed ? 'justify-center px-1' : 'px-1'"
-          aria-label="打开设置"
-          data-track="NAV_SETTINGS_OPEN"
-          @click="settingsOpen = true"
+      <!-- 右侧内容区 -->
+      <div class="relative flex min-w-0 flex-1 flex-col">
+        <header
+          class="flex h-14 shrink-0 items-center justify-between border-b border-flat-weak bg-surface px-6"
         >
-          <MenuIcon name="settings" :size="14" />
-          <span v-if="!effectiveCollapsed">设置</span>
-          <BaseTooltip v-if="effectiveCollapsed" text="设置" />
-        </button>
+          <div class="flex min-w-0 items-center gap-2">
+            <h1 class="truncate text-base font-semibold text-text">
+              {{ pageTitle }}
+            </h1>
+          </div>
+          <!-- 顶栏工具条：桌面端宿主项已移入自绘 TitleBar，页内只渲染插件条目
+               （盯盘清单这类下拉要浮在内容上方，留在页内层级才对）；
+               浏览器无标题栏，全部条目都留在页内 -->
+          <HeaderTools
+            :items="inPageHeaderItems"
+            :is-dark="isDark"
+            @toggle-theme="toggleDark()"
+            @open-search="searchModalOpen = true"
+            @open-agent="openAgentAnalysis"
+            @open-whitepaper="openWhitepaper"
+          />
+        </header>
+        <main class="flex-1 overflow-y-auto">
+          <!-- 内容上限 1600px：报价卡片栅格（quote-card-grid）在上限内按列宽公式排布 -->
+          <div class="mx-auto w-full max-w-[1600px] p-6">
+            <!-- 页面切换：KeepAlive 缓存页面状态；进入动画由 pageAnim 类名驱动（无离场状态机） -->
+            <RouterView v-slot="{ Component, route: routeRecord }">
+              <KeepAlive>
+                <component
+                  :is="Component"
+                  :key="routeRecord.path"
+                  :class="pageAnim"
+                />
+              </KeepAlive>
+            </RouterView>
+          </div>
+        </main>
       </div>
-    </aside>
 
-    <!-- 右侧内容区 -->
-    <div class="relative flex min-w-0 flex-1 flex-col">
-      <header
-        class="flex h-14 shrink-0 items-center justify-between border-b border-flat-weak bg-surface px-6"
-      >
-        <div class="flex min-w-0 items-center gap-2">
-          <h1 class="truncate text-base font-semibold text-text">
-            {{ pageTitle }}
-          </h1>
-        </div>
-        <!-- 右上角工具条：宿主自带项 + 插件顶栏条目，顺序与显隐由设置页「顶栏工具」编排 -->
-        <div class="flex shrink-0 items-center gap-1.5">
-          <template v-for="item in headerItems" :key="item.key">
-            <MarketStatusBadge v-if="item.id === HOST_HEADER_ITEM.MARKET_STATUS" />
-            <button
-              v-else-if="item.id === HOST_HEADER_ITEM.THEME"
-              type="button"
-              class="group relative pressable rounded-lg p-2 text-text-secondary hover:bg-flat-weak active:scale-90"
-              :aria-label="isDark ? '切换为亮色模式' : '切换为暗色模式'"
-              data-track="NAV_THEME_TOGGLE"
-              @click="toggleDark()"
-            >
-              <MenuIcon :name="isDark ? 'sun' : 'moon'" :size="16" />
-              <BaseTooltip :text="isDark ? '切换为亮色模式' : '切换为暗色模式'" placement="bottom" />
-            </button>
-            <!-- 搜索：点击打开弹窗 -->
-            <button
-              v-else-if="item.id === HOST_HEADER_ITEM.SEARCH"
-              type="button"
-              class="group relative pressable rounded-lg p-2 text-text-secondary hover:bg-flat-weak active:scale-90"
-              aria-label="搜索个股"
-              data-track="NAV_SEARCH_OPEN"
-              @click="searchModalOpen = true"
-            >
-              <MenuIcon name="search" :size="16" />
-              <BaseTooltip text="搜索个股" placement="bottom" />
-            </button>
-            <!-- Agent 分析：Tauri 开独立窗口，浏览器回退站内 standalone 路由 -->
-            <button
-              v-else-if="item.id === HOST_HEADER_ITEM.AGENT"
-              type="button"
-              class="group relative pressable rounded-lg p-2 text-text-secondary hover:bg-flat-weak active:scale-90"
-              aria-label="Agent 分析"
-              data-track="NAV_AGENT_OPEN"
-              @click="openAgentAnalysis"
-            >
-              <MenuIcon name="agent" :size="16" />
-              <BaseTooltip text="Agent 分析" placement="bottom" />
-            </button>
-            <!-- 软件白皮书：站内文档页，hover 提示用途 -->
-            <button
-              v-else-if="item.id === HOST_HEADER_ITEM.WHITEPAPER"
-              type="button"
-              class="group relative pressable rounded-lg p-2 text-text-secondary hover:bg-flat-weak active:scale-90"
-              aria-label="软件白皮书"
-              data-track="NAV_WHITEPAPER_OPEN"
-              @click="openWhitepaper"
-            >
-              <MenuIcon name="whitepaper" :size="16" />
-              <BaseTooltip text="软件白皮书" placement="bottom" />
-            </button>
-            <!-- 插件贡献的顶栏条目：图标 + 单条轮播，点击展开下拉面板 -->
-            <HeaderItemHost v-else-if="item.panel" :item="item.panel" />
-          </template>
-        </div>
-      </header>
-      <main class="flex-1 overflow-y-auto">
-        <!-- 内容上限 1600px：报价卡片栅格（quote-card-grid）在上限内按列宽公式排布 -->
-        <div class="mx-auto w-full max-w-[1600px] p-6">
-          <!-- 页面切换：KeepAlive 缓存页面状态；进入动画由 pageAnim 类名驱动（无离场状态机） -->
-          <RouterView v-slot="{ Component, route: routeRecord }">
-            <KeepAlive>
-              <component
-                :is="Component"
-                :key="routeRecord.path"
-                :class="pageAnim"
-              />
-            </KeepAlive>
-          </RouterView>
-        </div>
-      </main>
+      <!-- 右侧停靠面板（个股详情等可插拔内容，默认收起；窄屏全屏覆盖）。
+           必须留在横向行容器内：根节点是 flex-col（标题栏 + 内容区两段），
+           挂到根上会变成纵向列项，把侧栏 / 主区高度挤没 -->
+      <DockPanel />
     </div>
-
-    <!-- 右侧停靠面板（个股详情等可插拔内容，默认收起；窄屏全屏覆盖） -->
-    <DockPanel />
 
     <!-- 全局标的搜索弹窗 -->
     <StockSearchModal
@@ -563,6 +597,9 @@ void marketStatusStore.refresh();
       @close="searchModalOpen = false"
       @select="onHeaderSearchSelect"
     />
+
+    <!-- 初始设置引导（仅首次启动展示一次） -->
+    <FirstRunSetupModal v-model:open="firstRunSetupOpen" />
 
     <!-- 设置抽屉（右侧滑入，宽 2/3 视口） -->
     <BaseDrawer v-model:open="settingsOpen" title="设置">

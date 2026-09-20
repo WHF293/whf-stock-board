@@ -12,12 +12,15 @@
 - **代理白名单**：`src/constants/proxy.constants.ts` 的 `STOCK_PROXY_ALLOWED_HOSTS`（后缀匹配）：
   `eastmoney.com`、`gtimg.cn`、`sina.com.cn`、`sina.cn`、`sinajs.cn`、`10jqka.com.cn`、`thepaper.cn`、`cls.cn`、`linkdiary.cn`。
   新增域名需同步改这里（浏览器）与 capability（Tauri）。
-- **本机关键约束（踩坑结论，2026-09-14 实测复现）**：
-  - ⚠️ **东财行情域 `push2his.eastmoney.com` 与 `push2.eastmoney.com` 在本机长期表现为被 TCP 层封禁**（`fetch failed` / `UND_ERR_SOCKET`，即 AGENTS 里记的「东财封 IP」）。**带数字前缀的镜像域同样不可达**（实测 `1./13./45.push2his`、`1./7./20./45./91.push2` 全部失败）→ `stock-sdk` 的 `sdk.kline.*` / `sdk.batch.cn` 等走东财行情域的方法也随之失败。
-  - 📌 **2026-09-18 补充实测（口径修正：突发限速，不是永久封禁）**：该域**间隔 ≥1s 时可用**——`push2his/api/qt/stock/kline/get?secid=90.BKxxxx`（板块指数日 K，含成交额）与 `push2/api/qt/clist/get`（板块快照）均返回 200 且数据非空；但**短时间连发会立刻拒连**，停顿后自动恢复。**结论：可作兜底源，但必须严格低频（点击触发、串行 + ≥1.2s 间隔），不能当稳定主源或轮询源。**
+- **本机关键约束（踩坑结论，2026-09-18 复测更新；curl 与 node 两套栈结论一致）**：
+  - ⚠️ **`push2.eastmoney.com` 仍被 TCP 层封禁**（`http=000`，带数字镜像同样不可达）→ `stock-sdk` 的 clist / ulist.np 等地址继续经 `src/api/eastmoney-reroute.ts` 改道到 push2delay。
+  - ✅ **`push2his.eastmoney.com` 及数字镜像已恢复可达**（`1.` / `33.` 均 200）。**资金流历史必须走它**：`/api/qt/stock/fflow/daykline/get` 同参数下 push2his 返回 **121 条**（自 2026-03-27 起），而 **push2delay 只返回当日 1 条**（`lmt=0` 也一样）。
+    - 因此 `fflow` 路径**已从改道清单剔除**（2026-09-18）。改道清单只保留 push2delay 确实同构的路径：`clist` / `ulist.np` / `stock.get` / `trends2`。
+    - ⚠️ 回归症状：把 fflow 放回改道清单 → 「主力净流入（近10日）」图表只 1 个点、表格只 1 行，且**不报错**。
+    - ⚠️ **2026-09-20 复测：push2his API 路径再次对本机 TCP RST**（`http=000`，数字镜像 `1.` / `33.` 同封；根路径仍返回 404，即按 IP+路径封禁）。诱因是 30 板块 daykline 连发无间隔（现已在 `api/board-flow-history.api.ts` 落实并发 3 + 每请求 500ms 错峰）；push2delay 的 clist 同时段正常。**仍勿改道**（push2delay 的 daykline 只有当日 1 条）。
   - 📌 **失败形态（2026-09-18 复测，决定重试策略）**：多半是**连接层被掐断**而非 HTTP 错误码 —— `fetch failed` / `UND_ERR_SOCKET other side closed`（curl 侧 `000`，约 0.2s 即返回，实测 8 次里成功 1 次；间隔 1.5s 连打 12 次成功 3 次）。**稍候重试能恢复**（实测同 URL 第 2 次即 200）→ 因此「同 URL 原地重试 + 拉长间隔」是本域唯一有效的兜底手段，胜于换镜像域（镜像域实测全不可达）。
   - 📌 **两源量级对照（2026-09-18 实测，说明为何绝不混排）**：同一天同一板块，东财 `半导体(BK1036)` 成交额 3070.2 亿 vs 同花顺 `半导体(881121)` 2348.7 亿，**比值 1.31**（成分口径不同）；两套指数点位也不可比（东财 2868.43 vs 同花顺 8993 上下）。跨源拼接会让成交额口径在接缝处跳变，直接污染量能倍数与占比分位 → 两源数据必须**整表降级 + 分开存放**。
-  - 同属东财但**实测可达**的域：`push2delay.eastmoney.com`（快照列表 / 分时 `trends2`）、`push2ex`（涨停池）、`datacenter-web`、`np-listapi`（7×24 快讯）。
+  - 同属东财但**实测可达**的域：`push2his`（行情历史 / 资金流 / 分时；⚠️ 间歇性被临时封禁，见上）、`push2delay`（快照列表 / 分时 `trends2`）、`push2ex`（涨停池）、`datacenter-web`、`np-listapi`（7×24 快讯）。
   - ⚠️ **`push2delay` 不提供历史 K 线**：`/api/qt/stock/kline/get` 返回 **HTTP 200 但 `data` 为 null / `klines` 为空**。调用方若把「200 但无数据」当成功，会静默返回空数组 —— 表现为**图表空白、列表为空且没有任何错误提示**（本模块曾踩此坑）。解析上游必须校验「拿到非空数据」才算成功。
   - **指数日 K 成交额因此改走腾讯** `web.ifzq.gtimg.cn/appstock/app/newfqkline/get`（见 §1 `fetchMarketTurnover`）。该域已在代理白名单 `gtimg.cn` 与 Tauri capability `https://*.gtimg.cn/*` 内，无需新增配置。
   - 新浪 `quotes.sina.cn` K 线**无成交金额字段**（仅 `volume` 成交量），且 `volume×收盘价` 对指数不成立（实测约为真实成交额的 235 倍），故成交额不依赖新浪推算。
@@ -47,12 +50,13 @@
 | `fetchDividendRank` | `plugins/dividend-screen/em-data.ts` | `push2delay.eastmoney.com/api/qt/clist/get?fid=f133` | GET | **股息筛选**：全市场 A 股按 `f133` 股息率（TTM，东财口径）降序取前 N（`fltt=2&invt=2` 下 f2 现价 / f20 总市值 / f38 总股本 / f115 PE-TTM 均为真值小数）。⚠️ 实测 `pz>100` 只回 100 行（上游硬上限）→ 分页串行 1s 间隔 + 按代码去重；f133 随现价实时变、页边界会漂移，但排行只用于**选样本池**（展示口径全部由推算层自算），漂移只影响池边界个别股票。带 `Referer: quote.eastmoney.com` |
 | `fetchPerfByCodes` | `plugins/dividend-screen/em-data.ts` | `datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_LICO_FN_CPD` | GET | **股息筛选**：业绩报表，按**报告期 + 代码集合**过滤（`in` 分块 ≤100 代码）。字段 `PARENT_NETPROFIT` 归母净利 / `SJLTZ` 净利同比 / `YSTZ` 营收同比 / `BOARD_NAME` 行业；报告期字段名是 `REPORTDATE`（无下划线）。缺席 = 未披露（合法空）。带 `Referer: data.eastmoney.com` |
 | `fetchDividendsByCodes` | `plugins/dividend-screen/em-data.ts` | `datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET` | GET | **股息筛选**：分红送配明细，同样按报告期 + 代码集合过滤。字段 `PRETAX_BONUS_RMB` 每 10 股派息（含税，纯转增为 null）/ `TOTAL_SHARES` 公告时总股本；⚠️ 报告期字段名是 **`REPORT_DATE`（带下划线，与业绩报表的 `REPORTDATE` 不同名，混用会被 `success:false` 拒绝）**；同一报告期可能多条方案 → 每股派息按代码**求和**。带 `Referer: data.eastmoney.com` |
+| `fetchBoardFlowHistories` / `fetchBoardFlowHotBoards` | `api/board-flow-history.api.ts` | `push2his.eastmoney.com/api/qt/stock/fflow/daykline/get`（逐日历史）+ `push2delay.eastmoney.com/api/qt/clist/get`（热点名单 f174 排行） | GET | 板块（行业/概念）**逐日主力净流入历史**。消费方：Agent MCP `get_board_flow_history` + 市场榜单「板块净流入 → 查看历史净流入」页。历史在本机渐进累积（`localStorage['whf:sector-flow-history']`，独立 key 防整包写放大）：盘中进页拉新合并（同日 5 分钟节流）、盘后 / 非交易日只读本地、首次一次拉全量，每板块保留 250 交易日。**并发 3 + 每请求 500ms 错峰**（⚠️ 30 连发无间隔是 push2his 对本机 IP 封禁诱因之一，见 §0 2026-09-20 记录） |
 
 ---
 
 ## 2. stock-sdk 方法调用（`sdk` 单例，`src/api/sdk.ts`）
 
-`stock-sdk` 内部按方法路由到腾讯 / 东方财富不同域。**走东财行情域（`push2` / `push2his`）的方法在本机不可用**（已被 TCP 层封禁，见 §0），走腾讯源的方法（`quotes` / `calendar` / `search` / `timeline`）正常；「个股详情」的日 K 已改走新浪（见 §1）。
+`stock-sdk` 内部按方法路由到腾讯 / 东方财富不同域。**走东财 `push2` 的方法在本机不可用**（TCP 层封禁，改道 push2delay，见 §0）；**`push2his` 资金流历史依赖它，不要再改道**（2026-09-18 恢复过，2026-09-20 又被临时封禁，间歇性，恢复后即用，见 §0）；走腾讯源的方法（`quotes` / `calendar` / `search` / `timeline`）正常；「个股详情」的日 K 仍走新浪（复权口径原因，见 §1）。
 
 | 封装函数 | 文件 | SDK 方法 | 上游域（实测） | 说明 |
 | --- | --- | --- | --- | --- |
@@ -65,10 +69,11 @@
 | `fetchZtPool` | `api/event.api.ts` | `sdk.marketEvent.ztPool(type, date?)` | 东财 | 涨停/跌停等股池。**`date` 参数生效**（可取指定交易日，实测同一只票连板数逐日递进：9/15 = 1 板 → 9/16 = 2 板 → 9/17 = 3 板），但**只覆盖近端**（约一个月前的日期返回空池）；`qdate` 字段恒为当日，不代表实际请求日，不要用它判断日期。字段 `hybk`(行业，长名**被截断到 4 个汉字**)、`lbc`(连板数)、`fund`(封板资金)、`zttj`(N 天 M 板) |
 | `fetchStockChanges` | `api/event.api.ts` | `sdk.marketEvent.stockChanges('all')` | 东财 | 全市场盘口异动（滚动时间轴） |
 | `fetchBoardChanges` | `api/event.api.ts` | `sdk.marketEvent.boardChanges()` | 东财 | 板块异动汇总 |
-| `fetchMarketFundFlow` | `api/flow.api.ts` | `sdk.fundFlow.market()` | 东财 | 大盘资金流向历史（总览「资金速览」） |
-| `fetchIndividualFundFlow` | `api/flow.api.ts` | `sdk.fundFlow.individual(symbol)` | 东财 | 个股资金流历史（详情页） |
+| `fetchMarketFundFlow` | `api/flow.api.ts` | `sdk.fundFlow.market()` | 东财 **push2his（直连，勿改道）** | 大盘资金流向历史（总览「资金速览 / 主力净流入（近10日）」）。`lmt=0` 实测返回 **121 条**，前端 `slice(-10)` 取近 10 日 |
+| `fetchIndividualFundFlow` | `api/flow.api.ts` | `sdk.fundFlow.individual(symbol)` | 东财 **push2his（直连，勿改道）** | 个股资金流历史（详情页）。同上述 fflow 域约束 |
 | `fetchFundFlowRank` | `api/flow.api.ts` | `sdk.fundFlow.rank({indicator:'today'})` | 东财 | 个股主力资金流排名 |
 | `fetchSectorFundFlowRank` | `api/flow.api.ts` | `sdk.fundFlow.sectorRank({sectorType:'industry'})` | 东财 | 板块资金流排名 |
+| `fetchSectorFlowCurve(s)` | `api/sector-flow-curve.api.ts` | 直连 `push2delay.eastmoney.com/api/qt/stock/fflow/kline/get?secid=90.BKxxxx&klt=1&lmt=0` | 东财 **push2delay（直连，勿走 push2his）** | 行业板块**当日分时**资金流曲线（klt=1 分钟线，每分钟累计主力净流入，241 点；实测 2026-09-19）。⚠️ 与 fflow/daykline 口径相反：daykline 在 push2delay 只回 1 条被剔除改道，但 kline 分时在 push2delay 完整、在 push2his 反而返回空 klines；批量并发 3（市场榜单「板块净流入」页签的曲线视图，进视图触发一次不轮询） |
 | `fetchNorthboundHoldingRank` | `api/flow.api.ts` | `sdk.northbound.holdingRank({market:'all',period:'today'})` | 东财 | 北向持股排名 |
 | `fetchIsTradingDay` | `api/calendar.api.ts` | `sdk.calendar.isTradingDay()` | 腾讯日历 | 是否 A 股交易日（异步，带缓存） |
 | `getMarketStatus` | `api/calendar.api.ts` | `sdk.calendar.marketStatus(market)` | 同步 | 当前市场状态（盘前/交易中/午休/盘后/休市，不识假） |
@@ -130,7 +135,7 @@
 
 ## 4. 取数失败排查清单
 
-1. **先看是不是东财行情域**：`push2` / `push2his`（含数字前缀镜像）在本机全封，凡走这些域的请求都会 `fetch failed` / TCP RST。指数成交额走 §1 腾讯 `newfqkline`；个股日 K 走新浪 `fetchSinaKline`。
+1. **先看是不是东财行情域**：`push2` 在本机仍全封（含数字前缀镜像，`fetch failed` / TCP RST），`push2his` 已恢复可达（2026-09-18）→ **不要因为「历史上封过」就把 fflow / 分时也改道到 push2delay**（资金流历史在 push2delay 上只有当日 1 条，见 §0）。指数成交额走 §1 腾讯 `newfqkline`；个股日 K 仍走新浪 `fetchSinaKline`（复权口径决定，与封禁无关）。
 2. **HTTP 200 不等于有数据**：`push2delay` 的 kline 返回 200 但 `klines` 空。解析前必须校验拿到非空数据，否则会把「上游无数据」当成成功，页面表现为**空白且无报错**。
 3. **新域名 403 FORBIDDEN_TARGET**：补 `proxy.constants.ts` 白名单（浏览器）+ capability scope（Tauri）。
 4. **403 / 空数据**：检查 `Referer`（新浪/同花顺需带），或上游换了字段（参考 `.ai/` 下的新浪接口文档、新浪新闻接口文档）。

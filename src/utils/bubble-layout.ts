@@ -18,6 +18,9 @@
 /** 堆叠搜索迭代上限（防御性兜底，正常远达不到） */
 const MAX_STACK_ITERATIONS = 4_000;
 
+/** 高度收缩适配的最大迭代次数（线性收敛，正常 2 次内到位） */
+const MAX_SHRINK_ITERATIONS = 4;
+
 /** 气泡输入项 */
 export interface BubbleLayoutItem {
   /** 唯一键（调用方回查原始数据用） */
@@ -88,6 +91,21 @@ export interface BubbleLayoutOptions {
   tickCount: number;
   /** 数值文案格式化（用于气泡内数值行） */
   formatValue: (value: number) => string;
+  /**
+   * 画布高度上限（可选）：内容超高时按比例收缩 maxRadius 重排
+   * （每列泡数近似不变 ⇒ 堆叠高度近似 ∝ 半径）；收缩到 minFitRadius 下限
+   * 仍超高则按实际高度返回，由调用方等比缩放兜底（不出现滚动条）
+   */
+  maxHeight?: number;
+  /** 收缩适配时 maxRadius 的下限（保护面积语义的层次感，应大于 minRadius） */
+  minFitRadius?: number;
+  /**
+   * 固定画布高度（可选，高度裁决优先于 minHeight / maxHeight）：
+   * 内容不足时上下均分富余；收缩到下限仍超高时退回内容高度防泡出界。
+   * 用于「同数据多口径切换时画布高度保持一致」：调用方先算各口径的
+   * 适配高度取公共值，再以本参数回灌；收缩目标也随之改用它
+   */
+  fixedHeight?: number;
 }
 
 /** 气泡布局结果（坐标已是最终画布坐标，直接进 viewBox） */
@@ -208,14 +226,16 @@ const formatTick = (value: number, step: number): string => {
 };
 
 /**
- * 计算气泡图布局
+ * 单轮布局计算（在给定生效 maxRadius 下完整求解）
  * @param items 气泡数据（顺序即返回的 nodes 顺序）
  * @param options 布局参数
+ * @param effMaxRadius 本轮生效的半径上限（高度收缩适配会调低它）
  * @returns 布局结果（含 viewBox 尺寸、刻度与节点坐标）
  */
-export const layoutBubbles = (
+const computeLayout = (
   items: readonly BubbleLayoutItem[],
   options: BubbleLayoutOptions,
+  effMaxRadius: number,
 ): BubbleLayoutResult => {
   if (items.length === 0) {
     return {
@@ -237,14 +257,14 @@ export const layoutBubbles = (
   const valueSpan = maxValue - minValue;
 
   /* 半径：|值| 越大 → 半径越大（面积单调同增） */
-  const radiusSpan = options.maxRadius - options.minRadius;
+  const radiusSpan = effMaxRadius - options.minRadius;
   const radiusOf = (magnitude: number): number =>
     maxMagnitude > 0
       ? options.minRadius + radiusSpan * Math.sqrt(magnitude / maxMagnitude)
       : options.minRadius;
 
   /* 横轴：两侧各留一个最大半径，保证最大泡也不越界 */
-  const sidePadding = options.maxRadius + options.gap * 2;
+  const sidePadding = effMaxRadius + options.gap * 2;
   const axisStartX = sidePadding;
   const axisEndX = Math.max(options.width - sidePadding, axisStartX + 1);
   const xOf = (value: number): number =>
@@ -281,10 +301,14 @@ export const layoutBubbles = (
     placed.push({ x: node.cx, y, r: node.r });
   }
 
-  /* 画布高度：内容高度与最小高度取大，富余部分上下均分 */
+  /* 画布高度：fixedHeight 优先（多口径统一高度），内容更高时退回内容高度防出界；
+     否则内容高度与最小高度取大，富余部分上下均分 */
   const topExtent = Math.min(...placed.map((p) => p.y - p.r));
   const contentHeight = options.topPadding - topExtent + options.bottomPadding;
-  const height = Math.max(options.minHeight, contentHeight);
+  const height =
+    options.fixedHeight !== undefined
+      ? Math.max(options.fixedHeight, contentHeight)
+      : Math.max(options.minHeight, contentHeight);
   const baselineY = (height - contentHeight) / 2 + options.topPadding - topExtent;
   for (const node of nodes) {
     node.cy += baselineY;
@@ -326,4 +350,42 @@ export const layoutBubbles = (
     zeroX: minValue < 0 && maxValue > 0 ? xOf(0) : null,
     nodes,
   };
+};
+
+/**
+ * 计算气泡图布局（对外入口）
+ *
+ * 传了 `maxHeight` 时做高度适配：内容超高 → 按高度比例收缩 maxRadius 重排
+ * （每列泡数近似不变 ⇒ 堆叠高度近似 ∝ 半径，线性缩放即可收敛），
+ * 收缩到 `minFitRadius` 下限仍超高则按实际高度返回，由调用方等比缩放兜底。
+ * 传了 `fixedHeight` 时收缩目标改用它（多口径统一高度的回灌）。
+ * @param items 气泡数据（顺序即返回的 nodes 顺序）
+ * @param options 布局参数
+ * @returns 布局结果（含 viewBox 尺寸、刻度与节点坐标）
+ */
+export const layoutBubbles = (
+  items: readonly BubbleLayoutItem[],
+  options: BubbleLayoutOptions,
+): BubbleLayoutResult => {
+  let effMaxRadius = options.maxRadius;
+  let result = computeLayout(items, options, effMaxRadius);
+  const heightTarget = options.fixedHeight ?? options.maxHeight;
+  if (heightTarget === undefined) return result;
+
+  const floorRadius = Math.max(options.minFitRadius ?? 0, options.minRadius);
+  for (
+    let iteration = 0;
+    iteration < MAX_SHRINK_ITERATIONS &&
+    result.height > heightTarget &&
+    effMaxRadius > floorRadius;
+    iteration += 1
+  ) {
+    // 单次收缩下限 0.5：宁可多迭代一轮，也不要一步把气泡缩到看不清
+    const scale = Math.max(heightTarget / result.height, 0.5);
+    const nextRadius = Math.max(Math.round(effMaxRadius * scale), floorRadius);
+    if (nextRadius >= effMaxRadius) break;
+    effMaxRadius = nextRadius;
+    result = computeLayout(items, options, effMaxRadius);
+  }
+  return result;
 };

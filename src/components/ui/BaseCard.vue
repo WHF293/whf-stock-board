@@ -1,6 +1,11 @@
 <script setup lang="ts">
+import MenuIcon from './MenuIcon.vue';
+
 /**
  * 基础卡片：圆角 + 卡片面 + 柔和阴影，可选标题与右侧 extra 插槽
+ *
+ * 标题可配置为可点击（clickableTitle）：hover 高亮 + 尾部箭头，点击发射
+ * `title-click`，由调用方决定跳转目标；不开启时保持纯文本，现有用例零影响
  */
 defineProps<{
   /** 卡片标题；不传且无 extra 插槽时不渲染头部 */
@@ -15,6 +20,13 @@ defineProps<{
    * / `.table-scroll-fill`，其余内容（工具条、统计块）保持内容高即可。
    */
   fill?: boolean;
+  /** 标题是否可点击（hover 高亮 + 箭头提示；点击发射 title-click） */
+  clickableTitle?: boolean;
+}>();
+
+const emit = defineEmits<{
+  /** 点击可点击标题（clickableTitle 时生效，跳转目标由调用方决定） */
+  'title-click': [];
 }>();
 </script>
 
@@ -28,7 +40,20 @@ defineProps<{
       class="mb-3 flex items-center justify-between gap-2"
       :class="fill ? 'shrink-0' : ''"
     >
-      <h2 class="text-sm font-semibold text-text">{{ title }}</h2>
+      <component
+        :is="clickableTitle ? 'button' : 'h2'"
+        :type="clickableTitle ? 'button' : undefined"
+        class="text-sm font-semibold text-text"
+        :class="
+          clickableTitle
+            ? 'pressable flex items-center gap-0.5 rounded text-left hover:text-primary active:scale-[0.98]'
+            : ''
+        "
+        @click="clickableTitle && emit('title-click')"
+      >
+        {{ title }}
+        <MenuIcon v-if="clickableTitle" name="chevronRight" :size="14" class="text-text-tertiary" />
+      </component>
       <slot name="extra" />
     </header>
     <slot />

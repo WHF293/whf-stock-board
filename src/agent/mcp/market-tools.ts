@@ -36,7 +36,12 @@ import {
   fetchThsHotThemes,
 } from '../../api/news.api';
 import { fetchGlobalIndexQuotes, fetchUsSectorPanorama } from '../../api/panorama.api';
+import {
+  buildBoardFlowSummary,
+  fetchBoardFlowHistories,
+} from '../../api/board-flow-history.api';
 import { fetchFullQuotes } from '../../api/quotes.api';
+import { fetchSectorFlowCurves } from '../../api/sector-flow-curve.api';
 import { fetchMarketTurnover } from '../../api/turnover.api';
 import { toFullSymbol } from '../../utils/to-full-symbol';
 import { BUILTIN_MCP_IDS } from './constants';
@@ -157,7 +162,7 @@ export const MARKET_DATA_MCP_SERVER: BuiltinMcpServer = {
   key: 'market-data',
   name: '市场数据（内置）',
   description:
-    '大盘概览、资金流向（大盘/板块/个股/北向）、板块涨跌、涨停池、盘口异动、龙虎榜、大宗交易、全球指数、美股板块、多源热点新闻与热词',
+    '大盘概览、资金流向（大盘/板块/个股/北向、板块分时资金曲线、板块逐日资金历史）、板块涨跌、涨停池、盘口异动、龙虎榜、大宗交易、全球指数、美股板块、多源热点新闻与热词',
   tools: [
     entry({
       name: 'get_market_overview',
@@ -273,6 +278,108 @@ export const MARKET_DATA_MCP_SERVER: BuiltinMcpServer = {
               topStockName: row.topStockName ?? null,
             })),
             unit: '净流入单位：元',
+          },
+        };
+      },
+    }),
+    entry({
+      name: 'get_sector_flow_curve',
+      description:
+        '获取行业板块当日分时资金流曲线（每分钟一点，值为当日累计主力净流入，09:31→15:00）。用于复盘板块资金的日内进出节奏（如尾盘抢筹 / 开盘流出后回补）。板块代码（BK 编号）可先经 get_sector_fund_flow 获取；单次最多 26 个板块，逐点抽稀控制返回体积',
+      schema: z.object({
+        bkCodes: z
+          .array(z.string().regex(/^BK\d{4}$/, 'BK 编号形如 BK0475'))
+          .min(1)
+          .max(26)
+          .describe('板块代码列表（东财 BK 编号，1~26 个）'),
+        sampleStep: z
+          .number()
+          .int()
+          .min(1)
+          .max(60)
+          .default(15)
+          .describe('抽稀步长：每 N 分钟取一点（默认 15，即每刻钟一点；1 为全量 240 点）'),
+      }),
+      run: async (input) => {
+        const { bkCodes, sampleStep } = input as { bkCodes: string[]; sampleStep: number };
+        // 名称 / 涨跌幅从板块排名合并（1 次请求，失败不阻断曲线返回）
+        const [curves, rank] = await Promise.all([
+          fetchSectorFlowCurves(bkCodes),
+          fetchSectorFundFlowRank().catch(() => []),
+        ]);
+        const rankByCode = new Map(rank.map((item) => [item.code, item]));
+        const rows = curves.map((curve) => ({
+          code: curve.code,
+          name: rankByCode.get(curve.code)?.name ?? curve.code,
+          changePercent: rankByCode.get(curve.code)?.changePercent ?? null,
+          closeNetInflow: curve.points[curve.points.length - 1]?.mainNetInflow ?? null,
+          points: curve.points
+            .filter((_, index) => index % sampleStep === 0)
+            .map((point) => ({ time: point.time, mainNetInflow: point.mainNetInflow })),
+        }));
+        return {
+          text: {
+            tradeDate: curves[0]?.tradeDate ?? null,
+            count: rows.length,
+            failed: bkCodes.length - rows.length,
+            rows,
+            unit: '净流入单位：元（当日累计）',
+          },
+        };
+      },
+    }),
+    entry({
+      name: 'get_board_flow_history',
+      description:
+        '获取板块（行业/概念）近 N 个交易日的逐日主力净流入历史与区间合计。用于判断板块资金的持续性：持续流入（吸筹）还是一轮游（脉冲后流出）。板块代码可先经 get_sector_fund_flow / 热点排行获取；单次最多 30 个板块',
+      schema: z.object({
+        bkCodes: z
+          .array(z.string().regex(/^BK\d{4}$/, 'BK 编号形如 BK0475'))
+          .min(1)
+          .max(30)
+          .describe('板块代码列表（东财 BK 编号，1~30 个）'),
+        days: z
+          .number()
+          .int()
+          .min(1)
+          .max(60)
+          .default(10)
+          .describe('返回最近 N 个交易日（默认 10，最大 60）'),
+      }),
+      run: async (input) => {
+        const { bkCodes, days } = input as { bkCodes: string[]; days: number };
+        const histories = await fetchBoardFlowHistories(bkCodes);
+        // 复用 api 层的区间聚合纯函数：对齐交易日轴 + 合计 + 完整度
+        const summary = buildBoardFlowSummary(
+          histories,
+          new Map(
+            histories.map((history) => [
+              history.code,
+              { code: history.code, name: history.name, changePercent: null, net10d: null, net5d: null },
+            ]),
+          ),
+          days,
+        );
+        return {
+          text: {
+            tradeDays: summary.tradeDays,
+            dateRange: summary.dates.length
+              ? `${summary.dates[0]} ~ ${summary.dates[summary.dates.length - 1]}`
+              : null,
+            netTotalYi: Math.round(summary.netTotal / 1e8),
+            count: summary.boards.length,
+            failed: bkCodes.length - histories.length,
+            rows: summary.boards.map((board) => ({
+              code: board.code,
+              name: board.name,
+              netSumYi: Math.round(board.netSum / 1e8),
+              completeness: board.completeness,
+              history: board.history.map((row) => ({
+                date: row.date,
+                netYi: row.net === null ? null : Math.round((row.net / 1e8) * 100) / 100,
+              })),
+            })),
+            unit: '净流入单位：亿元（当日口径，正值流入）',
           },
         };
       },

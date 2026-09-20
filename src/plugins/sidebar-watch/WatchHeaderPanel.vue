@@ -6,8 +6,9 @@ import BaseSkeleton from '../../components/ui/BaseSkeleton.vue';
 import MenuIcon from '../../components/ui/MenuIcon.vue';
 import AlertEditor from './AlertEditor.vue';
 import { usePluginPanelHost } from '../../plugin/panel-host';
-import { useDockPanelStore } from '../../stores/dock-panel';
+import { useStockOpen } from '../../composables/use-stock-open';
 import { useWatchlistStore } from '../../stores/watchlist';
+import type { ContextStock } from '../../stores/stock-context';
 import { NOTIFY_TONE, NOTIFY_TONE_CLASS } from '../../constants/notify.constants';
 import { ROUTE_PATH } from '../../constants/router-meta.constants';
 import { getTrendByChangePercent } from '../../constants/trend.constants';
@@ -15,6 +16,7 @@ import { TREND_TEXT_CLASS } from '../../constants/stock-colors.constants';
 import { formatPercent } from '../../utils/format-percent';
 import { formatPrice } from '../../utils/format-price';
 import { findQuoteBySymbol } from '../../utils/find-quote-by-symbol';
+import { normalizeAShareCode } from '../../utils/normalize-a-share-code';
 import { describeAlertRule, isAlertConfigured, createEmptyAlertRule } from './alerts';
 import { filterCandidatesByWatchlist } from './candidates';
 import {
@@ -41,8 +43,8 @@ import type { FullQuote } from '../../types/stock-quote.types';
  * 面板只读引擎的快照。引擎不依赖本组件是否挂载，所以下拉收起后阈值提醒照常触发；
  * 顶栏收起态的「单条轮播」读的也是同一份快照（见 plugin.ts 的 marquee）。
  *
- * 点击一行会打开右侧个股详情（全站打开个股的唯一入口），并顺手把自己收起 ——
- * 下拉浮在内容之上，不收起会挡住刚打开的详情面板。
+ * 点击一行会**跳股票详情整页**（左侧来源列表 = 全部盯盘候选，可在列表内一键切换
+ * 同批股票），并顺手把自己收起 —— 下拉浮在内容之上，不收起会挡住详情页。
  */
 const props = defineProps<{
   /** 盯盘候选仓储（插件在 apply 里经 props 注入自己的实现） */
@@ -54,7 +56,7 @@ const props = defineProps<{
 const router = useRouter();
 const panelHost = usePluginPanelHost();
 const watchlistStore = useWatchlistStore();
-const dockPanel = useDockPanelStore();
+const { openPage } = useStockOpen();
 
 /** 正在编辑阈值的候选符号（null = 弹窗关闭；同时只编辑一个） */
 const editingSymbol = ref<string | null>(null);
@@ -145,11 +147,32 @@ const alertRuleOf = (symbol: string): WatchAlertRule =>
   props.repo.get(symbol)?.alert ?? createEmptyAlertRule();
 
 /**
- * 单击一行：打开右侧个股详情面板，并收起下拉
+ * 盯盘候选 → 详情页左侧来源列表
+ *
+ * 价格 / 涨跌幅取引擎的报价快照（行情未返回时为 null，详情页列表会显示占位符）；
+ * symbol 归一化为完整符号，保证与详情页路由符号同形态、当前股高亮可匹配
+ * @returns 上下文股票列表
+ */
+const buildContextList = (): ContextStock[] =>
+  candidates.value.map((candidate) => {
+    const quote: FullQuote | undefined = findQuoteBySymbol(
+      props.monitor.quotes.value,
+      candidate.symbol,
+    );
+    return {
+      symbol: normalizeAShareCode(candidate.symbol),
+      name: quote?.name || candidate.name || candidate.symbol,
+      price: quote?.price ?? null,
+      changePercent: quote?.changePercent ?? null,
+    };
+  });
+
+/**
+ * 单击一行：跳股票详情整页（左侧来源列表 = 全部盯盘候选），并收起下拉
  * @param symbol 完整符号
  */
 const onOpenStock = (symbol: string): void => {
-  dockPanel.openStock(symbol);
+  openPage(symbol, buildContextList());
   panelHost?.close();
 };
 

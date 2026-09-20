@@ -31,8 +31,12 @@ import {
 } from '../constants/heatmap.constants';
 import { YUAN_PER_YI } from '../constants/format.constants';
 import {
+  TURNOVER_CHART_METRIC,
+  TURNOVER_CHART_METRIC_DEFAULT,
+  TURNOVER_CHART_METRIC_OPTIONS,
   TURNOVER_RANGE_DEFAULT,
   TURNOVER_RANGE_TAB_OPTIONS,
+  type TurnoverChartMetric,
   type TurnoverRange,
 } from '../constants/turnover.constants';
 import { POLLING_INTERVAL } from '../constants/polling.constants';
@@ -57,9 +61,11 @@ import { formatYuanWithSign } from '../utils/format-yuan';
 import { formatTurnoverChange } from '../utils/format-turnover-change';
 import { countDistribution } from '../utils/count-distribution';
 import { delay } from '../utils/delay';
+import { useRouter } from 'vue-router';
 import { useSettingsStore } from '../stores/settings';
 import { useDataCacheStore } from '../stores/data-cache';
 import { DATA_CACHE_KEY } from '../constants/data-cache.constants';
+import { ROUTE_PATH } from '../constants/router-meta.constants';
 
 /** 市场宽度各接口请求间隔（毫秒）：对同一上游串行错峰 */
 const BREADTH_REQUEST_GAP_MS = 500;
@@ -101,6 +107,17 @@ const marketViewMode = ref<typeof VIEW_MODE[keyof typeof VIEW_MODE]>(VIEW_MODE.C
 const { openSidebar, openPage, toContextList } = useStockOpen();
 const settingsStore = useSettingsStore();
 const dataCache = useDataCacheStore();
+const router = useRouter();
+
+/** 跳市场榜单（成交额 / 主力净流入卡片标题入口） */
+const goMarketRank = (): void => {
+  void router.push(ROUTE_PATH.MARKET_RANK);
+};
+
+/** 跳行情全景（涨跌分布 / 板块热力卡片标题入口；默认即 A 股全景模块） */
+const goPanorama = (): void => {
+  void router.push(ROUTE_PATH.PANORAMA);
+};
 
 // 板块下钻状态机：热力图 / 列表两视图共享，切换展示形式不丢下钻位置
 const { drillView, drillTarget, isDrillLoading, drillError, drillInto, backToBoards } =
@@ -256,6 +273,9 @@ const turnoverViewMode = ref<typeof VIEW_MODE[keyof typeof VIEW_MODE]>(VIEW_MODE
 /** 成交额当前交易日窗口 */
 const turnoverRange = ref<TurnoverRange>(TURNOVER_RANGE_DEFAULT);
 
+/** 成交额图表量纲口径（成交量 / 相对成交量；仅图表视图消费，切表格不重置） */
+const turnoverChartMetric = ref<TurnoverChartMetric>(TURNOVER_CHART_METRIC_DEFAULT);
+
 /** 交易日窗口按钮组 v-model 适配：BaseTabs 要求字符串 value，窗口存 number */
 const turnoverRangeModel = computed<string>({
   get: () => String(turnoverRange.value),
@@ -288,9 +308,19 @@ onMounted(() => {
   void fetchTurnoverHistory();
 });
 
-/** 当前窗口内的成交额序列（升序，供折线图） */
+/** 当前窗口内的成交额序列（升序，供折线图与表格） */
 const turnoverRows = computed(() =>
   turnoverHistory.value.slice(-turnoverRange.value),
+);
+
+/**
+ * 图表数据源：相对成交量口径在窗口前多取 1 天基准日，
+ * 使首个可见交易日的「较上日差额」有前值可比；成交量口径即窗口切片
+ */
+const turnoverChartDays = computed(() =>
+  turnoverChartMetric.value === TURNOVER_CHART_METRIC.RELATIVE
+    ? turnoverHistory.value.slice(-(turnoverRange.value + 1))
+    : turnoverRows.value,
 );
 
 /** 当前窗口内的成交额表格行（升序算较上日变化，再倒序展示 + 亿元换算） */
@@ -522,10 +552,20 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
       </button>
     </div>
 
-    <!-- 成交额（资金速览 + 成交额变化合并为一张卡：两者本质同属市场成交维度） -->
-    <BaseCard title="成交额">
+    <!-- 成交额（资金速览 + 成交额变化合并为一张卡：两者本质同属市场成交维度；标题跳市场榜单） -->
+    <BaseCard
+      title="成交额"
+      clickable-title
+      @title-click="goMarketRank"
+    >
       <template #extra>
         <div class="flex items-center gap-2">
+          <!-- 量纲口径：仅图表视图展示（表格本身已含绝对额与较上日两列） -->
+          <BaseTabs
+            v-if="turnoverViewMode === VIEW_MODE.CHART"
+            v-model="turnoverChartMetric"
+            :options="TURNOVER_CHART_METRIC_OPTIONS"
+          />
           <BaseTabs v-model="turnoverRangeModel" :options="TURNOVER_RANGE_TAB_OPTIONS" />
           <BaseTabs v-model="turnoverViewMode" :options="VIEW_MODE_OPTIONS" />
         </div>
@@ -559,7 +599,8 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
       <!-- 图表视图 -->
       <TurnoverTrendChart
         v-else-if="turnoverViewMode === VIEW_MODE.CHART"
-        :days="turnoverRows"
+        :days="turnoverChartDays"
+        :metric="turnoverChartMetric"
       />
       <!-- 表格视图 -->
       <BaseTable
@@ -583,7 +624,9 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
     <div class="flex flex-wrap gap-4">
       <BaseCard
         title="涨跌分布"
+        clickable-title
         class="min-w-[500px] flex-1 basis-[calc(50%-0.5rem)]"
+        @title-click="goPanorama"
       >
         <template #extra>
           <BaseTabs v-model="distributionViewMode" :options="VIEW_MODE_OPTIONS" />
@@ -616,10 +659,12 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
         </BaseTable>
       </BaseCard>
 
-      <!-- 大盘资金流（近10日）：曲线 / 列表 -->
+      <!-- 大盘资金流（近10日）：曲线 / 列表；标题跳市场榜单 -->
       <BaseCard
         title="主力净流入（近10日）"
+        clickable-title
         class="min-w-[500px] flex-1 basis-[calc(50%-0.5rem)]"
+        @title-click="goMarketRank"
       >
         <template #extra>
           <BaseTabs v-model="marketViewMode" :options="VIEW_MODE_OPTIONS" />
@@ -675,8 +720,12 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
       </BaseCard>
     </div>
 
-    <!-- 板块热力 -->
-    <BaseCard title="板块热力（按总市值加权）">
+    <!-- 板块热力（标题跳行情全景 A 股全景模块） -->
+    <BaseCard
+      title="板块热力（按总市值加权）"
+      clickable-title
+      @title-click="goPanorama"
+    >
       <template #extra>
         <div class="flex flex-wrap items-center gap-2">
           <!-- 展示形式：热力图 / 列表 -->

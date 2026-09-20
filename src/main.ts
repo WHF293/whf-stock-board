@@ -34,7 +34,7 @@ initWeblog({
 });
 
 // 插件体系：必须在 app.use(router) 之前装配 —— 插件贡献的路由要在首个导航就绪，
-// 否则直接进入插件页面会被 404 兜底重定向回市场总览（详见 plugin/setup.ts）
+// 否则直接进入插件页面会先落到 404 兜底页（详见 plugin/setup.ts）
 installPlugins(pinia);
 
 app.use(router);

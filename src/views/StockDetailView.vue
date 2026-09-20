@@ -239,6 +239,10 @@ const switchStock = (next: string): void => {
 /** 左侧股票列表是否收起（收起时仅显示名称窄条；会话级） */
 const isListCollapsed = ref(false);
 
+/** 右侧信息栏是否收起（会话级）：收起时窄条 —— 报价头只留高/低/开/收两列、
+ * 五档盘口买盘/卖盘改上下堆叠，给 K 线主图让出宽度 */
+const isInfoCollapsed = ref(false);
+
 // ---------- 加自选 / 删自选弹窗（顶栏按钮触发） ----------
 /** 弹窗类型：null 关闭 / add 加自选 / remove 删自选 */
 type WatchDialogType = null | 'add' | 'remove';
@@ -405,15 +409,15 @@ const pctClass = (value: number | null): string =>
         class="flex shrink-0 flex-col overflow-hidden transition-all duration-200"
         :class="isListCollapsed ? 'w-24' : 'w-56'"
       >
-        <!-- 展开/收起按钮 -->
+        <!-- 展开/收起按钮：panelLeft 面板形状（左右侧栏开关统一样式）；靠左对齐（右栏开关靠右） -->
         <button
           type="button"
-          class="pressable mb-1 flex shrink-0 items-center justify-center rounded-lg p-1 text-text-tertiary hover:bg-flat-weak hover:text-text active:scale-90"
+          class="pressable mb-1 flex shrink-0 items-center justify-start rounded-lg p-1 pl-2.5 text-text-tertiary hover:bg-flat-weak hover:text-text active:scale-90"
           :aria-label="isListCollapsed ? '展开股票列表' : '收起股票列表'"
           :title="isListCollapsed ? '展开股票列表' : '收起股票列表'"
           @click="isListCollapsed = !isListCollapsed"
         >
-          <MenuIcon :name="isListCollapsed ? 'chevronRight' : 'chevronLeft'" :size="14" />
+          <MenuIcon name="panelLeft" :size="14" />
         </button>
 
         <!-- 收起态：仅股票名称（单行窄条） -->
@@ -441,7 +445,7 @@ const pctClass = (value: number | null): string =>
             <button
               type="button"
               class="w-full rounded-lg px-2 py-1.5 text-left transition-colors"
-              :class="item.symbol === symbol ? 'bg-primary-weak ring-1 ring-primary' : 'hover:bg-flat-weak'"
+              :class="item.symbol === symbol ? 'bg-primary-weak' : 'hover:bg-flat-weak'"
               @click="switchStock(item.symbol)"
             >
               <span class="flex items-center justify-between gap-2">
@@ -486,13 +490,35 @@ const pctClass = (value: number | null): string =>
         </div>
       </BaseCard>
 
-      <!-- 右侧信息栏：报价头 + 五档盘口（不随图表周期切换） -->
-      <div class="flex w-80 shrink-0 flex-col gap-3 overflow-y-auto">
+      <!-- 右侧信息栏：报价头 + 五档盘口（不随图表周期切换）。
+           支持展开/收起（与左侧列表同款交互，会话级）：收起时列宽 w-44，
+           报价头切 compact（高/低/开/收 两列）、五档盘口切 vertical（买盘上/卖盘下） -->
+      <div
+        class="flex shrink-0 flex-col gap-3 overflow-y-auto transition-all duration-200"
+        :class="isInfoCollapsed ? 'w-44' : 'w-80'"
+      >
         <BaseCard class="shrink-0">
-          <StockQuoteHeader :quote="quoteRef" metrics-only />
+          <!-- 展开/收起按钮（extra 槽，卡片头部右侧）：panelRight 面板形状（panelLeft 镜像，
+               竖线靠右对应右栏位置） -->
+          <template #extra>
+            <button
+              type="button"
+              class="pressable flex shrink-0 items-center justify-center rounded-lg p-1 text-text-tertiary hover:bg-flat-weak hover:text-text active:scale-90"
+              :aria-label="isInfoCollapsed ? '展开信息栏' : '收起信息栏'"
+              :title="isInfoCollapsed ? '展开信息栏' : '收起信息栏'"
+              @click="isInfoCollapsed = !isInfoCollapsed"
+            >
+              <MenuIcon name="panelRight" :size="14" />
+            </button>
+          </template>
+          <StockQuoteHeader
+            :quote="quoteRef"
+            metrics-only
+            :compact="isInfoCollapsed"
+          />
         </BaseCard>
         <BaseCard title="五档盘口" class="shrink-0">
-          <StockOrderBook :quote="quoteRef" />
+          <StockOrderBook :quote="quoteRef" :vertical="isInfoCollapsed" />
         </BaseCard>
       </div>
     </div>

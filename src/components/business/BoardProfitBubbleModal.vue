@@ -34,7 +34,8 @@ import { formatYuan } from '../../utils/format-yuan';
  *   一眼看出哪些行业赚钱效应最强 / 亏钱效应最重；
  * - **颜色**：7 档涨跌语义色，**恒按得分率判定**（与表格色阶同一口径），
  *   正得分为涨色、负得分为跌色，绝对值越档位越深；
- * - 布局是纯几何计算（`utils/bubble-layout.ts`），本组件只负责取数与交互。
+ * - 布局是纯几何计算（`utils/bubble-layout.ts`），本组件只负责取数与交互；
+ *   画布高度固定为「得分率 / 原始得分」两口径适配高度的公共值，切换口径不跳高。
  *
  * 数据口径见 `.ai/开发方案/2026-09-14-板块日历与赚钱效应开发方案.md`。
  */
@@ -64,10 +65,18 @@ const TOOLTIP_HEIGHT = 178;
 /**
  * 口径取值
  * @param row 板块日聚合行
+ * @param target 口径
+ * @returns 该口径下的数值
+ */
+const valueOfMetric = (row: BoardDailyRow, target: BoardProfitMetric): number =>
+  target === BOARD_PROFIT_METRIC.SCORE ? row.score : row.scoreRate;
+
+/**
+ * 口径取值（当前选中口径）
+ * @param row 板块日聚合行
  * @returns 当前口径下的数值
  */
-const valueOf = (row: BoardDailyRow): number =>
-  metric.value === BOARD_PROFIT_METRIC.SCORE ? row.score : row.scoreRate;
+const valueOf = (row: BoardDailyRow): number => valueOfMetric(row, metric.value);
 
 /** 当前口径展示名 */
 const metricLabel = computed<string>(
@@ -125,8 +134,10 @@ interface BubbleView extends BubbleLayoutNode {
 const layoutOptions = computed<BubbleLayoutOptions>(() => ({
   width: BOARD_PROFIT_BUBBLE.WIDTH,
   minHeight: BOARD_PROFIT_BUBBLE.MIN_HEIGHT,
+  maxHeight: BOARD_PROFIT_BUBBLE.MAX_HEIGHT,
   minRadius: BOARD_PROFIT_BUBBLE.MIN_RADIUS,
   maxRadius: BOARD_PROFIT_BUBBLE.MAX_RADIUS,
+  minFitRadius: BOARD_PROFIT_BUBBLE.MIN_FIT_RADIUS,
   gap: BOARD_PROFIT_BUBBLE.GAP,
   topPadding: BOARD_PROFIT_BUBBLE.TOP_PADDING,
   bottomPadding: BOARD_PROFIT_BUBBLE.BOTTOM_PADDING,
@@ -137,16 +148,37 @@ const layoutOptions = computed<BubbleLayoutOptions>(() => ({
   formatValue: formatMetricValue,
 }));
 
-/** 布局结果（口径切换时自动重算） */
+/**
+ * 指定口径下的气泡输入项
+ * @param target 口径
+ * @returns 布局输入（key / 名称 / 数值）
+ */
+const itemsOf = (target: BoardProfitMetric) =>
+  props.rows.map((row) => ({
+    key: row.boardCode,
+    name: row.boardName,
+    value: valueOfMetric(row, target),
+  }));
+
+/**
+ * 两口径的公共画布高度：各自按 MAX_HEIGHT 收缩适配后取最大值。
+ * 切换口径时画布高度恒等于它（弹窗内容不跳变）；病态数据收缩到下限
+ * 仍超高时取实际最大值，两口径仍一致（图内滚动兜底）
+ */
+const commonHeight = computed(() => {
+  // formatValue 换成空实现：泡内文案不参与几何，避免本 computed 经闭包依赖 metric
+  const heights = [BOARD_PROFIT_METRIC.SCORE, BOARD_PROFIT_METRIC.SCORE_RATE].map((target) =>
+    layoutBubbles(itemsOf(target), { ...layoutOptions.value, formatValue: () => '' }).height,
+  );
+  return Math.ceil(Math.max(...heights));
+});
+
+/** 布局结果（口径切换时自动重算，画布高度固定为两口径公共值） */
 const layout = computed(() =>
-  layoutBubbles(
-    props.rows.map((row) => ({
-      key: row.boardCode,
-      name: row.boardName,
-      value: valueOf(row),
-    })),
-    layoutOptions.value,
-  ),
+  layoutBubbles(itemsOf(metric.value), {
+    ...layoutOptions.value,
+    fixedHeight: commonHeight.value,
+  }),
 );
 
 /** 渲染用气泡（含颜色） */
@@ -289,11 +321,12 @@ watch(open, (isOpen) => {
 
       <BaseEmpty v-if="rows.length === 0" text="暂无板块得分数据，请先采集" />
 
-      <!-- 气泡画布 -->
+      <!-- 气泡画布：高度随宽度等比缩放；svg 以 calc 高度上限兜底，
+           保证「图 + 图例」整体塞进弹窗正文（85dvh 内），任何数据下都不出现滚动条 -->
       <div v-else class="relative">
         <svg
           :viewBox="`0 0 ${layout.width} ${layout.height}`"
-          class="block h-auto w-full select-none"
+          class="block h-auto max-h-[calc(85dvh-18rem)] w-full select-none"
           preserveAspectRatio="xMidYMid meet"
           role="img"
           :aria-label="ariaLabel"
