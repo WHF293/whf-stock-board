@@ -104,6 +104,15 @@ export interface MenuItemContribution {
   props?: Record<string, unknown>;
   /** 排序权重，越小越靠前（默认 500，即排在宿主菜单之后） */
   order?: number;
+  /**
+   * 是否声明为「插件页随插件撤销时的兜底落点」（默认 false）
+   *
+   * 用户正停在某个插件的页面上、而该插件被关闭 / 卸载 / 挂载失败回滚时，
+   * 宿主会把用户送到这里，避免他停在一个已经不存在、下次导航就 404 的页面上。
+   * 多个页面同时声明时取 `order` 最小者；声明随插件卸载一起消失，
+   * 所以**本页自己也关掉时**宿主会自然退到「侧栏第一个菜单」（见 `resolveRouteFallback`）。
+   */
+  fallbackLanding?: boolean;
 }
 
 /** 已注册的插件菜单项（内核补全默认值 + 归属插件后的形态） */
@@ -116,6 +125,8 @@ export interface RegisteredMenuItem extends MenuItemContribution {
   icon: string;
   /** 排序权重（已补默认值） */
   order: number;
+  /** 是否为兜底落点（已补默认值：缺省 false） */
+  fallbackLanding: boolean;
 }
 
 /** 路由贡献（不进菜单的隐藏页面，如详情子页、独立窗口页） */
@@ -145,6 +156,36 @@ export interface RegisteredRoute extends RouteContribution {
   pluginId: string;
   /** 是否挂在主布局之下（已补默认值） */
   underLayout: boolean;
+}
+
+/**
+ * 「用户正停留的插件页随插件一起撤销」的上下文
+ *
+ * 插件被关闭 / 卸载 / 挂载失败回滚时，它的路由会被桥接层从 router 上摘掉；
+ * 如果此刻用户正好停在那个页面上，页面其实已经不存在了，宿主需要接走他。
+ */
+export interface VanishedRouteInfo {
+  /** 消失的页面路径（用户原本停留的页，不含 query） */
+  path: string;
+  /** 页面标题（路由 `meta.title`；页面没声明时为空串） */
+  title: string;
+  /** 页面归属插件 id */
+  pluginId: string;
+  /** 页面归属插件名（插件已整体注销时退化为 id） */
+  pluginName: string;
+}
+
+/** 插件路由桥的可选宿主策略 */
+export interface PluginRouteBridgeOptions {
+  /**
+   * 当前停留的插件页随插件撤销时的收尾（跳去哪 + 要不要提示用户）
+   *
+   * 桥只负责**检测**（它知道哪条路由刚被撤销），去哪由宿主决定：
+   * 内核不认识宿主有哪些页面，硬编码「插件工坊」会把宿主绑死在某个插件上。
+   * 缺省不处理 —— 用户之后自己导航时由 404 兜底接走。
+   * @param info 消失页面的上下文
+   */
+  onVanishedRoute?: (info: VanishedRouteInfo) => void;
 }
 
 /**

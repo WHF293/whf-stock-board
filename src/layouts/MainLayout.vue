@@ -21,12 +21,14 @@ import { MARKET_STATUS_REFRESH_INTERVAL_MS } from "../constants/polling.constant
 import { HOST_HEADER_ITEM, HOST_HEADER_ITEMS } from "../constants/header.constants";
 import { MENU_ITEMS, ROUTE_PATH } from "../constants/router-meta.constants";
 import { openAgentAnalysisWindow } from "../utils/agent-window";
+import { orderSidebarMenu } from "../utils/order-sidebar-menu";
 import { useStockOpen } from "../composables/use-stock-open";
 import { useMarketStatusStore } from "../stores/market-status";
 import { useSettingsStore } from "../stores/settings";
 import { trackAction } from "../weblog/weblogActions";
 import type { SearchResult } from "../types/stock-quote.types";
 import type { ParsedCommandKeys } from "../plugin/command-keys";
+import type { SidebarMenuEntry } from "../utils/order-sidebar-menu";
 import type {
   RegisteredCommand,
   RegisteredHeaderItem,
@@ -80,21 +82,11 @@ const pageTitle = computed(() => route.meta.title ?? "");
 
 // ---------- 侧栏顺序（用户可在设置页编排，持久化在 settings.menuOrder） ----------
 
-/** 侧栏菜单项的渲染形态（宿主菜单与插件菜单合并后的统一形状） */
-interface SidebarMenuItem {
-  /** 路由路径 */
-  path: string;
-  /** 菜单标题 */
-  title: string;
-  /** 图标 key（MenuIcon 渲染） */
-  icon: string;
-}
-
 /** 宿主内置菜单（声明顺序即默认顺序） */
-const HOST_MENU_ITEMS: readonly SidebarMenuItem[] = MENU_ITEMS;
+const HOST_MENU_ITEMS: readonly SidebarMenuEntry[] = MENU_ITEMS;
 
 /** 插件贡献的菜单项（内核注册表；插件注册即出现，卸载即消失） */
-const pluginMenuItems = computed<SidebarMenuItem[]>(() => {
+const pluginMenuItems = computed<SidebarMenuEntry[]>(() => {
   void pluginKernel.revision.value;
   return pluginKernel.contributions.menu.items.map((item) => ({
     path: item.path,
@@ -104,33 +96,20 @@ const pluginMenuItems = computed<SidebarMenuItem[]>(() => {
 });
 
 /**
- * 按用户编排顺序渲染的菜单项：
- * 以 `settings.menuOrder` 为准；持久化里没有的页面（版本升级新增页面、
- * 插件贡献的菜单）追加到末尾，保证升级 / 装卸插件后入口不丢失；
- * `settings.hiddenMenus` 里编排时被关掉的页面不渲染（路由仍可达，Shift+Tab 也不循环到）
+ * 按用户编排顺序渲染的菜单项
+ *
+ * 顺序规则收敛在 `orderSidebarMenu`（而不是写在这里）：宿主在「插件页随插件
+ * 撤销」时要把用户退到「侧栏第一个菜单」，两处必须用同一份实现，否则界面上的
+ * 第一个和兜底跳去的第一个会不是同一个页面。
  */
-const menuItems = computed<SidebarMenuItem[]>(() => {
-  const all: SidebarMenuItem[] = [...HOST_MENU_ITEMS, ...pluginMenuItems.value];
-  const hidden = new Set(settingsStore.hiddenMenus);
-  const byPath = new Map<string, SidebarMenuItem>();
-  for (const item of all) {
-    if (!hidden.has(item.path)) {
-      byPath.set(item.path, item);
-    }
-  }
-  const ordered: SidebarMenuItem[] = [];
-  for (const path of settingsStore.menuOrder) {
-    const item = byPath.get(path);
-    if (item) {
-      ordered.push(item);
-      byPath.delete(path);
-    }
-  }
-  for (const item of all) {
-    if (byPath.has(item.path)) ordered.push(item);
-  }
-  return ordered;
-});
+const menuItems = computed<SidebarMenuEntry[]>(() =>
+  orderSidebarMenu(
+    HOST_MENU_ITEMS,
+    pluginMenuItems.value,
+    settingsStore.menuOrder,
+    settingsStore.hiddenMenus,
+  ),
+);
 
 /** 当前侧栏顺序下的路径列表（驱动页面过渡方向与 Shift+Tab 循环） */
 const menuOrderPaths = computed<string[]>(() =>

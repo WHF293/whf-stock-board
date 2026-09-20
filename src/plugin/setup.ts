@@ -4,13 +4,22 @@
  * 启动顺序（`main.ts` 在 `app.use(pinia)` 之后调用）：
  * 1. 宿主能力先登记进服务容器 —— 插件的 `apply` 里就能 `consume` 到；
  * 2. 按持久化黑名单逐个 `use()` 内置插件（依赖关系由内核自行收敛）；
- * 3. 把插件路由同步到 vue-router；
+ * 3. 把插件路由同步到 vue-router（并接住「用户正停在被撤销的插件页上」的情况）；
  * 4. 异步挂载用户插件（应用内安装，动态 import，见 `mountUserPluginsLater`）。
  *
  * 停止 / 重启插件不在这里做：用户在「设置 → 插件」里切换时，
  * `usePlugins()` 会直接调 `pluginKernel.setEnabled()`，内核即时卸载 / 重挂。
  */
 import { APP_VERSION } from '../constants/app-info.constants';
+import { NOTIFY_TONE } from '../constants/notify.constants';
+import {
+  PLUGIN_VANISHED_NOTICE_BODY,
+  PLUGIN_VANISHED_NOTICE_SOURCE,
+  PLUGIN_VANISHED_NOTICE_TITLE,
+} from '../constants/plugin.constants';
+import { MENU_ITEMS, ROUTE_PATH } from '../constants/router-meta.constants';
+import { orderSidebarMenu } from '../utils/order-sidebar-menu';
+import { resolveRouteFallback } from '../utils/resolve-route-fallback';
 import { BUILTIN_PLUGINS } from '../plugins';
 import { pluginKernel } from './index';
 import { mountUserPluginRecord } from './user-plugin-loader';
@@ -19,7 +28,9 @@ import { router } from '../router';
 import { usePluginPanelsStore } from '../stores/plugin-panels';
 import { usePluginStore } from '../stores/plugin';
 import { useNotificationsStore } from '../stores/notifications';
+import { useSettingsStore } from '../stores/settings';
 import { useUserPluginsStore } from '../stores/user-plugins';
+import type { VanishedRouteInfo } from '../types/plugin.types';
 import type { Pinia } from 'pinia';
 
 /** 是否已装配（重复调用直接返回，避免热更新时重复挂载） */
@@ -59,6 +70,46 @@ const openPanelByKey = (panelKey: string): void => {
     pluginStore.togglePanelCollapsed(panelKey);
   }
   panelsStore.requestReveal(panelKey);
+};
+
+/**
+ * 用户正停留的插件页随插件撤销时的收尾：把他送到一个**仍然存在**的页面，并说明原因
+ *
+ * 三级落点全部取自「撤销之后」的注册表，所以不会跳进另一个刚消失的页面：
+ * ① 插件自己声明的兜底落点（`fallbackLanding`，如插件工坊）；
+ * ② 侧栏第一个菜单（顺序与界面完全同源：`orderSidebarMenu`）；
+ * ③ 宿主首页（侧栏菜单全被用户隐藏时的最后一道）。
+ *
+ * 用 `replace` 而不是 `push`：原页面已不存在，留在历史里只会让「后退」撞上 404 兜底。
+ * @param info 消失页面的上下文（由路由桥在撤销路由时给出）
+ */
+const recoverVanishedRoute = (info: VanishedRouteInfo): void => {
+  const settingsStore = useSettingsStore();
+  const sidebar = orderSidebarMenu(
+    MENU_ITEMS,
+    pluginKernel.contributions.menu.items,
+    settingsStore.menuOrder,
+    settingsStore.hiddenMenus,
+  );
+  const target = resolveRouteFallback({
+    landingPaths: pluginKernel.contributions.menu.items
+      .filter((item) => item.fallbackLanding)
+      .map((item) => item.path),
+    sidebarPaths: sidebar.map((item) => item.path),
+    defaultPath: ROUTE_PATH.DASHBOARD,
+  });
+  void router.replace(target);
+
+  const targetTitle = router.resolve(target).meta.title;
+  useNotificationsStore().push({
+    source: PLUGIN_VANISHED_NOTICE_SOURCE,
+    tone: NOTIFY_TONE.FLAT,
+    title: PLUGIN_VANISHED_NOTICE_TITLE(info.pluginName),
+    body: PLUGIN_VANISHED_NOTICE_BODY(
+      info.title,
+      typeof targetTitle === 'string' ? targetTitle : target,
+    ),
+  });
 };
 
 /**
@@ -105,7 +156,7 @@ export const installPlugins = (pinia?: Pinia): void => {
   }
 
   // 3. 插件路由挂到 router（后续启停插件时由版本号驱动的桥持续同步）
-  attachPluginRoutes(router);
+  attachPluginRoutes(router, { onVanishedRoute: recoverVanishedRoute });
 
   // 4. 用户插件异步挂载（不阻塞首屏；路由由 router-bridge 的版本号机制补挂）
   void mountUserPluginsLater(userPluginsStore, pluginStore);

@@ -106,7 +106,7 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
 | 贡献点 | API | 说明 |
 | --- | --- | --- |
 | 侧栏面板 | `ctx.sidebar.add({ id, title, component, mode, position, order, visibleWhenCollapsed })` | `mode: 'inline' \| 'drawer'`（默认 inline）；`position: 'nav' \| 'footer'`；`order` 越大越靠下，宿主内置项在前 |
-| 菜单 | `ctx.menu.add({ path, title, icon, component, order? })` | **带 `component` 会自动注册路由**（挂在主布局之下），无需再手动 `router.add` |
+| 菜单 | `ctx.menu.add({ path, title, icon, component, order?, fallbackLanding? })` | **带 `component` 会自动注册路由**（挂在主布局之下），无需再手动 `router.add`；`fallbackLanding: true` 声明本页为「插件页随插件撤销时的兜底落点」（见「宿主接线」的最后一条） |
 | 路由 | `ctx.router.add({ path, component, underLayout? })` | 无菜单入口的隐藏页用这个；`underLayout` 默认 `true` |
 | 停靠面板 | `ctx.dock.add(key, component, title)` | 右侧面板（`openPluginPanel(key)` 打开） |
 | 顶栏条目 | `ctx.header.add({ id, title, icon, component, props?, marquee?, marqueeIntervalMs? })` | 应用**右上角工具条**的插件入口（`panel:open` 服务同样能唤醒）：收起态不展示图标，由宿主按 `marquee()` 返回的行做 Swiper 式上下滑动轮播（间隔默认 4s、下限 1500ms，单行不轮播；行给 `label`/`value` 时名称可截断、数值常显，视窗 171px 固定），点开下拉渲染 `component`（`usePluginPanelHost().close()` 可自行收起）；顺序与显隐在设置页「顶栏工具」编排（`settings.headerOrder` / `hiddenHeaderItems`） |
@@ -127,7 +127,10 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
 
 - `main.ts` 在 `app.use(router)` **之前**调 `installPlugins(pinia)`（`plugin/setup.ts`）：
   先 provide 宿主服务（`app:version` / `kernel:runtime` / `app:navigate` / `panel:open` / `app:notify`），再挂插件，
-  再 `attachPluginRoutes(router)`（订阅路由注册表版本号），随后**异步挂载用户插件**，最后 `router.afterEach` 广播 `route:changed`
+  再 `attachPluginRoutes(router, { onVanishedRoute })`（订阅路由注册表版本号，把插件注册 / 卸载翻译成 `addRoute` / 摘除；
+  **用户正停留的插件页随插件被撤销时**回调 `onVanishedRoute`，宿主在 `recoverVanishedRoute` 里按
+  「声明 `fallbackLanding` 的页面 → 侧栏第一个菜单 → 宿主首页」三级递退接走用户，并 `replace` 过去 + 浮窗说明原因），
+  随后**异步挂载用户插件**，最后 `router.afterEach` 广播 `route:changed`
 - 侧栏面板渲染：`components/plugin/SidebarPanelHost.vue`（inline，折叠时不挂载）+ `SidebarPanelEntry.vue`（drawer 入口按钮）+ `PluginPanelDrawer.vue`（抽屉承载）
 - 插件存储：`ctx.storage` 落在 `whf:app` 整包的 `plugin:<pluginId>` 命名空间下，**插件之间天然隔离**
 - 插件通用数据库 `ctx.db`（见下节）；面板组件通过 `usePluginPanelHost()`（`plugin/panel-host.ts`）拿到 `{ mode, visibleWhenCollapsed }` 等宿主上下文
