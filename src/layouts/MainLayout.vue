@@ -44,6 +44,8 @@ import type { RegisteredCommand, RegisteredSidebarPanel } from "../types/plugin.
  * 插件体系：左侧栏的面板与菜单项、顶栏条目均由插件内核贡献（见 `src/plugin/`），
  * 本布局只负责渲染注册表 + 分发插件命令快捷键，不关心具体是哪个插件；
  * 宿主自带顶栏项的声明顺序与插件条目合并后，统一由设置页「顶栏工具」编排顺序与显隐。
+ * 桌面端全部顶栏条目（宿主 + 插件，如盯盘）都渲染在自绘 TitleBar 上；
+ * 浏览器无标题栏，全部条目留在页内 header。
  *
  * 标题栏：Tauri 桌面端主窗口去掉了系统原生标题栏（tauri.conf 的 decorations: false），
  * 顶部渲染自绘 TitleBar（品牌区 + 侧栏收起/展开开关 + 窗口控制按钮，颜色跟随应用明暗主题），
@@ -259,10 +261,8 @@ const headerItems = computed<HeaderRenderItem[]>(() => {
   return ordered;
 });
 
-/** 桌面端进自绘 TitleBar 的条目：仅宿主自带项（市场状态 / 明暗 / 搜索 / Agent / 白皮书） */
-const titleBarHeaderItems = computed<HeaderRenderItem[]>(() =>
-  headerItems.value.filter((item) => item.panel === null),
-);
+/** 桌面端进自绘 TitleBar 的条目：宿主自带项 + 插件条目（盯盘入口与白皮书同一行） */
+const titleBarHeaderItems = computed<HeaderRenderItem[]>(() => headerItems.value);
 
 /**
  * 固定在 TitleBar 左侧（侧栏开关之后）的宿主条目，数组顺序即渲染顺序：
@@ -288,10 +288,14 @@ const titleBarTrailingItems = computed<HeaderRenderItem[]>(() =>
 
 /**
  * 页面 header 渲染的条目：浏览器 = 全部（无标题栏，宿主项留在页内）；
- * 桌面端 = 仅插件条目（宿主项已移入 TitleBar，插件下拉如盯盘清单留在页内）
+ * 桌面端 = 空（宿主项与插件条目都已移入 TitleBar）。
+ *
+ * 插件条目一并上移是用户指定（盯盘与白皮书同行）：插件下拉是 absolute z-50
+ * 定位，TitleBar 无 overflow 裁剪、也不构成独立堆叠上下文，下拉照常浮在
+ * 内容上方——「下拉要留在页内层级」的旧顾虑不成立。
  */
 const inPageHeaderItems = computed<HeaderRenderItem[]>(() =>
-  isTauriDesktop ? headerItems.value.filter((item) => item.panel !== null) : headerItems.value,
+  isTauriDesktop ? [] : headerItems.value,
 );
 
 /**
@@ -556,8 +560,7 @@ void marketStatusStore.refresh();
               {{ pageTitle }}
             </h1>
           </div>
-          <!-- 顶栏工具条：桌面端宿主项已移入自绘 TitleBar，页内只渲染插件条目
-               （盯盘清单这类下拉要浮在内容上方，留在页内层级才对）；
+          <!-- 顶栏工具条：桌面端全部条目（宿主 + 插件）已移入自绘 TitleBar，此处为空；
                浏览器无标题栏，全部条目都留在页内 -->
           <HeaderTools
             :items="inPageHeaderItems"

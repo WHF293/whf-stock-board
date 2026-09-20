@@ -270,10 +270,12 @@ const onToggle = (): void => {
       />
     </button>
 
-    <!-- 下拉面板：内容全部由插件决定，宿主只给承载与标题 -->
+    <!-- 下拉面板：内容全部由插件决定，宿主只给承载与标题。
+         select-text：桌面端本组件渲染在 TitleBar（select-none，防拖拽误选）内，
+         面板里的行情文案要恢复可选 -->
     <div
       v-if="open"
-      class="absolute right-0 top-full z-50 mt-2 w-80 rounded-card bg-surface p-3 shadow-lg"
+      class="absolute right-0 top-full z-50 mt-2 w-80 select-text rounded-card bg-surface p-3 shadow-lg"
       role="region"
       :aria-label="item.title"
     >
