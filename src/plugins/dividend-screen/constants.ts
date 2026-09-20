@@ -332,6 +332,7 @@ export const DIVIDEND_UNIVERSE_LABEL = '样本池';
 
 /** 表格列标题 */
 export const DIVIDEND_COLUMN_LABEL = {
+  action: '操作',
   name: '股票',
   industry: '行业',
   price: '现价',
@@ -346,7 +347,6 @@ export const DIVIDEND_COLUMN_LABEL = {
   debtRatio: '负债率',
   peTtm: 'PE(TTM)',
   ruleResult: '规则',
-  watch: '自选',
 } as const;
 
 /** 快捷筛选：仅已披露中报 */
@@ -445,7 +445,8 @@ export const WATCH_REMOVE_LABEL = '移出自选';
 export const WATCH_BULK_ADD = '把当前列表加入自选';
 
 /** 自选 tab 的空态文案 */
-export const WATCH_EMPTY_TEXT = '还没有自选股票——去「股息筛选」点行尾的星标加入，筛选出的通过名单可以整表收进来跟踪';
+export const WATCH_EMPTY_TEXT =
+  '还没有自选股票——在列表左侧「操作」列点「自选」按钮加入，筛选出的通过名单可以整表收进来跟踪，也可以在下方搜索个股加入';
 
 /** 自选 tab 的表格卡片标题 */
 export const WATCH_CARD_TITLE = '股息自选';
@@ -467,9 +468,7 @@ export const WATCH_SAVE_FAILED = '自选保存失败';
 export const RULE_SAVE_FAILED = '规则保存失败';
 
 /** 「显示未通过行」开关文案（未通过的行默认隐藏，翻开才显示并带原因徽标） */
-export const RULE_SHOW_FAILED = '显示未通过';
-
-/** 规则通过徽标文案 */
+export const RULE_SHOW_FAILED = '显示未通过';/** 规则通过徽标文案 */
 export const RULE_PASS_BADGE = '通过';
 
 /** 规则未通过徽标文案前缀 */
@@ -503,6 +502,37 @@ export const DIVIDEND_FORMULA_TEXT =
   '推算口径：预计今年净利 = 去年全年净利 ×（今年中报净利 ÷ 去年中报净利）；推算分红 = 去年分红率 × 预计今年净利；' +
   '推算股息率 = 推算每股分红 ÷ 现价。分红率沿用去年（含特别分红的异常年份照算），中报增速对全年为线性外推，' +
   '季节性强的行业（白酒 / 工程等下半年占比高）与并购重组个股会显著失真，请结合行业属性判断。';
+
+// ---------- 自选 tab · 个股搜索与预览 ----------
+
+/** 搜索输入框占位文案 */
+export const WATCH_SEARCH_PLACEHOLDER = '搜索个股（代码 / 名称 / 拼音）';
+
+/** 搜索输入框的可达性标签 */
+export const WATCH_SEARCH_LABEL = '搜索个股并加入自选';
+
+/** 搜索无结果的文案 */
+export const WATCH_SEARCH_NO_RESULT = '没有匹配的 A 股标的';
+
+/** 搜索失败文案前缀 */
+export const WATCH_SEARCH_FAILED = '搜索失败';
+
+/** 预览卡片标题 */
+export const WATCH_PREVIEW_TITLE = '个股预览';
+
+/** 预览卡片「不在样本池 → 按需拉取中」的提示文案 */
+export const WATCH_PREVIEW_FETCHING =
+  '不在最新扫描的样本池里，正在按需拉取该股的股息指标（行情 + 三期业绩 + 分红史 + 负债 ≈ 6 次串行请求）…';
+
+/** 预览卡片按需拉取成功后的口径说明 */
+export const WATCH_PREVIEW_ON_DEMAND_NOTE =
+  '该股不在最新扫描样本池，以下指标为点击时按需拉取（口径与扫描一致，但不写入快照，重进页面即消失）';
+
+/** 预览指标按需拉取失败的提示前缀 */
+export const WATCH_PREVIEW_FETCH_FAILED = '指标拉取失败';
+
+/** 预览卡片「打开个股详情」按钮文案 */
+export const WATCH_PREVIEW_OPEN_DETAIL = '个股详情';
 
 /**
  * 免责声明（页脚固定展示）

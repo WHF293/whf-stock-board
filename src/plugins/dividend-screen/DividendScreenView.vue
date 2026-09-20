@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
+import { useDebounceFn } from '@vueuse/core';
 import BaseButton from '../../components/ui/BaseButton.vue';
 import BaseCard from '../../components/ui/BaseCard.vue';
 import BaseEmpty from '../../components/ui/BaseEmpty.vue';
@@ -11,7 +12,9 @@ import { TREND_TEXT_CLASS } from '../../constants/stock-colors.constants';
 import { formatPercent } from '../../utils/format-percent';
 import { toFullSymbol } from '../../utils/to-full-symbol';
 import { useStockOpen } from '../../composables/use-stock-open';
-import { runDividendScan } from './scan';
+import type { SearchResult } from '../../types/stock-quote.types';
+import type { StockSearchService } from '../../types/plugin.types';
+import { fetchScreenRowByCode, runDividendScan } from './scan';
 import {
   createDefaultRules,
   createRuleInstance,
@@ -74,8 +77,17 @@ import {
   WATCH_CARD_TITLE,
   WATCH_COUNT_TEXT,
   WATCH_EMPTY_TEXT,
+  WATCH_PREVIEW_FETCHING,
+  WATCH_PREVIEW_FETCH_FAILED,
+  WATCH_PREVIEW_ON_DEMAND_NOTE,
+  WATCH_PREVIEW_OPEN_DETAIL,
+  WATCH_PREVIEW_TITLE,
   WATCH_REMOVE_LABEL,
   WATCH_SAVE_FAILED,
+  WATCH_SEARCH_FAILED,
+  WATCH_SEARCH_LABEL,
+  WATCH_SEARCH_NO_RESULT,
+  WATCH_SEARCH_PLACEHOLDER,
   YI_UNIT,
   YUAN_PER_YI,
   YUAN_UNIT,
@@ -93,6 +105,8 @@ import type { TableColumn } from '../../types/table.types';
 const props = defineProps<{
   /** 股息筛选仓储（由插件注入，已建表并水合快照与规则配置） */
   repo: DividendRepo;
+  /** 宿主通用搜索服务（`app:stock-search`；未提供时隐藏搜索入口，页面其余功能不受影响） */
+  stockSearch?: StockSearchService | null;
 }>();
 
 const { openSidebar, toContextList } = useStockOpen();
@@ -232,6 +246,189 @@ const onRemoveWatchByCode = (code: string): void => {
   });
 };
 
+// ---------- 自选 tab · 个股搜索与预览（消费宿主 app:stock-search 服务） ----------
+
+/** 搜索关键词（双向绑定） */
+const searchKeyword = ref('');
+/** 搜索结果（已过滤为 A 股个股） */
+const searchResults = ref<SearchResult[]>([]);
+/** 搜索请求中 */
+const searching = ref(false);
+/** 搜索失败提示（空串 = 无提示） */
+const searchNotice = ref('');
+/** 结果下拉是否展开 */
+const searchOpen = ref(false);
+/** 当前预览的标的（点搜索结果后设置） */
+const previewResult = ref<SearchResult | null>(null);
+
+/** 搜索框是否可用（宿主服务未提供时整块隐藏） */
+const searchAvailable = computed(() => props.stockSearch !== undefined && props.stockSearch !== null);
+
+/**
+ * 是否为 A 股个股（指数 / 基金 / 港美股不在股息自选语境里）
+ * @param result 搜索结果
+ * @returns 是否 A 股个股
+ */
+const isAShareStock = (result: SearchResult): boolean =>
+  result.category === 'stock' && (result.market === 'sh' || result.market === 'sz');
+
+/** 执行一次搜索（结果过滤为 A 股个股） */
+const doSearch = async (): Promise<void> => {
+  const trimmed = searchKeyword.value.trim();
+  previewResult.value = null;
+  if (trimmed.length < 2 || !props.stockSearch) {
+    searchResults.value = [];
+    searchOpen.value = false;
+    return;
+  }
+  searching.value = true;
+  searchNotice.value = '';
+  try {
+    const results = await props.stockSearch.search(trimmed);
+    searchResults.value = results.filter(isAShareStock);
+    searchOpen.value = true;
+  } catch (error) {
+    searchResults.value = [];
+    searchNotice.value = `${WATCH_SEARCH_FAILED}：${error instanceof Error ? error.message : String(error)}`;
+  } finally {
+    searching.value = false;
+  }
+};
+
+/** 输入防抖 300ms（与宿主 use-stock-search 同一节奏，避免轰炸上游） */
+const debouncedSearch = useDebounceFn(doSearch, 300);
+
+/** 关键词变化：清掉已选预览，防抖触发搜索 */
+watch(searchKeyword, () => {
+  previewResult.value = null;
+  void debouncedSearch();
+});
+
+/**
+ * 选中一个搜索结果 → 进入预览并收起下拉
+ *
+ * 快照命中的行直接渲染（零联网）；样本池外的个股按需拉取一次
+ * （行情 + 三期业绩 + 分红史 + 负债 ≈ 6 次串行请求，点击触发，不落库）。
+ * @param result 搜索结果
+ */
+const onSelectResult = (result: SearchResult): void => {
+  previewResult.value = result;
+  searchOpen.value = false;
+  const code = result.code.slice(2);
+  if (rowsByCode.value.has(code)) {
+    previewFetchedRow.value = null;
+    previewFetchError.value = '';
+    previewFetching.value = false;
+    return;
+  }
+  startPreviewFetch(code);
+};
+
+/** 关闭预览 */
+const onClosePreview = (): void => {
+  previewResult.value = null;
+};
+
+/** 预览标的的裸代码（完整符号 sh600519 → 600519） */
+const previewCode = computed(() =>
+  previewResult.value ? previewResult.value.code.slice(2) : '',
+);
+
+/** 预览标的在最新快照中的行（命中才有现成指标，无需联网） */
+const previewRow = computed(() =>
+  previewCode.value === '' ? undefined : rowsByCode.value.get(previewCode.value),
+);
+
+/** 按需拉取到的展示行（样本池外个股；仅当前选中标的有效的结果） */
+const previewFetchedRow = ref<DividendScreenRow | null>(null);
+/** 按需拉取中 */
+const previewFetching = ref(false);
+/** 按需拉取失败提示（空串 = 无提示） */
+const previewFetchError = ref('');
+/** 拉取序号（用户快速连点不同结果时丢弃过期响应） */
+let previewFetchSeq = 0;
+
+/**
+ * 按需拉取单股的完整展示行（点击触发，约 6 次串行请求；过期响应按序号丢弃）
+ * @param code 6 位裸代码
+ */
+const startPreviewFetch = (code: string): void => {
+  const seq = ++previewFetchSeq;
+  previewFetchedRow.value = null;
+  previewFetchError.value = '';
+  previewFetching.value = true;
+  fetchScreenRowByCode(code)
+    .then((row) => {
+      if (seq !== previewFetchSeq) return;
+      if (row) {
+        previewFetchedRow.value = row;
+      } else {
+        previewFetchError.value = '上游未返回该股行情（可能已退市或非沪深标的）';
+      }
+    })
+    .catch((error: unknown) => {
+      if (seq !== previewFetchSeq) return;
+      previewFetchError.value = `${WATCH_PREVIEW_FETCH_FAILED}：${error instanceof Error ? error.message : String(error)}`;
+    })
+    .finally(() => {
+      if (seq === previewFetchSeq) previewFetching.value = false;
+    });
+};
+
+/** 预览实际渲染的行：快照命中优先，否则用按需拉取结果 */
+const effectivePreviewRow = computed(() => previewRow.value ?? previewFetchedRow.value ?? undefined);
+
+/** 当前预览是否走的按需拉取（决定口径说明文案） */
+const previewIsOnDemand = computed(() => previewRow.value === undefined && previewFetchedRow.value !== null);
+
+/** 预览标的是否已自选 */
+const previewWatched = computed(() =>
+  previewCode.value !== '' && watchSet.value.has(previewCode.value),
+);
+
+/**
+ * 搜索结果里标的的展示名
+ * @param result 搜索结果
+ * @returns 展示名（无名称时回退完整代码）
+ */
+const resultLabel = (result: SearchResult): string => result.name || result.code;
+
+/**
+ * 预览 / 搜索结果加入自选（失败给搜索区提示）
+ * @param result 搜索结果
+ * @returns 无
+ */
+const onAddResultToWatch = (result: SearchResult): void => {
+  watchNotice.value = '';
+  props.repo
+    .addWatch([{ code: result.code.slice(2), name: result.name }])
+    .catch((error: unknown) => {
+      watchNotice.value = `${WATCH_SAVE_FAILED}：${error instanceof Error ? error.message : String(error)}`;
+    });
+};
+
+/**
+ * 预览标的切换自选态
+ */
+const onTogglePreviewWatch = (): void => {
+  if (!previewResult.value) return;
+  watchNotice.value = '';
+  if (previewWatched.value) {
+    props.repo.removeWatch([previewCode.value]).catch((error: unknown) => {
+      watchNotice.value = `${WATCH_SAVE_FAILED}：${error instanceof Error ? error.message : String(error)}`;
+    });
+    return;
+  }
+  onAddResultToWatch(previewResult.value);
+};
+
+/**
+ * 打开预览标的的个股详情侧栏（完整符号直接取自搜索结果，不经本地补前缀）
+ */
+const onOpenPreviewDetail = (): void => {
+  if (previewResult.value) openSidebar(previewResult.value.code, []);
+};
+
 /** 是否有任一筛选生效 */
 const filterActive = computed(
   () => publishedOnly.value || growingOnly.value || projectableOnly.value || showFailing.value,
@@ -276,19 +473,44 @@ const baseColumns: TableColumn<DividendScreenRow>[] = [
   { key: 'peTtm', label: DIVIDEND_COLUMN_LABEL.peTtm, align: 'right', sortable: true, sortValue: (row) => row.peTtm },
 ];
 
-/** 自选星标列 */
-const watchColumn: TableColumn<DividendScreenRow> = { key: 'watch', label: DIVIDEND_COLUMN_LABEL.watch };
+/** 最左操作列：加入 / 移出自选按钮（行内显式操作，替代原行尾星标） */
+const actionColumn: TableColumn<DividendScreenRow> = { key: 'action', label: DIVIDEND_COLUMN_LABEL.action };
 
-/** 当前 tab 的表格列（自选 tab 不展示规则列——自选本身已是筛选的结果） */
+/** 当前 tab 的表格列（操作列固定最左；自选 tab 不展示规则列——自选本身已是筛选的结果） */
 const tableColumns = computed<TableColumn<DividendScreenRow>[]>(() =>
   activeTab.value === DIVIDEND_TAB_WATCHLIST
-    ? [...baseColumns, watchColumn]
+    ? [actionColumn, ...baseColumns]
     : [
+        actionColumn,
         ...baseColumns,
         { key: 'ruleResult', label: DIVIDEND_COLUMN_LABEL.ruleResult },
-        watchColumn,
       ],
 );
+
+/**
+ * 操作列按钮文案（筛选 tab：加自选 / 已自选；自选 tab：恒为移除）
+ * @param row 展示行
+ * @returns 按钮文案
+ */
+const actionLabel = (row: DividendScreenRow): string => {
+  if (activeTab.value === DIVIDEND_TAB_WATCHLIST) return WATCH_REMOVE_LABEL;
+  return watchSet.value.has(row.code) ? '已自选' : `＋ ${WATCH_ADD_LABEL}`;
+};
+
+/**
+ * 操作列按钮样式（未加入 = 主色实底；已加入 / 移除 = 中性弱底）
+ * @param row 展示行
+ * @returns 类名
+ */
+const actionClass = (row: DividendScreenRow): string => {
+  const watched = watchSet.value.has(row.code);
+  if (activeTab.value === DIVIDEND_TAB_WATCHLIST) {
+    return 'bg-flat-weak text-text-secondary hover:bg-down-weak hover:text-down';
+  }
+  return watched
+    ? 'bg-flat-weak text-text-tertiary'
+    : 'bg-primary-weak text-primary hover:brightness-95';
+};
 
 /** 当前 tab 的表格行 */
 const tableRows = computed<DividendScreenRow[]>(() =>
@@ -782,6 +1004,128 @@ const onScan = async (): Promise<void> => {
         </template>
       </template>
 
+      <!-- 个股搜索与预览（消费宿主 app:stock-search 服务；服务缺席时整块隐藏，其余功能不受影响） -->
+      <div v-if="activeTab === DIVIDEND_TAB_WATCHLIST && searchAvailable" class="relative mb-3">
+        <input
+          v-model="searchKeyword"
+          type="text"
+          class="w-full max-w-md rounded-lg bg-flat-weak px-3 py-1.5 text-sm text-text outline-none placeholder:text-text-tertiary focus:ring-1 focus:ring-primary"
+          :placeholder="WATCH_SEARCH_PLACEHOLDER"
+          :aria-label="WATCH_SEARCH_LABEL"
+          @focus="searchOpen = searchResults.length > 0"
+          @blur="searchOpen = false"
+        />
+        <span v-if="searching" class="ml-2 text-xs text-text-tertiary">搜索中…</span>
+
+        <!-- 结果下拉：mousedown.prevent 抢在 blur 之前完成选中 -->
+        <div
+          v-if="searchOpen && searchResults.length > 0"
+          class="absolute z-20 mt-1 max-h-64 w-full max-w-md overflow-y-auto rounded-lg border border-flat-weak bg-surface shadow-lg"
+        >
+          <button
+            v-for="result in searchResults"
+            :key="result.code"
+            type="button"
+            class="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs hover:bg-flat-weak"
+            @mousedown.prevent="onSelectResult(result)"
+          >
+            <span class="truncate text-text">{{ resultLabel(result) }}</span>
+            <span class="shrink-0 tabular-nums text-[11px] text-text-tertiary">{{ result.code }}</span>
+          </button>
+        </div>
+        <p
+          v-if="searchOpen && searchKeyword.trim().length >= 2 && !searching && searchResults.length === 0 && !searchNotice"
+          class="mt-1 text-xs text-text-tertiary"
+        >
+          {{ WATCH_SEARCH_NO_RESULT }}
+        </p>
+        <p v-if="searchNotice" class="mt-1 rounded-lg bg-down-weak px-2 py-1 text-xs text-down">
+          {{ searchNotice }}
+        </p>
+
+        <!-- 预览：快照命中直接渲染；样本池外按需拉取（口径与扫描同源，不落库） -->
+        <div v-if="previewResult" class="mt-2 rounded-lg border border-flat-weak bg-flat-weak/40 p-3">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="text-sm font-medium text-text">
+              {{ WATCH_PREVIEW_TITLE }}：{{ previewResult.name || previewResult.code }}
+            </span>
+            <span class="tabular-nums text-[11px] text-text-tertiary">{{ previewResult.code }}</span>
+            <span
+              v-if="effectivePreviewRow"
+              class="inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] leading-none"
+              :class="ruleBadgeClass(effectivePreviewRow)"
+              :title="ruleReasonText(effectivePreviewRow)"
+            >
+              {{ hasEnabledRules ? ruleBadgeText(effectivePreviewRow) : RULE_NO_ACTIVE_HINT }}
+            </span>
+            <button
+              type="button"
+              class="pressable ml-auto rounded px-1 text-xs text-text-tertiary hover:text-text active:scale-95"
+              aria-label="关闭预览"
+              @click="onClosePreview"
+            >
+              ✕
+            </button>
+          </div>
+
+          <p v-if="previewFetching" class="mt-1.5 text-xs leading-relaxed text-text-tertiary">
+            {{ WATCH_PREVIEW_FETCHING }}
+          </p>
+          <p v-else-if="previewFetchError" class="mt-1.5 rounded-lg bg-down-weak px-2 py-1 text-xs leading-relaxed text-down">
+            {{ previewFetchError }}
+          </p>
+
+          <template v-if="effectivePreviewRow">
+            <dl class="mt-2 grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs sm:grid-cols-4">
+              <div>
+                <dt class="text-text-tertiary">{{ DIVIDEND_COLUMN_LABEL.price }}</dt>
+                <dd class="tabular-nums text-text">{{ formatPrice(effectivePreviewRow.price) }}</dd>
+              </div>
+              <div>
+                <dt class="text-text-tertiary">{{ DIVIDEND_COLUMN_LABEL.ttmYield }}</dt>
+                <dd class="tabular-nums text-text">{{ formatYield(effectivePreviewRow.ttmYield) }}</dd>
+              </div>
+              <div>
+                <dt class="text-text-tertiary">{{ DIVIDEND_COLUMN_LABEL.projectedYield }}</dt>
+                <dd class="tabular-nums font-medium text-up">{{ formatYield(effectivePreviewRow.projectedYield) }}</dd>
+              </div>
+              <div>
+                <dt class="text-text-tertiary">{{ DIVIDEND_COLUMN_LABEL.yieldLast }}</dt>
+                <dd class="tabular-nums text-text">{{ formatYield(effectivePreviewRow.yieldLast) }}</dd>
+              </div>
+              <div>
+                <dt class="text-text-tertiary">{{ DIVIDEND_COLUMN_LABEL.payoutLast }}</dt>
+                <dd class="tabular-nums text-text">{{ formatPayout(effectivePreviewRow.payoutLast) }}</dd>
+              </div>
+              <div>
+                <dt class="text-text-tertiary">{{ DIVIDEND_COLUMN_LABEL.dividendYears }}</dt>
+                <dd class="tabular-nums text-text">{{ formatDividendYears(effectivePreviewRow.dividendYears) }}</dd>
+              </div>
+              <div>
+                <dt class="text-text-tertiary">{{ DIVIDEND_COLUMN_LABEL.debtRatio }}</dt>
+                <dd class="tabular-nums text-text">{{ formatDebtRatio(effectivePreviewRow.debtRatio) }}</dd>
+              </div>
+              <div>
+                <dt class="text-text-tertiary">{{ DIVIDEND_COLUMN_LABEL.peTtm }}</dt>
+                <dd class="tabular-nums text-text">
+                  {{ effectivePreviewRow.peTtm === null ? DIVIDEND_PLACEHOLDER : effectivePreviewRow.peTtm.toFixed(1) }}
+                </dd>
+              </div>
+            </dl>
+            <p v-if="previewIsOnDemand" class="mt-1.5 text-[11px] leading-relaxed text-text-tertiary">
+              {{ WATCH_PREVIEW_ON_DEMAND_NOTE }}
+            </p>
+          </template>
+
+          <div class="mt-2 flex items-center gap-2">
+            <BaseButton variant="ghost" @click="onTogglePreviewWatch">
+              {{ previewWatched ? WATCH_REMOVE_LABEL : WATCH_ADD_LABEL }}
+            </BaseButton>
+            <BaseButton variant="ghost" @click="onOpenPreviewDetail">{{ WATCH_PREVIEW_OPEN_DETAIL }}</BaseButton>
+          </div>
+        </div>
+      </div>
+
       <!-- 自选中已不在最新扫描快照的条目：名单提示 + 逐个清理 -->
       <div
         v-if="activeTab === DIVIDEND_TAB_WATCHLIST && watchMissing.length > 0"
@@ -916,17 +1260,17 @@ const onScan = async (): Promise<void> => {
           </span>
         </template>
 
-        <template #watch="{ row }">
+        <template #action="{ row }">
           <button
             type="button"
-            class="pressable text-base leading-none active:scale-90"
-            :class="watchSet.has(row.code) ? 'text-primary' : 'text-text-tertiary hover:text-primary'"
-            :title="watchSet.has(row.code) ? WATCH_REMOVE_LABEL : WATCH_ADD_LABEL"
-            :aria-label="watchSet.has(row.code) ? WATCH_REMOVE_LABEL : WATCH_ADD_LABEL"
+            class="pressable whitespace-nowrap rounded-md px-1.5 py-0.5 text-[11px] leading-none active:scale-95"
+            :class="actionClass(row)"
+            :title="activeTab === DIVIDEND_TAB_WATCHLIST ? WATCH_REMOVE_LABEL : (watchSet.has(row.code) ? WATCH_REMOVE_LABEL : WATCH_ADD_LABEL)"
+            :aria-label="activeTab === DIVIDEND_TAB_WATCHLIST ? WATCH_REMOVE_LABEL : (watchSet.has(row.code) ? WATCH_REMOVE_LABEL : WATCH_ADD_LABEL)"
             @click.stop="onToggleWatch(row)"
             @dblclick.stop
           >
-            {{ watchSet.has(row.code) ? '★' : '☆' }}
+            {{ actionLabel(row) }}
           </button>
         </template>
 

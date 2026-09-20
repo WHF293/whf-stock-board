@@ -36,12 +36,15 @@ export const dividendScreenPlugin: PluginDefinition = {
     // 能力对外公开：其他插件 consume('dividend:repo') 即可读同一份快照
     ctx.provide('dividend:repo', repo);
 
+    // 宿主通用搜索服务（自选 tab 搜个股加自选用）；服务缺席时页面自动隐藏搜索入口
+    const stockSearch = ctx.consume('app:stock-search');
+
     ctx.menu.add({
       path: DIVIDEND_MENU_PATH,
       title: DIVIDEND_MENU_TITLE,
       icon: DIVIDEND_MENU_ICON,
       component: DividendScreenView,
-      props: { repo },
+      props: { repo, stockSearch },
     });
 
     ctx.logger.info('已注册「股息筛选」导航项与看板页面');
