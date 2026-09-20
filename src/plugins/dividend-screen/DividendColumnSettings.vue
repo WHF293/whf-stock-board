@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { VueDraggable } from 'vue-draggable-plus';
 import MenuIcon from '../../components/ui/MenuIcon.vue';
 import {
   DIVIDEND_COLUMN_LABEL,
@@ -15,9 +16,9 @@ import type { PluginSettingsStore } from '../../types/plugin.types';
 /**
  * 股息筛选 · 表头列设置（插件 settings 自定义组件，渲染在插件设置弹窗里）
  *
- * 勾选控制显隐、上下移控制顺序，**即时生效即时持久化**（宿主弹窗无确认按钮，
- * 与声明式 fields 的交互语义保持一致）；「恢复默认」回到代码声明顺序 + 全显。
- * 至少保留一列可见：最后一列的取消勾选会被忽略。
+ * 拖拽手柄控制顺序（与路由编排同一套 vue-draggable-plus 交互）、勾选控制显隐，
+ * **即时生效即时持久化**（宿主弹窗无确认按钮，与声明式 fields 的交互语义保持一致）；
+ * 「恢复默认」回到代码声明顺序 + 全显。至少保留一列可见：最后一列的取消勾选会被忽略。
  */
 const props = defineProps<{
   /** 插件设置存取句柄（宿主注入） */
@@ -36,6 +37,19 @@ const config = computed(() =>
 const visibleCount = computed(() => visibleDividendColumns(config.value).length);
 
 /**
+ * 列顺序的可写视图：拖拽结束后整组落库（隐藏集合不变，只按新顺序过滤对齐）
+ */
+const orderModel = computed({
+  get: () => config.value.order,
+  set: (order: string[]) => {
+    props.settings.set(DIVIDEND_SETTINGS_COLUMN_KEY, {
+      order,
+      hidden: order.filter((key) => config.value.hidden.includes(key)),
+    });
+  },
+});
+
+/**
  * 切换一列的显隐（即时落库；收起最后一列的操作被忽略）
  * @param key 列键
  * @param checked 是否勾选（勾选 = 显示）
@@ -52,23 +66,6 @@ const onToggle = (key: string, checked: boolean): void => {
   });
 };
 
-/**
- * 上移 / 下移一列（与相邻项交换，即时落库）
- * @param key 列键
- * @param direction 移动方向
- */
-const onMove = (key: string, direction: -1 | 1): void => {
-  const order = [...config.value.order];
-  const index = order.indexOf(key);
-  const target = index + direction;
-  if (index < 0 || target < 0 || target >= order.length) return;
-  [order[index], order[target]] = [order[target], order[index]];
-  props.settings.set(DIVIDEND_SETTINGS_COLUMN_KEY, {
-    order,
-    hidden: [...config.value.hidden],
-  });
-};
-
 /** 恢复默认：代码声明顺序 + 全部显示（只重置列配置，不动其他设置键） */
 const onResetDefault = (): void => {
   props.settings.set(DIVIDEND_SETTINGS_COLUMN_KEY, {
@@ -81,15 +78,30 @@ const onResetDefault = (): void => {
 <template>
   <div>
     <p class="mb-2 text-xs text-text-tertiary">
-      勾选要显示的列，用上下按钮调整顺序（即时生效）；「操作」列固定最左、「规则」列固定最右，不参与调整。
+      勾选要显示的列，拖拽手柄调整顺序（即时生效）；「操作」列固定最左、「规则」列固定最右，不参与调整。
     </p>
 
-    <ul class="space-y-1">
+    <VueDraggable
+      v-model="orderModel"
+      tag="ul"
+      :animation="150"
+      handle=".column-handle"
+      :force-fallback="true"
+      fallback-class="sortable-fallback bg-surface shadow-lg ring-1 ring-flat-weak"
+      ghost-class="opacity-40"
+      chosen-class="bg-flat-weak"
+      class="space-y-1"
+    >
       <li
         v-for="(key, index) in config.order"
         :key="key"
         class="flex select-none items-center gap-2.5 rounded-lg border border-flat-weak px-2.5 py-1.5 text-sm"
       >
+        <MenuIcon
+          name="grip"
+          :size="15"
+          class="column-handle shrink-0 cursor-grab text-text-tertiary active:cursor-grabbing"
+        />
         <span class="w-5 shrink-0 text-right text-xs tabular-nums text-text-tertiary">
           {{ index + 1 }}
         </span>
@@ -108,28 +120,8 @@ const onResetDefault = (): void => {
             {{ DIVIDEND_COLUMN_LABEL[key as keyof typeof DIVIDEND_COLUMN_LABEL] }}
           </span>
         </label>
-        <span class="flex shrink-0 items-center gap-0.5">
-          <button
-            type="button"
-            class="pressable rounded p-1 text-text-tertiary hover:bg-flat-weak hover:text-text active:scale-90 disabled:cursor-not-allowed disabled:opacity-35"
-            :disabled="index === 0"
-            :aria-label="`上移${DIVIDEND_COLUMN_LABEL[key as keyof typeof DIVIDEND_COLUMN_LABEL]}`"
-            @click="onMove(key, -1)"
-          >
-            <MenuIcon name="expand" :size="13" class="-rotate-90" />
-          </button>
-          <button
-            type="button"
-            class="pressable rounded p-1 text-text-tertiary hover:bg-flat-weak hover:text-text active:scale-90 disabled:cursor-not-allowed disabled:opacity-35"
-            :disabled="index === config.order.length - 1"
-            :aria-label="`下移${DIVIDEND_COLUMN_LABEL[key as keyof typeof DIVIDEND_COLUMN_LABEL]}`"
-            @click="onMove(key, 1)"
-          >
-            <MenuIcon name="expand" :size="13" class="rotate-90" />
-          </button>
-        </span>
       </li>
-    </ul>
+    </VueDraggable>
 
     <button
       type="button"
