@@ -9,6 +9,7 @@ import BaseTabs from '../../components/ui/BaseTabs.vue';
 import MenuIcon from '../../components/ui/MenuIcon.vue';
 import { getTrendByChangePercent } from '../../constants/trend.constants';
 import { TREND_TEXT_CLASS } from '../../constants/stock-colors.constants';
+import { delay } from '../../utils/delay';
 import { formatPercent } from '../../utils/format-percent';
 import { toFullSymbol } from '../../utils/to-full-symbol';
 import { useStockOpen } from '../../composables/use-stock-open';
@@ -32,6 +33,7 @@ import {
   DIVIDEND_DETAIL_TITLE,
   DIVIDEND_DISCLAIMER,
   DIVIDEND_EMPTY_TEXT,
+  EM_DATACENTER_DELAY_MS,
   DIVIDEND_FILTER_CLEAR,
   DIVIDEND_FILTER_GROWING,
   DIVIDEND_FILTER_PUBLISHED,
@@ -231,20 +233,81 @@ const createPlaceholderRow = (item: DividendWatchItem): DividendScreenRow => ({
 });
 
 /**
- * 自选展示行：快照命中的显示完整指标；快照外的合成占位行也进列表
- * （自选是用户主动清单，不该因为样本池没覆盖就从列表里消失）
+ * 会话内按需拉取的展示行缓存（代码 → 行）
+ *
+ * 快照外自选（样本池没覆盖的个股）进自选 tab 时自动补拉：约 6 次串行请求/股，
+ * 拉到后整个会话复用，切 tab / 重渲染不再请求；不落库（持久化快照仍以扫描为准）。
+ */
+const onDemandRows = ref(new Map<string, DividendScreenRow>());
+
+/** 上游明确无行情的代码（退市 / 非沪深，本次会话不再重试） */
+const onDemandGone = ref(new Set<string>());
+
+/** 正在拉取中的代码（防重复排队；非响应式，进度走 watchFetchProgress） */
+const fetchingCodes = new Set<string>();
+
+/** 快照外自选的补拉进度（null = 空闲） */
+const watchFetchProgress = ref<{ done: number; total: number } | null>(null);
+
+/**
+ * 自选展示行：快照命中 → 会话内按需拉取命中 → 占位行（指标 `--`）
+ * （自选是用户主动清单，全部条目都进列表；快照外个股拉到数据后原地补全）
  */
 const watchRows = computed<DividendScreenRow[]>(() =>
-  watchedItems.value.map((item) => rowsByCode.value.get(item.code) ?? createPlaceholderRow(item)),
+  watchedItems.value.map((item) =>
+    rowsByCode.value.get(item.code) ?? onDemandRows.value.get(item.code) ?? createPlaceholderRow(item),
+  ),
 );
 
-/** 快照外自选的代码集合（占位行不显示「中报未披露」状态徽标，避免误导） */
+/** 仍无指标数据的自选代码（占位行不显示「中报未披露」状态徽标，避免误导） */
 const watchMissingCodes = computed(
   () =>
     new Set(
-      watchedItems.value.filter((item) => !rowsByCode.value.has(item.code)).map((item) => item.code),
+      watchedItems.value
+        .filter((item) => !rowsByCode.value.has(item.code) && !onDemandRows.value.has(item.code))
+        .map((item) => item.code),
     ),
 );
+
+/**
+ * 串行补拉快照外自选的完整指标（进入自选 tab 触发；个股间留间隔守频率红线）
+ *
+ * 单股 ≈ 6 次请求（与扫描同源同口径）；拉取失败的代码本轮跳过并在提示区说明，
+ * 不进入黑名单（限速类失败下次进入 tab 会自然重试，无轮询不会风暴）。
+ */
+const fetchMissingWatchRows = async (): Promise<void> => {
+  const pending = [...watchMissingCodes.value].filter((code) => !fetchingCodes.has(code));
+  if (pending.length === 0) return;
+  let done = 0;
+  watchFetchProgress.value = { done, total: pending.length };
+  for (const code of pending) {
+    fetchingCodes.add(code);
+    try {
+      const row = await fetchScreenRowByCode(code);
+      if (row) {
+        const next = new Map(onDemandRows.value);
+        next.set(code, row);
+        onDemandRows.value = next;
+      } else {
+        // 上游无此股行情（退市 / 非沪深）：占位行保留，会话内不再请求
+        onDemandGone.value = new Set(onDemandGone.value).add(code);
+      }
+    } catch (error: unknown) {
+      watchNotice.value = `快照外自选指标拉取失败：${error instanceof Error ? error.message : String(error)}`;
+    } finally {
+      fetchingCodes.delete(code);
+      done += 1;
+      watchFetchProgress.value = done < pending.length ? { done, total: pending.length } : null;
+      if (done < pending.length) await delay(EM_DATACENTER_DELAY_MS);
+    }
+  }
+};
+
+// 进入自选 tab（或快照外自选集变化）时自动补拉，数据到位后占位行原地变完整行
+watch([activeTab, watchMissingCodes], ([tab]) => {
+  if (tab !== DIVIDEND_TAB_WATCHLIST) return;
+  void fetchMissingWatchRows();
+});
 
 /**
  * 切换某行的自选态（星标列；加入 / 移出都即时持久化）
@@ -1017,6 +1080,12 @@ const onScan = async (): Promise<void> => {
           class="text-xs tabular-nums text-text-tertiary"
         >
           {{ WATCH_COUNT_TEXT(watchRows.length) }}
+        </span>
+        <span
+          v-if="watchFetchProgress"
+          class="text-[11px] tabular-nums text-text-tertiary"
+        >
+          正在拉取快照外个股指标 {{ watchFetchProgress.done }}/{{ watchFetchProgress.total }}…
         </span>
         <template v-else>
           <button
