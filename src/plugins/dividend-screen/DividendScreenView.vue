@@ -597,6 +597,30 @@ const tableColumns = computed<TableColumn<DividendScreenRow>[]>(() =>
       ],
 );
 
+/** 个别列的最小可读宽度（px）；未登记的数值列按默认值算 */
+const DIVIDEND_COLUMN_MIN_WIDTH: Record<string, number> = {
+  name: 200,
+  industry: 88,
+  action: 64,
+  ruleResult: 88,
+};
+/** 数值列的最小可读宽度（px） */
+const NUMERIC_COLUMN_MIN_WIDTH = 80;
+/** 展开箭头列（BaseTable 内置 w-8）的最小宽度（px） */
+const EXPAND_COLUMN_MIN_WIDTH = 32;
+
+/**
+ * 表格最小宽度随可见列数缩放（全列可见 ≈ 1352px）：隐藏列后表格才能收窄，
+ * 不再顶着写死的 1320px 出横向滚动条
+ */
+const tableMinWidth = computed(() => {
+  const columns = tableColumns.value.reduce(
+    (sum, col) => sum + (DIVIDEND_COLUMN_MIN_WIDTH[col.key] ?? NUMERIC_COLUMN_MIN_WIDTH),
+    0,
+  );
+  return `${columns + EXPAND_COLUMN_MIN_WIDTH}px`;
+});
+
 /**
  * 操作列按钮文案（筛选 tab：加自选 / 已自选；自选 tab：恒为移除）
  * @param row 展示行
@@ -1271,7 +1295,7 @@ const onScan = async (): Promise<void> => {
         :enable-dblclick-nav="true"
         :expandable="true"
         :expanded-keys="expandedKeys"
-        min-width="1320px"
+        :min-width="tableMinWidth"
         @row-click="onToggleExpand"
         @row-dblclick="onRowDblclick"
         @toggle-expand="onToggleExpand"
