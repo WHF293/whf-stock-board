@@ -14,6 +14,8 @@ import type { ThemeColor } from '../constants/theme-color.constants';
 import { TREND_THEME_DEFAULT } from '../constants/trend-theme.constants';
 import type { TrendTheme } from '../constants/trend-theme.constants';
 import { WATERMARK_ENABLED_DEFAULT } from '../constants/watermark.constants';
+import { CLOSE_TO_TRAY_DEFAULT } from '../constants/window-close.constants';
+import { syncCloseToTray } from '../api/tray.api';
 import { SIDEBAR_COLLAPSED_DEFAULT } from '../constants/sidebar.constants';
 import { WEBLOG_ENABLED_DEFAULT } from '../constants/weblog.constants';
 import { MENU_DEFAULT_ORDER } from '../constants/router-meta.constants';
@@ -92,6 +94,8 @@ interface SettingsState {
   agentStockOnly: boolean;
   /** 初始设置引导是否已完成（首次打开软件时弹出引导弹窗，完成 / 关闭后不再出现） */
   setupCompleted: boolean;
+  /** 桌面端 · 点击关闭按钮最小化到托盘（false = 直接关闭应用；浏览器模式无此行为） */
+  closeToTray: boolean;
 }
 
 /**
@@ -123,6 +127,7 @@ export const useSettingsStore = defineStore('settings', {
     weblogEnabled: WEBLOG_ENABLED_DEFAULT,
     agentStockOnly: true,
     setupCompleted: resolveSetupCompletedDefault(),
+    closeToTray: CLOSE_TO_TRAY_DEFAULT,
   }),
 
   actions: {
@@ -188,6 +193,18 @@ export const useSettingsStore = defineStore('settings', {
      */
     setWatermarkEnabled(enabled: boolean): void {
       this.watermarkEnabled = enabled;
+    },
+
+    /**
+     * 设置「点击关闭按钮最小化到托盘」
+     *
+     * 写持久化的同时同步给 Rust 侧（CloseRequested 拦截在 Rust 统一处理）；
+     * 浏览器模式同步为空操作，持久化仅保留偏好。
+     * @param enabled true = 关闭请求仅隐藏窗口；false = 直接关闭应用
+     */
+    setCloseToTray(enabled: boolean): void {
+      this.closeToTray = enabled;
+      void syncCloseToTray(enabled);
     },
 
     /**

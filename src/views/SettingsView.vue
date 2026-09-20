@@ -727,6 +727,23 @@ const onProbeProxy = async (): Promise<void> => {
     </BaseCard>
 
 
+    <!-- 窗口 & 托盘开关（仅桌面端生效） -->
+    <BaseCard title="窗口 & 托盘">
+      <div class="flex items-center justify-between">
+        <div>
+          <p class="text-sm text-text">关闭按钮最小化到托盘</p>
+          <p class="mt-0.5 text-xs text-text-tertiary">
+            开启后点击标题栏 ×（或 Alt+F4）仅隐藏到系统托盘，托盘菜单「退出」才是真正关闭；关闭后点击关闭直接退出应用
+          </p>
+        </div>
+        <BaseSwitch
+          :model-value="settingsStore.closeToTray"
+          data-track="CLOSE_TO_TRAY_TOGGLE"
+          @update:model-value="settingsStore.setCloseToTray"
+        />
+      </div>
+    </BaseCard>
+
     <!-- 水印开关 + 快捷键说明（合并一卡） -->
     <BaseCard title="水印 & 快捷键">
       <div class="space-y-4">

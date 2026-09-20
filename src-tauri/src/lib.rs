@@ -1,7 +1,75 @@
-use tauri::Manager;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{Manager, State};
 use tauri_plugin_sql::{Migration, MigrationKind};
 
 mod window_syscmd;
+
+/// 「关闭按钮最小化到托盘」开关（前端设置页经 `set_close_to_tray` 命令实时同步；
+/// 持久化在前端 localStorage，Rust 侧只保存运行期快照，默认 false = 关闭即退出）
+struct CloseToTrayEnabled(AtomicBool);
+
+/// 查询当前是否启用「关闭最小化到托盘」
+///
+/// 默认 false：未同步过设置时保持传统行为（关闭即退出），
+/// 前端启动后会立即同步一次持久化值。
+fn close_to_tray_enabled(state: &CloseToTrayEnabled) -> bool {
+  state.0.load(Ordering::Acquire)
+}
+
+/// 同步「关闭按钮最小化到托盘」设置（前端设置页 / 启动时调用）
+///
+/// # 参数
+/// - `enabled`：true = 关闭请求仅隐藏窗口（托盘菜单「退出」才真正退出）
+#[tauri::command]
+fn set_close_to_tray(state: State<CloseToTrayEnabled>, enabled: bool) {
+  state.0.store(enabled, Ordering::Release);
+}
+
+/// 构建系统托盘：左键单击显示主窗口，菜单提供「显示主窗口 / 退出」；
+/// 真正的退出只走托盘菜单「退出」（`app.exit`），关闭按钮的语义由
+/// `on_window_event` 的 CloseRequested 拦截逻辑决定。
+fn build_tray(app: &tauri::App) -> tauri::Result<()> {
+  let show = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
+  let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+  let menu = Menu::with_items(app, &[&show, &quit])?;
+
+  TrayIconBuilder::with_id("main-tray")
+    .icon(app.default_window_icon().expect("应用图标缺失").clone())
+    .tooltip("股票看板")
+    .menu(&menu)
+    .show_menu_on_left_click(false)
+    .on_menu_event(|app, event| match event.id().as_ref() {
+      "show" => {
+        if let Some(window) = app.get_webview_window("main") {
+          let _ = window.show();
+          let _ = window.set_focus();
+        }
+      }
+      "quit" => {
+        app.exit(0);
+      }
+      _ => {}
+    })
+    .on_tray_icon_event(|tray, event| {
+      // 左键单击托盘图标 = 唤起主窗口（Windows 惯例；菜单走右键）
+      if let TrayIconEvent::Click {
+        button: MouseButton::Left,
+        button_state: MouseButtonState::Up,
+        ..
+      } = event
+      {
+        if let Some(window) = tray.app_handle().get_webview_window("main") {
+          let _ = window.show();
+          let _ = window.set_focus();
+        }
+      }
+    })
+    .build(app)?;
+  Ok(())
+}
 
 /// agent.db v1：Agent 分析模块全部表（方案 §3，2026-09-14 第五版，仅 OpenAI 兼容规范）
 ///
@@ -605,6 +673,19 @@ pub fn run() {
         .build(),
     )
     .plugin(tauri_plugin_fs::init())
+    .manage(CloseToTrayEnabled(AtomicBool::new(false)))
+    .invoke_handler(tauri::generate_handler![set_close_to_tray])
+    .on_window_event(|window, event| {
+      // 关闭语义统一在 Rust 侧收口：自绘标题栏 × / Alt+F4 / 任务栏关闭都触发
+      // CloseRequested。启用「最小化到托盘」时只隐藏窗口（阻止本次关闭），
+      // 真正的退出走托盘菜单「退出」（app.exit）。
+      if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+        if window.label() == "main" && close_to_tray_enabled(&window.app_handle().state()) {
+          api.prevent_close();
+          let _ = window.hide();
+        }
+      }
+    })
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(
@@ -619,6 +700,8 @@ pub fn run() {
       if let Some(main_window) = app.get_webview_window("main") {
         window_syscmd::enable(&main_window);
       }
+      // 系统托盘：左键唤起主窗口，右键菜单「显示主窗口 / 退出」
+      build_tray(app)?;
       Ok(())
     })
     .run(tauri::generate_context!())
