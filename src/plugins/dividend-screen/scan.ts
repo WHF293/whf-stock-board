@@ -11,7 +11,7 @@
  * 频率纪律：全部串行 + 同上游间隔，总请求量 ≈ 排行页数 + 5 × 代码分块数
  * （业绩 3 + 分红 1 + 负债 1；样本池 200 时约 12 次）；只由用户点击触发，不轮询。
  */
-import { chunkCodes, fetchDebtRatioByCodes, fetchDividendRank, fetchDividendsByCodes, fetchPerfByCodes } from './em-data';
+import { chunkCodes, fetchDebtRatioByCodes, fetchDividendRank, fetchDividendsByCodes, fetchPerfByCodes, fetchRankRowByCode } from './em-data';
 import { buildScreenRow, sortScreenRows } from './project';
 import { DIVIDEND_HISTORY_YEARS, DIVIDEND_PROJECT_STATUS } from './constants';
 import type { DividendRepo } from './storage';
@@ -132,4 +132,41 @@ export const runDividendScan = async (
 
   await repo.saveScan(rows, meta);
   return { rows, meta };
+};
+
+/**
+ * 按需拉取单只股票的完整展示行（自选 tab 搜索预览用）
+ *
+ * 样本池外的个股不走全量扫描：单股精确行情（ulist.np，1 次）+ 三期业绩 + 多期分红
+ * + 负债（datacenter 各 1 次，单股不分块）≈ 6 次串行请求，推算口径与扫描完全同源
+ * （同一个 `buildScreenRow`）。只由用户点击搜索结果触发，不轮询、不落库
+ * ——预览是临时数据，进自选并扫描后才有持久化快照。
+ * @param code 6 位裸代码
+ * @returns 展示行；上游未返回该股行情（退市 / 非沪深）为 null
+ */
+export const fetchScreenRowByCode = async (code: string): Promise<DividendScreenRow | null> => {
+  const periods = resolveReportPeriods();
+  const base = await fetchRankRowByCode(code);
+  if (!base) return null;
+
+  const perfH1 = await fetchPerfByCodes([code], periods.h1);
+  const perfH1Last = await fetchPerfByCodes([code], periods.h1Last);
+  const perfFyLast = await fetchPerfByCodes([code], periods.fyLast);
+  const divAll = await fetchDividendsByCodes(
+    [code],
+    [...resolveDividendHistoryDates(periods.fyLast), periods.interim],
+  );
+  const debt = await fetchDebtRatioByCodes([code], [periods.h1, periods.fyLast]);
+
+  return buildScreenRow({
+    base,
+    h1: perfH1.get(code),
+    h1Last: perfH1Last.get(code),
+    fyLast: perfFyLast.get(code),
+    divLast: divAll.get(code)?.get(periods.fyLast),
+    divInterim: divAll.get(code)?.get(periods.interim),
+    fyDividends: divAll.get(code),
+    fyLastDate: periods.fyLast,
+    debt: debt.get(code),
+  });
 };

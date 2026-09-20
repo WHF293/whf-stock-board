@@ -120,6 +120,41 @@ export const fetchDividendRank = async (
 };
 
 /**
+ * 单股精确查询（`ulist.np` 按 secids 精确取行情）
+ *
+ * 字段与排行 clist **完全同构**（f12/f14/f2/…/f133，`fltt=2&invt=2` 下同为真值小数），
+ * 返回体也是 `data.diff` 数组 → 直接复用 `parseRankPage` 解析成 `RankBaseRow`。
+ * 用途：自选 tab 搜索预览时，样本池外的个股按需补一次行情（点击触发，不轮询）。
+ */
+export const EM_ULIST_URL = 'https://push2delay.eastmoney.com/api/qt/ulist.np/get';
+
+/** 单股精确查询串（`{secid}` 由取数层替换） */
+const EM_ULIST_QUERY =
+  'secids={secid}&fields=f12,f14,f2,f3,f20,f23,f38,f115,f133&fltt=2&invt=2';
+
+/**
+ * 6 位裸代码 → ulist secid 的市场前缀（`1.` = 沪，`0.` = 深）
+ *
+ * 股息语境只有沪深 A 股（搜索层已过滤），北交所（4/8 开头）不在支持范围。
+ * @param code 6 位裸代码
+ * @returns 市场前缀
+ */
+const marketPrefix = (code: string): string => (code.startsWith('6') ? '1' : '0');
+
+/**
+ * 精确查询单只股票的行情基准行（字段与排行一致，可直接进推算层）
+ * @param code 6 位裸代码
+ * @returns 排行基准行；上游未返回该股（退市 / 非沪深）为 null
+ */
+export const fetchRankRowByCode = async (code: string): Promise<RankBaseRow | null> => {
+  const query = EM_ULIST_QUERY.replace('{secid}', `${marketPrefix(code)}.${code}`);
+  const { rows } = parseRankPage(
+    await fetchTextWithRetry(`${EM_ULIST_URL}?${query}`, EM_QUOTE_REFERER),
+  );
+  return rows.find((row) => row.code === code) ?? null;
+};
+
+/**
  * 组装 datacenter 的查询串（报告期 in 多值 + 代码 in 分块）
  * @param reportName 报表名
  * @param reportDateField 该报表的报告期字段名（三个报表各不相同）
