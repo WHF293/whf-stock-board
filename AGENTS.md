@@ -74,8 +74,8 @@ server/           # vite 中间件：/stock-proxy（仅浏览器 dev 使用）
 **一切能力都由插件贡献**——侧栏面板、菜单、路由、停靠面板、命令、Agent MCP 服务器。
 宿主不硬编码任何具体插件，新增能力应当写成插件而不是改宿主（`MainLayout.vue` 里只保留面板承载与命令转发）。
 
-> **API 文档在根目录 [`PLUGIN_API.md`](./PLUGIN_API.md)**（九个贡献点字段与默认值、ctx 数据层、六个宿主服务、
-> 六个内置事件、配额与红线的完整清单）。本节只留架构约定；
+> **API 文档在根目录 [`PLUGIN_API.md`](./PLUGIN_API.md)**（九个贡献点字段与默认值、ctx 数据层、
+> 九个宿主服务、六个内置事件、配额与红线的完整清单）。本节只留架构约定；
 > 写插件前先看那份文档，改本节涉及的能力时同步它。
 
 ### 内核 API
@@ -131,7 +131,8 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
 ### 宿主接线（别绕开）
 
 - `main.ts` 在 `app.use(router)` **之前**调 `installPlugins(pinia)`（`plugin/setup.ts`）：
-  先 provide 宿主服务（`app:version` / `kernel:runtime` / `app:navigate` / `panel:open` / `app:notify`），再挂插件，
+  先 provide 宿主服务（`app:version` / `kernel:runtime` / `app:navigate` / `panel:open` / `app:notify` /
+  `app:stock-search` / `app:ui` / `app:http` / `app:quotes`），再挂插件，
   再 `attachPluginRoutes(router, { onVanishedRoute })`（订阅路由注册表版本号，把插件注册 / 卸载翻译成 `addRoute` / 摘除；
   **用户正停留的插件页随插件被撤销时**回调 `onVanishedRoute`，宿主在 `recoverVanishedRoute` 里按
   「声明了 `fallbackLanding` 的页面（宿主 `MENU_ITEMS` 里的自带页优先，再是插件声明的）→ 侧栏第一个菜单 → 宿主首页」
@@ -144,6 +145,11 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
   插件 `ctx.consume('app:notify')` 即可弹右下角提醒（tone 走涨跌 token，自动跟随 `data-trend`）。
   承载组件由 `MainLayout` 渲染一次，**与发起它的插件面板是否挂载无关**——需要长期生效的提醒（如盯盘到价）必须走这里，
   不能挂在面板组件里（面板折叠即卸载）
+- **第三方（用户插件）的三条补给通道**（2026-09-21 起）：用户插件是运行时 Blob 动态 import 的，
+  `import` / `template` 一律拿不到东西，因此宿主代为下发 —— ① `ctx.vue`（h/ref/computed…，写渲染函数用）
+  ② `app:ui`（宿主八个基础组件 + `confirm()`，承载组件 `PluginConfirmHost` 挂在 MainLayout）
+  ③ `app:http`（受 `STOCK_PROXY_ALLOWED_HOSTS` 约束）/ `app:quotes`（批量报价）。
+  改这几个服务等于改第三方插件的地板，务必同步 PLUGIN_API.md
 
 ### 插件工坊不是插件（v2.6.2 起转正）
 
@@ -213,13 +219,18 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
   面板组件用渲染函数写——生产构建不含 Vue 运行时模板编译器，`<template>` 字符串不可用
 - ⚠️ **插件代码里不能写 `import`（2026-09-20 实测）**：用户插件是 Blob URL 动态 `import()` 的，
   拿不到 Vite 的依赖解析 —— 裸包名报 `Failed to resolve module specifier "vue"`，绝对路径报
-  `base scheme isn't hierarchical`。因此第三方插件的组件只能是**不依赖 import 的普通对象**
-  （如 `component: { render: () => 'Hello 插件' }`，render 返回字符串会被宿主渲成文本节点）；
-  需要 `h` / 响应式 / 宿主 UI 组件的场景，要等宿主把 SDK 作为服务暴露（方案见 `PLUGIN_API.md` §13）。
-  Tailwind 类同理：只有宿主源码里出现过的类才被生成到 CSS
-- **加载链**：`plugin/user-plugin-loader.ts` 把代码包成 Blob URL 动态 `import()`（CSP 无限制：浏览器侧无
-  CSP meta、Tauri `csp: null`）→ `validateUserPluginDefinition` 结构校验（id 规则 / 必填字段 / 占用检查，
-  **纯函数**可被烟雾测试直跑）→ `pluginKernel.use(def, { origin: 'user' })`
+  `base scheme isn't hierarchical`。
+- 🛡️ **能力已由宿主代发（2026-09-21 起）**：第三方要写有状态的 UI，直接用
+  `ctx.vue`（h / ref / computed / watch / onMounted / onUnmounted / nextTick）与
+  `app:ui`（Button / Input / Switch / Tag / Card / Empty / Tabs / Icon + `confirm()`），
+  要取数用 `app:http`（受白名单约束）/ `app:quotes`。Tailwind 类仍然只有宿主源码里出现过的才有 CSS——
+  所以**首选宿主组件，而不是自己堆类名**
+- 🛡️ **静态预检（`plugin/user-plugin-lint.ts`，纯函数）**：`import` / `export … from` / `import()` /
+  `template:'…'` 这四类在安装前的「解析预览」就被拦下并报**行号**；Tailwind 任意类只给提醒不拦。
+  改这套规则 = 改第三方作者的试错成本，务必同步 `PLUGIN_API.md` §0
+- **加载链**：`plugin/user-plugin-loader.ts`（先 `lintUserPluginCode` → 再 Blob URL 动态 `import()`，
+  CSP 无限制：浏览器侧无 CSP meta、Tauri `csp: null`）→ `validateUserPluginDefinition` 结构校验
+  （id 规则 / 必填字段 / 占用检查，**纯函数**可被烟雾测试直跑）→ `pluginKernel.use(def, { origin: 'user' })`
 - **持久化**：代码原文存 `stores/user-plugins.ts`（命名空间 `plugin.user`，上限 50 条 / 单份 512KB）；
   启动时 `setup.ts` 异步重挂，并按启动路径快照还原「直刷插件路由被 404 兜底带走」的场景
 - **管理**：启停与内置插件同一套黑名单语义；管理弹窗里用户插件有「卸载」（两段确认）——内核 `unuse`

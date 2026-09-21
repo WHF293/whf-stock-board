@@ -52,7 +52,10 @@ interface GuideChapter {
  * ⚠️ 2026-09-20 实测修正：插件代码是运行时包成 Blob URL 动态 import 的（见 PLUGIN_API.md §0），
  * 拿不到 Vite 的依赖解析 —— 曾经的 `import { defineComponent, h } from 'vue';`
  * 在解析预览阶段就报 `Failed to resolve module specifier "vue"`，装不上。
- * 因此模板改成「不 import 任何东西、render 返回字符串」的实测可用形态。
+ *
+ * 因此模板写成「不 import 任何东西」的形态：
+ * - 渲染函数所需的 h / ref 从 `ctx.vue` 取（宿主代发的运行时句柄）；
+ * - 界面元素优先用 `app:ui` 的宿主组件，避免自己写 Tailwind 类（构建期只扫描宿主源码）。
  */
 const USER_PLUGIN_TEMPLATE = `export default {
   id: 'my-plugin',
@@ -60,15 +63,25 @@ const USER_PLUGIN_TEMPLATE = `export default {
   version: '1.0.0',
   description: '示例：往左侧栏加一个面板',
   apply(ctx) {
+    // 宿主代发的能力：UI 组件与 Vue 运行时句柄（第三方写不了 import）
+    const ui = ctx.consume('app:ui');
+    const { h, ref } = ctx.vue;
+
+    const count = ref(0);
     ctx.sidebar.add({
       id: 'main',
       title: '我的插件',
       mode: 'inline',
       position: 'nav',
       order: 300,
-      // 组件不能用 template 字符串（无运行时模板编译器）；
-      // render 返回字符串会被宿主渲染成文本节点
-      component: { render: () => 'Hello 插件' },
+      // 组件不能用 template 字符串（无运行时模板编译器），
+      // render 里用 h 搭结构、样式交给宿主的 UI 组件
+      component: {
+        render: () => h(ui.Button, {
+          variant: 'primary',
+          onClick: () => { count.value += 1; },
+        }, () => '点了 ' + count.value + ' 次'),
+      },
     });
   },
 };`;

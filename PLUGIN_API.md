@@ -12,7 +12,7 @@
 
 | 层 | 内容 | 谁能用 | 兼容承诺 |
 | --- | --- | --- | --- |
-| **① 契约层** | `ctx.*` 全部成员、`AppServiceMap` 六个宿主服务、`AppEventMap` 六个内置事件、`types/plugin.types.ts` 全部导出类型 | 源码级插件 + 应用内安装的用户插件 | **主版本号内保证向后兼容**；要改形态须同步本文档 |
+| **① 契约层** | `ctx.*` 全部成员、`AppServiceMap` 九个宿主服务、`AppEventMap` 六个内置事件、`types/plugin.types.ts` 全部导出类型 | 源码级插件 + 应用内安装的用户插件 | **主版本号内保证向后兼容**；要改形态须同步本文档 |
 | **② 服务扩展层** | 插件之间经 `ctx.provide` / `ctx.consume` 互相暴露的自定义服务与事件（如 `note:repo` / `note:saved`） | 任何插件 | 由「提供方插件」负责；消费方必须允许 `consume` 返回 `undefined` 并降级 |
 | **③ 宿主内部模块** | `@/api/*`、`@/utils/*`、`@/composables/*`、`@/components/ui/*`、`@/stores/*` 等源码模块 | **仅源码级插件**（跟宿主一起构建） | 无承诺；改名 / 搬文件不另行通知 |
 
@@ -30,9 +30,23 @@
 | Tailwind class | ⚠️ 只有**宿主源码里出现过的类**才被生成到 CSS（`px-2` 实测生效 `padding-left: 8px`）；插件独有的类（`ps-[13px]`、`outline-dashed outline-fuchsia-500`）实测**无样式** |
 | `window.whf*` 之类的全局 SDK | ❌ 宿主当前没有任何全局暴露（扫描 `window` 无命中） |
 
+> ⚠️ **这三条现在是安装前的静态预检项**（2026-09-21 起，`src/plugin/user-plugin-lint.ts`）。
+> 带上它们的插件在「解析预览」阶段就会被拦下，报错会指出**第几行 + 为什么 + 该怎么改**，
+> 而不是丢一句浏览器的底层 `Failed to fetch dynamically imported module`。
+> Tailwind 类不拦（能装），只在预览区给出「可能没有样式」的提醒。
+
 ✅ **好消息**：不 import 任何东西的插件完全可以挂载——实测注册侧栏面板并渲染成功，
-且 `ctx` 全套、六个宿主服务、`ctx.storage` / `ctx.db`（`ensureTable`→`insert`→`select`→`remove`→`count`）、`ctx.on` 全部可用。
-**第三方插件请把自己限制在第 ① 层。**（补齐第三方可依赖的 UI/工具通道见 §13「已知缺口」）
+且 `ctx` 全套、九个宿主服务、`ctx.storage` / `ctx.db`（`ensureTable`→`insert`→`select`→`remove`→`count`）、`ctx.on` 全部可用。
+**第三方插件请把自己限制在第 ① 层。**
+
+第一条红线的替代方案已经补齐了，写第三方插件不再需要 import：
+
+| 以前只能靠 ③ 层 | 现在第 ① 层就有 |
+| --- | --- |
+| `import { h, ref } from 'vue'` 写渲染函数 | `ctx.vue.h` / `ctx.vue.ref` / `ctx.vue.computed` …（§2） |
+| `import BaseButton from '@/components/ui/BaseButton.vue'` | `ctx.consume('app:ui').Button`（§5.4） |
+| 自定义 Tailwind 类调样式 | 用 `app:ui` 的组件，样式天然跟着宿主主题走（§5.4） |
+| 自己 `fetch` 上游数据（跨域 / 白名单无从着手） | `app:http`（受白名单约束，§5.5）、`app:quotes`（批量报价，§5.6） |
 
 ---
 
@@ -90,6 +104,7 @@ export const myPlugin: PluginDefinition = {
 | `ctx.storage` | `PluginStorage` | KV 持久化（§4.1） |
 | `ctx.settings` | `PluginSettingsStore` | 清单式设置的运行时存取（§4.3） |
 | `ctx.db` | `PluginDatabase` | 结构化表（§4.2） |
+| `ctx.vue` | `PluginVueRuntime` | **Vue 运行时句柄**：`h` / `ref` / `reactive` / `computed` / `watch` / `onMounted` / `onUnmounted` / `nextTick`。第三方插件写渲染函数全靠它（见下方） |
 | `ctx.sidebar` / `ctx.header` / `ctx.menu` / `ctx.router` / `ctx.dock` / `ctx.command` / `ctx.stockRow` / `ctx.stockDetail` / `ctx.agent` | 贡献点 | 九个 UI / 能力扩展点（见 §3） |
 | `ctx.effect(fn)` | `(fn: () => void \| (() => void)) => Disposable` | 立即执行一次 + 登记清理 |
 | `ctx.onDispose(fn)` | `(fn: () => void) => void` | 只登记「卸载时回调」，不立即执行 |
@@ -337,6 +352,9 @@ ctx.settings.reset();                 // 回到声明默认值
 | `app:notify` | `NotifyService` | 右下角应用级浮窗（宿主渲染，**跨路由常驻、与发起它的组件是否挂载无关**） |
 | `app:stock-search` | `StockSearchService` | 标的搜索（代码 / 名称 / 拼音，腾讯源） |
 | `kernel:runtime` | `PluginRuntimeReader` | 内核只读自省：`list()` / `get(id)` / `listServices()` / `recentEvents()` |
+| `app:ui` | `UiKitService` | **UI Kit**：宿主的 Button / Input / Switch / Tag / Card / Empty / Tabs / Icon 组件句柄 + `confirm()` 确认弹窗（§5.4） |
+| `app:http` | `HttpService` | **受控网络请求**：走宿主上游通道，仅允许白名单域名（§5.5） |
+| `app:quotes` | `QuotesService` | **行情报价**：按代码批量取实时快照（§5.6） |
 
 ### 5.1 `app:notify`
 
@@ -376,6 +394,95 @@ runtime?.get('my-plugin');
 runtime?.listServices();  // 当前生效的服务名（排障用）
 runtime?.recentEvents();  // 最近事件（由新到旧，缓冲 200 条；**环形缓冲不是响应式**，页面需自行定时刷新）
 ```
+
+### 5.4 `app:ui` — UI Kit（第三方插件做界面的唯一来源）
+
+第三方插件有两个先天短板：**import 不了宿主组件**，**自己写的 Tailwind 类可能没有 CSS**。
+UI Kit 一次解决两件事：宿主把自己正在用的组件原样交给插件，拼出来的界面天然与原生页面同风格、
+跟着主题走（暗色 / 主色切换自动跟随）。
+
+```ts
+const ui = ctx.consume('app:ui');
+const { h } = ctx.vue;
+
+// 在渲染函数里用它们（props 与各 Base* 组件一致，第三参数是默认插槽）
+ctx.sidebar.add({
+  id: 'main',
+  title: '我的插件',
+  component: {
+    render: () => h(ui.Card, { title: '我的插件' }, {
+      default: () => [
+        h(ui.Input, {
+          modelValue: keyword.value,
+          'onUpdate:modelValue': (value) => { keyword.value = value; },
+          placeholder: '输入代码',
+        }),
+        h(ui.Button, { variant: 'ghost', onClick: onClick }, () => '查询'),
+      ],
+    }),
+  },
+});
+```
+
+| 句柄 | 对应组件 | 关键 props |
+| --- | --- | --- |
+| `ui.Button` | `BaseButton` | `variant: 'primary' \| 'ghost' \| 'danger'`、`disabled`、`type` |
+| `ui.Input` | `BaseInput` | `modelValue`（`onUpdate:modelValue`）、`placeholder`、`type` |
+| `ui.Switch` | `BaseSwitch` | `modelValue`（`onUpdate:modelValue`） |
+| `ui.Tag` | `BaseTag` | `tone: 'primary' \| 'up' \| 'down' \| 'flat'` |
+| `ui.Card` | `BaseCard` | `title`、`fill`、`clickableTitle` + `extra` / 默认插槽 |
+| `ui.Empty` | `BaseEmpty` | `text` |
+| `ui.Tabs` | `BaseTabs` | `options: { label, value }[]`、`modelValue`、`variant: 'segmented' \| 'underline'` |
+| `ui.Icon` | `MenuIcon` | `name`（key 清单见 §9）、`size` |
+
+`confirm()` — 删除确认这类「必须问一句」的场景：
+
+```ts
+const ok = await ui.confirm({
+  title: '删除这条记录？',
+  content: '删除后不可恢复。',
+  okText: '删除',
+  okVariant: 'danger',
+});
+if (!ok) return;
+```
+
+- 弹窗**由宿主渲染**（`PluginConfirmHost` 挂在 MainLayout），因此发起它的插件组件被折叠 / 卸载都不会丢答复；
+- 同时来了第二个 `confirm`，前一个立刻结算为 `false`（UI 上无法分辨两个弹窗，宁可给明确结果也不要悬死）。
+
+### 5.5 `app:http` — 受控网络请求
+
+```ts
+const http = ctx.consume('app:http');
+if (!http.isAllowed('https://push2.eastmoney.com/api/qt/clist/get')) return;   // 先自检
+const response = await http.fetch('https://push2.eastmoney.com/api/qt/clist/get?…');
+const text = await response.text();     // 腾讯源仍是 GBK：需要原字节转码时自行处理
+http.allowedHosts;                       // 当前白名单（['eastmoney.com', 'gtimg.cn', 'sina.com.cn', …]）
+```
+
+| 成员 | 类型 | 说明 |
+| --- | --- | --- |
+| `fetch` | `typeof fetch` | 与标准 fetch 同签名。Tauri 端由 Rust 直连（无 CORS），浏览器端走 `/stock-proxy` |
+| `allowedHosts` | `readonly string[]` | 允许访问的域名（后缀匹配，子域自动覆盖） |
+| `isAllowed(url)` | `(url: string) => boolean` | 发起前自检，非法 / 相对 URL 一律 false |
+
+红线：
+
+- **白名单之外的域名一律不可达**（`STOCK_PROXY_ALLOWED_HOSTS`，与宿主完全同源）。这不是限制插件，
+  是为了不把应用变成开放代理 —— 需要新源请提 issue，由宿主把它加进白名单后再用；
+- 代理有 3 秒短缓存与 12 秒超时，别的红线见 §10；
+- 别用它打应用自身的接口 —— 应用能力一律走 `ctx.storage` / `ctx.db` 与各项服务。
+
+### 5.6 `app:quotes` — 行情报价
+
+```ts
+const quotes = ctx.consume('app:quotes');
+const list = await quotes.fetchFullQuotes(['300339', 'sh600519']);   // FullQuote[]
+```
+
+- 裸代码（`300339`）与完整符号（`sh600519`）都能传；上游拿不到的代码不出结果，**按 code 取值务必用地图查找**；
+- 返回值结构是 `FullQuote`（见 `types/stock-quote.types.ts`），宿主已处理好行情源与转码；
+- **不要轮询**：这是一个展示级的批量接口，长期后台刷新请走低频（≥30s）并受 §10 的频率红线约束。
 
 ---
 
@@ -489,8 +596,9 @@ MenuIcon 可用 icon key（未知 key 渲染为空、不报错）：
 | 同屏浮窗 | 4 条 | `NOTIFY_MAX_ITEMS` |
 | 浮窗默认存活 | 8 s（`0` = 常驻） | `NOTIFY_DEFAULT_TIMEOUT_MS` |
 | 顶栏轮播间隔 | 默认 4000 ms，下限 1500 ms | `HEADER_ITEM_MARQUEE_INTERVAL_*` |
-| 网络请求 | 必须经 `proxyFetch`；域名白名单见 SERVER_API.md §0 | 数据通道红线 |
+| 网络请求 | 必须经 `app:http.fetch`（内部就是宿主 `proxyFetch`）；域名限于 `app:http.allowedHosts`，越界请求会被 Rust 侧 scope / 代理中间件拒掉 | 数据通道红线 |
 | 东财高频 | 会封 IP；全市场快照并发 ≤ 3，同上游连续请求 `delay(500)`，重接口一律点击触发不轮询 | 频率红线 |
+| 第三方插件语言 | 代码里不允许出现 `import` / `export … from` / `import()` / `template:` —— 安装前静态预检直接拦下（`user-plugin-lint.ts`） | 加载机制红线 |
 | 列表刷新 | 不许翻 `loading`（会把整表卸载重建导致闪屏）；只在「一条数据都还没有」时进骨架屏 | UI 红线 |
 
 ---
@@ -542,28 +650,73 @@ node .ai/tmp/plugin-kernel-smoke.mjs
 
 ### 11.2 第三方用户插件（不 import 任何东西）
 
+一个「有状态 + 有数据 + 用宿主组件」的完整形态（2026-09-21 起的能力，实测可用）：
+
 ```js
 export default {
   id: 'my-plugin',
   name: '我的插件',
   version: '1.0.0',
-  description: '示例：往左侧栏加一个面板',
+  description: '示例：查一笔报价，用完可以删掉记录',
   apply(ctx) {
+    const ui = ctx.consume('app:ui');
+    const quotes = ctx.consume('app:quotes');
+    const { h, ref } = ctx.vue;                 // Vue 运行时句柄，不用 import
+
+    const keyword = ref('');
+    const result = ref('');
+    const busy = ref(false);
+
+    const onQuery = async () => {
+      busy.value = true;
+      const list = await quotes.fetchFullQuotes([keyword.value]);
+      result.value = list.length > 0 ? `${list[0].name} ${list[0].price}` : '没查到';
+      busy.value = false;
+    };
+
+    const onRemove = async () => {
+      const ok = await ui.confirm({ title: '清空结果？', okVariant: 'danger' });
+      if (ok) result.value = '';
+    };
+
     ctx.sidebar.add({
       id: 'main',
       title: '我的插件',
       position: 'nav',
       order: 300,
-      // 不能用 template（无运行时编译器）；render 返回字符串会被宿主渲染成文本节点
-      component: { render: () => 'Hello 插件' },
+      // 渲染函数组件：render 里用 h 搭结构，样式由宿主组件负责（别写新 Tailwind 类）
+      component: {
+        render: () => h('div', { class: 'flex flex-col gap-2' }, [
+          h(ui.Input, {
+            modelValue: keyword.value,
+            'onUpdate:modelValue': (value) => { keyword.value = value; },
+            placeholder: '输入股票代码',
+          }),
+          h(ui.Button, { variant: 'primary', disabled: busy.value, onClick: onQuery }, () => '查询'),
+          h(ui.Tag, { tone: 'primary' }, () => result.value || '暂无结果'),
+          h(ui.Button, { variant: 'ghost', onClick: onRemove }, () => '清空'),
+        ]),
+      },
     });
-    ctx.command.add({ id: 'ping', title: '打个招呼', run: () => ctx.consume('app:notify')?.notify({ title: '你好' }) });
+
+    ctx.command.add({
+      id: 'ping',
+      title: '打个招呼',
+      run: () => ctx.consume('app:notify')?.notify({ title: '你好' }),
+    });
   },
 };
 ```
 
+最小形态（只要一个静态面板）依然简单：`component: { render: () => 'Hello 插件' }`。
+
 保存成 `.js` → 设置 → 插件 → 安装插件 → 粘贴 / 选文件 → 解析预览 → 确认安装。
-⚠️ 见 §0：不要写 `import`，不要指望自定义 Tailwind class（用宿主已用的类或内联 `style`）。
+
+⚠️ 三条红线（写下来会被安装前的静态预检拦住 / 提醒）：
+
+- 不要写 `import` / `export … from` / 动态 `import()` —— 拿不到任何模块；
+- 不要写 `template: '…'` —— 生产构建没有运行时编译器，只会渲染为空；
+- 少写新的 Tailwind 类 —— 只有宿主源码里出现过的类才有 CSS（会给出提醒，但能装）。
 
 ---
 
@@ -574,26 +727,29 @@ export default {
 | `AppServiceMap` / `AppEventMap` / 贡献点类型 | 本文档 + `AGENTS.md`「插件体系」+ `README.md`「插件体系」 |
 | `ctx.db` 的表 / 列 | Agent MCP 工具描述（`src/agent/mcp/app-tools.ts` 的 `db_query` / `db_execute`） |
 | 新增 / 删除的 API | `SERVER_API.md`（若是网络接口） |
+| 预检规则（允许 / 禁止哪些写法） | 本文档 §0 + §13，以及安装弹窗的说明文案（两者是同一套认知） |
 | 白皮书里出现的功能 | `src/views/WhitepaperView.vue` 的对应章节（硬性同步规范） |
 | 内核本身 | 跑 `.ai/tmp/plugin-kernel-smoke.mjs`（自带转译器，**直接 node 跑**，不要经 ts-smoke-harness） |
 
 ---
 
-## 13. 已知缺口（给想写第三方插件的人先看）
+## 13. 已知缺口（2026-09-21 更新：四个缺口已补齐三条）
 
-按 §0 的实测，第三方插件目前**只有 `ctx` 这一层可用**，UI 与工具能力存在缺口：
+| 原缺口 | 现在 |
+| --- | --- |
+| ① 拿不到 `h` / Vue 响应式 | ✅ **`ctx.vue`** 下发 `h` / `ref` / `reactive` / `computed` / `watch` / `onMounted` / `onUnmounted` / `nextTick`（§2） |
+| ② 拿不到宿主组件、Tailwind 类受限 | ✅ **`app:ui`** 把宿主正在用的组件原样交给插件，样式天然随主题（§5.4） |
+| ③ 没有取数通道 | ✅ **`app:http`（白名单内）+ `app:quotes`（批量报价）**（§5.5 / §5.6） |
+| ④ 没有模板编译器 | ⚠️ 仍需渲染函数（见下） |
+| ⑤ 写坏了要给什么样的报错 | ✅ **安装前静态预检**：行号 + 原因 + 该怎么改（`src/plugin/user-plugin-lint.ts`） |
 
-1. **拿不到 `h` / Vue 响应式**：官方模板里的 `import { defineComponent, h } from 'vue'` 实际跑不通（安装解析阶段就失败）。要么自行 bundle 一份运行时，要么宿主提供 SDK。
-2. **无模板编译器**：只能用渲染函数或纯字符串。
-3. **Tailwind 类受限**：只有宿主源码里用到的类有样式。
-4. **无类型提示**：第三方只能用 JS 硬写，且本文档就是唯一的接口说明。
+仍未补齐的：
 
-可选的补齐路线（改宿主，均为新增能力、不破坏现有契约）：
+1. **模板编译器**：`component.template` 仍不可用，请一律用渲染函数。
+   （若将来真要支持：把 `vue` 换到含编译器的 esm-bundler，代价是 +约 100KB 主包体积，
+   收益与 `app:ui` 重叠，**当前不划算**。）
+2. **无类型提示**：第三方只能用 JS 硬写。要 TS 提示，只能自行维护一份 `AppServiceMap` / `PluginContext` 的 d.ts 副本。
+3. **`app:ui` 覆盖面有限**：目前只有 Button / Input / Switch / Tag / Card / Empty / Tabs / Icon 八个组件。
+   Table / Modal / Drawer 这类更重的组件还没开放 —— 真有插件需要时再补（补的是复用，不是凭想象先造）。
 
-| 方案 | 做法 | 代价 |
-| --- | --- | --- |
-| A. 暴露 SDK 服务（推荐） | 新增 `app:sdk` 服务：`{ h, ref, reactive, computed, watch, defineComponent }` + 常用 UI 组件 + 常用格式化工具，插件在 `apply` 里 `ctx.consume('app:sdk')` 后闭包使用 | 新增一个服务 + 一份类型声明；不碰 window、不改加载机制 |
-| B. 暴露全局对象 | `window.whf = { h, ref, BaseButton, … }` | 简单直白，但全局命名空间无类型约束、易冲突 |
-| C. 加 import map | `index.html` 写 `<script type="importmap">` 映射 `vue` 到 CDN / 本地产物 | 浏览器端可行，Tauri 生产环境需同步；多份 Vue 实例风险要看映射目标是否为宿主同一份 |
-
-在方案落地前，**第三方插件请把自己限制在第 ① 层**（§11.2 的写法是实测可用的最小形态）。
+如果第三条里的某一项正好卡住你的插件，宿主侧补它的成本很低（一个组件句柄 + 一行 provide），欢迎提需求。
