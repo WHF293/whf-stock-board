@@ -28,6 +28,14 @@ export default defineConfig({
   },
   build: {
     rollupOptions: {
+      /**
+       * 多页入口：主应用 + 任务栏盯盘小组件（独立轻量窗口，不装插件内核，
+       * 数据经 Tauri 事件来自主窗口既有盯盘引擎；见 src/widget/watch-widget-main.ts）
+       */
+      input: {
+        main: fileURLToPath(new URL('./index.html', import.meta.url)),
+        'watch-widget': fileURLToPath(new URL('./watch-widget.html', import.meta.url)),
+      },
       output: {
         /**
          * echarts 体积大且多页共用，单独分包避免打进行情总览主 chunk

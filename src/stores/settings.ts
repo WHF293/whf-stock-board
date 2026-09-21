@@ -14,6 +14,7 @@ import type { ThemeColor } from '../constants/theme-color.constants';
 import { TREND_THEME_DEFAULT } from '../constants/trend-theme.constants';
 import type { TrendTheme } from '../constants/trend-theme.constants';
 import { WATERMARK_ENABLED_DEFAULT } from '../constants/watermark.constants';
+import { WATCH_WIDGET_SETTINGS_DEFAULT } from '../constants/watch-widget.constants';
 import { CLOSE_TO_TRAY_DEFAULT } from '../constants/window-close.constants';
 import { syncCloseToTray } from '../api/tray.api';
 import { SIDEBAR_COLLAPSED_DEFAULT } from '../constants/sidebar.constants';
@@ -30,6 +31,7 @@ import type { HeatmapViewMode } from '../types/heatmap.types';
 import type { PanoramaCnViewMode } from '../constants/panorama.constants';
 import type { BoardCalendarHeatBasis, BoardCalendarRange } from '../types/board-calendar.types';
 import type { BoardDetailRange } from '../types/board-detail.types';
+import type { WatchWidgetSettings } from '../types/watch-widget.types';
 import { BOARD_DEFAULT_ORDER, normalizeBoardHidden, normalizeBoardOrder } from '../utils/board-order';
 
 /**
@@ -96,6 +98,8 @@ interface SettingsState {
   setupCompleted: boolean;
   /** 桌面端 · 点击关闭按钮最小化到托盘（false = 直接关闭应用；浏览器模式无此行为） */
   closeToTray: boolean;
+  /** 桌面端 · 任务栏盯盘小组件（开关 / 显示模式 / 拖动位置；浏览器模式无此行为） */
+  watchWidget: WatchWidgetSettings;
 }
 
 /**
@@ -128,6 +132,7 @@ export const useSettingsStore = defineStore('settings', {
     agentStockOnly: true,
     setupCompleted: resolveSetupCompletedDefault(),
     closeToTray: CLOSE_TO_TRAY_DEFAULT,
+    watchWidget: { ...WATCH_WIDGET_SETTINGS_DEFAULT },
   }),
 
   actions: {
@@ -205,6 +210,14 @@ export const useSettingsStore = defineStore('settings', {
     setCloseToTray(enabled: boolean): void {
       this.closeToTray = enabled;
       void syncCloseToTray(enabled);
+    },
+
+    /**
+     * 设置任务栏盯盘小组件配置（局部合并；仅桌面端生效，浏览器模式只保留偏好）
+     * @param patch 配置增量（开关 / 显示模式 / 拖动位置）
+     */
+    setWatchWidget(patch: Partial<WatchWidgetSettings>): void {
+      this.watchWidget = { ...this.watchWidget, ...patch };
     },
 
     /**

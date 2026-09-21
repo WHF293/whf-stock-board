@@ -25,7 +25,7 @@
  */
 import WatchHeaderPanel from './WatchHeaderPanel.vue';
 import { createWatchCandidateRepo } from './service';
-import { createWatchMonitor } from './monitor';
+import { createWatchMonitor, type WatchMonitor } from './monitor';
 import { buildMarqueeLines } from './marquee';
 import { filterCandidatesByWatchlist } from './candidates';
 import { ROUTE_PATH } from '../../constants/router-meta.constants';
@@ -71,6 +71,10 @@ export const sidebarWatchPlugin: PluginDefinition = {
     // 引擎不在组件里，生命周期挂在插件上：卸载即停轮询、并清掉自己弹过的浮窗
     ctx.onDispose(() => monitor.stop());
 
+    // 引擎实例作为服务公开（如任务栏小组件插件复用同一份报价快照，
+    // 避免第二份引擎造成上游请求翻倍与阈值 armed 状态双写）
+    ctx.provide('watch:monitor', monitor);
+
     ctx.header.add({
       id: WATCH_HEADER_ITEM_ID,
       title: WATCH_HEADER_ITEM_TITLE,
@@ -111,3 +115,11 @@ export const sidebarWatchPlugin: PluginDefinition = {
     ctx.logger.info('已注册顶栏条目（含轮播）、行操作、watch:repo 服务、盯盘引擎与 1 条命令');
   },
 };
+
+// 把引擎服务登记进全局服务契约表（与 service.ts 的 watch:repo 同模式）
+declare module '../../types/plugin.types' {
+  interface AppServiceMap {
+    /** 盯盘引擎只读句柄（由 dsh-sidebar-watch 提供；报价快照经同一份轮询维护） */
+    'watch:monitor': WatchMonitor;
+  }
+}

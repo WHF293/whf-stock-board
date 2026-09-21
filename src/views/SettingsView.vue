@@ -19,6 +19,7 @@ import { sdk } from "../api/sdk";
 import { MENU_DEFAULT_ORDER, MENU_ITEMS, ROUTE_PATH } from "../constants/router-meta.constants";
 import { HEADER_DEFAULT_ORDER, HOST_HEADER_ITEMS } from "../constants/header.constants";
 import { STOCK_PROXY_PATH } from "../constants/proxy.constants";
+import { WATCH_WIDGET_MODE } from "../constants/watch-widget.constants";
 import {
   POLLING_INTERVAL,
   REFRESH_INTERVAL_OPTIONS,
@@ -363,6 +364,7 @@ const SHORTCUTS = [
     action: '收起 / 展开左侧导航栏（仅桌面端生效）',
   },
   { key: 'Shift + Tab', action: '切换页面（按侧栏顺序循环，不含设置页）' },
+  { key: 'Ctrl + ↑ / ↓', action: '股票详情页：左侧来源列表内切换上一只 / 下一只（列表仅一只时不动作）' },
   { key: 'Esc', action: '关闭股票详情面板 / 搜索弹窗 / 对话框' },
   { key: '↑ ↓', action: '搜索弹窗内切换标的' },
   { key: 'Enter', action: '搜索弹窗内确认选中标的' },
@@ -741,6 +743,52 @@ const onProbeProxy = async (): Promise<void> => {
           data-track="CLOSE_TO_TRAY_TOGGLE"
           @update:model-value="settingsStore.setCloseToTray"
         />
+      </div>
+    </BaseCard>
+
+    <!-- 任务栏盯盘小组件（仅桌面端生效） -->
+    <BaseCard title="任务栏盯盘小组件">
+      <div class="space-y-4">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-sm text-text">常驻盯盘迷你条</p>
+            <p class="mt-0.5 text-xs text-text-tertiary">
+              在 Windows 任务栏上方常驻一个置顶迷你条（可拖动，位置会记住）：轮播盯盘标的，单击展开气泡看全部，点标的自动唤起主窗口并打开详情页；仅桌面端生效
+            </p>
+          </div>
+          <BaseSwitch
+            :model-value="settingsStore.watchWidget.enabled"
+            data-track="WATCH_WIDGET_TOGGLE"
+            @update:model-value="(enabled: boolean) => settingsStore.setWatchWidget({ enabled })"
+          />
+        </div>
+        <div
+          v-if="settingsStore.watchWidget.enabled"
+          class="flex items-center justify-between border-t border-flat-weak pt-4"
+        >
+          <div>
+            <p class="text-sm text-text">显示模式</p>
+            <p class="mt-0.5 text-xs text-text-tertiary">
+              摸鱼模式：鼠标离开 3 秒自动隐藏，移到屏幕右下角唤回
+            </p>
+          </div>
+          <div class="flex items-center gap-2">
+            <BaseButton
+              :variant="settingsStore.watchWidget.mode === WATCH_WIDGET_MODE.ALWAYS ? 'primary' : 'ghost'"
+              data-track="WATCH_WIDGET_MODE_ALWAYS"
+              @click="settingsStore.setWatchWidget({ mode: WATCH_WIDGET_MODE.ALWAYS })"
+            >
+              常驻显示
+            </BaseButton>
+            <BaseButton
+              :variant="settingsStore.watchWidget.mode === WATCH_WIDGET_MODE.HOVER ? 'primary' : 'ghost'"
+              data-track="WATCH_WIDGET_MODE_HOVER"
+              @click="settingsStore.setWatchWidget({ mode: WATCH_WIDGET_MODE.HOVER })"
+            >
+              离开隐藏
+            </BaseButton>
+          </div>
+        </div>
       </div>
     </BaseCard>
 

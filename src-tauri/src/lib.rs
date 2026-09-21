@@ -28,6 +28,15 @@ fn set_close_to_tray(state: State<CloseToTrayEnabled>, enabled: bool) {
   state.0.store(enabled, Ordering::Release);
 }
 
+/// 主屏工作区查询（任务栏盯盘小组件停靠定位用）
+///
+/// 返回 `(left, top, right, bottom)` 物理像素；SPI 不可用时返回 None，
+/// 前端自行回退「屏幕高度 - 48px 任务栏」启发式。
+#[tauri::command]
+fn get_work_area() -> Option<(i32, i32, i32, i32)> {
+  window_syscmd::primary_work_area()
+}
+
 /// 构建系统托盘：左键单击显示主窗口，菜单提供「显示主窗口 / 退出」；
 /// 真正的退出只走托盘菜单「退出」（`app.exit`），关闭按钮的语义由
 /// `on_window_event` 的 CloseRequested 拦截逻辑决定。
@@ -674,7 +683,7 @@ pub fn run() {
     )
     .plugin(tauri_plugin_fs::init())
     .manage(CloseToTrayEnabled(AtomicBool::new(false)))
-    .invoke_handler(tauri::generate_handler![set_close_to_tray])
+    .invoke_handler(tauri::generate_handler![set_close_to_tray, get_work_area])
     .on_window_event(|window, event| {
       // 关闭语义统一在 Rust 侧收口：自绘标题栏 × / Alt+F4 / 任务栏关闭都触发
       // CloseRequested。启用「最小化到托盘」时只隐藏窗口（阻止本次关闭），

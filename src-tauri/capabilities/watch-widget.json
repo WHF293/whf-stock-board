@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "watch-widget",
+  "description": "任务栏盯盘小组件两个窗口（盯盘条 / 气泡）的最小权限：事件收发 + 盯盘条窗口拖拽 + 读取自身位置（拖动上报）。窗口的创建、显隐与定位由主窗口侧执行（权限挂在 default capability）",
+  "windows": [
+    "watch-widget",
+    "watch-widget-popover"
+  ],
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging"
+  ]
+}
