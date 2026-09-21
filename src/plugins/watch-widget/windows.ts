@@ -222,17 +222,30 @@ export const openPopoverWindow = async (): Promise<WebviewWindow | null> => {
   });
 };
 
+/** 气泡停靠布局（位置为物理像素；高度为逻辑像素，供 setSize 用） */
+export interface PopoverLayout {
+  /** 物理像素 x（右对齐盯盘条） */
+  x: number;
+  /** 物理像素 y（盯盘条正上方，留 GAP 间距） */
+  y: number;
+  /** 逻辑像素高度（按行数计算，封顶 MAX_ROWS） */
+  logicalHeight: number;
+}
+
 /**
- * 把气泡定位到盯盘条正上方（右对齐），并按行数设定尺寸
- * @param popover 气泡窗口
+ * 计算气泡相对盯盘条的停靠布局（右对齐、条正上方）
+ *
+ * 拆成独立纯查询函数：`positionPopover`（展开时，含尺寸）与
+ * `movePopoverToBar`（拖动跟随，只平移不改尺寸）共用同一份几何口径，
+ * 保证两条路径算出的落点一致。
  * @param bar 盯盘条窗口（定位基准）
  * @param rowCount 当前行数（决定气泡高度，封顶 MAX_ROWS）
+ * @returns 气泡布局
  */
-export const positionPopover = async (
-  popover: WebviewWindow,
+export const computePopoverLayout = async (
   bar: WebviewWindow,
   rowCount: number,
-): Promise<void> => {
+): Promise<PopoverLayout> => {
   const [barPosition, barSize, scaleFactor] = await Promise.all([
     bar.outerPosition(),
     bar.outerSize(),
@@ -247,6 +260,36 @@ export const positionPopover = async (
   const width = Math.round(WATCH_WIDGET_POPOVER_WIDTH * scaleFactor);
   const x = barPosition.x + barSize.width - width;
   const y = barPosition.y - height - Math.round(WATCH_WIDGET_POPOVER_GAP * scaleFactor);
-  await popover.setSize(new LogicalSize(WATCH_WIDGET_POPOVER_WIDTH, logicalHeight));
-  await popover.setPosition(new PhysicalPosition(x, y));
+  return { x, y, logicalHeight };
+};
+
+/**
+ * 把气泡定位到盯盘条正上方（右对齐），并按行数设定尺寸（展开时用）
+ * @param popover 气泡窗口
+ * @param bar 盯盘条窗口（定位基准）
+ * @param rowCount 当前行数（决定气泡高度，封顶 MAX_ROWS）
+ */
+export const positionPopover = async (
+  popover: WebviewWindow,
+  bar: WebviewWindow,
+  rowCount: number,
+): Promise<void> => {
+  const layout = await computePopoverLayout(bar, rowCount);
+  await popover.setSize(new LogicalSize(WATCH_WIDGET_POPOVER_WIDTH, layout.logicalHeight));
+  await popover.setPosition(new PhysicalPosition(layout.x, layout.y));
+};
+
+/**
+ * 拖动跟随：把气泡平移到盯盘条正上方（不改尺寸；条拖动期间高频调用）
+ * @param popover 气泡窗口
+ * @param bar 盯盘条窗口（定位基准）
+ * @param rowCount 当前行数（跟随期间行数不变，仅用于几何口径一致）
+ */
+export const movePopoverToBar = async (
+  popover: WebviewWindow,
+  bar: WebviewWindow,
+  rowCount: number,
+): Promise<void> => {
+  const layout = await computePopoverLayout(bar, rowCount);
+  await popover.setPosition(new PhysicalPosition(layout.x, layout.y));
 };

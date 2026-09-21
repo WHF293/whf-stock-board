@@ -69,6 +69,12 @@ export const WATCH_WIDGET_REVEAL_ZONE = 160;
 /** 单双击区分窗口（毫秒）：单击延后执行，双击到来时取消单击动作 */
 export const WATCH_WIDGET_CLICK_DELAY_MS = 280;
 
+/** 拖动结束判定窗口（毫秒）：条实时上报位置后，超过该窗口无新位置才记忆落点 */
+export const WATCH_WIDGET_MOVE_SETTLE_MS = 300;
+
+/** 气泡跟随条拖动的节流间隔（毫秒；跟随期间只平移不改尺寸） */
+export const WATCH_WIDGET_POPOVER_FOLLOW_INTERVAL_MS = 50;
+
 /** 条内轮播间隔（毫秒；多候选逐条轮播，单候选静止） */
 export const WATCH_WIDGET_ROTATE_MS = 4000;
 
@@ -80,7 +86,7 @@ export const WATCH_WIDGET_EVENTS = {
   REQUEST: 'watch-widget://request',
   /** 盯盘条 → 主窗口：切换气泡显隐（气泡「收起」按钮同走此事件） */
   POPOVER_TOGGLE: 'watch-widget://popover-toggle',
-  /** 盯盘条 → 主窗口：条被拖动（携带新物理坐标，主窗口记忆到设置） */
+  /** 盯盘条 → 主窗口：条被拖动（实时携带物理坐标；主窗口负责气泡跟随与落点记忆） */
   BAR_MOVED: 'watch-widget://bar-moved',
   /** 条 / 气泡 → 主窗口：打开某只股票（唤起主窗口 + 跳详情页，左列=盯盘候选） */
   OPEN_STOCK: 'watch-widget://open-stock',

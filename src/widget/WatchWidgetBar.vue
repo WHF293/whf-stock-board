@@ -7,8 +7,7 @@ import {
   WATCH_WIDGET_CLICK_DELAY_MS,
   WATCH_WIDGET_EVENTS,
   WATCH_WIDGET_ROTATE_MS,
-} from '../plugins/watch-widget/constants';
-import type { WatchWidgetRow } from '../types/watch-widget.types';
+} from '../plugins/watch-widget/constants';import type { WatchWidgetRow } from '../types/watch-widget.types';
 
 /**
  * 任务栏盯盘小组件 · 迷你条（单行轮播）
@@ -16,6 +15,7 @@ import type { WatchWidgetRow } from '../types/watch-widget.types';
  * - 数据：只消费主窗口推送的轮播行，挂载时发一次快照请求（本窗口零上游请求）；
  * - 左侧细条是唯一拖拽区（data-tauri-drag-region），其余区域留给点击 ——
  *   Tauri 的拖拽区会在 mousedown 就接管，与「单击展开气泡」互斥，必须分区；
+ * - 拖动中实时上报位置（展开的气泡跟随移动、拖完的落点记忆都在主窗口侧做）。
  * - 单击 = 切换气泡；双击 = 打开当前标的（主窗口跳详情页）。
  *   两者用「单击延迟判定」区分：第一击挂起，延迟窗口内第二击到来即视为双击。
  */
@@ -47,14 +47,9 @@ onMounted(() => {
     });
     void emit(WATCH_WIDGET_EVENTS.REQUEST);
 
-    // 拖动结束上报新位置（防抖；主窗口记忆到设置，下次开启原位恢复）
-    let moveTimer: number | undefined;
+    // 拖动中实时上报位置（不防抖）：气泡跟随与落点记忆（防抖）都由主窗口侧处理
     unlistenMoved = await getCurrentWindow().onMoved(({ payload }) => {
-      if (moveTimer) window.clearTimeout(moveTimer);
-      moveTimer = window.setTimeout(() => {
-        moveTimer = undefined;
-        void emit(WATCH_WIDGET_EVENTS.BAR_MOVED, { x: payload.x, y: payload.y });
-      }, WATCH_WIDGET_CLICK_DELAY_MS);
+      void emit(WATCH_WIDGET_EVENTS.BAR_MOVED, { x: payload.x, y: payload.y });
     });
   })();
   rotateTimer = window.setInterval(() => {

@@ -41,7 +41,9 @@ import {
   WATCH_WIDGET_BAR_WIDTH,
   WATCH_WIDGET_CURSOR_POLL_MS,
   WATCH_WIDGET_EVENTS,
+  WATCH_WIDGET_MOVE_SETTLE_MS,
   WATCH_WIDGET_NOTIFY_SOURCE,
+  WATCH_WIDGET_POPOVER_FOLLOW_INTERVAL_MS,
   WATCH_WIDGET_POPOVER_WIDTH,
   WATCH_WIDGET_REVEAL_ZONE,
 } from './constants';
@@ -49,6 +51,7 @@ import { buildWatchContextList, buildWatchWidgetRows } from './presenter';
 import {
   getWorkArea,
   getWindowRect,
+  movePopoverToBar,
   openBarWindow,
   openPopoverWindow,
   positionPopover,
@@ -253,6 +256,10 @@ export const watchWidgetPlugin: PluginDefinition = {
 
     // ---------- 跨窗口事件（小组件窗口只有事件通道，没有别的宿主上下文） ----------
     const unlistens: UnlistenFn[] = [];
+    /** 气泡跟随条拖动的节流时间戳（条拖动期间 onMoved 高频到达，只按间隔摆位） */
+    let lastFollowAt = 0;
+    /** 拖动落点记忆的防抖句柄（超过 SETTLE 窗口无新位置才落库 + 精确校正一次） */
+    let settleTimer: number | undefined;
     unlistens.push(
       await listen(WATCH_WIDGET_EVENTS.REQUEST, () => {
         pushLines();
@@ -265,13 +272,45 @@ export const watchWidgetPlugin: PluginDefinition = {
     );
     unlistens.push(
       await listen<{ x: number; y: number }>(WATCH_WIDGET_EVENTS.BAR_MOVED, (event) => {
-        // 拖动落点记忆到设置（下次开启原位恢复）；矩形同步刷新供鼠标判定
-        settingsStore.setWatchWidget({ position: { x: event.payload.x, y: event.payload.y } });
+        // 条矩形同步刷新供鼠标判定（查询异步，不阻塞跟随）
         if (barWindow) {
           void getWindowRect(barWindow).then((rect) => {
             barRect = rect;
           });
         }
+        // 气泡跟随：展开态下按节流间隔平移贴回条正上方（只平移不改尺寸，避免闪烁）
+        const now = Date.now();
+        const popoverLive = popoverWindow;
+        const barLive = barWindow;
+        if (
+          popoverVisible &&
+          popoverLive &&
+          barLive &&
+          now - lastFollowAt >= WATCH_WIDGET_POPOVER_FOLLOW_INTERVAL_MS
+        ) {
+          lastFollowAt = now;
+          void movePopoverToBar(popoverLive, barLive, rows.value.length).then(() =>
+            getWindowRect(popoverLive).then((rect) => {
+              popoverRect = rect;
+            }),
+          );
+        }
+        // 拖动落点：超过 SETTLE 窗口无新位置视为拖完，记忆位置 + 精确校正一次
+        // （节流可能让最后一次跟随错过落点；positionPopover 含尺寸兜底）
+        if (settleTimer) window.clearTimeout(settleTimer);
+        settleTimer = window.setTimeout(() => {
+          settleTimer = undefined;
+          settingsStore.setWatchWidget({ position: { x: event.payload.x, y: event.payload.y } });
+          const popover = popoverWindow;
+          const bar = barWindow;
+          if (popoverVisible && popover && bar) {
+            void positionPopover(popover, bar, rows.value.length).then(() =>
+              getWindowRect(popover).then((rect) => {
+                popoverRect = rect;
+              }),
+            );
+          }
+        }, WATCH_WIDGET_MOVE_SETTLE_MS);
       }),
     );
     unlistens.push(
@@ -306,7 +345,9 @@ export const watchWidgetPlugin: PluginDefinition = {
           lastInsideAt = Date.now();
           return;
         }
-        // hover 模式：到访过、又离开超过延迟秒数 → 条与气泡一起隐藏（always 模式条常驻）
+        // hover 模式：到访过、又离开超过延迟秒数 → 条与气泡一起隐藏（always 模式条常驻）。
+        // 气泡自身**不单独自动收起**：展开后只有「收起」按钮或再次单击条（toggle）
+        // 才会隐藏 —— hover 模式下条整体隐藏时才连带气泡一起走。
         const config = settingsStore.watchWidget;
         if (
           barVisible &&
@@ -318,17 +359,13 @@ export const watchWidgetPlugin: PluginDefinition = {
           barVisible = false;
           cursorArmed = false;
           await hidePopover();
-          return;
-        }
-        // 气泡的离开隐藏与模式无关（它是临时浮层）
-        if (popoverVisible && Date.now() - lastInsideAt >= config.hideDelaySec * 1000) {
-          await hidePopover();
         }
       })();
     }, WATCH_WIDGET_CURSOR_POLL_MS);
 
     ctx.onDispose(() => {
       window.clearInterval(cursorTimer);
+      if (settleTimer) window.clearTimeout(settleTimer);
       for (const unlisten of unlistens) unlisten();
       void destroyWindows();
     });
