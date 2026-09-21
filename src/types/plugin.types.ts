@@ -857,7 +857,10 @@ export interface PluginDefinition {
   description: string;
   /** 作者（缺省「内置」） */
   author?: string;
-  /** 依赖的插件 id：任一未挂载则本插件停在「等待依赖」状态 */
+  /**
+   * 依赖声明（字符串既可为**插件 id** 也可为**服务名**，内核按「插件已挂载或服务已提供」判定就绪）：
+   * 任一未就绪则本插件停在「等待依赖」状态，提供方挂载 / provide 后自动续挂
+   */
   inject?: readonly string[];
   /** 插件配置（等价 dsh 的配置层：不改源码即可换实现 / 调参数） */
   config?: PluginConfig;
