@@ -33,6 +33,9 @@ const parsed = ref<PluginDefinition | null>(null);
 /** 解析 / 安装的错误文案 */
 const errorMessage = ref('');
 
+/** 静态预检的非致命提醒（能装，但可能显示不正常） */
+const warningLines = ref<string[]>([]);
+
 /** 安装进行中（动态 import 是异步的，期间禁用按钮防重复提交） */
 const busy = ref(false);
 
@@ -53,21 +56,32 @@ watch(open, (value) => {
   fileName.value = '';
   parsed.value = null;
   errorMessage.value = '';
+  warningLines.value = [];
   busy.value = false;
 });
+
+/**
+ * 把静态预检的非致命提醒压成展示文案
+ * @param issues 预检提醒列表（含源码行号）
+ */
+const pushWarnings = (issues: readonly { line: number; message: string }[] | undefined): void => {
+  warningLines.value = (issues ?? []).map((issue) => `第 ${issue.line} 行：${issue.message}`);
+};
 
 /** 解析预览：只校验，不安装 */
 const onParse = async (): Promise<void> => {
   parsed.value = null;
   errorMessage.value = '';
+  warningLines.value = [];
   busy.value = true;
-  // 复用安装链路的前半段（import + 结构校验 + id 占用检查），但这里不落存储与内核
+  // 复用安装链路的前半段（静态预检 + import + 结构校验 + id 占用检查），但不落存储与内核
   const occupiedIds = [
     ...BUILTIN_PLUGINS.map((plugin) => plugin.id),
     ...useUserPluginsStore().records.map((record) => record.id),
   ];
   const result = await importUserPluginCode(code.value, occupiedIds);
   busy.value = false;
+  pushWarnings(result.warnings);
   if (result.ok) {
     parsed.value = result.definition;
   } else {
@@ -80,6 +94,7 @@ const onInstall = async (): Promise<void> => {
   busy.value = true;
   const result = await install(code.value);
   busy.value = false;
+  pushWarnings(result.warnings);
   if (result.ok) {
     open.value = false;
     return;
@@ -106,7 +121,7 @@ const onPickFile = async (event: Event): Promise<void> => {
 
 <template>
   <BaseModal v-model:open="open" title="安装插件" max-width-class="max-w-xl">
-    <div class="rounded-card border border-warn-weak bg-warn-weak/40 px-3 py-2 text-xs text-text-secondary">
+    <div class="rounded-card border border-primary/30 bg-primary-weak/60 px-3 py-2 text-xs text-text-secondary">
       ⚠️ 插件代码会以与应用相同的权限运行，请只安装来源可信的插件。
     </div>
 
@@ -125,12 +140,19 @@ const onPickFile = async (event: Event): Promise<void> => {
         spellcheck="false"
         placeholder="export default { id: 'my-plugin', name: '我的插件', version: '1.0.0', description: '…', apply(ctx) { … } }"
         class="w-full resize-y rounded-card border border-flat-weak bg-surface px-3 py-2 font-mono text-xs text-text outline-none focus:border-primary"
-        @input="() => { parsed = null; errorMessage = ''; }"
+        @input="() => { parsed = null; errorMessage = ''; warningLines = []; }"
       />
     </div>
 
-    <div v-if="errorMessage" class="mt-2 rounded-card border border-up/40 bg-up/10 px-3 py-2 text-xs text-up">
+    <div v-if="errorMessage" class="mt-2 whitespace-pre-line rounded-card border border-up/40 bg-up/10 px-3 py-2 text-xs text-up">
       {{ errorMessage }}
+    </div>
+
+    <div v-if="warningLines.length > 0" class="mt-2 rounded-card border border-primary/30 bg-primary-weak/60 px-3 py-2">
+      <p class="text-xs font-medium text-primary">能装，但可能显示不正常：</p>
+      <p v-for="line in warningLines" :key="line" class="mt-0.5 whitespace-pre-line text-xs text-text-secondary">
+        {{ line }}
+      </p>
     </div>
 
     <div v-if="parsed" class="mt-2 rounded-card border border-flat-weak px-3 py-2">
@@ -150,19 +172,30 @@ const onPickFile = async (event: Event): Promise<void> => {
   version: '1.0.0',
   description: '示例：往左侧栏加一个面板',
   apply(ctx) {
+    // 宿主代发的能力：UI 组件与 Vue 运行时句柄
+    const ui = ctx.consume('app:ui');
+    const { h, ref } = ctx.vue;
+
+    const count = ref(0);
     ctx.sidebar.add({
       id: 'main',
       title: '我的插件',
       mode: 'inline',
       position: 'nav',
       order: 300,
-      component: { render: () => 'Hello 插件' },
+      component: {
+        render: () => h(ui.Button, {
+          variant: 'primary',
+          onClick: () => { count.value += 1; },
+        }, () => '点了 ' + count.value + ' 次'),
+      },
     });
   },
 };</pre>
       <p class="mt-2">
         面板组件请用渲染函数（生产构建不含 Vue 运行时模板编译器）；⚠️ 插件是运行时动态加载的，代码里<strong>不能写 import</strong>
-        （拿不到 vue 等依赖），可用能力以宿主 <code>ctx</code> 为准 —— 完整 API 见 PLUGIN_API.md。
+        （拿不到 vue 等依赖）—— 需要 h / ref 就从 <code>ctx.vue</code> 取，需要按钮输入框就用 <code>app:ui</code>，
+        完整 API 见 PLUGIN_API.md。
       </p>
     </details>
 

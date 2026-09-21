@@ -11,6 +11,7 @@ import { useUserPluginsStore } from '../stores/user-plugins';
 import { USER_PLUGIN_CODE_MAX_LENGTH } from '../constants/plugin.constants';
 import { trackAction } from '../weblog/weblogActions';
 import type { ComputedRef } from 'vue';
+import type { UserPluginLintIssue } from '../plugin/user-plugin-lint';
 import type { UserPluginRecord } from '../types/plugin.types';
 
 /** 安装结果 */
@@ -19,6 +20,8 @@ export interface UserPluginInstallResult {
   ok: boolean;
   /** 失败原因（成功时为空串） */
   error: string;
+  /** 非致命提醒（静态预检产出：能装但可能显示异常，如 Tailwind 类没有 CSS） */
+  warnings?: readonly UserPluginLintIssue[];
 }
 
 /** 卸载后的数据表处置待办（弹窗据此展示「保留 / 删表」询问） */
@@ -95,7 +98,7 @@ export const useUserPlugins = (): UseUserPluginsReturn => {
     ];
     const result = await importUserPluginCode(code, occupiedIds);
     if (!result.ok) {
-      return { ok: false, error: result.error };
+      return { ok: false, error: result.error, warnings: result.warnings };
     }
     const { definition } = result;
     const record: UserPluginRecord = {
@@ -112,7 +115,7 @@ export const useUserPlugins = (): UseUserPluginsReturn => {
     }
     mountUserPluginDefinition(definition, pluginStore.isPluginEnabled(definition.id));
     trackAction('PLUGIN_INSTALL', { target: definition.id, detail: definition.version });
-    return { ok: true, error: '' };
+    return { ok: true, error: '', warnings: result.warnings };
   };
 
   const uninstall = (id: string): void => {

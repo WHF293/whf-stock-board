@@ -11,10 +11,11 @@
  *
  * 因此「卸载插件」等价于「把它的所有贡献抹掉」，不需要为插件写专门的反向逻辑。
  */
+import type * as Vue from 'vue';
 import type { Component } from 'vue';
 import type { BuiltinMcpServer } from '../agent/mcp/types';
 import type { NotifyService } from './notify.types';
-import type { SearchResult } from './stock-quote.types';
+import type { FullQuote, SearchResult } from './stock-quote.types';
 import type { HEADER_MARQUEE_TONE, PLUGIN_ORIGIN, PLUGIN_STATUS } from '../constants/plugin.constants';
 
 /** 可逆副作用句柄：调用 `dispose()` 撤销一次注册（幂等） */
@@ -715,6 +716,89 @@ export interface StockSearchService {
  * }
  * ```
  */
+/**
+ * 行情报价服务（`app:quotes`）
+ *
+ * 宿主收费化简入口：插件不必自己拼上游 URL、不必处理代理与转码。
+ * 频率红线见 PLUGIN_API.md §10 —— 报价类请求**不要轮询**，用户点击触发或低频刷新。
+ */
+export interface QuotesService {
+  /**
+   * 按代码批量取实时快照（腾讯源）
+   * @param codes 代码列表（裸代码如 `300339`，或 `sz300339` 完整符号）
+   * @returns 报价列表（上游拿不到的代码不会出现在这里）
+   */
+  fetchFullQuotes: (codes: readonly string[]) => Promise<FullQuote[]>;
+}
+
+/**
+ * 确认弹窗入参（`app:ui` 的 `confirm`）
+ */
+export interface UiConfirmOptions {
+  /** 标题（默认「确认」） */
+  title?: string;
+  /** 正文文案 */
+  content?: string;
+  /** 确认按钮文案（默认「确定」） */
+  okText?: string;
+  /** 取消按钮文案（默认「取消」） */
+  cancelText?: string;
+  /** 确认按钮变体：primary 主色 / danger 危险（默认 primary） */
+  okVariant?: 'primary' | 'danger';
+}
+
+/**
+ * 宿主 UI Kit 服务（`app:ui`）
+ *
+ * 第三方插件既 import 不了宿主组件，写了 Tailwind 类也可能没有 CSS（构建期只扫描
+ * 宿主源码）。UI Kit 是这个问题的正解：宿主把自己正在用的组件原样发给插件，
+ * 插件用它拼出来的界面天然与原生页面同风格，且**不受样式丢失影响**。
+ *
+ * 组件 props 与各 Base* 组件一致（比如 Input / Switch / Tabs 都是 v-model），
+ * 用法：`h(ui.Button, { variant: 'ghost', onClick }, () => '删除')`。
+ */
+export interface UiKitService {
+  /** 按钮（primary / ghost / danger 三变体，默认 slot 为文案） */
+  Button: Component;
+  /** 单行输入（`modelValue` 双向绑定，placeholder / type） */
+  Input: Component;
+  /** 开关（`modelValue` 双向绑定） */
+  Switch: Component;
+  /** 标签胶囊（primary / up / down / flat 四色调） */
+  Tag: Component;
+  /** 带标题区的卡片（title / fill，extra 插槽） */
+  Card: Component;
+  /** 空态占位（text） */
+  Empty: Component;
+  /** 分段 / 下划线两档 tab（options + modelValue） */
+  Tabs: Component;
+  /** 图标（name 取 MenuIcon 的 icon key） */
+  Icon: Component;
+  /** 弹一条应用级确认弹窗（宿主渲染，返回用户是否确认） */
+  confirm: (options?: UiConfirmOptions) => Promise<boolean>;
+}
+
+/**
+ * 受控网络请求服务（`app:http`）
+ *
+ * 复用宿主的上游通道（Tauri 由 Rust 直连、浏览器走 /stock-proxy），因此
+ * **只允许访问 `allowedHosts` 白名单内的域名** —— 既不新增开放代理面，
+ * 也让插件不必自建 CORS 方案。
+ */
+export interface HttpService {
+  /** 发起一个受上游白名单约束的请求（签名同 fetch） */
+  fetch: typeof fetch;
+  /** 当前允许访问的域名白名单（后缀匹配：`eastmoney.com` 覆盖其所有子域） */
+  allowedHosts: readonly string[];
+  /**
+   * 判断某个 URL 是否允许访问（插件可先自检，避免请求被拒后才知道）
+   * @param url 目标地址
+   * @returns 是否允许
+   */
+  isAllowed: (url: string) => boolean;
+}
+
+/** 应用初始化之前约定：调整上述服务后同步 PLUGIN_API.md 与 AGENTS.md（见 §12） */
 export interface AppServiceMap {
   /** 应用版本号（内核挂载时自动提供，来源 APP_VERSION） */
   'app:version': string;
@@ -738,6 +822,12 @@ export interface AppServiceMap {
   'app:notify': NotifyService;
   /** 标的搜索（代码 / 名称 / 拼音，腾讯源；宿主封装 stock-sdk，调用方自行防抖与过滤非 A 股） */
   'app:stock-search': StockSearchService;
+  /** 宿主 UI Kit（Button / Input / Tag / Card … + confirm），第三方插件做界面的唯一来源 */
+  'app:ui': UiKitService;
+  /** 受控网络请求（走宿主上游通道，仅允许白名单域名） */
+  'app:http': HttpService;
+  /** 行情报价：按代码批量取实时快照 */
+  'app:quotes': QuotesService;
 }
 
 /** 内核运行时只读视图（供插件自省，不暴露挂载 / 卸载能力） */
@@ -976,6 +1066,36 @@ export interface PluginDefinition {
  *
  * 一切以 `ctx.` 开头的注册都会在插件卸载时自动撤销，插件**不需要**写反向逻辑。
  */
+/**
+ * 插件 Vue 运行时句柄（第三方插件写不了 import，这是它唯一的来源）
+ *
+ * 用户插件是运行时被包成 Blob URL 动态 import 的一段字符串，没有任何打包器参与
+ * 模块解析，因此它**拿不到 `vue` 包**（写 `import { h } from 'vue'` 必然失败）。
+ * 而渲染函数组件恰恰需要 h / ref 这一套才写得出「有状态、会重渲染」的 UI。
+ *
+ * 宿主把这些能力以句柄形式挂到 `ctx.vue` 上：插件既不需要 import，也不需要关心
+ * 宿主用的是哪个 Vue 版本 —— 版本一致性由宿主保证。
+ */
+export interface PluginVueRuntime {
+  /** 创建虚拟节点（渲染函数的地基） */
+  h: typeof Vue.h;
+  /** 响应式基本值 */
+  ref: typeof Vue.ref;
+  /** 响应式对象 */
+  reactive: typeof Vue.reactive;
+  /** 派生值 */
+  computed: typeof Vue.computed;
+  /** 监听响应式变化（在渲染函数组件内部调用时随组件卸载自动停止） */
+  watch: typeof Vue.watch;
+  /** 组件挂载完成回调 */
+  onMounted: typeof Vue.onMounted;
+  /** 组件卸载回调 */
+  onUnmounted: typeof Vue.onUnmounted;
+  /** DOM 更新后回调 */
+  nextTick: typeof Vue.nextTick;
+}
+
+/** 插件上下文（`apply(ctx)` 的唯一入参） */
 export interface PluginContext {
   /** 当前插件 id */
   readonly pluginId: string;
@@ -985,6 +1105,8 @@ export interface PluginContext {
   readonly logger: PluginLogger;
   /** 插件自有持久化（命名空间隔离） */
   readonly storage: PluginStorage;
+  /** Vue 运行时句柄（h / ref / computed …，第三方插件写不了 import，能力从这里取） */
+  readonly vue: PluginVueRuntime;
   /** 插件设置（清单 settings 字段的运行时存取，值持久化在 storage 的 `settings` 键下） */
   readonly settings: PluginSettingsStore;
   /** 插件通用数据库（每插件独立表，见 PluginDatabase） */

@@ -183,6 +183,18 @@ export const USER_PLUGIN_BLOB_MIME = 'text/javascript';
 /** 用户插件缺省作者文案（定义里没写 author 时展示用） */
 export const USER_PLUGIN_AUTHOR_LABEL = '用户安装';
 
+/**
+ * 第三方插件预检报错里指向文档的提示语
+ *
+ * 用户插件拿不到 vue 等依赖（运行时 Blob 动态 import，见 PLUGIN_API.md §0），
+ * 报错必须同时告诉作者「去哪找替代品」，否则他只会卡在第一步。
+ */
+export const USER_PLUGIN_LINT_DOC_HINT =
+  '可用能力清单见仓库根目录 PLUGIN_API.md。';
+
+/** 预检单类问题最多报几条（超出截断，避免长篇刷屏） */
+export const USER_PLUGIN_LINT_MAX_ISSUES = 3;
+
 /** 「插件页随插件撤销」浮窗的来源标签（宿主收尾时提示用户页面为什么变了） */
 export const PLUGIN_VANISHED_NOTICE_SOURCE = '插件管理';
 

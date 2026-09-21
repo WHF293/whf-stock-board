@@ -14,6 +14,7 @@ import DockPanel from "../components/dock/DockPanel.vue";
 import BaseTooltip from "../components/ui/BaseTooltip.vue";
 import MenuIcon from "../components/ui/MenuIcon.vue";
 import NotificationHost from "../components/ui/NotificationHost.vue";
+import PluginConfirmHost from "../components/plugin/PluginConfirmHost.vue";
 import SidebarPanelHost from "../components/plugin/SidebarPanelHost.vue";
 import SidebarPanelEntry from "../components/plugin/SidebarPanelEntry.vue";
 import PluginPanelDrawer from "../components/plugin/PluginPanelDrawer.vue";
@@ -634,5 +635,8 @@ void marketStatusStore.refresh();
 
     <!-- 应用级浮窗（插件经 app:notify 服务发起，跨路由常驻） -->
     <NotificationHost />
+
+    <!-- 插件确认弹窗（经 app:ui 的 confirm 发起，宿主渲染、答复回到插件的 Promise） -->
+    <PluginConfirmHost />
   </div>
 </template>

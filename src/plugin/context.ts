@@ -6,6 +6,16 @@
  * 卸载时被一并撤销。
  */
 import { PLUGIN_LOG_PREFIX, PLUGIN_STORAGE_NAMESPACE_PREFIX } from '../constants/plugin.constants';
+import {
+  computed,
+  h,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  reactive,
+  ref,
+  watch,
+} from 'vue';
 import { appStorage } from '../utils/app-local-storage';
 import {
   loadPluginStorage,
@@ -30,6 +40,7 @@ import type {
   PluginSettingsDeclaration,
   PluginSettingsStore,
   PluginStorage,
+  PluginVueRuntime,
 } from '../types/plugin.types';
 
 /**
@@ -123,6 +134,23 @@ const createLogger = (pluginId: string): PluginLogger => {
 export class PluginContextImpl implements PluginContext {
   /** 当前插件 id */
   readonly pluginId: string;
+
+  /**
+   * Vue 运行时句柄（第三方插件的能力入口）
+   *
+   * 用户插件是运行时动态 import 的字符串，写 `import { h } from 'vue'` 拿不到包，
+   * 因此这一套由宿主代持并以 `ctx.vue` 下发 —— 不再需要插件自己去引 vue。
+   */
+  readonly vue: PluginVueRuntime = {
+    h,
+    ref,
+    reactive,
+    computed,
+    watch,
+    onMounted,
+    onUnmounted,
+    nextTick,
+  };
 
   /** 当前插件配置（只读） */
   readonly config: PluginConfig;

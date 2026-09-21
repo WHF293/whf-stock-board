@@ -24,7 +24,18 @@ import {
 } from '../constants/router-meta.constants';
 import { orderSidebarMenu } from '../utils/order-sidebar-menu';
 import { resolveRouteFallback } from '../utils/resolve-route-fallback';
+import { STOCK_PROXY_ALLOWED_HOSTS } from '../constants/proxy.constants';
 import { searchStocks } from '../api/search.api';
+import { fetchFullQuotes } from '../api/quotes.api';
+import { proxyFetch } from '../api/proxy-fetch';
+import BaseButton from '../components/ui/BaseButton.vue';
+import BaseCard from '../components/ui/BaseCard.vue';
+import BaseEmpty from '../components/ui/BaseEmpty.vue';
+import BaseInput from '../components/ui/BaseInput.vue';
+import BaseSwitch from '../components/ui/BaseSwitch.vue';
+import BaseTabs from '../components/ui/BaseTabs.vue';
+import BaseTag from '../components/ui/BaseTag.vue';
+import MenuIcon from '../components/ui/MenuIcon.vue';
 import { BUILTIN_PLUGINS } from '../plugins';
 import { pluginKernel } from './index';
 import { mountUserPluginRecord } from './user-plugin-loader';
@@ -34,6 +45,7 @@ import { usePluginPanelsStore } from '../stores/plugin-panels';
 import { usePluginStore } from '../stores/plugin';
 import { useNotificationsStore } from '../stores/notifications';
 import { useSettingsStore } from '../stores/settings';
+import { usePluginUiStore } from '../stores/plugin-ui';
 import { useUserPluginsStore } from '../stores/user-plugins';
 import type { VanishedRouteInfo } from '../types/plugin.types';
 import type { Pinia } from 'pinia';
@@ -123,6 +135,28 @@ const recoverVanishedRoute = (info: VanishedRouteInfo): void => {
 };
 
 /**
+ * 判断目标地址是否在代理白名单内（与代理中间件同一套后缀匹配规则）
+ *
+ * Tauri 端由 Rust 侧的 http scope 兜底（越界请求直接被拒），浏览器端由
+ * `/stock-proxy` 中间件校验。这里给插件一个**自检**手段：与其请求被拒后才发现，
+ * 不如发起前就知道行不行。
+ * @param url 目标地址
+ * @returns 是否允许访问
+ */
+const isAllowedProxyTarget = (url: string): boolean => {
+  let host: string;
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    // 相对路径 / 非法 URL 一律不在白名单内（插件不应该访问应用自身接口之外的相对地址）
+    return false;
+  }
+  return STOCK_PROXY_ALLOWED_HOSTS.some(
+    (allowed) => host === allowed || host.endsWith(`.${allowed}`),
+  );
+};
+
+/**
  * 装配插件体系（幂等）
  *
  * 必须在 `app.use(pinia)` 之后、首个导航之前调用：
@@ -148,6 +182,31 @@ export const installPlugins = (pinia?: Pinia): void => {
   // 标的搜索：宿主封装 stock-sdk 的腾讯搜索，插件自建 UI 消费（调用方自行防抖）
   pluginKernel.services.provide('app:stock-search', { search: searchStocks });
   pluginKernel.services.provide('panel:open', openPanelByKey);
+
+  // 受控网络请求：走宿主的上游通道（Tauri 由 Rust 直连 / 浏览器走 /stock-proxy）。
+  // 域名白名单与宿主完全同源，插件拿不到「访问任意站点」的能力
+  pluginKernel.services.provide('app:http', {
+    fetch: proxyFetch,
+    allowedHosts: STOCK_PROXY_ALLOWED_HOSTS,
+    isAllowed: isAllowedProxyTarget,
+  });
+  // 行情报价：宿主封装腾讯源，插件不必自己拼上游 URL、处理转码与频率红线
+  pluginKernel.services.provide('app:quotes', { fetchFullQuotes });
+
+  // UI Kit：宿主把自己正在用的基础组件原样发给插件 —— 第三方插件 import 不了组件、
+  // 自定义 Tailwind 类也可能没有 CSS，用它拼出来的界面天然与原生页面同风格
+  const pluginUiStore = pinia ? usePluginUiStore(pinia) : usePluginUiStore();
+  pluginKernel.services.provide('app:ui', {
+    Button: BaseButton,
+    Card: BaseCard,
+    Empty: BaseEmpty,
+    Input: BaseInput,
+    Switch: BaseSwitch,
+    Tabs: BaseTabs,
+    Tag: BaseTag,
+    Icon: MenuIcon,
+    confirm: (options) => pluginUiStore.requestConfirm(options ?? {}),
+  });
 
   // 应用级浮窗：插件发起、宿主渲染（承载组件在 MainLayout，与插件面板挂载状态无关）
   const notificationsStore = pinia
