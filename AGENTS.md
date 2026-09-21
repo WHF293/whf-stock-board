@@ -232,6 +232,11 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
 - 🛡️ **静态预检（`plugin/user-plugin-lint.ts`，纯函数）**：`import` / `export … from` / `import()` /
   `template:'…'` 这四类在安装前的「解析预览」就被拦下并报**行号**；Tailwind 任意类只给提醒不拦。
   改这套规则 = 改第三方作者的试错成本，务必同步 `PLUGIN_API.md` §0
+- 📦 **分发形态是构建产物（zip 包优先）**：`utils/plugin-package.ts`（纯函数）用 fflate 解包 →
+  剥掉唯一顶层目录 → 读 `manifest.json`（`id` 必填；`entry` 默认 `main.js`；`readme` 默认 `README.md`）→
+  取入口产物代码；无清单时若包内只有一份 js 就按单文件包处理。随后走同一条加载链，
+  安装前 `checkManifestConsistency` 校验清单 `id` / `version` 与产物导出一致（**不一致直接报错**，
+  绝不静默取一边）。面向作者的包格式说明在 `PLUGIN_WIKI.md` §8.2
 - **加载链**：`plugin/user-plugin-loader.ts`（先 `lintUserPluginCode` → 再 Blob URL 动态 `import()`，
   CSP 无限制：浏览器侧无 CSP meta、Tauri `csp: null`）→ `validateUserPluginDefinition` 结构校验
   （id 规则 / 必填字段 / 占用检查，**纯函数**可被烟雾测试直跑）→ `pluginKernel.use(def, { origin: 'user' })`

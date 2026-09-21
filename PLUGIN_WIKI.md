@@ -1,6 +1,6 @@
 # 第三方插件开发 wiki
 
-> 面向**应用内安装**的插件作者：你不跟宿主一起构建，用户把一份 `.js` 粘贴进来或选个文件就能装上。
+> 面向**应用内安装**的插件作者：你不跟宿主一起构建，交出去的是**构建产物** —— 打成一个 `.zip` 包（推荐，见 §8.2）或单份 `.js`，用户选文件就能装上。
 > 要给宿主仓库提 PR 的「源码级插件」作者请另看 `PLUGIN_API.md`（那份更全，含宿主内部模块清单）。
 >
 > 适用版本：**v2.6.1+**。契约的唯一事实源是 `src/types/plugin.types.ts`，
@@ -31,7 +31,7 @@ export default {
 };
 ```
 
-存成 `hello.js` → 应用里 **设置 → 插件 → 安装** → 粘贴代码或选择本地 `.js` / `.mjs` 文件 → 「解析预览」→ 安装。
+存成 `hello.js` → 应用里 **设置 → 插件（或插件工坊）→ 安装** → 选 `.zip` 产物包，或粘贴代码 / 选本地 `.js` → 「解析预览」→ 安装。
 装完立刻生效，不用重启；在插件管理里可以停用 / 卸载（卸载建过表时会问「保留数据 / 一并删除」）。
 
 ### 0.2 三条不能碰的红线（装之前就会被拦下）
@@ -631,6 +631,64 @@ Babel 等价配置：`@babel/plugin-transform-react-jsx` 设 `pragma: "h"`、`pr
 - **JSX 没有 `v-model`**：双向绑定照旧写成 `modelValue={x.value}` + `onUpdate:modelValue={(v) => { x.value = v; }}`；
 - 预编译产物是普通 JS，粘贴或选文件安装都行，预检不会再拦（产物里没有 import 也没有 template）。
 
+### 8.2 打包成 zip 分发（推荐）
+
+交给别人的是**产物包**，不是源码：宿主运行时没有打包器也没有编译器，装的时候读包 → 取入口产物 →
+走和单文件 JS 完全相同的预检链路。
+
+```
+my-plugin.zip
+├── manifest.json     清单：这是谁、入口在哪
+├── main.js           入口产物（单文件 ESM，export default { … }）
+└── README.md         可选说明（安装弹窗里可展开预览）
+```
+
+`manifest.json` 字段：
+
+| 字段 | 必填 | 说明 |
+| --- | --- | --- |
+| `id` | ✅ | 必须与产物导出的 `id` **完全一致**，不一致直接报「清单 id 与产物不一致」 |
+| `version` | 推荐 | 与产物导出的 `version` 必须一致（改了代码忘了同步清单是常见错） |
+| `name` / `description` / `author` | 否 | 展示用；缺失时取产物导出的值 |
+| `entry` | 否 | 入口产物路径，默认 `main.js` |
+| `readme` | 否 | 说明文件路径，默认 `README.md` |
+
+**产物必须打成单文件**（宿主一次只加载一份代码，包内多个互相 import 的 chunk 装不起来 ——
+相对路径在 Blob URL 里解析不了）：
+
+```bash
+npx esbuild src/main.js --bundle --format=esm --outfile=main.js
+```
+
+打包四条：
+
+1. **不要把 vue 打进产物**：插件里的 `h` / `ref` 必须来自 `ctx.vue`（与宿主同一个 Vue 实例，
+   响应式才互通）。源码里就别写 `import`，写了预检也会拦；
+2. **顶层目录随意**：包成 `my-plugin/…` 也能认（宿主会自动剥掉唯一的顶层目录）；
+3. **路径里别带 `..` 或绝对路径**，会被当成非法包拒收；
+4. 体积：入口产物 ≤ 512KB，整个 zip ≤ 8MB。
+
+压包（任选）：
+
+```bash
+zip -r my-plugin.zip manifest.json main.js README.md        # macOS / Linux
+tar -a -c -f my-plugin.zip manifest.json main.js README.md  # Windows
+```
+
+也可在 `package.json` 里挂个脚本用 fflate 打（`npm i -D fflate`）：
+
+```js
+// scripts/pack.mjs
+import { zipSync } from 'fflate';
+import { readFileSync, writeFileSync } from 'node:fs';
+const read = (p) => readFileSync(p);
+writeFileSync('my-plugin.zip', zipSync({
+  'manifest.json': read('manifest.json'),
+  'main.js': read('dist/main.js'),
+  'README.md': read('README.md'),
+}));
+```
+
 ---
 
 ## 9. 配额与红线
@@ -639,6 +697,7 @@ Babel 等价配置：`@babel/plugin-transform-react-jsx` 设 `pragma: "h"`、`pr
 | --- | --- |
 | 用户插件条目数 | 50 条 |
 | 单份插件代码 | 512 KB |
+| zip 包体积 | 8 MB（入口产物仍受上面的 512 KB 约束） |
 | 同屏浮窗 | 4 条 |
 | 浮窗默认存活 | 8 s（`0` = 常驻） |
 | 顶栏轮播间隔 | 默认 4000 ms，下限 1500 ms |
@@ -1019,6 +1078,9 @@ export interface PluginContext {
 | 安装时报「第 N 行：不能写 import」 | 预检拦下了 | 删掉 import，能力从 `ctx` / `app:*` 服务上取 |
 | 安装时报「不能用 template 字符串」 | 生产构建没有模板编译器 | 改成 `render: () => h(...)` |
 | 粘贴 JSX 后报语法错误 / 报「不能写 import」 | JSX 也要编译，而且 Vue JSX 插件默认产物带 import | 本地预编译成 `h()` 产物再装（第 8.1 节） |
+| 选 zip 包报「无法解压」 / 「zip 包内没有可用文件」 | 不是 zip 或包里只有系统噪音文件（`.DS_Store`、`__MACOSX`） | 重新打包：只放 manifest / 产物 / README |
+| 报「包内没有 .js 产物」 / 「包内有多个 js 文件」 | 入口不叫 `main.js`，且清单没写 `entry` | `manifest.json` 里加 `"entry": "dist/index.js"` |
+| 报「清单 id / 版本与产物不一致」 | 改了代码没同步 `manifest.json` | 两边对齐后重新打包（宿主不会静默取一边） |
 | 装上了但面板一片空白 | `render` 返回了 `undefined` / 抛错 | 看控制台 `[plugin] <id>` 开头的日志；先返回一个纯文本 `h('div', 'hi')` 二分定位 |
 | 样式全没了 / 布局是散的 | 自定义 Tailwind 类产物 CSS 里没有 | 改用 `app:ui` 组件或内联 `style` |
 | 按钮点了没反应 | 事件名写成了 `@click` | 渲染函数里是 `onClick` |

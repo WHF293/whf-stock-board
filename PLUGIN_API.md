@@ -752,7 +752,7 @@ export default {
 
 最小形态（只要一个静态面板）依然简单：`component: { render: () => 'Hello 插件' }`。
 
-保存成 `.js` → 设置 → 插件 → 安装插件 → 粘贴 / 选文件 → 解析预览 → 确认安装。
+保存成 `.js`（推荐连同 `manifest.json` / `README.md` 打成 `.zip` 产物包）→ 设置 → 插件（或插件工坊）→ 安装插件 → 选 zip 包 / 粘贴 / 选文件 → 解析预览 → 确认安装。包格式见 `PLUGIN_WIKI.md` §8.2。
 
 ⚠️ 三条红线（写下来会被安装前的静态预检拦住 / 提醒）：
 
@@ -770,6 +770,7 @@ export default {
 | `ctx.db` 的表 / 列 | Agent MCP 工具描述（`src/agent/mcp/app-tools.ts` 的 `db_query` / `db_execute`） |
 | 新增 / 删除的 API | `SERVER_API.md`（若是网络接口） |
 | 预检规则（允许 / 禁止哪些写法） | 本文档 §0 + §13，以及安装弹窗的说明文案（两者是同一套认知） |
+| 用户插件 zip 包格式（清单字段 / 入口解析规则） | `src/utils/plugin-package.ts` + `PLUGIN_WIKI.md` §8.2 + 安装弹窗「插件包格式」折叠说明 |
 | 白皮书里出现的功能 | `src/views/WhitepaperView.vue` 的对应章节（硬性同步规范） |
 | 内核本身 | 跑 `.ai/tmp/plugin-kernel-smoke.mjs`（自带转译器，**直接 node 跑**，不要经 ts-smoke-harness） |
 

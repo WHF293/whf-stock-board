@@ -887,9 +887,9 @@ const GUIDE_CHAPTERS: GuideChapter[] = [
       {
         type: 'steps',
         items: [
-          '准备插件代码：单个预构建 ESM JS 模块（export default { … } 导出插件定义；组件用 Vue 渲染函数编写，生产构建不含运行时模板编译器）。⚠️ 第三方插件是运行时动态加载的，**不能写 import**（拿不到 vue 等依赖），可用能力以宿主 ctx 为准，完整清单见仓库根目录的 PLUGIN_API.md。',
-          '打开 设置 →「插件」卡片 →「安装插件」。',
-          '粘贴代码或选择本地 .js 文件 → 点「解析预览」做结构校验（id 不能与内置或已安装插件重复）。',
+          '准备插件产物：源码用 esbuild 打成**单文件 ESM**（npx esbuild src/main.js --bundle --format=esm --outfile=main.js），连同 manifest.json（id / name / version / description / entry）与 README.md 压成 .zip 包；直接给一份 .js 也行。⚠️ 第三方插件是运行时动态加载的，**不能写 import**（拿不到 vue 等依赖），可用能力以宿主 ctx 为准，完整清单见仓库根目录的 PLUGIN_WIKI.md。',
+          '打开 设置 →「插件」卡片（或插件工坊页）→「安装插件」。',
+          '选 .zip 插件包，或粘贴代码 / 选本地 .js 文件 → 点「解析预览」做结构校验（id 不能与内置或已安装插件重复；zip 包还会校验 manifest 与产物是否一致）。',
           '点「确认安装」：代码持久化到本机，面板 / 菜单 / 路由即时生效，下次启动自动挂载。',
           '到「插件工坊」页面核对贡献点与生效服务；设置 →「插件」里可随时停用 / 启用，失败可重试。',
         ],
