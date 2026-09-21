@@ -161,8 +161,9 @@ export const openBarWindow = async (
     const win = new WebviewWindow(WATCH_WIDGET_WINDOW_LABEL, {
       url: WATCH_WIDGET_WINDOW_URL,
       title: '盯盘小组件',
-      x: position.x,
-      y: position.y,
+      // ⚠️ 不传构造器 x/y：Tauri 的 position(x, y) 是**逻辑像素**，而停靠计算在物理像素
+      // 体系里（SPI 工作区 / 光标 / outerPosition 全是物理），混用会把窗口飞出屏幕。
+      // 统一在 created 后用 setPosition(PhysicalPosition) 显式物理落位（见下）。
       width: WATCH_WIDGET_BAR_WIDTH,
       height: WATCH_WIDGET_BAR_HEIGHT,
       decorations: false,
@@ -176,8 +177,11 @@ export const openBarWindow = async (
     });
     // 创建成败经事件异步到达（capabilities 未重编译时 IPC 会被拒），必须等事件下结论
     win.once('tauri://created', () => {
-      void win.show().catch(() => undefined);
-      resolve(win);
+      void (async () => {
+        await win.setPosition(new PhysicalPosition(position.x, position.y)).catch(() => undefined);
+        await win.show().catch(() => undefined);
+        resolve(win);
+      })();
     });
     win.once('tauri://error', (event) => {
       console.error('[watch-widget] 盯盘条创建失败', event);

@@ -1,4 +1,6 @@
 import type { WatchWidgetMode } from '../constants/watch-widget.constants';
+import type { ThemeColor } from '../constants/theme-color.constants';
+import type { TrendTheme } from '../constants/trend-theme.constants';
 import type { HeaderMarqueeTone } from './plugin.types';
 
 /**
@@ -7,6 +9,16 @@ import type { HeaderMarqueeTone } from './plugin.types';
  * 小组件窗口是独立轻量入口（不装插件内核），与主窗口之间只经 Tauri 事件通信；
  * 本文件的载荷 / 设置类型被两侧共用（插件、小组件入口、设置 store）。
  */
+
+/** 主题同步载荷（主窗口推送给小组件窗口，明暗 / 主题色 / 涨跌配色三要素） */
+export interface WatchWidgetThemePayload {
+  /** 是否暗色模式 */
+  dark: boolean;
+  /** 主题色（data-theme） */
+  theme: ThemeColor;
+  /** 涨跌配色主题（data-trend） */
+  trend: TrendTheme;
+}
 
 /** 小组件条上单行展示数据（主窗口推送给小组件窗口的载荷行） */
 export interface WatchWidgetRow {

@@ -106,9 +106,9 @@ const onDblclick = (): void => {
   >
     <!-- 左侧细条：唯一拖拽区（拖拽与点击互斥，必须分区） -->
     <div data-tauri-drag-region class="widget-drag-strip w-3.5 shrink-0 border-r border-flat-weak" />
-    <!-- 展示区：单击切气泡、双击开详情 -->
+    <!-- 展示区：单击切气泡、双击开详情；上下 6px 内边距（与窗口高度常量联动） -->
     <div
-      class="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 px-2"
+      class="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 px-2 py-1.5"
       :title="current ? `${current.name} 双击打开详情，单击展开候选列表` : '盯盘'"
       @click="onClick"
       @dblclick="onDblclick"

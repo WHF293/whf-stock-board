@@ -27,6 +27,7 @@ import type { UnlistenFn } from '@tauri-apps/api/event';
 import { WATCH_WIDGET_MODE } from '../../constants/watch-widget.constants';
 import { NOTIFY_TONE } from '../../constants/notify.constants';
 import { ROUTE_PATH } from '../../constants/router-meta.constants';
+import { useTheme } from '../../composables/use-theme';
 import { useDockPanelStore } from '../../stores/dock-panel';
 import { useSettingsStore } from '../../stores/settings';
 import { useStockContextStore } from '../../stores/stock-context';
@@ -122,6 +123,24 @@ export const watchWidgetPlugin: PluginDefinition = {
 
     // 引擎轮询驱动推送（约数秒一次，量级极小，无需防抖）
     ctx.effect(() => watch(rows, pushLines, { immediate: true }));
+
+    // ---------- 主题实时同步（明暗 / 主题色 / 涨跌配色） ----------
+    /**
+     * 主窗口主题三要素变化即广播给条 / 气泡。
+     * 不依赖 storage 事件：WebView2 跨窗口 storage 事件实测不可达，
+     * 主题跟随与行情数据共用同一条已验证的事件通道。
+     */
+    const { isDark } = useTheme();
+    ctx.effect(() =>
+      watch(
+        [isDark, () => settingsStore.themeColor, () => settingsStore.trendTheme],
+        ([dark, theme, trend]) => {
+          if (!barWindow && !popoverWindow) return;
+          void emit(WATCH_WIDGET_EVENTS.THEME, { dark, theme, trend });
+        },
+        { immediate: true },
+      ),
+    );
 
     // ---------- 气泡（单例窗口，隐藏复用） ----------
     const showPopover = async (): Promise<void> => {

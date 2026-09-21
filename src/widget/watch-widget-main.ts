@@ -31,4 +31,8 @@ const view = route === WATCH_WIDGET_POPOVER_ROUTE ? WatchWidgetPopover : WatchWi
 const pinia = createPinia();
 pinia.use(piniaPluginPersistedstate);
 
+// body 打上页面标识 id：样式层用 `body#watch-widget-page` 提高特异性，
+// 压过 theme.css 的 `body { background-color }`，保证透明窗口整页透出桌面
+document.body.id = 'watch-widget-page';
+
 createApp(WatchWidgetApp, { view }).use(pinia).mount('#widget');

@@ -33,8 +33,8 @@ export const WATCH_WIDGET_POPOVER_WINDOW_URL = `watch-widget.html?${WATCH_WIDGET
 /** 盯盘条宽度（逻辑像素；窗口物理宽 = 该值 × 缩放比） */
 export const WATCH_WIDGET_BAR_WIDTH = 288;
 
-/** 盯盘条高度（逻辑像素） */
-export const WATCH_WIDGET_BAR_HEIGHT = 40;
+/** 盯盘条高度（逻辑像素）= 文本行 16 + 上下各 6 padding + 上下各 1 边框 */
+export const WATCH_WIDGET_BAR_HEIGHT = 30;
 
 /** 气泡宽度（逻辑像素；与条同宽、右对齐悬浮） */
 export const WATCH_WIDGET_POPOVER_WIDTH = 288;
@@ -84,4 +84,10 @@ export const WATCH_WIDGET_EVENTS = {
   BAR_MOVED: 'watch-widget://bar-moved',
   /** 条 / 气泡 → 主窗口：打开某只股票（唤起主窗口 + 跳详情页，左列=盯盘候选） */
   OPEN_STOCK: 'watch-widget://open-stock',
+  /**
+   * 主窗口 → 小组件窗口：主题三要素（明暗 / 主题色 / 涨跌配色）实时同步。
+   * 不走 storage 事件 —— WebView2 跨窗口 storage 事件在实测中不可靠，
+   * 主题跟随必须走与行情数据同一条已验证的事件通道。
+   */
+  THEME: 'watch-widget://theme',
 } as const satisfies Record<string, string>;
