@@ -907,6 +907,12 @@ export interface UserPluginRecord {
   code: string;
   /** 安装时间（ISO 8601） */
   installedAt: string;
+  /**
+   * 安装来源（可选，历史记录没有此字段）
+   *
+   * `zip` = 第三方 zip 产物包；`code` = 粘贴 / 选择单文件 JS。仅用于展示与排查。
+   */
+  source?: string;
 }
 
 /** 插件运行时信息（插件管理弹窗 / 插件工坊展示） */

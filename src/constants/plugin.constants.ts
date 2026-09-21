@@ -177,6 +177,38 @@ export const USER_PLUGIN_CODE_MAX_LENGTH = 512 * 1024;
 /** 用户插件持久化条目数上限（防误贴超大文件刷爆存储） */
 export const USER_PLUGIN_RECORD_MAX = 50;
 
+/**
+ * 插件 zip 包内的清单文件名
+ *
+ * 第三方插件导入的是**构建产物包**：清单只描述包（谁做的、入口在哪），
+ * 真正跑起来的是入口产物导出的定义。二者不一致时以产物为准并报错（见下方说明）。
+ */
+export const USER_PLUGIN_MANIFEST_FILE = 'manifest.json';
+
+/** 清单里没写 entry 时的默认入口文件名 */
+export const USER_PLUGIN_ENTRY_DEFAULT = 'main.js';
+
+/** 清单里没写 readme 时的默认说明文件名（存在才展示，缺失不报错） */
+export const USER_PLUGIN_README_DEFAULT = 'README.md';
+
+/** zip 包体积上限（8MB：产物本体受 512KB 约束，富余留给 README / 资源） */
+export const USER_PLUGIN_PACKAGE_MAX_BYTES = 8 * 1024 * 1024;
+
+/** zip 包选择框的 accept（同时给出扩展名与 MIME，各平台表现不一） */
+export const USER_PLUGIN_PACKAGE_ACCEPT = '.zip,application/zip,application/x-zip-compressed';
+
+/**
+ * 用户插件的安装来源（只做展示与统计，不参与启停判定）
+ *
+ * `zip` = 第三方打包产物；`code` = 粘贴 / 选择单文件 JS。
+ */
+export const USER_PLUGIN_SOURCE = {
+  /** 导入 zip 产物包 */
+  PACKAGE: 'zip',
+  /** 粘贴或选择单文件 JS */
+  CODE: 'code',
+} as const;
+
 /** 用户插件代码动态 import 时的 Blob MIME（ESM 模块） */
 export const USER_PLUGIN_BLOB_MIME = 'text/javascript';
 

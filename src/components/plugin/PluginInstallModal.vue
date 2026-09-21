@@ -2,30 +2,56 @@
 import { computed, ref, watch } from 'vue';
 import BaseButton from '../ui/BaseButton.vue';
 import BaseModal from '../ui/BaseModal.vue';
+import BaseTabs from '../ui/BaseTabs.vue';
 import BaseTag from '../ui/BaseTag.vue';
 import { importUserPluginCode } from '../../plugin/user-plugin-loader';
 import { BUILTIN_PLUGINS } from '../../plugins';
 import { useUserPlugins } from '../../composables/use-user-plugins';
 import { useUserPluginsStore } from '../../stores/user-plugins';
-import { USER_PLUGIN_AUTHOR_LABEL } from '../../constants/plugin.constants';
+import { checkManifestConsistency, parsePluginPackage } from '../../utils/plugin-package';
+import {
+  USER_PLUGIN_AUTHOR_LABEL,
+  USER_PLUGIN_PACKAGE_ACCEPT,
+  USER_PLUGIN_SOURCE,
+} from '../../constants/plugin.constants';
+import type { PluginPackage } from '../../utils/plugin-package';
 import type { PluginDefinition } from '../../types/plugin.types';
 
 /**
  * 插件安装弹窗（应用内安装用户插件）
  *
- * 流程：粘贴代码或选择本地 .js 文件 → 「解析预览」（结构校验，不落内核）→
- * 「确认安装」（持久化代码 + 内核挂载，面板 / 菜单 / 路由即时生效）。
- * 插件代码与应用同权限执行，弹窗内有固定风险提示。
+ * 两种来源，同一条安装链路：
+ * - **zip 插件包**（第三方分发的常态）：manifest.json + 入口产物 + 可选 README，
+ *   解包后取入口产物代码 → 静态预检 → 结构校验 → 清单一致性校验 → 安装；
+ * - **粘贴 / 选择单文件 JS**：给作者自己调试用，同一条链路，只是没有清单。
+ *
+ * 流程：「解析预览」（结构校验，不落内核）→「确认安装」（持久化代码 + 内核挂载，
+ * 面板 / 菜单 / 路由即时生效）。插件代码与应用同权限执行，弹窗内有固定风险提示。
  */
 const open = defineModel<boolean>('open', { required: true });
 
 const { install } = useUserPlugins();
 
-/** 代码输入框内容 */
+/** 安装来源切换选项 */
+const SOURCE_OPTIONS = [
+  { label: 'zip 插件包', value: 'package' },
+  { label: '粘贴代码', value: 'code' },
+] as const;
+
+/** README 预览最多展示的字符数（包内文档可能很长，弹窗里只给个开头） */
+const README_PREVIEW_MAX = 600;
+
+/** 当前安装来源（zip 包 / 单文件代码） */
+const mode = ref<'package' | 'code'>('package');
+
+/** 代码输入框内容（zip 包模式下由解包结果填充，不展示在界面上） */
 const code = ref('');
 
 /** 当前选中的本地文件名（仅展示用） */
 const fileName = ref('');
+
+/** zip 包解析结果（null = 未选择或解析失败） */
+const pkg = ref<PluginPackage | null>(null);
 
 /** 解析出的插件定义预览（null = 尚未解析或解析失败） */
 const parsed = ref<PluginDefinition | null>(null);
@@ -45,19 +71,51 @@ const metaLines = computed(() => {
   return [
     `id：${parsed.value.id}`,
     `版本：v${parsed.value.version}`,
-    `作者：${parsed.value.author || USER_PLUGIN_AUTHOR_LABEL}`,
+    `作者：${parsed.value.author || pkg.value?.manifest.author || USER_PLUGIN_AUTHOR_LABEL}`,
   ];
 });
+
+/** 包信息行（入口 / 包内文件数 / 清单有无） */
+const packageLines = computed(() => {
+  if (!pkg.value) return [];
+  return [
+    `入口：${pkg.value.entryPath}`,
+    `包内 ${pkg.value.files.length} 个文件`,
+    pkg.value.hasManifest ? '含 manifest.json' : '无 manifest.json（元信息取自产物）',
+  ];
+});
+
+/** README 预览文本（超长截断） */
+const readmePreview = computed(() => {
+  const text = pkg.value?.readme ?? '';
+  if (text.length <= README_PREVIEW_MAX) return text;
+  return `${text.slice(0, README_PREVIEW_MAX)}…`;
+});
+
+/** 清空解析态（换来源 / 换文件 / 改代码时都要重来） */
+const resetParseState = (): void => {
+  parsed.value = null;
+  errorMessage.value = '';
+  warningLines.value = [];
+};
 
 /** 打开弹窗时重置表单 */
 watch(open, (value) => {
   if (!value) return;
+  mode.value = 'package';
   code.value = '';
   fileName.value = '';
-  parsed.value = null;
-  errorMessage.value = '';
-  warningLines.value = [];
+  pkg.value = null;
+  resetParseState();
   busy.value = false;
+});
+
+/** 切换来源时清掉另一侧的残留（避免装到旧内容） */
+watch(mode, () => {
+  code.value = '';
+  fileName.value = '';
+  pkg.value = null;
+  resetParseState();
 });
 
 /**
@@ -70,9 +128,7 @@ const pushWarnings = (issues: readonly { line: number; message: string }[] | und
 
 /** 解析预览：只校验，不安装 */
 const onParse = async (): Promise<void> => {
-  parsed.value = null;
-  errorMessage.value = '';
-  warningLines.value = [];
+  resetParseState();
   busy.value = true;
   // 复用安装链路的前半段（静态预检 + import + 结构校验 + id 占用检查），但不落存储与内核
   const occupiedIds = [
@@ -82,17 +138,28 @@ const onParse = async (): Promise<void> => {
   const result = await importUserPluginCode(code.value, occupiedIds);
   busy.value = false;
   pushWarnings(result.warnings);
-  if (result.ok) {
-    parsed.value = result.definition;
-  } else {
+  if (!result.ok) {
     errorMessage.value = result.error;
+    return;
   }
+  // zip 包：清单与产物必须一致，否则「包里写一套、装进去是另一套」
+  if (pkg.value) {
+    const inconsistency = checkManifestConsistency(pkg.value.manifest, result.definition);
+    if (inconsistency) {
+      errorMessage.value = inconsistency;
+      return;
+    }
+  }
+  parsed.value = result.definition;
 };
 
 /** 确认安装：写持久化 + 内核挂载，成功后收起弹窗 */
 const onInstall = async (): Promise<void> => {
   busy.value = true;
-  const result = await install(code.value);
+  const result = await install(code.value, {
+    manifest: pkg.value?.manifest,
+    source: pkg.value ? USER_PLUGIN_SOURCE.PACKAGE : USER_PLUGIN_SOURCE.CODE,
+  });
   busy.value = false;
   pushWarnings(result.warnings);
   if (result.ok) {
@@ -101,6 +168,28 @@ const onInstall = async (): Promise<void> => {
   }
   errorMessage.value = result.error;
   parsed.value = null;
+};
+
+/**
+ * 选择 zip 插件包并解包
+ * @param event 文件选择框 change 事件
+ */
+const onPickPackage = async (event: Event): Promise<void> => {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+  fileName.value = file.name;
+  pkg.value = null;
+  code.value = '';
+  resetParseState();
+  input.value = '';
+  try {
+    const parsedPackage = parsePluginPackage(await file.arrayBuffer());
+    pkg.value = parsedPackage;
+    code.value = parsedPackage.code;
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : String(error);
+  }
 };
 
 /**
@@ -113,8 +202,7 @@ const onPickFile = async (event: Event): Promise<void> => {
   if (!file) return;
   fileName.value = file.name;
   code.value = await file.text();
-  parsed.value = null;
-  errorMessage.value = '';
+  resetParseState();
   input.value = '';
 };
 </script>
@@ -126,6 +214,43 @@ const onPickFile = async (event: Event): Promise<void> => {
     </div>
 
     <div class="mt-3">
+      <BaseTabs v-model="mode" :options="SOURCE_OPTIONS" />
+    </div>
+
+    <div v-if="mode === 'package'" class="mt-3">
+      <div class="flex items-center justify-between">
+        <p class="text-xs text-text-tertiary">选择第三方打包好的 .zip 插件包</p>
+        <label class="cursor-pointer text-xs text-primary hover:underline">
+          选择 .zip 文件
+          <input type="file" :accept="USER_PLUGIN_PACKAGE_ACCEPT" class="hidden" @change="onPickPackage" />
+        </label>
+      </div>
+      <p v-if="fileName" class="mt-1 text-xs text-text-tertiary">已读取：{{ fileName }}</p>
+      <div
+        v-if="pkg"
+        class="mt-2 rounded-card border border-flat-weak bg-surface px-3 py-2"
+      >
+        <div class="flex items-center gap-2">
+          <span class="text-sm font-medium text-text">{{ pkg.manifest.name || '待解析的插件包' }}</span>
+          <BaseTag v-if="pkg.manifest.version" tone="flat">v{{ pkg.manifest.version }}</BaseTag>
+        </div>
+        <p v-if="pkg.manifest.description" class="mt-1 text-xs text-text-secondary">
+          {{ pkg.manifest.description }}
+        </p>
+        <p class="mt-1 text-xs text-text-tertiary">{{ packageLines.join(' · ') }}</p>
+        <details v-if="readmePreview" class="mt-2 text-xs text-text-tertiary">
+          <summary class="cursor-pointer select-none hover:text-text-secondary">README</summary>
+          <pre
+            class="mt-1.5 max-h-40 overflow-auto whitespace-pre-wrap rounded-card bg-flat-weak px-2.5 py-2 font-mono text-xs leading-relaxed text-text-secondary"
+          >{{ readmePreview }}</pre>
+        </details>
+      </div>
+      <p v-else class="mt-2 text-xs text-text-tertiary">
+        包内需含入口产物（默认 main.js），建议带 manifest.json 与 README.md。
+      </p>
+    </div>
+
+    <div v-else class="mt-3">
       <div class="mb-1.5 flex items-center justify-between">
         <p class="text-xs text-text-tertiary">插件代码（预构建 ESM JS，export default { … }）</p>
         <label class="cursor-pointer text-xs text-primary hover:underline">
@@ -140,7 +265,7 @@ const onPickFile = async (event: Event): Promise<void> => {
         spellcheck="false"
         placeholder="export default { id: 'my-plugin', name: '我的插件', version: '1.0.0', description: '…', apply(ctx) { … } }"
         class="w-full resize-y rounded-card border border-flat-weak bg-surface px-3 py-2 font-mono text-xs text-text outline-none focus:border-primary"
-        @input="() => { parsed = null; errorMessage = ''; warningLines = []; }"
+        @input="resetParseState"
       />
     </div>
 
@@ -165,37 +290,27 @@ const onPickFile = async (event: Event): Promise<void> => {
     </div>
 
     <details class="mt-3 text-xs text-text-tertiary">
-      <summary class="cursor-pointer select-none hover:text-text-secondary">插件格式说明 / 最小模板</summary>
-      <pre class="mt-2 overflow-x-auto rounded-card bg-surface px-3 py-2 font-mono text-xs leading-relaxed text-text-secondary">export default {
-  id: 'my-plugin',
-  name: '我的插件',
-  version: '1.0.0',
-  description: '示例：往左侧栏加一个面板',
-  apply(ctx) {
-    // 宿主代发的能力：UI 组件与 Vue 运行时句柄
-    const ui = ctx.consume('app:ui');
-    const { h, ref } = ctx.vue;
+      <summary class="cursor-pointer select-none hover:text-text-secondary">插件包格式 / 最小模板</summary>
+      <pre class="mt-2 overflow-x-auto rounded-card bg-surface px-3 py-2 font-mono text-xs leading-relaxed text-text-secondary">my-plugin.zip
+├── manifest.json
+├── main.js
+└── README.md
 
-    const count = ref(0);
-    ctx.sidebar.add({
-      id: 'main',
-      title: '我的插件',
-      mode: 'inline',
-      position: 'nav',
-      order: 300,
-      component: {
-        render: () => h(ui.Button, {
-          variant: 'primary',
-          onClick: () => { count.value += 1; },
-        }, () => '点了 ' + count.value + ' 次'),
-      },
-    });
-  },
-};</pre>
+// manifest.json
+{
+  "id": "my-plugin",
+  "name": "我的插件",
+  "version": "1.0.0",
+  "description": "一句话说明",
+  "author": "作者名",
+  "entry": "main.js",
+  "readme": "README.md"
+}</pre>
       <p class="mt-2">
-        面板组件请用渲染函数（生产构建不含 Vue 运行时模板编译器）；⚠️ 插件是运行时动态加载的，代码里<strong>不能写 import</strong>
-        （拿不到 vue 等依赖）—— 需要 h / ref 就从 <code>ctx.vue</code> 取，需要按钮输入框就用 <code>app:ui</code>，
-        完整 API 见 PLUGIN_API.md。
+        产物必须是<strong>单文件</strong> ESM 且不能残留 import（宿主运行时没有打包器也没有编译器）：
+        需要 h / ref 就写 <code>const { h, ref } = ctx.vue;</code>，需要 UI 组件就用 <code>app:ui</code>，
+        然后用 <code>npx esbuild src/main.js --bundle --format=esm --outfile=main.js</code> 打包成单文件再压缩。
+        完整约定见仓库根目录 <strong>PLUGIN_WIKI.md</strong>。
       </p>
     </details>
 
