@@ -144,9 +144,7 @@ const onPickFile = async (event: Event): Promise<void> => {
 
     <details class="mt-3 text-xs text-text-tertiary">
       <summary class="cursor-pointer select-none hover:text-text-secondary">插件格式说明 / 最小模板</summary>
-      <pre class="mt-2 overflow-x-auto rounded-card bg-surface px-3 py-2 font-mono text-xs leading-relaxed text-text-secondary">import { defineComponent, h } from 'vue';
-
-export default {
+      <pre class="mt-2 overflow-x-auto rounded-card bg-surface px-3 py-2 font-mono text-xs leading-relaxed text-text-secondary">export default {
   id: 'my-plugin',
   name: '我的插件',
   version: '1.0.0',
@@ -158,14 +156,13 @@ export default {
       mode: 'inline',
       position: 'nav',
       order: 300,
-      component: defineComponent({
-        render: () => h('div', { class: 'p-3 text-xs' }, 'Hello 插件'),
-      }),
+      component: { render: () => 'Hello 插件' },
     });
   },
 };</pre>
       <p class="mt-2">
-        面板组件请用渲染函数（生产构建不含 Vue 运行时模板编译器）；完整贡献点见 AGENTS.md「插件体系」。
+        面板组件请用渲染函数（生产构建不含 Vue 运行时模板编译器）；⚠️ 插件是运行时动态加载的，代码里<strong>不能写 import</strong>
+        （拿不到 vue 等依赖），可用能力以宿主 <code>ctx</code> 为准 —— 完整 API 见 PLUGIN_API.md。
       </p>
     </details>
 

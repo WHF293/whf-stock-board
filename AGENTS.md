@@ -74,15 +74,20 @@ server/           # vite 中间件：/stock-proxy（仅浏览器 dev 使用）
 **一切能力都由插件贡献**——侧栏面板、菜单、路由、停靠面板、命令、Agent MCP 服务器。
 宿主不硬编码任何具体插件，新增能力应当写成插件而不是改宿主（`MainLayout.vue` 里只保留面板承载与命令转发）。
 
+> **API 文档在根目录 [`PLUGIN_API.md`](./PLUGIN_API.md)**（九个贡献点字段与默认值、ctx 数据层、六个宿主服务、
+> 六个内置事件、配额与红线的完整清单）。本节只留架构约定；
+> 写插件前先看那份文档，改本节涉及的能力时同步它。
+
 ### 内核 API
 
 ```ts
 import { pluginKernel } from '@/plugin';
-pluginKernel.use(plugin, config?)  // 注册并挂载（返回 Disposable）
+pluginKernel.use(definition, options?)   // options: { enabled?: boolean; origin?: 'builtin' | 'user' }
 pluginKernel.unuse(id)             // 彻底移除
 pluginKernel.setEnabled(id, bool)  // 运行期启停（贡献点即撤销/恢复）
 pluginKernel.retry(id)             // 失败插件显式重试
 pluginKernel.list()                // PluginRuntimeInfo[]（status/contributions/error）
+pluginKernel.listSettingsPlugins() // 已挂载且声明 settings 的插件（宿主设置弹窗数据源）
 pluginKernel.revision              // ref<number>：宿主响应式依赖它感知变化
 ```
 
@@ -108,7 +113,7 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
 | 侧栏面板 | `ctx.sidebar.add({ id, title, component, mode, position, order, visibleWhenCollapsed })` | `mode: 'inline' \| 'drawer'`（默认 inline）；`position: 'nav' \| 'footer'`；`order` 越大越靠下，宿主内置项在前 |
 | 菜单 | `ctx.menu.add({ path, title, icon, component, order?, fallbackLanding? })` | **带 `component` 会自动注册路由**（挂在主布局之下），无需再手动 `router.add`；`fallbackLanding: true` 声明本页为「插件页随插件撤销时的兜底落点」（见「宿主接线」的最后一条） |
 | 路由 | `ctx.router.add({ path, component, underLayout? })` | 无菜单入口的隐藏页用这个；`underLayout` 默认 `true` |
-| 停靠面板 | `ctx.dock.add(key, component, title)` | 右侧面板（`openPluginPanel(key)` 打开） |
+| 停靠面板 | `ctx.dock.add({ id, title, component, props? })` | 右侧面板（调用方自己用 `useDockPanelStore().openPluginPanel('<pluginId>#<id>')` 打开；`panel:open` 服务当前不含 dock） |
 | 顶栏条目 | `ctx.header.add({ id, title, icon, component, props?, marquee?, marqueeIntervalMs? })` | 应用**右上角工具条**的插件入口（`panel:open` 服务同样能唤醒）：收起态不展示图标，由宿主按 `marquee()` 返回的行做 Swiper 式上下滑动轮播（间隔默认 4s、下限 1500ms，单行不轮播；行给 `label`/`value` 时名称可截断、数值常显，视窗 171px 固定），点开下拉渲染 `component`（`usePluginPanelHost().close()` 可自行收起）；顺序与显隐在设置页「顶栏工具」编排（`settings.headerOrder` / `hiddenHeaderItems`） |
 | 命令 | `ctx.command.add({ id, title, keys?, run })` | `keys: 'Ctrl+Alt+N'` 自动接管全局快捷键（`command-keys.ts` 解析） |
 | 股票行操作 | `ctx.stockRow.add({ id, title, activeTitle?, icon, order?, isActive?, run })` | 往**自选股表格的「操作」列**注入按钮（宿主不硬编码任何插件）；`isActive` 表达激活态（宿主据此高亮 + 换用 `activeTitle`），适合「盯盘 / 取消盯盘」这类开关动作 |
@@ -120,7 +125,7 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
 1. 建目录 `src/plugins/<your-plugin>/`：`plugin.ts`（导出 `PluginDefinition`）+ 面板 `xxx.vue` + `constants.ts`（文案/阈值入常量）
 2. `plugin.ts` 里 `apply: (ctx) => ctx.sidebar.add({ id, title, component, mode: 'inline', position: 'nav', order })`
 3. 注册到 `src/plugins/index.ts` 的 `BUILTIN_PLUGINS`（宿主按此列表挂载，黑名单见 `stores/plugin.ts`；**改前先按下方「备份与恢复」规范备份**）
-4. 面板内既可用 `pluginLab` 这类宿主导出的公共数据，也可自己 `ctx.provide` 服务给别的插件
+4. 面板内既可消费宿主服务（`ctx.consume`，如 `app:notify` / `kernel:runtime`），也可自己 `ctx.provide` 服务给别人；想看当前挂载了哪些插件、各自贡献了什么，去左侧导航的**插件工坊**页（它不是插件，见下方条目）
 5. 启停无需改宿主：设置页「插件」卡片（`PluginManageModal.vue`）已按 `pluginKernel.list()` 自动渲染
 
 ### 宿主接线（别绕开）
@@ -129,7 +134,8 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
   先 provide 宿主服务（`app:version` / `kernel:runtime` / `app:navigate` / `panel:open` / `app:notify`），再挂插件，
   再 `attachPluginRoutes(router, { onVanishedRoute })`（订阅路由注册表版本号，把插件注册 / 卸载翻译成 `addRoute` / 摘除；
   **用户正停留的插件页随插件被撤销时**回调 `onVanishedRoute`，宿主在 `recoverVanishedRoute` 里按
-  「声明 `fallbackLanding` 的页面 → 侧栏第一个菜单 → 宿主首页」三级递退接走用户，并 `replace` 过去 + 浮窗说明原因），
+  「声明了 `fallbackLanding` 的页面（宿主 `MENU_ITEMS` 里的自带页优先，再是插件声明的）→ 侧栏第一个菜单 → 宿主首页」
+  三级递退接走用户，并 `replace` 过去 + 浮窗说明原因），
   随后**异步挂载用户插件**，最后 `router.afterEach` 广播 `route:changed`
 - 侧栏面板渲染：`components/plugin/SidebarPanelHost.vue`（inline，折叠时不挂载）+ `SidebarPanelEntry.vue`（drawer 入口按钮）+ `PluginPanelDrawer.vue`（抽屉承载）
 - 插件存储：`ctx.storage` 落在 `whf:app` 整包的 `plugin:<pluginId>` 命名空间下，**插件之间天然隔离**
@@ -138,6 +144,18 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
   插件 `ctx.consume('app:notify')` 即可弹右下角提醒（tone 走涨跌 token，自动跟随 `data-trend`）。
   承载组件由 `MainLayout` 渲染一次，**与发起它的插件面板是否挂载无关**——需要长期生效的提醒（如盯盘到价）必须走这里，
   不能挂在面板组件里（面板折叠即卸载）
+
+### 插件工坊不是插件（v2.6.2 起转正）
+
+「插件工坊」最早是一个演示用的内置插件，现已**转正为宿主自带功能**：页面在 `src/views/PluginLabView.vue`，
+路径与导航由 `ROUTE_PATH.PLUGIN_LAB` + `MENU_ITEMS` 注册（和「市场总览」同一层），不在 `BUILTIN_PLUGINS` 里。
+
+- 它是**插件体系的自省窗口**：内核概览、插件清单（启停 / 安装 / 卸载）、贡献点总览、生效服务、最近事件，
+  数据全部取自 `pluginKernel`（运行时只读句柄 + 服务容器 + 贡献注册表），不需要也不该走 props 注入。
+- 它**不可被停用**，于是「插件页随插件撤销」始终有一个可用落点：兜底声明写在 `MENU_ITEMS` 条目的
+  `fallbackLanding: true` 上，由 `recoverVanishedRoute` 与插件侧的同类声明一起解析（宿主页优先）。
+- 反过来：**宿主 page 若要用某个插件的能力，直接向服务容器取（`pluginKernel.services.consume`），并允许它缺席**——
+  插件可停用，页面不能因此崩。
 
 ### 面板挂载语义（决定「后台任务该放哪」，别踩）
 
@@ -192,7 +210,13 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
 除源码级插件外，应用支持**运行时安装**：设置页「插件」→「安装插件」（`PluginInstallModal.vue`）。
 
 - **插件格式**：预构建 ESM JS，`export default { …PluginDefinition }`（或 `export const plugin`）。
-  面板组件用渲染函数 `h()` 写——生产构建不含 Vue 运行时模板编译器，`<template>` 字符串不可用
+  面板组件用渲染函数写——生产构建不含 Vue 运行时模板编译器，`<template>` 字符串不可用
+- ⚠️ **插件代码里不能写 `import`（2026-09-20 实测）**：用户插件是 Blob URL 动态 `import()` 的，
+  拿不到 Vite 的依赖解析 —— 裸包名报 `Failed to resolve module specifier "vue"`，绝对路径报
+  `base scheme isn't hierarchical`。因此第三方插件的组件只能是**不依赖 import 的普通对象**
+  （如 `component: { render: () => 'Hello 插件' }`，render 返回字符串会被宿主渲成文本节点）；
+  需要 `h` / 响应式 / 宿主 UI 组件的场景，要等宿主把 SDK 作为服务暴露（方案见 `PLUGIN_API.md` §13）。
+  Tailwind 类同理：只有宿主源码里出现过的类才被生成到 CSS
 - **加载链**：`plugin/user-plugin-loader.ts` 把代码包成 Blob URL 动态 `import()`（CSP 无限制：浏览器侧无
   CSP meta、Tauri `csp: null`）→ `validateUserPluginDefinition` 结构校验（id 规则 / 必填字段 / 占用检查，
   **纯函数**可被烟雾测试直跑）→ `pluginKernel.use(def, { origin: 'user' })`
