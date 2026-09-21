@@ -35,6 +35,9 @@ import BaseInput from '../components/ui/BaseInput.vue';
 import BaseSwitch from '../components/ui/BaseSwitch.vue';
 import BaseTabs from '../components/ui/BaseTabs.vue';
 import BaseTag from '../components/ui/BaseTag.vue';
+import BaseTable from '../components/ui/BaseTable.vue';
+import BaseModal from '../components/ui/BaseModal.vue';
+import BaseDrawer from '../components/ui/BaseDrawer.vue';
 import MenuIcon from '../components/ui/MenuIcon.vue';
 import { BUILTIN_PLUGINS } from '../plugins';
 import { pluginKernel } from './index';
@@ -204,6 +207,9 @@ export const installPlugins = (pinia?: Pinia): void => {
     Switch: BaseSwitch,
     Tabs: BaseTabs,
     Tag: BaseTag,
+    Table: BaseTable,
+    Modal: BaseModal,
+    Drawer: BaseDrawer,
     Icon: MenuIcon,
     confirm: (options) => pluginUiStore.requestConfirm(options ?? {}),
   });

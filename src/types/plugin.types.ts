@@ -772,6 +772,21 @@ export interface UiKitService {
   Empty: Component;
   /** 分段 / 下划线两档 tab（options + modelValue） */
   Tabs: Component;
+  /**
+   * 配置驱动的表格（columns / rows / rowKey）
+   *
+   * 自定义单元格用**与列 key 同名的作用域插槽**：`h(ui.Table, props, { code: ({ row }) => … })`。
+   * 表头排序（列 `sortable`）/ 行展开（`expandable` + `#expanded` 插槽）均可用
+   */
+  Table: Component;
+  /**
+   * 通用弹窗（title + `open` 双向绑定 + 默认 / #filters / #footer 三插槽）
+   *
+   * 与 `confirm()` 的区别：`confirm` 是宿主渲染的一次性确认，Modal 是插件自己持有的一块界面
+   */
+  Modal: Component;
+  /** 右侧抽屉（title + `open` 双向绑定 + width），承载整页体量内容 */
+  Drawer: Component;
   /** 图标（name 取 MenuIcon 的 icon key） */
   Icon: Component;
   /** 弹一条应用级确认弹窗（宿主渲染，返回用户是否确认） */

@@ -1,6 +1,8 @@
 # PLUGIN_API.md — 插件开放接口清单
 
 > 本文件盘点**宿主开放给插件的全部能力**（`ctx.*` 九个贡献点、数据持久化、宿主服务、事件、配额与红线）。
+> **第三方（应用内安装）插件作者请优先看 [PLUGIN_WIKI.md](./PLUGIN_WIKI.md)** —— 那份是面向你的独立 wiki；
+> 本文件面向宿主仓库贡献者（含第三层「宿主内部模块」清单）。
 > 类型契约的唯一事实源是 `src/types/plugin.types.ts`，宿主侧接线（注册顺序、 `recoverVanishedRoute`）见 `src/plugin/setup.ts`；
 > 两者冲突时以代码为准，并回来修本文档。
 >
@@ -352,7 +354,7 @@ ctx.settings.reset();                 // 回到声明默认值
 | `app:notify` | `NotifyService` | 右下角应用级浮窗（宿主渲染，**跨路由常驻、与发起它的组件是否挂载无关**） |
 | `app:stock-search` | `StockSearchService` | 标的搜索（代码 / 名称 / 拼音，腾讯源） |
 | `kernel:runtime` | `PluginRuntimeReader` | 内核只读自省：`list()` / `get(id)` / `listServices()` / `recentEvents()` |
-| `app:ui` | `UiKitService` | **UI Kit**：宿主的 Button / Input / Switch / Tag / Card / Empty / Tabs / Icon 组件句柄 + `confirm()` 确认弹窗（§5.4） |
+| `app:ui` | `UiKitService` | **UI Kit**：宿主的 Button / Input / Switch / Tag / Card / Empty / Tabs / Table / Modal / Drawer / Icon 组件句柄 + `confirm()` 确认弹窗（§5.4） |
 | `app:http` | `HttpService` | **受控网络请求**：走宿主上游通道，仅允许白名单域名（§5.5） |
 | `app:quotes` | `QuotesService` | **行情报价**：按代码批量取实时快照（§5.6） |
 
@@ -433,7 +435,47 @@ ctx.sidebar.add({
 | `ui.Card` | `BaseCard` | `title`、`fill`、`clickableTitle` + `extra` / 默认插槽 |
 | `ui.Empty` | `BaseEmpty` | `text` |
 | `ui.Tabs` | `BaseTabs` | `options: { label, value }[]`、`modelValue`、`variant: 'segmented' \| 'underline'` |
+| `ui.Table` | `BaseTable` | `columns`、`rows`、`rowKey`、`minWidth`、`rowClickable`、`expandable` + 列 key 同名插槽（见下） |
+| `ui.Modal` | `BaseModal` | `title`、`open`（`onUpdate:open`）、`maxWidthClass`、`heightClass` + 默认 / `filters` / `footer` 插槽 |
+| `ui.Drawer` | `BaseDrawer` | `title`、`open`（`onUpdate:open`）、`width`（默认 `66vw`） |
 | `ui.Icon` | `MenuIcon` | `name`（key 清单见 §9）、`size` |
+
+三个「重」组件的用法要点：
+
+```ts
+// Table：列配置驱动，自定义单元格用「与列 key 同名」的作用域插槽
+h(ui.Table, {
+  columns: [
+    { key: 'code', label: '代码', sortable: true, sortValue: (row) => row.code },
+    { key: 'price', label: '现价', align: 'right' },
+  ],
+  rows: rows.value,
+  rowKey: (row) => row.code,
+  minWidth: '320px',
+  onRowClick: (row) => { /* 行点击 */ },
+}, {
+  // 插槽名 = 列 key，参数是 { row }；不提供则展示 row[key] 原值
+  price: ({ row }) => h('span', { class: 'tabular-nums' }, row.price.toFixed(2)),
+})
+```
+
+```ts
+// Modal / Drawer：open 由插件自己持有，插槽填内容
+const open = ref(false);
+h(ui.Modal, {
+  open: open.value,
+  title: '新增条目',
+  'onUpdate:open': (value) => { open.value = value; },
+  onCancel: () => { open.value = false; },
+}, {
+  default: () => h(ui.Input, { /* … */ }),
+  footer: () => h(ui.Button, { variant: 'primary', onClick: onSubmit }, () => '保存'),
+})
+```
+
+- `ui.Table` 的排序是**点击表头**触发的内置行为，作用于传入的 `rows`（不是全量数据）；
+- `ui.Modal` / `ui.Drawer` 自带遮罩点击关闭、ESC 关闭、打开时锁 body 滚动，插件只需维护 `open`；
+- 两者与 `confirm()` 的分工：`confirm()` 是宿主渲染的一次性确认，`Modal` / `Drawer` 是插件自己持有的界面。
 
 `confirm()` — 删除确认这类「必须问一句」的场景：
 
@@ -746,10 +788,13 @@ export default {
 仍未补齐的：
 
 1. **模板编译器**：`component.template` 仍不可用，请一律用渲染函数。
-   （若将来真要支持：把 `vue` 换到含编译器的 esm-bundler，代价是 +约 100KB 主包体积，
+   JSX 同理（也要编译，且 Vue JSX 插件的默认产物会 `import "vue/jsx-runtime"`）——
+   第三方想要 JSX 的写法，正确姿势是**本地预编译成 `h()` 产物**再安装，宿主不用改（见 `PLUGIN_WIKI.md` §8.1）。
+   （若将来真要在运行时支持模板：把 `vue` 换到含编译器的 esm-bundler，代价是 +约 100KB 主包体积，
    收益与 `app:ui` 重叠，**当前不划算**。）
 2. **无类型提示**：第三方只能用 JS 硬写。要 TS 提示，只能自行维护一份 `AppServiceMap` / `PluginContext` 的 d.ts 副本。
-3. **`app:ui` 覆盖面有限**：目前只有 Button / Input / Switch / Tag / Card / Empty / Tabs / Icon 八个组件。
-   Table / Modal / Drawer 这类更重的组件还没开放 —— 真有插件需要时再补（补的是复用，不是凭想象先造）。
+3. **`app:ui` 覆盖面有限**：目前十一个组件（Button / Input / Switch / Tag / Card / Empty / Tabs /
+   Table / Modal / Drawer / Icon）。Select / DatePicker / 图表这类还没开放 ——
+   真有插件需要时再补（补的是复用，不是凭想象先造）。
 
 如果第三条里的某一项正好卡住你的插件，宿主侧补它的成本很低（一个组件句柄 + 一行 provide），欢迎提需求。
