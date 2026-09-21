@@ -6,7 +6,6 @@
  */
 import { sidebarWatchPlugin } from './sidebar-watch/plugin';
 import { quickNotePlugin } from './quick-note/plugin';
-import { pluginLabPlugin } from './plugin-lab/plugin';
 import { mainlinePlugin } from './mainline/plugin';
 import { dividendScreenPlugin } from './dividend-screen/plugin';
 import type { PluginDefinition } from '../types/plugin.types';
@@ -15,7 +14,6 @@ import type { PluginDefinition } from '../types/plugin.types';
 export const BUILTIN_PLUGINS: readonly PluginDefinition[] = [
   sidebarWatchPlugin,
   quickNotePlugin,
-  pluginLabPlugin,
   mainlinePlugin,
   dividendScreenPlugin,
 ];

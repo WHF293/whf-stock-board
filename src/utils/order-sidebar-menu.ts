@@ -14,6 +14,13 @@ export interface SidebarMenuEntry {
   title: string;
   /** 图标 key（MenuIcon 渲染） */
   icon: string;
+  /**
+   * 是否声明为「插件页随插件撤销」的兜底落点（宿主自带页面用）
+   *
+   * 插件侧的同名声明在 `ctx.menu.add()` 参数里；这里给宿主的正式页面用同一套语义，
+   * 于是「落点」永远只有一个来源：**看谁声明了它**，而不是在某个常量里硬编码路径。
+   */
+  fallbackLanding?: boolean;
 }
 
 /**

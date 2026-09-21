@@ -1,33 +1,36 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useIntervalFn } from '@vueuse/core';
-import BaseButton from '../../components/ui/BaseButton.vue';
-import BaseCard from '../../components/ui/BaseCard.vue';
-import BaseEmpty from '../../components/ui/BaseEmpty.vue';
-import BaseSwitch from '../../components/ui/BaseSwitch.vue';
-import BaseTag from '../../components/ui/BaseTag.vue';
-import PluginInstallModal from '../../components/plugin/PluginInstallModal.vue';
-import { pluginKernel } from '../../plugin';
-import { usePlugins } from '../../composables/use-plugins';
-import { useUserPlugins } from '../../composables/use-user-plugins';
-import { PLUGIN_STATUS, PLUGIN_STATUS_LABEL, PLUGIN_STATUS_TONE } from '../../constants/plugin.constants';
-import { formatTime } from '../../utils/format-time';
-import { PLUGIN_LAB_EVENT_LIMIT, PLUGIN_LAB_TICK_MS } from './constants';
-import type { PluginRuntimeInfo } from '../../types/plugin.types';
-import type { QuickNoteRepo } from '../quick-note/service';
+import BaseButton from '../components/ui/BaseButton.vue';
+import BaseCard from '../components/ui/BaseCard.vue';
+import BaseEmpty from '../components/ui/BaseEmpty.vue';
+import BaseSwitch from '../components/ui/BaseSwitch.vue';
+import BaseTag from '../components/ui/BaseTag.vue';
+import PluginInstallModal from '../components/plugin/PluginInstallModal.vue';
+import { pluginKernel } from '../plugin';
+import { usePlugins } from '../composables/use-plugins';
+import { useUserPlugins } from '../composables/use-user-plugins';
+import {
+  PLUGIN_LAB_EVENT_LIMIT,
+  PLUGIN_LAB_TICK_MS,
+  PLUGIN_STATUS,
+  PLUGIN_STATUS_LABEL,
+  PLUGIN_STATUS_TONE,
+} from '../constants/plugin.constants';
+import { formatTime } from '../utils/format-time';
+import type { PluginRuntimeInfo } from '../types/plugin.types';
+import type { QuickNoteRepo } from '../plugins/quick-note/service';
 
 /**
- * 插件工坊（插件 dsh-plugin-lab 贡献的页面）
+ * 插件工坊（宿主自带页面，正式功能）
  *
- * 「宿主能看到什么，插件就能看到什么」：本页全部数据来自内核运行时的只读句柄
- * （`kernel:runtime` 服务）与宿主经 props 注入的 `note:repo` 服务，
- * 页面本身也是通过 `ctx.menu.add()` 注册的 —— 插件能加菜单、能加页面、能读运行时。
+ * 本页是插件体系的自省 / 管理窗口：全部数据来自内核运行时的只读句柄
+ * （`pluginKernel.reader()`）与服务容器（`pluginKernel.services`），
  * 启停 / 安装 / 卸载直接复用宿主的 composable 与弹窗，管理能力不只在设置页。
+ *
+ * 它本身**不是插件**：路径与导航由宿主注册（`ROUTE_PATH.PLUGIN_LAB`），
+ * 因此不会被停用，也不出现在插件清单里，并作为「插件页随插件撤销」的兜底落点。
  */
-const props = defineProps<{
-  /** 速记仓储（由 dsh-quick-note 提供；该插件被禁用时为 undefined） */
-  noteRepo?: QuickNoteRepo;
-}>();
 
 const { setEnabled, retry } = usePlugins();
 const { isUserPlugin, uninstall, pendingDbCleanup, resolveDbCleanup } = useUserPlugins();
@@ -102,14 +105,23 @@ const mcpServers = computed(() => {
   return [...pluginKernel.contributions.agent.servers];
 });
 
-/** 速记服务是否可用（跨插件服务消费示例） */
-const noteAvailable = computed(() => props.noteRepo !== undefined);
+/**
+ * 当前生效的速记服务（由 dsh-quick-note 插件提供，未提供时降级）
+ *
+ * 宿主页面直接向服务容器取用：插件挂载 / 卸载后重解析一次即可，
+ * 不必把实现当作 props 注入（页面也就不再依赖谁来挂载它）。
+ */
+const noteRepo = computed<QuickNoteRepo | undefined>(() => {
+  void tick.value;
+  void pluginKernel.revision.value;
+  return pluginKernel.services.consume('note:repo');
+});
+
+/** 速记服务是否可用（插件被禁用时为 false） */
+const noteAvailable = computed(() => noteRepo.value !== undefined);
 
 /** 最近一条速记正文（服务不可用时展示提示） */
-const latestNoteText = computed(() => {
-  void tick.value;
-  return props.noteRepo?.latest()?.text ?? '';
-});
+const latestNoteText = computed(() => noteRepo.value?.latest()?.text ?? '');
 
 /**
  * 贡献点计数的可读文案

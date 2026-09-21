@@ -80,8 +80,9 @@ const openPanelByKey = (panelKey: string): void => {
 /**
  * 用户正停留的插件页随插件撤销时的收尾：把他送到一个**仍然存在**的页面，并说明原因
  *
- * 三级落点全部取自「撤销之后」的注册表，所以不会跳进另一个刚消失的页面：
- * ① 插件自己声明的兜底落点（`fallbackLanding`，如插件工坊）；
+ * 三级落点全部取自「撤销之后」的注册表，所以不会跳进另一个刚消失的页面；
+ * 第一级「兜底落点」两处来源并存：宿主自带的正式页面（如插件工坊，在
+ * `MENU_ITEMS` 里声明）与插件自己声明的贡献点（`ctx.menu.add` 的 `fallbackLanding`）。
  * ② 侧栏第一个菜单（顺序与界面完全同源：`orderSidebarMenu`）；
  * ③ 宿主首页（侧栏菜单全被用户隐藏时的最后一道）。
  *
@@ -97,9 +98,13 @@ const recoverVanishedRoute = (info: VanishedRouteInfo): void => {
     settingsStore.hiddenMenus,
   );
   const target = resolveRouteFallback({
-    landingPaths: pluginKernel.contributions.menu.items
-      .filter((item) => item.fallbackLanding)
-      .map((item) => item.path),
+    landingPaths: [
+      // 宿主自带页面的声明优先（恒可用），再是插件声明的落点
+      ...MENU_ITEMS.filter((item) => item.fallbackLanding === true).map((item) => item.path),
+      ...pluginKernel.contributions.menu.items
+        .filter((item) => item.fallbackLanding)
+        .map((item) => item.path),
+    ],
     sidebarPaths: sidebar.map((item) => item.path),
     defaultPath: ROUTE_PATH.DASHBOARD,
   });

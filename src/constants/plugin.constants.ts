@@ -100,6 +100,12 @@ export const PLUGIN_LOG_PREFIX = '[plugin]';
 /** 内核事件环形缓冲容量（插件工坊「最近事件」用，超出丢弃最旧一条） */
 export const PLUGIN_EVENT_HISTORY_MAX = 200;
 
+/** 插件工坊「最近事件」最多展示的条数 */
+export const PLUGIN_LAB_EVENT_LIMIT = 12;
+
+/** 插件工坊事件心跳间隔（毫秒）：事件环形缓冲不是响应式的，用它驱动定时刷新 */
+export const PLUGIN_LAB_TICK_MS = 1000;
+
 /** 事件名合法形态：`namespace:action` 或纯标识符（宽松，仅用于日志可读性） */
 export const PLUGIN_EVENT_NAME_PATTERN = /^[a-z][a-z0-9:_-]*$/i;
 
