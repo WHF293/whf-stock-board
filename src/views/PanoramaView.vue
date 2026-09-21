@@ -6,6 +6,7 @@ import BaseTabs from '../components/ui/BaseTabs.vue';
 import TabConfigButton from '../components/ui/TabConfigButton.vue';
 import { useTabConfig } from '../composables/use-tab-config';
 import PanoramaCnBoard from '../components/business/PanoramaCnBoard.vue';
+import PanoramaReviewBoard from '../components/business/panorama-review/PanoramaReviewBoard.vue';
 import {
   fetchGlobalFuturesPanorama,
   fetchGlobalIndexPanorama,
@@ -23,11 +24,12 @@ import { usePolling } from '../composables/use-polling';
 import { POLLING_INTERVAL } from '../constants/polling.constants';
 
 /**
- * 行情全景：A股全景（板块排行，含行业/概念/筛选/成分股）/ 美股全景 / 全球宏观
+ * 行情全景：A股全景（板块排行，含行业/概念/筛选/成分股）/ 美股全景 / 全球宏观 /
+ * 历史复盘（牛熊模式库）
  *
  * 美股与全球宏观只展示名称 + 涨跌幅（网格卡片）；进入页面串行错峰拉取一次
  * （不参与轮询）；数据先取内存快照秒出 UI，接口成功后写回快照并刷新；
- * A股全景由 PanoramaCnBoard 组件自管数据（快照 / 轮询 / 成分股）
+ * A股全景与历史复盘由各自组件自管数据（历史复盘快照落 appStorage，重进零联网）
  */
 
 /** 模块 tab 选项 */
@@ -35,15 +37,21 @@ const MODULE_TABS = [
   { label: 'A股全景', value: 'cn' },
   { label: '美股全景', value: 'us' },
   { label: '全球宏观', value: 'macro' },
+  { label: '历史复盘', value: 'review' },
 ] as const;
 
 /** 各接口请求间隔（毫秒）：对同一上游串行错峰 */
 const REQUEST_GAP_MS = 500;
 
-// 页签显隐 + 顺序可配置（持久化）；激活值被隐藏时自动回退首个可见 tab
+// 页签显隐 + 顺序可配置（持久化，右上角「配置页签」按钮）；激活值被隐藏时自动回退首个可见 tab
 const { visibleOptions: moduleTabOptions, activeValue: activeModule } = useTabConfig(
   'panorama',
   MODULE_TABS,
+);
+
+/** 是否处于组件自管数据的模块（A股 / 历史复盘：宿主不拉数据，无骨架 / 空态逻辑） */
+const isSelfManagedModule = computed(
+  () => activeModule.value === 'cn' || activeModule.value === 'review',
 );
 
 const dataCache = useDataCacheStore();
@@ -103,8 +111,9 @@ const fetchUsBoards = async (): Promise<void> => {
   dataCache.set(DATA_CACHE_KEY.PANORAMA_US_BOARDS, usBoards.value);
 };
 
-/** 拉取当前模块数据（成功后写快照；A股模块由 PanoramaCnBoard 自管） */
+/** 拉取当前模块数据（成功后写快照；A股模块由 PanoramaCnBoard 自管；插件面板自管数据） */
 const loadActiveModule = async (): Promise<void> => {
+  if (isSelfManagedModule.value) return;
   isLoading.value = true;
   isError.value = false;
   try {
@@ -142,11 +151,11 @@ usePolling({
 });
 
 /**
- * 切换模块：有快照直接展示，无快照则拉取（A股模块由组件自管）
+ * 切换模块：插件面板自管数据；有快照直接展示，无快照则拉取（A股模块由组件自管）
  */
 const onSelectModule = (): void => {
   isError.value = false;
-  if (activeModule.value === 'cn') {
+  if (isSelfManagedModule.value) {
     isLoading.value = false;
     return;
   }
@@ -188,8 +197,11 @@ const isEmpty = computed(
       <span class="text-xs text-text-tertiary">未开盘时展示最近交易日收盘数据</span>
     </div>
 
+    <!-- 历史复盘：牛熊模式库面板（数据自管，快照落 appStorage；撑满剩余高度） -->
+    <PanoramaReviewBoard v-if="activeModule === 'review'" class="min-h-0 flex-1" />
+
     <!-- A股全景：板块排行组件（数据自管；撑满剩余高度，表格尽量高） -->
-    <PanoramaCnBoard v-if="activeModule === 'cn'" class="min-h-0 flex-1" />
+    <PanoramaCnBoard v-else-if="activeModule === 'cn'" class="min-h-0 flex-1" />
 
     <!-- 加载骨架（美股 / 宏观） -->
     <BaseCard v-else-if="isLoading">

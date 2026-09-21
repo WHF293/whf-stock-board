@@ -42,6 +42,9 @@ export const STORAGE_NS_MARKET_RANK_SECTOR_VIEW = 'marketRank.sectorView';
 /** 插件系统命名空间（禁用黑名单 + 侧栏面板折叠态） */
 export const STORAGE_NS_PLUGIN = 'plugin';
 
+/** 行情全景 · 历史复盘命名空间（指数月K快照 + 同步水位；约百余 KB 量级） */
+export const STORAGE_NS_PANORAMA_REVIEW = 'panorama.review';
+
 /** 用户安装插件命名空间（应用内安装的插件代码持久化） */
 export const STORAGE_NS_USER_PLUGINS = 'plugin.user';
 
