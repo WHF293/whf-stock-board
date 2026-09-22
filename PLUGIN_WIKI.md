@@ -39,12 +39,13 @@ export default {
 
 | 不能写 | 为什么 | 该怎么写 |
 | --- | --- | --- |
-| `import … from '…'`、`export … from '…'`、`import('…')` | 插件是运行时被包成 Blob URL 动态加载的一段字符串，解析它的那一刻**没有打包器在场**，浏览器只认 URL、不认包管理器 | 所有能力都从 `ctx` 上取（第 3、6 章） |
-| `component: { template: '<div>…' }` | 生产构建用的是**不含模板编译器**的 Vue 运行时，写了只会多一行 `[Vue warn]`，组件**渲染成空白**——最坑的那种失败 | 用渲染函数 `render: () => h(…)`（第 9 章） |
+| `import … from '…'`、`export … from '…'`、`import('…')` | 插件是运行时被包成 Blob URL 动态加载的一段字符串，解析它的那一刻**没有打包器在场**，浏览器只认 URL、不认包管理器 | 所有能力都从 `ctx` 上取（第 3、5 章） |
+| `component: { template: '<div>…' }` | 生产构建用的是**不含模板编译器**的 Vue 运行时，写了只会多一行 `[Vue warn]`，组件**渲染成空白**——最坑的那种失败 | 用渲染函数 `render: () => h(…)`（第 8 章） |
 | 自己发明 Tailwind 类调样式 | Tailwind 在**构建期**只扫描宿主源码，插件独有的类（如 `ps-[13px]`、`outline-dashed`）在产物 CSS 里根本没有 | 用 `app:ui` 的组件，或内联 `style` |
 
-这三类现在是**安装前的静态预检项**：命中前两条直接拦下，报错写清「第几行 + 为什么 + 该怎么改」；
-Tailwind 类不拦（能装），只在解析预览区提醒「可能没有样式」。
+前三条是**安装前的静态预检项**：命中前两条直接拦下，报错写清「第几行 + 为什么 + 该怎么改」；
+第三条不拦（能装），但解析预览时会拿**宿主真实样式表**逐个类名比对，缺样式的会按「第几行 + 类名」列出来
+（不是靠猜——早期版本按「长得像 Tailwind 类」猜，在官方插件上 3 条全是误报）。
 
 ### 0.3 一句话理解这套机制
 
@@ -65,7 +66,7 @@ export default {
   author: '作者名',              // 可省略，缺省显示「用户安装」
   inject: [],                   // 可选：依赖别的插件 id
   config: {},                   // 可选：只读配置，ctx.config 取
-  settings: { /* 第 5.3 节 */ },// 可选：声明后宿主自动生成设置表单
+  settings: { /* 第 4.3 节 */ },// 可选：声明后宿主自动生成设置表单
   apply(ctx) { /* 所有注册都写在这里 */ },   // 可以写成 async
 };
 ```
@@ -77,7 +78,7 @@ export default {
 | `author` | — | 缺省按来源兜底 |
 | `inject` | — | 依赖没挂载 → 本插件停在 `pending`；依赖被停用 → 级联回 `pending`；**环形依赖不会死循环** |
 | `config` | — | 只读，随定义下发（`ctx.config`） |
-| `settings` | — | 设置声明，见第 5.3 节 |
+| `settings` | — | 设置声明，见第 4.3 节 |
 | `apply` | ✅ | 抛错 → 状态 `failed`，**已产生的贡献点全量回滚**；不自动重试，用户在管理弹窗点重试 |
 
 ### 1.1 状态机
@@ -93,7 +94,7 @@ export default {
 ### 1.2 卸载时你不用写反向逻辑
 
 所有 `ctx.*.add()` 的返回值、所有 `ctx.on()` 的订阅，都被内核收进本次挂载的「副作用袋」，
-卸载时逆序 dispose 一遍。**轮询、定时器、全局监听请用 `ctx.effect` / `ctx.onDispose` 登记**（第 8 章），
+卸载时逆序 dispose 一遍。**轮询、定时器、全局监听请用 `ctx.effect` / `ctx.onDispose` 登记**（第 7 章），
 不要指望组件里的 `onUnmounted`——面板会被折叠卸载。
 
 ---
@@ -106,10 +107,10 @@ export default {
 | `ctx.config` | 只读配置 |
 | `ctx.logger` | `{ info, warn, error }`，前缀固定 `[plugin] <id> [级别]` |
 | `ctx.vue` | **Vue 运行时句柄**：`h` / `ref` / `reactive` / `computed` / `watch` / `onMounted` / `onUnmounted` / `nextTick` |
-| `ctx.storage` | KV 持久化（第 5.1 节） |
-| `ctx.db` | 结构化表（第 5.2 节） |
-| `ctx.settings` | 清单式设置的运行时存取（第 5.3 节） |
-| `ctx.sidebar` / `header` / `menu` / `router` / `dock` / `command` / `stockRow` / `stockDetail` / `agent` | 九个贡献点（第 4 章） |
+| `ctx.storage` | KV 持久化（第 4.1 节） |
+| `ctx.db` | 结构化表（第 4.2 节） |
+| `ctx.settings` | 清单式设置的运行时存取（第 4.3 节） |
+| `ctx.sidebar` / `header` / `menu` / `router` / `dock` / `command` / `stockRow` / `stockDetail` / `agent` | 九个贡献点（第 3 章） |
 | `ctx.effect(fn)` | 立即执行一次 + 登记清理函数 |
 | `ctx.onDispose(fn)` | 只登记「卸载时回调」，不立即执行 |
 | `ctx.provide(name, impl)` | 给别的插件贡献服务 |
@@ -144,7 +145,7 @@ ctx.sidebar.add({
 ```
 
 ⚠️ **面板会被卸载**：① 面板标题条折叠；② 侧栏收起且 `visibleWhenCollapsed` 为假。
-所以**轮询 / 告警 / 定时任务必须写在插件层**（第 8 章），写在面板组件里会随折叠停摆。
+所以**轮询 / 告警 / 定时任务必须写在插件层**（第 7 章），写在面板组件里会随折叠停摆。
 
 ### 3.2 `ctx.menu.add()` — 左侧导航菜单（带 component 自动产出路由）
 
@@ -330,7 +331,7 @@ ctx.settings.reset();
 
 ---
 
-## 5. 十五个宿主服务（`ctx.consume` 取）
+## 5. 十六个宿主服务（`ctx.consume` 取）
 
 宿主启动时就注册好了，`apply` 里必拿得到。**一律判空**：插件之间互相提供的服务在提供方被停用时会消失。
 

@@ -14,7 +14,7 @@
 
 | 层 | 内容 | 谁能用 | 兼容承诺 |
 | --- | --- | --- | --- |
-| **① 契约层** | `ctx.*` 全部成员、`AppServiceMap` 十五个宿主服务、`AppEventMap` 六个内置事件、`types/plugin.types.ts` 全部导出类型 | 源码级插件 + 应用内安装的用户插件 | **主版本号内保证向后兼容**；要改形态须同步本文档 |
+| **① 契约层** | `ctx.*` 全部成员、`AppServiceMap` 十六个宿主服务、`AppEventMap` 六个内置事件、`types/plugin.types.ts` 全部导出类型 | 源码级插件 + 应用内安装的用户插件 | **主版本号内保证向后兼容**；要改形态须同步本文档 |
 | **② 服务扩展层** | 插件之间经 `ctx.provide` / `ctx.consume` 互相暴露的自定义服务与事件（如 `note:repo` / `note:saved`） | 任何插件 | 由「提供方插件」负责；消费方必须允许 `consume` 返回 `undefined` 并降级 |
 | **③ 宿主内部模块** | `@/api/*`、`@/utils/*`、`@/composables/*`、`@/components/ui/*`、`@/stores/*` 等源码模块 | **仅源码级插件**（跟宿主一起构建） | 无承诺；改名 / 搬文件不另行通知 |
 
@@ -447,7 +447,7 @@ ctx.sidebar.add({
 | `ui.Modal` | `BaseModal` | `title`、`open`（`onUpdate:open`）、`maxWidthClass`、`heightClass` + 默认 / `filters` / `footer` 插槽 |
 | `ui.Drawer` | `BaseDrawer` | `title`、`open`（`onUpdate:open`）、`width`（默认 `66vw`） |
 | `ui.Skeleton` | `BaseSkeleton` | 无 props，默认三行文本形状，默认插槽可自定形状。**只在一条数据都没有时用** —— 列表刷新不许翻 loading（会整表卸载重建闪屏），见 §10 |
-| `ui.Icon` | `MenuIcon` | `name`（key 清单见 §9）、`size` |
+| `ui.Icon` | `MenuIcon` | `name`（key 清单见 `PLUGIN_WIKI.md` §10）、`size` |
 
 三个「重」组件的用法要点：
 
@@ -889,7 +889,8 @@ export default {
 
 | 改了什么 | 必须同步 |
 | --- | --- |
-| `AppServiceMap` / `AppEventMap` / 贡献点类型 | 本文档 + `AGENTS.md`「插件体系」+ `README.md`「插件体系」 |
+| `AppServiceMap` / `AppEventMap` / 贡献点类型 | 本文档 + `AGENTS.md`「插件体系」+ `README.md`「插件体系」+ `PLUGIN_WIKI.md`（第三方那份） |
+| 插件会用到的宿主 `types/` / `constants/` | 插件仓库 `../whf-stock-board-plugin`：跑一次 `node scripts/sync-host-contract.mjs` 重出 `host/` 契约快照（那边类型层会直接报错） |
 | `ctx.db` 的表 / 列 | Agent MCP 工具描述（`src/agent/mcp/app-tools.ts` 的 `db_query` / `db_execute`） |
 | 新增 / 删除的 API | `SERVER_API.md`（若是网络接口） |
 | 预检规则（允许 / 禁止哪些写法） | 本文档 §0 + §13，以及安装弹窗的说明文案（两者是同一套认知） |
@@ -899,7 +900,7 @@ export default {
 
 ---
 
-## 13. 已知缺口（2026-09-21 更新：四个缺口已补齐三条）
+## 13. 已知缺口（2026-09-22 更新：⑤ 静态预检已落地，样式审计改为 CSSOM 实读）
 
 | 原缺口 | 现在 |
 | --- | --- |
@@ -908,6 +909,7 @@ export default {
 | ③ 没有取数通道 | ✅ **`app:http`（白名单内）+ `app:quotes`（批量报价）**（§5.5 / §5.6） |
 | ④ 没有模板编译器 | ⚠️ 仍需渲染函数（见下） |
 | ⑤ 写坏了要给什么样的报错 | ✅ **安装前静态预检**：行号 + 原因 + 该怎么改（`src/plugin/user-plugin-lint.ts`） |
+| ⑥ 类名有没有样式只能靠猜 | ✅ **CSSOM 实读**：安装预览时用 `auditPluginClassNames` 拿宿主真实样式表比对（`src/plugin/user-plugin-class-audit.ts`），不再按「长得像 Tailwind 类」猜 —— 旧版猜法在主线插件上 3 条全误报 |
 
 仍未补齐的：
 

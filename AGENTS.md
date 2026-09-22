@@ -306,6 +306,7 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
 node .ai/tmp/plugin-kernel-smoke.mjs   # 150 项断言：挂载/卸载/贡献点可逆/order 排序/依赖收敛/环形依赖/失败回滚/服务覆盖恢复/事件退订/清理逆序/菜单自动路由/存储隔离/快捷键解析/Agent 贡献点/revision/ctx.db 降级通道全链路
 node "C:/Users/ChenYj/.workbuddy/skills/ts-smoke-harness/scripts/run-ts-smoke.mjs" --test .ai/tmp/plugin-db-smoke.mjs   # 38 项：ctx.db 纯函数层（表名校验/DDL/序列化/真 SQLite 执行）
 node "C:/Users/ChenYj/.workbuddy/skills/ts-smoke-harness/scripts/run-ts-smoke.mjs" --test .ai/tmp/plugin-zip-smoke.mjs  # zip 产物包回验（解包/静态预检/真机执行/清单一致性）；默认读 ../whf-stock-board-plugin/plugins-dist，可用 WHF_PLUGIN_DIST 覆盖
+node .ai/tmp/plugin-doc-lint-smoke.mjs   # 176 项：插件文档 ↔ 契约一致性（服务/事件/UI 组件/贡献点双向比对、计数文案、章节交叉引用是否指向存在的标题）。**改了契约或动了 PLUGIN_API.md / PLUGIN_WIKI.md / README 的插件段就必须跑** —— 纯 node 直跑，不要经 harness
 ```
 
 问自己一句：「这个能力是插件贡献的，还是我又改宿主硬编码了？插件卸载后它真的消失了吗？」
