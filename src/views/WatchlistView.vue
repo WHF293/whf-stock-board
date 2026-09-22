@@ -8,19 +8,30 @@ import BaseInput from "../components/ui/BaseInput.vue";
 import BaseTabs from "../components/ui/BaseTabs.vue";
 import MenuIcon from "../components/ui/MenuIcon.vue";
 import StockSearchModal from "../components/business/StockSearchModal.vue";
+import WatchlistBatchAddModal from "../components/business/WatchlistBatchAddModal.vue";
 import WatchlistGroupEditModal from "../components/business/WatchlistGroupEditModal.vue";
 import WatchlistTable from "../components/business/WatchlistTable.vue";
 import { fetchFullQuotes } from "../api/quotes.api";
 import { usePolling } from "../composables/use-polling";
 import { POLLING_INTERVAL } from "../constants/polling.constants";
-import { DEFAULT_GROUP_ID } from "../constants/watchlist.constants";
+import { NOTIFY_SOURCE_WATCHLIST, NOTIFY_TONE } from "../constants/notify.constants";
+import {
+  BATCH_ADD_EXISTS_TEMPLATE,
+  BATCH_ADD_MISSING_DETAIL_MAX,
+  BATCH_ADD_MISSING_MULTI_TEMPLATE,
+  BATCH_ADD_MISSING_TEMPLATE,
+  BATCH_ADD_SKIPPED_TEMPLATE,
+  BATCH_ADD_SUCCESS_TEMPLATE,
+  DEFAULT_GROUP_ID,
+} from "../constants/watchlist.constants";
 import { useWatchlistStore } from "../stores/watchlist";
+import { useNotificationsStore } from "../stores/notifications";
 import { useDataCacheStore } from "../stores/data-cache";
 import { DATA_CACHE_KEY } from "../constants/data-cache.constants";
 import { findQuoteBySymbol } from "../utils/find-quote-by-symbol";
 import type { SearchResult } from "../types/stock-quote.types";
 import type { FullQuote } from "../types/stock-quote.types";
-import type { WatchlistStock } from "../types/watchlist.types";
+import type { BatchAddResolveResult, WatchlistStock } from "../types/watchlist.types";
 
 /**
  * 自选股：分组 tab + 搜索添加 + 分组表格，轮询仅拉当前分组标的；
@@ -28,6 +39,7 @@ import type { WatchlistStock } from "../types/watchlist.types";
  */
 const watchlistStore = useWatchlistStore();
 const dataCache = useDataCacheStore();
+const notifyStore = useNotificationsStore();
 
 /** 当前激活分组 id */
 const activeGroupId = ref<string>(DEFAULT_GROUP_ID);
@@ -283,6 +295,86 @@ const onConfirmStockGroups = (groupIds: string[]): void => {
     groupIds,
   );
 };
+
+// ---------- 批量添加（弹窗内解析 + 校验，这里落库并弹浮窗） ----------
+
+/** 批量添加弹窗开关 */
+const batchAddOpen = ref(false);
+
+/**
+ * 批量添加确认：把校验通过的标的逐个加入当前分组，并提示查不到的代码
+ *
+ * 弹窗已经用行情接口确认过代码存在，这里只处理「加得进 / 已在分组里」，
+ * 再按用户能看懂的方式反馈：成功一条、查不到的逐条（多于 3 条合并成一条防刷屏）。
+ * @param payload 弹窗回传的校验结果
+ */
+const onConfirmBatchAdd = (payload: BatchAddResolveResult): void => {
+  const group = activeGroup.value;
+  if (!group) {
+    return;
+  }
+  // addedAt 递增，保持用户输入的先后顺序（同毫秒入库时列表顺序才稳定）
+  const base = Date.now();
+  let added = 0;
+  let skipped = 0;
+  payload.items.forEach((item, index) => {
+    const ok = watchlistStore.addStock(
+      { symbol: item.symbol, name: item.name, addedAt: base + index },
+      group.id,
+    );
+    if (ok) {
+      added += 1;
+    } else {
+      skipped += 1;
+    }
+  });
+
+  if (added > 0) {
+    notifyStore.push({
+      title: BATCH_ADD_SUCCESS_TEMPLATE.replace('{count}', String(added)).replace(
+        '{group}',
+        group.name,
+      ),
+      body: skipped > 0 ? BATCH_ADD_SKIPPED_TEMPLATE.replace('{skipped}', String(skipped)) : '',
+      tone: NOTIFY_TONE.PRIMARY,
+      source: NOTIFY_SOURCE_WATCHLIST,
+    });
+  } else if (skipped > 0) {
+    notifyStore.push({
+      title: BATCH_ADD_EXISTS_TEMPLATE.replace('{count}', String(skipped)).replace(
+        '{group}',
+        group.name,
+      ),
+      tone: NOTIFY_TONE.FLAT,
+      source: NOTIFY_SOURCE_WATCHLIST,
+    });
+  }
+
+  const missing = payload.missing;
+  if (missing.length === 0) {
+    return;
+  }
+  // 少量逐条报出（用户要的就是「哪个代码错了」），多了合并成一条避免同屏被挤爆
+  if (missing.length <= BATCH_ADD_MISSING_DETAIL_MAX) {
+    for (const input of missing) {
+      notifyStore.push({
+        title: BATCH_ADD_MISSING_TEMPLATE.replace('{code}', input),
+        tone: NOTIFY_TONE.UP,
+        source: NOTIFY_SOURCE_WATCHLIST,
+        dedupeKey: `watchlist-batch-missing-${input}`,
+      });
+    }
+    return;
+  }
+  notifyStore.push({
+    title: BATCH_ADD_MISSING_MULTI_TEMPLATE.replace('{count}', String(missing.length)).replace(
+      '{codes}',
+      missing.slice(0, BATCH_ADD_MISSING_DETAIL_MAX).join('、'),
+    ),
+    tone: NOTIFY_TONE.UP,
+    source: NOTIFY_SOURCE_WATCHLIST,
+  });
+};
 </script>
 
 <template>
@@ -300,10 +392,18 @@ const onConfirmStockGroups = (groupIds: string[]): void => {
 
     <!-- 搜索添加（左侧）+ 新建分组（右侧） -->
     <div class="flex shrink-0 flex-wrap items-center justify-between gap-2">
-      <div>
+      <div class="flex items-center gap-2">
         <BaseButton variant="ghost" @click="searchModalOpen = true">
           <MenuIcon name="plus" :size="14" />
           添加股票
+        </BaseButton>
+        <BaseButton
+          variant="ghost"
+          data-track="WATCHLIST_BATCH_ADD"
+          @click="batchAddOpen = true"
+        >
+          <MenuIcon name="tradeImport" :size="14" />
+          批量添加
         </BaseButton>
       </div>
       <form class="flex items-center gap-2" @submit.prevent="onAddGroup">
@@ -390,6 +490,13 @@ const onConfirmStockGroups = (groupIds: string[]): void => {
           searchModalOpen = false;
         }
       "
+    />
+
+    <!-- 批量添加弹窗（粘贴代码 → 校验存在性 → 回传后落库并提示） -->
+    <WatchlistBatchAddModal
+      v-model:open="batchAddOpen"
+      :group-name="activeGroup?.name ?? ''"
+      @confirm="onConfirmBatchAdd"
     />
 
     <!-- 分组归属编辑弹窗（操作列编辑按钮触发；勾选后确认才生效） -->
