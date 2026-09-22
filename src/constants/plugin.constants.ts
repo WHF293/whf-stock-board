@@ -97,6 +97,19 @@ export const PLUGIN_STATUS_TONE: Record<
 /** 插件日志前缀（内核统一 `[plugin:<id>]` 形态） */
 export const PLUGIN_LOG_PREFIX = '[plugin]';
 
+/**
+ * 第三方插件产物的**运行时桥**全局键
+ *
+ * 为什么需要一个全局：`ctx.vue` 只在 `apply(ctx)` 那一刻才存在，而打包出来的
+ * `.vue` 产物里有 `_hoisted_1 = createElementVNode(...)` 这类**模块顶层**求值，
+ * 它发生在产物被 import 的瞬间 —— 早于 apply。桥在装配期就挂到 `globalThis`，
+ * 产物的 vue 别名模块（打包时由 `scripts/build-plugins.mjs` 生成）从它取同一份实例，
+ * 于是插件产物与宿主共用**唯一一个 Vue**，不会出现两份互不相通的响应式系统。
+ *
+ * 桥本身**只暴露 vue**（冻结对象、单一用途），不是给插件开的宿主能力后门。
+ */
+export const PLUGIN_RUNTIME_BRIDGE_KEY = '__WHF_PLUGIN_RUNTIME__';
+
 /** 内核事件环形缓冲容量（插件工坊「最近事件」用，超出丢弃最旧一条） */
 export const PLUGIN_EVENT_HISTORY_MAX = 200;
 

@@ -3,7 +3,7 @@
 > 面向**应用内安装**的插件作者：你不跟宿主一起构建，交出去的是**构建产物** —— 打成一个 `.zip` 包（推荐，见 §8.2）或单份 `.js`，用户选文件就能装上。
 > 要给宿主仓库提 PR 的「源码级插件」作者请另看 `PLUGIN_API.md`（那份更全，含宿主内部模块清单）。
 >
-> 适用版本：**v2.6.1+**。契约的唯一事实源是 `src/types/plugin.types.ts`，
+> 适用版本：**v2.6.2+**。契约的唯一事实源是 `src/types/plugin.types.ts`，
 > 与本文冲突时以代码为准，并欢迎提 issue 回来修文档。
 
 ---
@@ -33,6 +33,7 @@ export default {
 
 存成 `hello.js` → 应用里 **设置 → 插件（或插件工坊）→ 安装** → 选 `.zip` 产物包，或粘贴代码 / 选本地 `.js` → 「解析预览」→ 安装。
 装完立刻生效，不用重启；在插件管理里可以停用 / 卸载（卸载建过表时会问「保留数据 / 一并删除」）。
+同 id 再装一次不会撞车：见 §8.3（升级 / 接管 / 卸载）。
 
 ### 0.2 三条不能碰的红线（装之前就会被拦下）
 
@@ -329,7 +330,7 @@ ctx.settings.reset();
 
 ---
 
-## 5. 九个宿主服务（`ctx.consume` 取）
+## 5. 十五个宿主服务（`ctx.consume` 取）
 
 宿主启动时就注册好了，`apply` 里必拿得到。**一律判空**：插件之间互相提供的服务在提供方被停用时会消失。
 
@@ -338,12 +339,19 @@ ctx.settings.reset();
 | `app:version` | 应用版本号字符串 |
 | `app:navigate` | `(path) => void` 跳路由（插件不持有 router 实例） |
 | `panel:open` | `(panelKey) => void` 按全局键 `<id>#<key>` 打开面板；键不存在只 `console.warn` |
+| `panel:close` | `(panelKey) => void` 关掉自己的面板（drawer 关抽屉 / 顶栏收起下拉 / inline 折叠） |
 | `app:notify` | 右下角应用级浮窗（宿主渲染，**跨路由常驻**） |
 | `app:stock-search` | 标的搜索（代码 / 名称 / 拼音） |
+| `app:stock-picker` | **选股弹窗**：宿主渲染全站统一的搜索，Promise 回传结果（第 5.12 节） |
+| `app:stock-open` | **打开个股**：`openSidebar` 开右侧详情侧栏 / `openPage` 进详情整页（第 5.7 节） |
+| `app:watchlist` | **自选股只读视图**：`symbols()` / `groups()` / `nameOf()`（第 5.8 节） |
+| `app:polling` | **轮询调度器工厂**：`create()`，自带交易窗口 / 退避 / 可见性策略（第 5.9 节） |
 | `kernel:runtime` | 内核只读自省：`list()` / `get(id)` / `listServices()` / `recentEvents()` |
-| `app:ui` | **UI Kit**：宿主组件句柄 + `confirm()`（第 5.4 节） |
+| `app:ui` | **UI Kit**：十二个宿主组件句柄 + `confirm()`（第 5.4 节） |
 | `app:http` | **受控网络请求**：走宿主上游通道，仅白名单域名（第 5.5 节） |
 | `app:quotes` | **行情报价**：按代码批量取实时快照（第 5.6 节） |
+| `app:market` | **市场剖面**：沪深逐日成交额 / 指定交易日涨停池（重接口，别轮询；第 5.10 节） |
+| `app:format` | **格式化与涨跌语义**：红涨绿跌、百分比 / 价格 / 相对时间、符号互转、`delay` / `debounce`（第 5.11 节） |
 
 ### 5.1 `app:notify`
 
@@ -405,6 +413,7 @@ h(ui.Button, { variant: 'primary', onClick }, () => '查询');     // 第三参�
 | `ui.Table` | `columns`（`{ key, label, align, sortable, sortValue }`，**表头文案是 `label` 不是 `title`**）、`rows`、`rowKey`、`minWidth`、`rowClickable`、`expandable` + 列 key 同名插槽 |
 | `ui.Modal` | `title`、`open`（配 `'onUpdate:open'`）、`maxWidthClass`、`heightClass` + 默认 / `filters` / `footer` 插槽 |
 | `ui.Drawer` | `title`、`open`（配 `'onUpdate:open'`）、`width`（默认 `66vw`） |
+| `ui.Skeleton` | 骨架占位，无 props（默认三行形状，默认插槽可自定）。**只在一条数据都没有时用** |
 | `ui.Icon` | `name`（icon key 见第 10 章）、`size` |
 
 `ui.Table` 自定义单元格用**与列 key 同名**的作用域插槽：
@@ -489,6 +498,103 @@ const list = await ctx.consume('app:quotes').fetchFullQuotes(['300339', 'sh60051
 - 上游拿不到的代码不出结果，**按 code 取值务必做地图查找**，不要假设下标；
 - **不要轮询**：这是展示级的批量接口，长期后台刷新请走低频（≥30s）。
 
+### 5.7 `app:stock-open` — 打开个股
+
+```js
+const stockOpen = ctx.consume('app:stock-open');
+stockOpen.openSidebar('sh600519');   // 单击语义：展开右侧详情侧栏
+stockOpen.openPage('600519');        // 双击语义：进详情整页（裸码也认）
+
+// 带上来源列表 → 详情页左侧可一键切换同批股票（symbol 由宿主归一化）
+stockOpen.openPage('600519', rows.map((r) => ({ symbol: r.code, name: r.name })));
+```
+
+与宿主页面的搜索、自选股表格是**同一个实现**。你自己 `app:navigate` 也能跳过去，
+但会丢掉详情页左侧的来源列表。
+
+### 5.8 `app:watchlist` — 自选股（只读）
+
+```js
+const watchlist = ctx.consume('app:watchlist');
+watchlist.symbols();            // 全部自选股完整符号（跨分组去重）
+watchlist.groups();             // [{ id, name, stocks: [{ symbol, name }] }]
+watchlist.nameOf('sh600519');   // 查名称；不在自选股里返回 undefined
+```
+
+三个成员都是 getter，**在你自己的 computed / watch 里调用会跟随自选股变化**：
+
+```js
+const monitored = computed(() => rows.value.filter((r) => watchlist.symbols().includes(r.symbol)));
+```
+
+**只给读不给写** —— 增删自选归宿主页面。
+
+### 5.9 `app:polling` — 轮询（别自己写 `setInterval`）
+
+```js
+const scheduler = ctx.consume('app:polling').create({
+  task: async () => { /* 取数（务必批量） */ },
+  intervalMs: 30_000,
+  tradingAware: true,        // 只有交易窗口内轮询，窗口外自动暂停
+});
+ctx.effect(() => () => scheduler.stop());   // 卸载必须 stop，否则监听泄漏
+
+await scheduler.runNow();     // 立即补一轮（受互斥保护）
+scheduler.isEligible();       // 当前是否允许轮询
+```
+
+自带四份策略：**交易窗口感知 / 失败指数退避 / 页面可见性感知 / 轮询总开关**。
+自己写一份大概率岔开，而岔一次的代价是顶到上游频率红线（东财会封 IP）。
+
+### 5.10 `app:market` — 市场剖面（重接口）
+
+```js
+const market = ctx.consume('app:market');
+const series = await market.fetchMarketTurnover();        // [{ date, shanghaiAmount, shenzhenAmount, totalAmount }]
+const pool = await market.fetchLimitUpPool('2026-09-18'); // 涨停池 [{ code, name, price, changePercent, continuousBoardCount, boardAmount, industry }]
+```
+
+两者都是重量级请求 —— **只能由用户点击触发，不要轮询**。
+
+### 5.11 `app:format` — 格式化与涨跌语义
+
+```js
+const f = ctx.consume('app:format');
+f.percent(2.35);              // '+2.35%'
+f.percentUnsigned(1.71);      // '1.71%'
+f.price(1702.3);              // '1702.30'
+f.relativeTime(Date.now() - 3e5);   // '5分钟前'
+f.trend(2.35);                // trend 枚举
+f.trendClass(f.trend(-1));    // 文本色类名（红涨绿跌是宿主口径，别自己写）
+f.trendPillClass(trend);      // 胶囊类名
+f.toFullSymbol('600519');     // 'sh600519'
+f.toBareCode('sz300339');     // '300339'
+f.normalizeCode('600519');    // 'sh600519'
+f.findQuote(quotesMap, 'sh600519');   // 上游返回裸代码键时也能查到
+await f.delay(500);           // 错开对同一上游的连续请求
+const onInput = f.debounce(doSearch, 300);
+f.placeholder;                // '--'
+```
+
+红涨绿跌、`delay` / `debounce`（上游限速节拍的一部分）、符号三形态互转 ——
+这些**不要各写一份**，写反或写岔的代价分别是配色反了 / 触发封 IP / 整列变 `--`。
+
+### 5.12 `app:stock-picker` — 让用户挑一只股票
+
+要「让用户挑一只票」时用这个，**别自己搭搜索框**：你那份没有搜索历史、样式不统一，
+宿主搜索改版了也不会跟着更新，弹窗的生命周期还得自己管。
+
+```js
+const picked = await ctx.consume('app:stock-picker').pick();   // 取消 / 关闭 = null
+if (picked) {
+  // picked.code 是 sh600519 完整形态，picked.name 是股票名
+  save({ symbol: picked.code, name: picked.name });
+}
+```
+
+弹窗**由宿主渲染**（和 `app:ui` 的 `confirm()` 同一套路），所以你的面板被折叠、
+路由被切走，结果照样回得来。
+
 ---
 
 ## 6. 内置事件
@@ -534,32 +640,24 @@ ctx.on('note:saved', (id) => { /* … */ });
 
 | 需求 | 放哪 | 原因 |
 | --- | --- | --- |
-| 轮询 / 到价告警 / 定时任务 | **插件层**：`ctx.effect(() => { const t = setInterval(...); return () => clearInterval(t); })` | 侧栏面板有**两层折叠**都会卸载组件，写在组件里会随折叠停摆 |
+| 轮询 / 到价告警 / 定时任务 | **插件层**：`app:polling` 的 `create()` + `ctx.effect(() => () => scheduler.stop())` | 侧栏面板有**两层折叠**都会卸载组件，写在组件里会随折叠停摆 |
 | 弹提醒 | `app:notify` | 宿主承载、跨路由常驻 |
 | 跳页面 / 唤醒面板 | `app:navigate` / `panel:open('<id>#<key>')` | 插件不持有 router 实例 |
+| 关掉自己的面板 | `panel:close('<id>#<key>')` | 「保存并关闭」这类动作不必 inject 宿主内部上下文 |
 
 ```js
 apply(ctx) {
-  const timer = setInterval(tick, 30_000);
-  ctx.effect(() => () => clearInterval(timer));   // 卸载时自动清理
+  const scheduler = ctx.consume('app:polling').create({ task: tick, intervalMs: 30_000, tradingAware: true });
+  ctx.effect(() => () => scheduler.stop());   // 卸载时收干净
   ctx.onDispose(() => ctx.consume('app:notify')?.dismissBySource('我的插件'));
 }
 ```
 
-> 宿主内部有一套 `createPollingScheduler`（自带交易窗口感知、失败指数退避、页面可见性感知），
-> 但它属于宿主源码模块，第三方插件暂时拿不到。第三方目前的正确做法是**自己 `setInterval` + `ctx.effect` 清理**，
-> 需要交易时段判断就自己写（下面这段可以直接抄）。
-> 如果你确实需要带退避 / 交易窗口的调度器，欢迎提需求，宿主补一个服务的成本很低。
-
-```js
-/** A 股交易时段粗判（不含节假日；精确到分钟） */
-const isTradingNow = (now = new Date()) => {
-  const day = now.getDay();
-  if (day === 0 || day === 6) return false;
-  const minutes = now.getHours() * 60 + now.getMinutes();
-  return (minutes >= 570 && minutes <= 690) || (minutes >= 780 && minutes <= 900);   // 9:30-11:30 / 13:00-15:00
-};
-```
+> **别自己写 `setInterval` 去重/退避逻辑**：`app:polling` 的 `create()` 已经带了
+> 交易窗口感知、失败指数退避（`BACKOFF_BASE * 2^n` 封顶）、页面可见性感知与轮询总开关，
+> 和宿主 `usePolling` 是同一份实现。自己写一份迟早岔开，岔一次的代价是顶到上游频率红线。
+>
+> 窗口外的场景（比如只想每天 09:00 跑一次）才回到 `ctx.effect` + 自己算时间。
 
 ### 7.2 页面被撤销时用户会被接走
 
@@ -688,6 +786,25 @@ writeFileSync('my-plugin.zip', zipSync({
   'README.md': read('README.md'),
 }));
 ```
+
+### 8.3 再装一次：升级、接管与卸载
+
+**同 id 不会被「已被占用」挡下**——宿主按高层政策处理三种情形，安装弹窗会把「这次到底会发生什么」写在预览里：
+
+| 情形 | 弹窗提示 | 按钮 | 结果 |
+| --- | --- | --- | --- |
+| 首次安装 | 无 | 确认安装 | 挂载新插件 |
+| 已装过同 id（不同 version） | `已安装 v1.0.0，本次将升级到 v1.1.0` | 确认升级 | 旧版本整体撤销，新版本接管，**数据表保留** |
+| 已装过同 id（相同 version） | `已安装 v1.0.0，本次将覆盖重装` | 确认升级 | 同上（重装一份干净的实现） |
+| 与某个**内置插件**同 id | `内置版 vX 将被本版本接管；卸载本插件即刻恢复内置实现` | 确认接管安装 | 内置实现让位（下次启动也不再注册），卸载后立刻恢复 |
+
+要点：
+
+- **发新版不用让用户先卸载**：用户直接装新包即可；内置能力改 zip 分发后，这一装就是「升级」。
+- **数据跟着 id 走**：`ctx.db` 表名 `plugin_<id>_*`、`ctx.storage` 命名空间 `plugin:<id>` 都由 id 派生，
+  升级 / 接管 / 卸载重装都不丢数据；要彻底清，卸载时选「一并删除」。
+- **卸载入口**：插件工坊或设置 → 插件管理，卡片底部「卸载」需点两次（第二次变「确认卸载」），
+  防手滑；卸完 plugin 的代码、面板、菜单、路由、命令立即消失，无需重启。
 
 ---
 
@@ -1095,7 +1212,7 @@ export interface PluginContext {
 
 ## 14. 兼容承诺与反馈
 
-- **契约层（`ctx.*` 全部成员、九个宿主服务、六个内置事件）在主版本号内保证向后兼容**；
+- **契约层（`ctx.*` 全部成员、十六个宿主服务、六个内置事件）在主版本号内保证向后兼容**；
   要改形态宿主会同步本文件与 `PLUGIN_API.md`；
 - 插件之间互相提供的服务（如 `note:repo`）由提供方插件负责，**消费方必须允许缺席**；
 - 宿主内部模块（`@/api/*`、`@/utils/*`、`@/components/ui/*`…）对第三方不可用，改名不另行通知；

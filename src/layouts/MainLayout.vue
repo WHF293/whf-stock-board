@@ -15,6 +15,7 @@ import BaseTooltip from "../components/ui/BaseTooltip.vue";
 import MenuIcon from "../components/ui/MenuIcon.vue";
 import NotificationHost from "../components/ui/NotificationHost.vue";
 import PluginConfirmHost from "../components/plugin/PluginConfirmHost.vue";
+import PluginStockPickerHost from "../components/plugin/PluginStockPickerHost.vue";
 import SidebarPanelHost from "../components/plugin/SidebarPanelHost.vue";
 import SidebarPanelEntry from "../components/plugin/SidebarPanelEntry.vue";
 import PluginPanelDrawer from "../components/plugin/PluginPanelDrawer.vue";
@@ -638,5 +639,8 @@ void marketStatusStore.refresh();
 
     <!-- 插件确认弹窗（经 app:ui 的 confirm 发起，宿主渲染、答复回到插件的 Promise） -->
     <PluginConfirmHost />
+
+    <!-- 插件选股弹窗（经 app:stock-picker 服务发起，宿主渲染、结果回到插件的 Promise） -->
+    <PluginStockPickerHost />
   </div>
 </template>

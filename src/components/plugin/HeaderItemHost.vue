@@ -189,6 +189,16 @@ watch(
   },
 );
 
+// 「关闭面板」服务（panel:close）：与上面对称，插件在自己的面板里点「完成」
+// 之后要能把自己收起来（过去只能靠 inject 宿主内部的面板上下文，第三方插件拿不到）。
+watch(
+  () => [panelsStore.headerCloseSeq, panelsStore.headerCloseKey] as const,
+  ([, key]) => {
+    if (key !== props.item.key) return;
+    open.value = false;
+  },
+);
+
 // 「外部点击收起下拉」必须忽略 Teleport 到 body 的弹窗层（role="dialog"）：
 // 弹窗里的输入框 / 按钮在 DOM 上都在条目以外，不忽略的话，点一下弹窗正文
 // 就会把下拉收起 —— 下拉一卸载，弹窗作为它的子组件也跟着消失。

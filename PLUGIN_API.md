@@ -1,12 +1,12 @@
 # PLUGIN_API.md — 插件开放接口清单
 
-> 本文件盘点**宿主开放给插件的全部能力**（`ctx.*` 九个贡献点、数据持久化、宿主服务、事件、配额与红线）。
+> 本文件盘点**宿主开放给插件的全部能力**（`ctx.*` 九个贡献点、数据持久化、十六个宿主服务、事件、配额与红线）。
 > **第三方（应用内安装）插件作者请优先看 [PLUGIN_WIKI.md](./PLUGIN_WIKI.md)** —— 那份是面向你的独立 wiki；
 > 本文件面向宿主仓库贡献者（含第三层「宿主内部模块」清单）。
 > 类型契约的唯一事实源是 `src/types/plugin.types.ts`，宿主侧接线（注册顺序、 `recoverVanishedRoute`）见 `src/plugin/setup.ts`；
 > 两者冲突时以代码为准，并回来修本文档。
 >
-> 适用版本：v2.6.1（含「插件工坊转正为宿主页面」的改动）。
+> 适用版本：v2.6.2（含「官方插件改为 zip 产物包分发」与十六个宿主服务的改动）。
 
 ## 0. 稳定性分层（先读这一节，它决定你能依赖什么）
 
@@ -14,7 +14,7 @@
 
 | 层 | 内容 | 谁能用 | 兼容承诺 |
 | --- | --- | --- | --- |
-| **① 契约层** | `ctx.*` 全部成员、`AppServiceMap` 九个宿主服务、`AppEventMap` 六个内置事件、`types/plugin.types.ts` 全部导出类型 | 源码级插件 + 应用内安装的用户插件 | **主版本号内保证向后兼容**；要改形态须同步本文档 |
+| **① 契约层** | `ctx.*` 全部成员、`AppServiceMap` 十五个宿主服务、`AppEventMap` 六个内置事件、`types/plugin.types.ts` 全部导出类型 | 源码级插件 + 应用内安装的用户插件 | **主版本号内保证向后兼容**；要改形态须同步本文档 |
 | **② 服务扩展层** | 插件之间经 `ctx.provide` / `ctx.consume` 互相暴露的自定义服务与事件（如 `note:repo` / `note:saved`） | 任何插件 | 由「提供方插件」负责；消费方必须允许 `consume` 返回 `undefined` 并降级 |
 | **③ 宿主内部模块** | `@/api/*`、`@/utils/*`、`@/composables/*`、`@/components/ui/*`、`@/stores/*` 等源码模块 | **仅源码级插件**（跟宿主一起构建） | 无承诺；改名 / 搬文件不另行通知 |
 
@@ -38,7 +38,7 @@
 > Tailwind 类不拦（能装），只在预览区给出「可能没有样式」的提醒。
 
 ✅ **好消息**：不 import 任何东西的插件完全可以挂载——实测注册侧栏面板并渲染成功，
-且 `ctx` 全套、九个宿主服务、`ctx.storage` / `ctx.db`（`ensureTable`→`insert`→`select`→`remove`→`count`）、`ctx.on` 全部可用。
+且 `ctx` 全套、十六个宿主服务、`ctx.storage` / `ctx.db`（`ensureTable`→`insert`→`select`→`remove`→`count`）、`ctx.on` 全部可用。
 **第三方插件请把自己限制在第 ① 层。**
 
 第一条红线的替代方案已经补齐了，写第三方插件不再需要 import：
@@ -310,6 +310,7 @@ await ctx.db.clear('watch_candidates');
 | 读出形态 | `PluginDbRow<T> = T & { id: number; createdAt: number; updatedAt: number }` |
 | 双端一致 | Tauri 落 SQLite，浏览器端降级为本地 JSON 表仿真，语义一致 |
 | 卸载 | 若插件建过表，卸载用户插件时弹窗询问「保留数据 / 一并删除」 |
+| 升级 / 接管 | 同 id 再装不会报「已被占用」：已装过 = 升级（数据保留）；与内置插件同 id = 接管内置版本，卸载后恢复内置实现 |
 
 ### 4.3 `ctx.settings` — 清单式设置
 
@@ -353,10 +354,17 @@ ctx.settings.reset();                 // 回到声明默认值
 | `panel:open` | `(panelKey: string) => void` | 按全局键打开面板：drawer → 开右侧抽屉；inline → 取消折叠并滚动到可视区；顶栏条目 → 展开下拉。键不存在只 `console.warn` |
 | `app:notify` | `NotifyService` | 右下角应用级浮窗（宿主渲染，**跨路由常驻、与发起它的组件是否挂载无关**） |
 | `app:stock-search` | `StockSearchService` | 标的搜索（代码 / 名称 / 拼音，腾讯源） |
+| `app:stock-picker` | `StockPickerService` | **选股弹窗**：宿主渲染全站统一的标的搜索，Promise 回传 `SearchResult \| null`（§5.12） |
 | `kernel:runtime` | `PluginRuntimeReader` | 内核只读自省：`list()` / `get(id)` / `listServices()` / `recentEvents()` |
-| `app:ui` | `UiKitService` | **UI Kit**：宿主的 Button / Input / Switch / Tag / Card / Empty / Tabs / Table / Modal / Drawer / Icon 组件句柄 + `confirm()` 确认弹窗（§5.4） |
+| `panel:close` | `(panelKey: string) => void` | 关闭自己的面板（`panel:open` 的反向动作）：drawer 关抽屉、顶栏条目收起下拉、inline 折叠。键不存在只 `console.warn` |
+| `app:stock-open` | `StockOpenService` | **全站统一的个股打开交互**：`openSidebar` 开右侧详情侧栏 / `openPage` 进详情整页（§5.7） |
+| `app:watchlist` | `WatchlistService` | **自选股只读视图**：`symbols()` / `groups()` / `nameOf()`（§5.8） |
+| `app:polling` | `PollingService` | **轮询调度器工厂**：`create()` 与宿主同一份交易窗口 / 退避 / 可见性策略（§5.9） |
+| `app:ui` | `UiKitService` | **UI Kit**：宿主的 Button / Input / Switch / Tag / Card / Empty / Tabs / Table / Modal / Drawer / Skeleton / Icon 十二个组件句柄 + `confirm()` 确认弹窗（§5.4） |
 | `app:http` | `HttpService` | **受控网络请求**：走宿主上游通道，仅允许白名单域名（§5.5） |
 | `app:quotes` | `QuotesService` | **行情报价**：按代码批量取实时快照（§5.6） |
+| `app:market` | `MarketService` | **市场剖面**：沪深逐日成交额 / 指定交易日涨停池（重接口，只能点击触发，§5.10） |
+| `app:format` | `FormatService` | **格式化与涨跌语义**：红涨绿跌、百分比 / 价格 / 相对时间、符号三形态互转、`delay` / `debounce`、按符号查报价（§5.11） |
 
 ### 5.1 `app:notify`
 
@@ -438,6 +446,7 @@ ctx.sidebar.add({
 | `ui.Table` | `BaseTable` | `columns`、`rows`、`rowKey`、`minWidth`、`rowClickable`、`expandable` + 列 key 同名插槽（见下） |
 | `ui.Modal` | `BaseModal` | `title`、`open`（`onUpdate:open`）、`maxWidthClass`、`heightClass` + 默认 / `filters` / `footer` 插槽 |
 | `ui.Drawer` | `BaseDrawer` | `title`、`open`（`onUpdate:open`）、`width`（默认 `66vw`） |
+| `ui.Skeleton` | `BaseSkeleton` | 无 props，默认三行文本形状，默认插槽可自定形状。**只在一条数据都没有时用** —— 列表刷新不许翻 loading（会整表卸载重建闪屏），见 §10 |
 | `ui.Icon` | `MenuIcon` | `name`（key 清单见 §9）、`size` |
 
 三个「重」组件的用法要点：
@@ -525,6 +534,119 @@ const list = await quotes.fetchFullQuotes(['300339', 'sh600519']);   // FullQuot
 - 裸代码（`300339`）与完整符号（`sh600519`）都能传；上游拿不到的代码不出结果，**按 code 取值务必用地图查找**；
 - 返回值结构是 `FullQuote`（见 `types/stock-quote.types.ts`），宿主已处理好行情源与转码；
 - **不要轮询**：这是一个展示级的批量接口，长期后台刷新请走低频（≥30s）并受 §10 的频率红线约束。
+
+### 5.7 `app:stock-open` — 打开个股（全站两条交互的唯一入口）
+
+```ts
+const stockOpen = ctx.consume('app:stock-open');
+
+stockOpen?.openSidebar('sh600519');                    // 单击语义：展开右侧详情侧栏
+stockOpen?.openPage('600519');                         // 双击语义：进详情整页（裸码也认）
+
+// 带上来源列表：详情页左侧可一键切换同批股票（symbol 由宿主归一化，高亮才匹配得上）
+const list = rows.value.map((row) => ({ symbol: row.code, name: row.name, changePercent: row.pct }));
+stockOpen?.openPage('600519', list);
+```
+
+| 成员 | 说明 |
+| --- | --- |
+| `openSidebar(symbol, list?)` | 展开右侧个股详情侧栏；给了 `list` 才写入详情页左侧来源列表 |
+| `openPage(symbol, list?)` | 收起侧栏 + 跳详情页；不给 `list` 时写入「只有当前一只」（避免残留上一批） |
+
+> 这两条与宿主页面右上角的搜索、自选股表格用的是**同一个实现**（`createStockOpenService`）：
+> 插件自己拼 `router.push` 也能跳过去，但会丢掉详情页左侧的来源列表。
+
+### 5.8 `app:watchlist` — 自选股只读视图
+
+```ts
+const watchlist = ctx.consume('app:watchlist');
+watchlist?.symbols();            // 全部自选股完整符号（跨分组去重）
+watchlist?.groups();             // 分组结构：[{ id, name, stocks: [{ symbol, name }] }]
+watchlist?.nameOf('sh600519');   // 查名称；不在自选股里返回 undefined
+
+// 三个成员都是 getter：在插件自己的 computed / watch 里调用会跟随自选股变化
+const monitored = computed(() => candidates.value.filter((item) => watchlist.symbols().includes(item.symbol)));
+```
+
+**只给读，不给写** —— 增删自选股仍归宿主页面。插件一旦能改用户自选股，
+「谁加的」「卸载后要不要撤销」都说不清。
+
+### 5.9 `app:polling` — 轮询调度（务必用它，别自己写 `setInterval`）
+
+```ts
+const polling = ctx.consume('app:polling');
+const scheduler = polling.create({
+  task: async () => { /* 取数（务必批量，不要逐只循环） */ },
+  intervalMs: 30_000,
+  tradingAware: true,      // 仅 A 股交易窗口内轮询，窗口外自动暂停（挂载时仍跑一次）
+});
+ctx.effect(() => () => scheduler.stop());   // 卸载必须 stop：交易窗口 / 可见性监听随它释放
+
+await scheduler.runNow();    // 立即补一轮（受互斥保护，执行中调用被忽略）
+scheduler.isEligible();      // 当前是否允许轮询（总开关打开且处于交易窗口内）
+```
+
+自带四份策略，与宿主 `usePolling` 共用同一份实现：**交易窗口感知 / 失败指数退避
+（`BACKOFF_BASE * 2^n` 封顶）/ 页面可见性感知 / 轮询总开关**。自己写一份迟早岔开，
+而岔一次的代价是顶到上游频率红线（东财会封 IP）。
+
+### 5.10 `app:market` — 市场剖面（重接口，别轮询）
+
+```ts
+const market = ctx.consume('app:market');
+
+// 沪深两市逐日成交额（腾讯指数日 K 源，按日期升序且日期轴连续）
+const series = await market.fetchMarketTurnover();
+// → [{ date: '2026-09-18', shanghaiAmount: …, shenzhenAmount: …, totalAmount: … }]
+
+// 指定交易日涨停池（缺省当日）
+const pool = await market.fetchLimitUpPool('2026-09-18');
+// → [{ code, name, price, changePercent, continuousBoardCount, boardAmount, industry }]
+```
+
+两个取数口径都固定在宿主一侧，且都是重量级网络请求 —— **只能由用户点击触发**。
+涨停池成员是从上游约 18 个字段里**挑出来映射**的，插件拿到的结构因此长期稳定。
+
+### 5.11 `app:format` — 格式化与涨跌语义
+
+```ts
+const format = ctx.consume('app:format');
+format.placeholder;                    // '--'（全站数值占位口径）
+format.trend(2.35);                    // Trend.UP（红涨绿跌的唯一入口）
+format.trendClass(format.trend(-1));   // 文本色类名（主题 token）
+format.trendPillClass(trend);          // 胶囊类名（弱色底 + 语义文字色）
+format.percent(2.35);                  // '+2.35%'
+format.percentUnsigned(1.71);          // '1.71%'
+format.price(1702.3);                  // '1702.30'
+format.relativeTime(Date.now() - 3e5); // '5分钟前'
+await format.delay(500);               // 错开对同一上游的连续请求
+const onInput = format.debounce(doSearch, 300);   // 搜索防抖
+format.toFullSymbol('600519');         // 'sh600519'
+format.toBareCode('sz300339');         // '300339'
+format.normalizeCode('600519');        // 'sh600519'（A 股三形态统一）
+format.findQuote(quotesMap, 'sh600519');  // 按本地符号查上游返回的裸代码键
+```
+
+这一组看着「只是几个小函数」，实际每条都是宿主口径：涨跌配色是中国市场约定
+（第三方自己写大概率写反）；`delay` / `debounce` 是上游限速节拍的一部分；
+符号三形态互转踩过两次坑，失灵表现为整列 `--`。**不要各写一份。**
+
+### 5.12 `app:stock-picker` — 让用户挑一只股票（宿主渲染，Promise 回传）
+
+插件要「让用户挑一只票」时用这个，**不要自己搭一个搜索框**：自己写的那份没有搜索历史、
+样式不统一，宿主搜索改版后也不会跟着更新，而且弹窗的生命周期还得自己管。
+
+```ts
+const picker = ctx.consume('app:stock-picker');
+const picked = await picker?.pick();      // 取消 / 关闭 = null
+if (picked) {
+  // picked: SearchResult —— code 是 sh600519 完整形态，name 是股票名
+  save({ symbol: picked.code, name: picked.name });
+}
+```
+
+与 `app:ui` 的 `confirm()` 同一范式：**插件发起、宿主渲染**（承载组件 `PluginStockPickerHost`
+挂在 `MainLayout`），因此发起方组件被卸载（面板折叠、路由切走）也照样拿得到结果。
 
 ---
 
@@ -794,8 +916,8 @@ export default {
    （若将来真要在运行时支持模板：把 `vue` 换到含编译器的 esm-bundler，代价是 +约 100KB 主包体积，
    收益与 `app:ui` 重叠，**当前不划算**。）
 2. **无类型提示**：第三方只能用 JS 硬写。要 TS 提示，只能自行维护一份 `AppServiceMap` / `PluginContext` 的 d.ts 副本。
-3. **`app:ui` 覆盖面有限**：目前十一个组件（Button / Input / Switch / Tag / Card / Empty / Tabs /
-   Table / Modal / Drawer / Icon）。Select / DatePicker / 图表这类还没开放 ——
+3. **`app:ui` 覆盖面有限**：目前十二个组件（Button / Input / Switch / Tag / Card / Empty / Tabs /
+   Table / Modal / Drawer / Skeleton / Icon）。Select / DatePicker / 图表这类还没开放 ——
    真有插件需要时再补（补的是复用，不是凭想象先造）。
 
 如果第三条里的某一项正好卡住你的插件，宿主侧补它的成本很低（一个组件句柄 + 一行 provide），欢迎提需求。

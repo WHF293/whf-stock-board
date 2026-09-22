@@ -6,6 +6,15 @@
  */
 @import 'tailwindcss';
 
+/*
+ * 官方插件的类名白名单（`scripts/build-plugins.mjs` 打包时自动生成）
+ *
+ * 官方插件已改成 zip 产物包分发，它们的源码不在 `src/` 下，Tailwind 的自动扫描扫不到 ——
+ * 少了这条 `@source`，插件 UI 就靠「宿主别处碰巧也用了同一个类」活着，
+ * 宿主哪天改版删掉那处用法，插件就静默失去样式。这里显式把它纳入扫描即可免疫。
+ */
+@source './plugin-classes.txt';
+
 /* 暗色变体：基于 html.dark 类启用 dark: 前缀工具类 */
 @custom-variant dark (&:where(.dark, .dark *));
 

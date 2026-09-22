@@ -13,8 +13,10 @@
  */
 import type * as Vue from 'vue';
 import type { Component } from 'vue';
+import type { Trend } from '../constants/trend.constants';
 import type { BuiltinMcpServer } from '../agent/mcp/types';
 import type { NotifyService } from './notify.types';
+import type { PollingOptions, PollingScheduler } from './polling.types';
 import type { FullQuote, SearchResult } from './stock-quote.types';
 import type { HEADER_MARQUEE_TONE, PLUGIN_ORIGIN, PLUGIN_STATUS } from '../constants/plugin.constants';
 
@@ -789,6 +791,8 @@ export interface UiKitService {
   Drawer: Component;
   /** 图标（name 取 MenuIcon 的 icon key） */
   Icon: Component;
+  /** 骨架屏（首屏无数据时的占位；列表刷新不要翻 loading，见 PLUGIN_API.md §10） */
+  Skeleton: Component;
   /** 弹一条应用级确认弹窗（宿主渲染，返回用户是否确认） */
   confirm: (options?: UiConfirmOptions) => Promise<boolean>;
 }
@@ -813,6 +817,238 @@ export interface HttpService {
   isAllowed: (url: string) => boolean;
 }
 
+/** 单个交易日的沪深两市成交额（单位：元） */
+export interface MarketTurnoverPoint {
+  /** 交易日（`YYYY-MM-DD`） */
+  date: string;
+  /** 上证成交额（元） */
+  shanghaiAmount: number;
+  /** 深证成交额（元） */
+  shenzhenAmount: number;
+  /** 两市合计（元） */
+  totalAmount: number;
+}
+
+/**
+ * 涨停池成员（`app:market` 的 `fetchLimitUpPool` 返回项）
+ *
+ * 由宿主从上游股池**挑字段映射**而来：上游字段名与口径随版本变化，
+ * 这里只承诺插件真正用得到的那些，避免把上游的不稳定直接暴露给第三方。
+ */
+export interface LimitUpPoolMember {
+  /** 股票代码（裸代码） */
+  code: string;
+  /** 股票名称 */
+  name: string;
+  /** 最新价（元） */
+  price: number | null;
+  /** 涨跌幅（百分数） */
+  changePercent: number | null;
+  /** 连板数（仅涨停池有值） */
+  continuousBoardCount: number | null;
+  /** 封板资金（元） */
+  boardAmount: number | null;
+  /** 所属行业名（东财口径，与板块分类体系不一定同源） */
+  industry: string;
+}
+
+/**
+ * 市场级行情服务（`app:market`）
+ *
+ * 成交总额 / 涨停池这类**市场剖面**数据：取数口径固定在宿主这一侧，
+ * 插件各自找源只会各说各话（不同源的指数样本、复权与停牌处理并不一致）。
+ * 两者均为重量级网络请求：**只能由用户点击触发，不要轮询**。
+ */
+export interface MarketService {
+  /**
+   * 沪深两市逐日总成交额（腾讯指数日 K 源）
+   * @returns 按日期升序、日期轴连续的成交额序列
+   */
+  fetchMarketTurnover: () => Promise<MarketTurnoverPoint[]>;
+  /**
+   * 指定交易日的涨停池
+   * @param date 交易日（`YYYY-MM-DD`）；缺省为当日
+   * @returns 池子成员（上游对过早日期返回空数组）
+   */
+  fetchLimitUpPool: (date?: string) => Promise<LimitUpPoolMember[]>;
+}
+
+/**
+ * 个股打开服务（`app:stock-open`）
+ *
+ * 全站有两套「打开一只股票」的交互（右侧详情侧栏 / 详情整页），过去只有宿主内部
+ * 的 `useStockOpen()` 能走到。插件拿不到这份逻辑就会各写一套跳转，
+ * 于是「双击进详情页时左侧来源列表有没有东西」这种细节插件写不出、
+ * 也不该让插件写 —— 这里是两条交互的唯一入口。
+ */
+export interface StockOpenService {
+  /**
+   * 单击语义：展开右侧个股详情侧栏（携带 `list` 时写入详情页左侧来源列表）
+   * @param symbol 个股符号（裸代码或完整符号均可，宿主侧归一化）
+   * @param list 来源列表（如插件自己表格的全部行，供详情页一键切换）
+   */
+  openSidebar: (symbol: string, list?: readonly StockContextItem[]) => void;
+  /**
+   * 双击语义：收起侧栏并进入个股详情整页
+   * @param symbol 个股符号（裸代码或完整符号均可，宿主侧归一化）
+   * @param list 来源列表（不给时写入仅当前一只，避免残留上一批）
+   */
+  openPage: (symbol: string, list?: readonly StockContextItem[]) => void;
+}
+
+/**
+ * 详情页左侧「来源列表」的一项（`app:stock-open` 的 `list` 元素）
+ *
+ * 与宿主内部 `ContextStock` 同源，只是这里作为契约对外：
+ * `symbol` 会由宿主归一化成完整符号（详情页高亮匹配就靠它），其余字段可选。
+ */
+export interface StockContextItem {
+  /** 股票符号（裸代码 `600519` 或完整符号 `sh600519` 均可，宿主归一化） */
+  symbol: string;
+  /** 股票名称（缺省空串） */
+  name?: string;
+  /** 现价（元；来源列表无该字段时缺省 null） */
+  price?: number | null;
+  /** 当日涨跌幅（%；来源列表无该字段时缺省 null） */
+  changePercent?: number | null;
+}
+
+/**
+ * 自选股只读视图里的一只股票
+ */
+export interface WatchlistItem {
+  /** 完整符号（sh600519 形态） */
+  symbol: string;
+  /** 股票名称 */
+  name: string;
+}
+
+/**
+ * 自选股分组只读视图（`app:watchlist` 的 `groups` 元素）
+ */
+export interface WatchlistGroupView {
+  /** 分组 id */
+  id: string;
+  /** 分组名 */
+  name: string;
+  /** 组内股票 */
+  stocks: readonly WatchlistItem[];
+}
+
+/**
+ * 自选股只读服务（`app:watchlist`）
+ *
+ * 只给**读**：写操作（增删分组、加自选）仍是宿主页面的职责 ——
+ * 插件一旦能改用户自选股，撤销语义与「谁加的」就都说不清了。
+ *
+ * 三个成员全是 getter 而不是快照数组：在插件自己的 `computed` / `watch` 里调用
+ * 就能感知自选股变化（宿主 pinia state 的响应式依赖会正常被收集）。
+ */
+export interface WatchlistService {
+  /**
+   * 全部自选股符号（跨分组去重）
+   * @returns 完整符号列表
+   */
+  symbols: () => readonly string[];
+  /**
+   * 分组结构（默认组在首位）
+   * @returns 分组列表
+   */
+  groups: () => readonly WatchlistGroupView[];
+  /**
+   * 按符号查名称
+   * @param symbol 完整符号
+   * @returns 自选股里的名称；不在自选股里返回 undefined
+   */
+  nameOf: (symbol: string) => string | undefined;
+}
+
+/**
+ * 选股弹窗服务（`app:stock-picker`）
+ *
+ * 弹窗就是全站统一的标的搜索（代码 / 名称 / 拼音、含「上次搜索」与键盘上下键），
+ * 由**宿主渲染**并以 Promise 返回结果 —— 与 `app:ui` 的 `confirm()` 同一范式：
+ * 插件自己搭一个搜索框只会更差（样式不统一、没有搜索历史、过滤口径容易写岔），
+ * 而且一旦宿主搜索改版，插件那一份也不会跟着更新。
+ */
+export interface StockPickerService {
+  /**
+   * 打开选股弹窗
+   * @returns 用户挑中的标的；取消 / 关闭为 null
+   */
+  pick: () => Promise<SearchResult | null>;
+}
+
+/**
+ * 轮询调度服务（`app:polling`）
+ *
+ * 宿主把 `createPollingScheduler` 这一个入口交给插件：**交易窗口感知 / 失败指数退避 /
+ * 页面可见性感知 / 轮询总开关**四份策略只有一份实现。插件自己写 `setInterval`
+ * 迟早会两边写岔，而岔一次的代价是顶到上游频率红线（东财会封 IP）。
+ *
+ * 调度器属于**插件层**而不是组件层：面板有两层折叠会卸载组件，写在组件里的轮询会停摆。
+ */
+export interface PollingService {
+  /**
+   * 创建一个轮询调度器（自身不注册任何清理，调用方负责 `stop()`）
+   * @param options 轮询选项（与宿主内部 `PollingOptions` 完全一致）
+   * @returns 调度句柄
+   */
+  create: (options: PollingOptions) => PollingScheduler;
+}
+
+/**
+ * 格式化与涨跌语义服务（`app:format`）
+ *
+ * 这一组看起来「只是几个小函数」，实际每一条都是**宿主口径**：
+ * - 涨跌配色是中国市场约定（红涨绿跌），第三方自己写大概率写反；
+ * - `delay` / `debounce` 是上游限速节拍的一部分，各自实现会触发封 IP；
+ * - 符号三形态互转（裸码 / 完整符号 / 归一化）踩过两次坑，失灵时表现为整列 `--`。
+ *
+ * 所以宁可由宿主统一提供，也不让每个插件各写一份。
+ */
+export interface FormatService {
+  /** 数值占位符（全站 `--` 口径） */
+  placeholder: string;
+  /**
+   * 涨跌方向（红涨绿跌语义的唯一入口）
+   * @param changePercent 涨跌幅（百分数数值）
+   */
+  trend: (changePercent: number | null | undefined) => Trend;
+  /** 涨跌方向 → 文本色类名（对应主题 token） */
+  trendClass: (trend: Trend) => string;
+  /** 涨跌方向 → 胶囊类名（弱色底 + 语义文字色） */
+  trendPillClass: (trend: Trend) => string;
+  /** 带符号百分比（`+2.35%`） */
+  percent: (value: number | null | undefined) => string;
+  /** 不带符号百分比（`1.71%`） */
+  percentUnsigned: (value: number | null | undefined) => string;
+  /** 价格两位小数 */
+  price: (value: number | null | undefined) => string;
+  /** 相对时间（`3分钟前` / `昨天` / `9-18`） */
+  relativeTime: (timestamp: number) => string;
+  /** 等待指定毫秒（错开对同一上游的连续请求） */
+  delay: (ms: number) => Promise<void>;
+  /**
+   * 防抖包装（搜索框等场景；定时器随闭包回收，无需额外清理）
+   * @param fn 目标函数
+   * @param wait 防抖窗口（毫秒）
+   */
+  debounce: <T extends unknown[]>(fn: (...args: T) => void, wait: number) => (...args: T) => void;
+  /** 任意形态代码 → 完整符号（`sh600519`） */
+  toFullSymbol: (input: string) => string;
+  /** 完整符号 → 裸代码（`sz300339` → `300339`） */
+  toBareCode: (symbol: string) => string;
+  /**
+   * A 股代码归一化 → 完整符号（`600519` / `sh600519` / `600519.SH` → `sh600519`）
+   *
+   * 与详情页路由里的符号同形态：只有归一化了，详情页左侧列表才能高亮到当前这只
+   */
+  normalizeCode: (input: string) => string;
+  /** 报价映射按本地符号查报价（兼容上游返回的裸代码键） */
+  findQuote: (quotesMap: Record<string, FullQuote>, symbol: string) => FullQuote | undefined;
+}
+
 /** 应用初始化之前约定：调整上述服务后同步 PLUGIN_API.md 与 AGENTS.md（见 §12） */
 export interface AppServiceMap {
   /** 应用版本号（内核挂载时自动提供，来源 APP_VERSION） */
@@ -829,6 +1065,20 @@ export interface AppServiceMap {
    */
   'panel:open': (panelKey: string) => void;
   /**
+   * 关闭一个插件面板（`panel:open` 的反向动作）
+   *
+   * drawer 面板关抽屉、顶栏条目收起下拉、inline 面板折叠。
+   * 「保存并关闭」这类动作不再依赖 `inject` 宿主内部上下文 —— 插件知道自己的面板 key
+   * （`<pluginId>#<id>`，注册时的那两个值拼出来），按 key 关即可。
+   */
+  'panel:close': (panelKey: string) => void;
+  /** 全站统一的个股打开交互（右侧详情侧栏 / 详情整页），替代宿主内部 `useStockOpen` */
+  'app:stock-open': StockOpenService;
+  /** 自选股只读视图（符号 / 分组 / 查名），替代插件直接读 `stores/watchlist` */
+  'app:watchlist': WatchlistService;
+  /** 轮询调度器工厂（交易窗口 / 退避 / 可见性四份策略的唯一实现） */
+  'app:polling': PollingService;
+  /**
    * 弹一条应用级浮窗提醒（右下角常驻，跨路由）
    *
    * 宿主承载、插件只发起：浮窗**不依赖发起它的组件是否挂载**，
@@ -837,12 +1087,27 @@ export interface AppServiceMap {
   'app:notify': NotifyService;
   /** 标的搜索（代码 / 名称 / 拼音，腾讯源；宿主封装 stock-sdk，调用方自行防抖与过滤非 A 股） */
   'app:stock-search': StockSearchService;
+  /**
+   * 打开全站统一的选股弹窗（宿主渲染 + 搜索历史，Promise 返回结果）
+   *
+   * 插件要「让用户挑一只股票」时用这个，而不是自己搭一个搜索框 ——
+   * 后者没有搜索历史、样式不统一，且宿主搜索改版后不会跟着更新。
+   */
+  'app:stock-picker': StockPickerService;
   /** 宿主 UI Kit（Button / Input / Tag / Card … + confirm），第三方插件做界面的唯一来源 */
   'app:ui': UiKitService;
   /** 受控网络请求（走宿主上游通道，仅允许白名单域名） */
   'app:http': HttpService;
   /** 行情报价：按代码批量取实时快照 */
   'app:quotes': QuotesService;
+  /**
+   * 市场剖面数据（沪深成交额 / 涨停池）
+   *
+   * 重接口，宿主统一取数口径；只能由用户点击触发。
+   */
+  'app:market': MarketService;
+  /** 格式化与涨跌语义（红涨绿跌、百分比、相对时间、符号互转、限速节拍） */
+  'app:format': FormatService;
 }
 
 /** 内核运行时只读视图（供插件自省，不暴露挂载 / 卸载能力） */
@@ -1096,25 +1361,13 @@ export interface PluginDefinition {
  *
  * 宿主把这些能力以句柄形式挂到 `ctx.vue` 上：插件既不需要 import，也不需要关心
  * 宿主用的是哪个 Vue 版本 —— 版本一致性由宿主保证。
+ *
+ * **这里是整个 vue 命名空间**（早期只挑了 9 个常用成员，结果插件用到 `shallowRef` /
+ * `effectScope` 时拿不到）。保持全量还有一层意义：`.vue` 编译产物会引用
+ * `createElementVNode` / `openBlock` / `mergeProps` 等一批内部 API，
+ * 只有全量才能覆盖（详见 PLUGIN_WIKI §8.2 的打包一节）。
  */
-export interface PluginVueRuntime {
-  /** 创建虚拟节点（渲染函数的地基） */
-  h: typeof Vue.h;
-  /** 响应式基本值 */
-  ref: typeof Vue.ref;
-  /** 响应式对象 */
-  reactive: typeof Vue.reactive;
-  /** 派生值 */
-  computed: typeof Vue.computed;
-  /** 监听响应式变化（在渲染函数组件内部调用时随组件卸载自动停止） */
-  watch: typeof Vue.watch;
-  /** 组件挂载完成回调 */
-  onMounted: typeof Vue.onMounted;
-  /** 组件卸载回调 */
-  onUnmounted: typeof Vue.onUnmounted;
-  /** DOM 更新后回调 */
-  nextTick: typeof Vue.nextTick;
-}
+export type PluginVueRuntime = Readonly<typeof Vue>;
 
 /** 插件上下文（`apply(ctx)` 的唯一入参） */
 export interface PluginContext {

@@ -52,8 +52,12 @@ export type ValidateResult = ValidateSuccess | ValidateFailure;
  *
  * 只检查「能不能被内核接受」：对象形态、必填元信息、apply 可调用、id 合法且不冲突。
  * apply 内部逻辑的正确性交给内核的挂载失败回滚机制兜底。
+ *
+ * ⚠️ `occupiedIds` 只是**照断言做事**，同 id 的政策在上层：安装路径一律传 `[]`，
+ * 因为「id 撞车」现在是合法情形 —— 与已装插件同 id = 升级 / 覆盖重装，与内置插件同 id = 接管内置版
+ * （见 `useUserPlugins.install`）。别在这里把政策加回来。
  * @param value 待校验值（来自动态 import 的导出）
- * @param occupiedIds 已被占用的插件 id（内置 + 已安装用户插件）
+ * @param occupiedIds 调用方判定「绝对不可撞」的插件 id（传空数组 = 允许同 id）
  * @returns 校验结果（成功带定义引用，失败带原因文案）
  */
 export const validateUserPluginDefinition = (
@@ -98,7 +102,7 @@ export const validateUserPluginDefinition = (
  * 运行环境里，写 import / template 必然失败，且失败信息是浏览器的底层报错。
  * 预检把它换成「第几行 + 为什么 + 该怎么改」，作者不必再去猜。
  * @param code 插件代码原文（预构建 ESM JS）
- * @param occupiedIds 已被占用的插件 id
+ * @param occupiedIds 调用方判定「绝对不可撞」的插件 id（安装流程传空数组，见上方口径）
  * @returns 校验结果（成功带定义，失败带原因文案；import 本身抛错也归一为失败）
  */
 export const importUserPluginCode = async (
@@ -150,7 +154,7 @@ export const mountUserPluginDefinition = (
  * 从持久化记录反推插件定义并挂载（启动流程用）
  * @param record 用户插件记录
  * @param enabled 是否启用
- * @param occupiedIds 启动时已占用的插件 id（内置插件；安装时已校验过，这里防历史脏数据兜底）
+ * @param occupiedIds 启动时不允许撞车的插件 id（尚未被接管的内置插件；用户接管的情况已由上层过滤）
  * @returns 加载与校验结果（成功时已完成内核注册）
  */
 export const mountUserPluginRecord = async (

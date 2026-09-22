@@ -4,6 +4,7 @@ import BaseButton from '../ui/BaseButton.vue';
 import BaseModal from '../ui/BaseModal.vue';
 import BaseTabs from '../ui/BaseTabs.vue';
 import BaseTag from '../ui/BaseTag.vue';
+import { auditPluginClassNames } from '../../plugin/user-plugin-class-audit';
 import { importUserPluginCode } from '../../plugin/user-plugin-loader';
 import { BUILTIN_PLUGINS } from '../../plugins';
 import { useUserPlugins } from '../../composables/use-user-plugins';
@@ -31,6 +32,7 @@ import type { PluginDefinition } from '../../types/plugin.types';
 const open = defineModel<boolean>('open', { required: true });
 
 const { install } = useUserPlugins();
+const userPluginsStore = useUserPluginsStore();
 
 /** 安装来源切换选项 */
 const SOURCE_OPTIONS = [
@@ -58,6 +60,43 @@ const parsed = ref<PluginDefinition | null>(null);
 
 /** 解析 / 安装的错误文案 */
 const errorMessage = ref('');
+
+/** 待覆盖的旧安装记录（同 id 已装过 = 升级 / 重装；null = 首次安装） */
+const existingRecord = computed(() => {
+  const id = parsed.value?.id;
+  if (!id) return null;
+  return userPluginsStore.records.find((record) => record.id === id) ?? null;
+});
+
+/** 本次会接管的内置插件定义（同 id 且随应用里发了默认实现） */
+const builtinConflict = computed(() => {
+  const id = parsed.value?.id;
+  if (!id) return null;
+  return BUILTIN_PLUGINS.find((plugin) => plugin.id === id) ?? null;
+});
+
+/** 覆盖安装 / 接管安装的提示（首次安装时为空串） */
+const upgradeHint = computed(() => {
+  const previous = existingRecord.value;
+  if (!previous || !parsed.value) return '';
+  const same = previous.version === parsed.value.version;
+  return same
+    ? `已安装 v${previous.version}，本次将覆盖重装（插件数据表保留）`
+    : `已安装 v${previous.version}，本次将升级到 v${parsed.value.version}（插件数据表保留）`;
+});
+
+/** 接管内置版本的提示（同 id 的内置实现会被本次安装顶替） */
+const takeoverHint = computed(() => {
+  if (!builtinConflict.value || existingRecord.value || !parsed.value) return '';
+  return `内置版 v${builtinConflict.value.version} 将被本版本接管；卸载本插件即刻恢复内置实现`;
+});
+
+/** 安装按钮文案（说清楚这次到底是装、升级还是接管，避免误以为装出第二份） */
+const installLabel = computed(() => {
+  if (existingRecord.value) return '确认升级';
+  if (builtinConflict.value) return '确认接管安装';
+  return '确认安装';
+});
 
 /** 静态预检的非致命提醒（能装，但可能显示不正常） */
 const warningLines = ref<string[]>([]);
@@ -119,11 +158,21 @@ watch(mode, () => {
 });
 
 /**
- * 把静态预检的非致命提醒压成展示文案
- * @param issues 预检提醒列表（含源码行号）
+ * 汇总要展示的非致命提醒
+ *
+ * 静态预检现在只管「必然加载失败」；样式能不能看由 `auditPluginClassNames` 单独判 ——
+ * 它查的是宿主**当前真实加载的 CSS**（CSSOM），不猜，因此不复述「可能没样式」这类空话。
+ * @param source 待装的插件代码原文（样式审计的输入）
+ * @param issues 静态预检提醒
  */
-const pushWarnings = (issues: readonly { line: number; message: string }[] | undefined): void => {
-  warningLines.value = (issues ?? []).map((issue) => `第 ${issue.line} 行：${issue.message}`);
+const pushWarnings = (
+  source: string,
+  issues: readonly { line: number; message: string }[] | undefined,
+): void => {
+  warningLines.value = [
+    ...(issues ?? []),
+    ...auditPluginClassNames(source),
+  ].map((issue) => `第 ${issue.line} 行：${issue.message}`);
 };
 
 /** 解析预览：只校验，不安装 */
@@ -131,13 +180,11 @@ const onParse = async (): Promise<void> => {
   resetParseState();
   busy.value = true;
   // 复用安装链路的前半段（静态预检 + import + 结构校验 + id 占用检查），但不落存储与内核
-  const occupiedIds = [
-    ...BUILTIN_PLUGINS.map((plugin) => plugin.id),
-    ...useUserPluginsStore().records.map((record) => record.id),
-  ];
-  const result = await importUserPluginCode(code.value, occupiedIds);
+  // 内置 id 与已装过的 id 都**不算占用**：前者是接管、后者是升级，
+  // 都由 install 的高层政策处理；交给底层只会得到一句「已被占用」，用户无从下手。
+  const result = await importUserPluginCode(code.value, []);
   busy.value = false;
-  pushWarnings(result.warnings);
+  pushWarnings(code.value, result.warnings);
   if (!result.ok) {
     errorMessage.value = result.error;
     return;
@@ -161,7 +208,7 @@ const onInstall = async (): Promise<void> => {
     source: pkg.value ? USER_PLUGIN_SOURCE.PACKAGE : USER_PLUGIN_SOURCE.CODE,
   });
   busy.value = false;
-  pushWarnings(result.warnings);
+  pushWarnings(code.value, result.warnings);
   if (result.ok) {
     open.value = false;
     return;
@@ -287,6 +334,8 @@ const onPickFile = async (event: Event): Promise<void> => {
       </div>
       <p class="mt-1 text-xs text-text-secondary">{{ parsed.description }}</p>
       <p class="mt-1 text-xs text-text-tertiary">{{ metaLines.join(' · ') }}</p>
+      <p v-if="upgradeHint" class="mt-1.5 text-xs text-primary">{{ upgradeHint }}</p>
+      <p v-if="takeoverHint" class="mt-1.5 text-xs text-primary">{{ takeoverHint }}</p>
     </div>
 
     <details class="mt-3 text-xs text-text-tertiary">
@@ -320,7 +369,7 @@ const onPickFile = async (event: Event): Promise<void> => {
           解析预览
         </BaseButton>
         <BaseButton variant="primary" :disabled="!parsed || busy" @click="onInstall">
-          确认安装
+          {{ installLabel }}
         </BaseButton>
       </div>
     </template>
