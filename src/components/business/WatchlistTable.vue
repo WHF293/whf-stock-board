@@ -20,7 +20,7 @@ import type { TableColumn } from '../../types/table.types';
  * 自选股表格（列配置驱动）：拖拽手柄 / 现价 / 涨跌幅胶囊 / 成交额 / 换手率 / 操作，
  * 行点击进个股详情；拖拽手柄可重排自选顺序
  *
- * 「操作」列 = 宿主自带的删除 + **插件贡献的行操作**（`ctx.stockRow`）：
+ * 「操作」列 = 宿主自带的「编辑分组归属」与「从当前分组移除」 + **插件贡献的行操作**（`ctx.stockRow`）：
  * 宿主不知道任何具体插件，只按注册表渲染按钮（图标 / 文案 / 激活态由插件声明）。
  */
 const props = defineProps<{
@@ -38,8 +38,10 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  /** 点击删除按钮 */
+  /** 点击删除按钮（只从**当前分组**移除，其余分组的归属不动） */
   remove: [symbol: string];
+  /** 点击编辑按钮（由宿主打开分组归属弹窗） */
+  edit: [stock: WatchlistStock];
   /** 拖拽重排（下标为 stocks 数组下标，按 row-key 反查、与排序状态无关） */
   reorder: [fromIndex: number, toIndex: number];
 }>();
@@ -239,7 +241,18 @@ const columns: TableColumn<WatchlistStock>[] = [
         </button>
         <button
           type="button"
+          data-track="WATCHLIST_EDIT_GROUPS"
+          class="pressable rounded p-1 text-text-tertiary hover:bg-flat-weak hover:text-text active:scale-90"
+          :title="`编辑 ${row.name} 的分组归属`"
+          :aria-label="`编辑 ${row.name} 的分组归属`"
+          @click.stop="emit('edit', row)"
+        >
+          <MenuIcon name="pencil" :size="14" />
+        </button>
+        <button
+          type="button"
           class="pressable rounded p-1 text-text-tertiary hover:bg-up-weak hover:text-up active:scale-90"
+          :title="`从当前分组移除 ${row.name}`"
           :aria-label="`删除 ${row.name}`"
           @click.stop="emit('remove', row.symbol)"
         >

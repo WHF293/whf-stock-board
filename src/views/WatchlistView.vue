@@ -8,6 +8,7 @@ import BaseInput from "../components/ui/BaseInput.vue";
 import BaseTabs from "../components/ui/BaseTabs.vue";
 import MenuIcon from "../components/ui/MenuIcon.vue";
 import StockSearchModal from "../components/business/StockSearchModal.vue";
+import WatchlistGroupEditModal from "../components/business/WatchlistGroupEditModal.vue";
 import WatchlistTable from "../components/business/WatchlistTable.vue";
 import { fetchFullQuotes } from "../api/quotes.api";
 import { usePolling } from "../composables/use-polling";
@@ -19,6 +20,7 @@ import { DATA_CACHE_KEY } from "../constants/data-cache.constants";
 import { findQuoteBySymbol } from "../utils/find-quote-by-symbol";
 import type { SearchResult } from "../types/stock-quote.types";
 import type { FullQuote } from "../types/stock-quote.types";
+import type { WatchlistStock } from "../types/watchlist.types";
 
 /**
  * 自选股：分组 tab + 搜索添加 + 分组表格，轮询仅拉当前分组标的；
@@ -166,7 +168,7 @@ const onAddStock = (result: SearchResult): void => {
 };
 
 /**
- * 移除当前分组内的自选股
+ * 移除**当前分组内**的自选股（其余分组的归属不动；跨分组调整走操作列的编辑弹窗）
  * @param symbol 股票符号
  */
 const onRemoveStock = (symbol: string): void => {
@@ -184,6 +186,44 @@ const onReorderStock = (fromIndex: number, toIndex: number): void => {
   if (activeGroup.value) {
     watchlistStore.reorderStock(activeGroup.value.id, fromIndex, toIndex);
   }
+};
+
+// ---------- 分组归属编辑弹窗（操作列的编辑按钮触发） ----------
+
+/** 分组归属弹窗开关 */
+const editGroupsOpen = ref(false);
+
+/** 待编辑归属的自选股（关闭时保留上一次的值，避免关闭动画期间内容跳空） */
+const editingStock = ref<WatchlistStock | null>(null);
+
+/**
+ * 打开分组归属弹窗
+ * @param stock 表格行对应的自选股条目
+ */
+const onEditStockGroups = (stock: WatchlistStock): void => {
+  editingStock.value = stock;
+  editGroupsOpen.value = true;
+};
+
+/**
+ * 确认分组归属：按勾选结果同步（勾上=加入该组，取消=从该组移除）
+ *
+ * 名称优先取最新报价（上游可能改名），条目原有的加入时间保持不变
+ * @param groupIds 弹窗回传的勾选分组 id 列表
+ */
+const onConfirmStockGroups = (groupIds: string[]): void => {
+  const stock = editingStock.value;
+  if (!stock) {
+    return;
+  }
+  watchlistStore.syncStockGroups(
+    {
+      symbol: stock.symbol,
+      name: findQuoteBySymbol(quotesMap.value, stock.symbol)?.name ?? stock.name,
+      addedAt: stock.addedAt,
+    },
+    groupIds,
+  );
 };
 </script>
 
@@ -247,6 +287,7 @@ const onReorderStock = (fromIndex: number, toIndex: number): void => {
           :quotes-map="quotesMap"
           @remove="onRemoveStock"
           @reorder="onReorderStock"
+          @edit="onEditStockGroups"
         />
         <div v-else class="space-y-3" aria-hidden="true">
           <div
@@ -281,6 +322,13 @@ const onReorderStock = (fromIndex: number, toIndex: number): void => {
           searchModalOpen = false;
         }
       "
+    />
+
+    <!-- 分组归属编辑弹窗（操作列编辑按钮触发；勾选后确认才生效） -->
+    <WatchlistGroupEditModal
+      v-model:open="editGroupsOpen"
+      :stock="editingStock"
+      @confirm="onConfirmStockGroups"
     />
   </div>
 </template>

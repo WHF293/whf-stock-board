@@ -70,6 +70,7 @@ export const WEBLOG_ACTIONS = {
   STOCK_OPEN_PAGE: { category: 'business', label: '打开个股详情整页' },
   WATCHLIST_ADD: { category: 'business', label: '添加自选股' },
   WATCHLIST_REMOVE: { category: 'business', label: '移除自选股' },
+  WATCHLIST_EDIT_GROUPS: { category: 'business', label: '编辑自选股分组归属' },
   NEWS_SAVE: { category: 'business', label: '保存新闻' },
   ACCOUNT_IMPORT: { category: 'business', label: '导入对账单/交割单' },
   ACCOUNT_EXPORT: { category: 'business', label: '导出表格' },
