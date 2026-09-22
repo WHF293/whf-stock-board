@@ -285,7 +285,8 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
 增删**源码文件**才算「安装 / 卸载」，运行时启停（设置页开关）不碰源文件、天然可逆，无需备份。
 下面两步必须走备份流程：
 
-1. **安装前备份**：把所有将被改动的宿主文件（至少 `src/plugins/index.ts`，若还涉及 constants / MCP registry / 路由等一并算上）按原相对路径备份到 `.ai/plugin-backups/<pluginId>/`，并在该目录写 `manifest.json`：`{ pluginId, files: [相对路径...], backupAt, note }`
+1. **安装前备份**：把所有将被改动的宿主文件（至少 `src/plugins/index.ts`，若还涉及 constants / MCP registry / 路由等一并算上）按原相对路径备份到 `.ai/plugin-backups/<pluginId>/`，并在该目录写 `manifest.json`：`{ pluginId, files: [相对路径...], backupAt, note }`。
+   （四个官方插件的源码副本已清掉 —— 它们在独立仓库里有完整源码与 git 历史，本仓库不留第二份）
 2. **卸载时恢复**：先删插件目录 `src/plugins/<pluginId>/`，再把备份文件按 `manifest.json` 清单逐一写回原路径，恢复后跑 `pnpm lint` + `pnpm build` 验证
 3. **git 是第二道保险，不替代本流程**：`.ai/` 不入库，备份只在本机有效；git 干净时 `git checkout -- <file>` 也可用，但 manifest 备份是硬性兜底
 4. 插件自己的运行时数据（`whf:app` 整包里 `plugin:<pluginId>` 命名空间）卸载插件时**不清理**，重装后数据仍在——要彻底清数据需用户在设置页确认
