@@ -31,6 +31,7 @@ import {
 } from '../utils/trade-marks';
 import { usePolling } from '../composables/use-polling';
 import { useChartPeriod } from '../composables/use-chart-period';
+import { useDetailPanelCollapse } from '../composables/use-detail-panel-collapse';
 import { POLLING_INTERVAL } from '../constants/polling.constants';
 import { CHART_PERIOD_OPTIONS } from '../constants/stock-detail.constants';
 import { useDataCacheStore } from '../stores/data-cache';
@@ -265,12 +266,9 @@ const onStockSwitchKeydown = (event: KeyboardEvent): void => {
 };
 useEventListener(window, 'keydown', onStockSwitchKeydown);
 
-/** 左侧股票列表是否收起（收起时仅显示名称窄条；会话级） */
-const isListCollapsed = ref(false);
-
-/** 右侧信息栏是否收起（会话级）：收起时窄条 —— 报价头只留高/低/开/收两列、
- * 五档盘口买盘/卖盘改上下堆叠，给 K 线主图让出宽度 */
-const isInfoCollapsed = ref(false);
+// 收起态由 useDetailPanelCollapse 模块级共享：KeepAlive 按 path（含 symbol）缓存页面实例，
+// 组件内 ref 会按股票各存一份（股票 A 收起、切 B 变展开），故提升到组件实例之外
+const { isListCollapsed, isInfoCollapsed } = useDetailPanelCollapse();
 
 // ---------- 加自选 / 删自选弹窗（顶栏按钮触发） ----------
 /** 弹窗类型：null 关闭 / add 加自选 / remove 删自选 */
