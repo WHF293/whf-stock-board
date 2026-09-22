@@ -108,6 +108,10 @@ export const WEBLOG_ACTIONS = {
   CHECK_UPDATE: { category: 'business', label: '检查更新' },
   SHORTCUTS_VIEW: { category: 'business', label: '查看快捷键说明' },
   REPO_OPEN: { category: 'business', label: '打开 GitHub 仓库' },
+  DATA_EXPORT_OPEN: { category: 'business', label: '打开数据导出' },
+  DATA_EXPORT_CONFIRM: { category: 'business', label: '执行数据导出' },
+  DATA_IMPORT_OPEN: { category: 'business', label: '选择导入文件' },
+  DATA_IMPORT_CONFIRM: { category: 'business', label: '执行数据导入' },
 
   // ---------- 系统事件 ----------
   APP_START: { category: 'system', label: '应用启动' },

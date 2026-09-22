@@ -27,8 +27,11 @@
     "core:window:allow-cursor-position",
     "sql:default",
     "sql:allow-execute",
+    "dialog:allow-open",
+    "dialog:allow-save",
     "fs:allow-mkdir",
     "fs:allow-write-file",
+    "fs:allow-write-text-file",
     "fs:allow-read-dir",
     "fs:allow-read-text-file",
     "fs:allow-exists",
@@ -41,6 +44,12 @@
         },
         {
           "path": "$APPDATA/agent-workspace/**"
+        },
+        {
+          "path": "$APPDATA/backups"
+        },
+        {
+          "path": "$APPDATA/backups/**"
         }
       ]
     },

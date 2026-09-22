@@ -13,6 +13,9 @@ import BaseTag from "../components/ui/BaseTag.vue";
 import PluginManageModal from "../components/plugin/PluginManageModal.vue";
 import PluginInstallModal from "../components/plugin/PluginInstallModal.vue";
 import FirstRunSetupModal from "../components/business/FirstRunSetupModal.vue";
+import DataExportModal from "../components/business/DataExportModal.vue";
+import DataImportModal from "../components/business/DataImportModal.vue";
+import { isDataPortAvailable } from "../api/data-port.api";
 import { pluginKernel } from "../plugin";
 import { usePlugins } from "../composables/use-plugins";
 import { sdk } from "../api/sdk";
@@ -351,6 +354,15 @@ const latestVersion = ref<string>("");
 
 /** 快捷键说明弹窗 */
 const shortcutsModalOpen = ref(false);
+
+/** 数据迁移功能是否可用（SQLite 是 Tauri 专属，浏览器端禁用） */
+const dataPortAvailable = isDataPortAvailable();
+
+/** 数据导出弹窗 */
+const dataExportOpen = ref(false);
+
+/** 数据导入弹窗 */
+const dataImportOpen = ref(false);
 
 /**
  * 快捷键清单（供「快捷键说明」弹窗展示）
@@ -903,6 +915,41 @@ const onProbeProxy = async (): Promise<void> => {
       </div>
     </BaseCard>
 
+    <!-- 数据迁移：导出 / 导入本地数据（换机迁移，仅桌面端） -->
+    <BaseCard title="数据迁移">
+      <div class="flex items-center justify-between gap-4 border-b border-flat-weak pb-4">
+        <div>
+          <p class="text-sm text-text">导出数据</p>
+          <p class="mt-0.5 text-xs text-text-tertiary">
+            按类别勾选自选股 / 账户 / 设置等本地数据，导出为单个 JSON 文件备份或换机
+          </p>
+        </div>
+        <BaseButton
+          variant="ghost"
+          data-track="DATA_EXPORT_OPEN"
+          :disabled="!dataPortAvailable"
+          @click="dataExportOpen = true"
+        >
+          导出
+        </BaseButton>
+      </div>
+      <div class="flex items-center justify-between gap-4 pt-4">
+        <div>
+          <p class="text-sm text-text">导入数据</p>
+          <p class="mt-0.5 text-xs text-text-tertiary">
+            {{ dataPortAvailable ? "从导出文件恢复，覆盖前自动备份并需二次确认" : "仅桌面端可用（浏览器端无本地数据库）" }}
+          </p>
+        </div>
+        <BaseButton
+          variant="ghost"
+          :disabled="!dataPortAvailable"
+          @click="dataImportOpen = true"
+        >
+          导入
+        </BaseButton>
+      </div>
+    </BaseCard>
+
     <BaseCard title="系统">
       <div class="mb-4 flex items-center justify-between gap-4">
         <div class="min-w-0">
@@ -947,6 +994,9 @@ const onProbeProxy = async (): Promise<void> => {
     </BaseCard>
 
     <!-- 快捷键说明弹窗 -->
+    <DataExportModal v-model:open="dataExportOpen" />
+    <DataImportModal v-model:open="dataImportOpen" />
+
     <BaseConfirmModal
       v-model:open="shortcutsModalOpen"
       title="快捷键说明"

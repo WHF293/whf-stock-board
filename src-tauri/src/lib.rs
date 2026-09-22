@@ -682,6 +682,7 @@ pub fn run() {
         .build(),
     )
     .plugin(tauri_plugin_fs::init())
+    .plugin(tauri_plugin_dialog::init())
     .manage(CloseToTrayEnabled(AtomicBool::new(false)))
     .invoke_handler(tauri::generate_handler![set_close_to_tray, get_work_area])
     .on_window_event(|window, event| {
