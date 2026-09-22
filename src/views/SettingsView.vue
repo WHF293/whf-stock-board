@@ -22,7 +22,7 @@ import { sdk } from "../api/sdk";
 import { MENU_DEFAULT_ORDER, MENU_ITEMS, ROUTE_PATH } from "../constants/router-meta.constants";
 import { HEADER_DEFAULT_ORDER, HOST_HEADER_ITEMS } from "../constants/header.constants";
 import { STOCK_PROXY_PATH } from "../constants/proxy.constants";
-import { WATCH_WIDGET_MODE } from "../constants/watch-widget.constants";
+import { WATCH_WIDGET_MODE, WATCH_WIDGET_POWER } from "../constants/watch-widget.constants";
 import {
   POLLING_INTERVAL,
   REFRESH_INTERVAL_OPTIONS,
@@ -768,14 +768,32 @@ const onProbeProxy = async (): Promise<void> => {
               在 Windows 任务栏上方常驻一个置顶迷你条（可拖动，位置会记住）：轮播盯盘标的，单击展开气泡看全部，点标的自动唤起主窗口并打开详情页；仅桌面端生效
             </p>
           </div>
-          <BaseSwitch
-            :model-value="settingsStore.watchWidget.enabled"
-            data-track="WATCH_WIDGET_TOGGLE"
-            @update:model-value="(enabled: boolean) => settingsStore.setWatchWidget({ enabled })"
-          />
+          <div class="flex items-center gap-2">
+            <BaseButton
+              :variant="settingsStore.watchWidget.power === WATCH_WIDGET_POWER.OFF ? 'primary' : 'ghost'"
+              data-track="WATCH_WIDGET_POWER_OFF"
+              @click="settingsStore.setWatchWidget({ power: WATCH_WIDGET_POWER.OFF })"
+            >
+              关闭
+            </BaseButton>
+            <BaseButton
+              :variant="settingsStore.watchWidget.power === WATCH_WIDGET_POWER.ALWAYS ? 'primary' : 'ghost'"
+              data-track="WATCH_WIDGET_POWER_ALWAYS"
+              @click="settingsStore.setWatchWidget({ power: WATCH_WIDGET_POWER.ALWAYS })"
+            >
+              常驻
+            </BaseButton>
+            <BaseButton
+              :variant="settingsStore.watchWidget.power === WATCH_WIDGET_POWER.SMART ? 'primary' : 'ghost'"
+              data-track="WATCH_WIDGET_POWER_SMART"
+              @click="settingsStore.setWatchWidget({ power: WATCH_WIDGET_POWER.SMART })"
+            >
+              智能开启
+            </BaseButton>
+          </div>
         </div>
         <div
-          v-if="settingsStore.watchWidget.enabled"
+          v-if="settingsStore.watchWidget.power !== WATCH_WIDGET_POWER.OFF"
           class="flex items-center justify-between border-t border-flat-weak pt-4"
         >
           <div>
@@ -799,6 +817,17 @@ const onProbeProxy = async (): Promise<void> => {
             >
               离开隐藏
             </BaseButton>
+          </div>
+        </div>
+        <div
+          v-if="settingsStore.watchWidget.power === WATCH_WIDGET_POWER.SMART"
+          class="flex items-center justify-between border-t border-flat-weak pt-4"
+        >
+          <div>
+            <p class="text-sm text-text">智能开启说明</p>
+            <p class="mt-0.5 text-xs text-text-tertiary">
+              仅交易日盘中（9:30-15:00，含午休）显示迷你条；盘前、盘后与节假日自动隐藏
+            </p>
           </div>
         </div>
       </div>

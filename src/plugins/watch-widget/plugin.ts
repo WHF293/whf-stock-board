@@ -24,11 +24,12 @@ import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import type { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import type { PhysicalPosition } from '@tauri-apps/api/dpi';
 import type { UnlistenFn } from '@tauri-apps/api/event';
-import { WATCH_WIDGET_MODE } from '../../constants/watch-widget.constants';
+import { WATCH_WIDGET_MODE, WATCH_WIDGET_POWER } from '../../constants/watch-widget.constants';
 import { NOTIFY_TONE } from '../../constants/notify.constants';
 import { ROUTE_PATH } from '../../constants/router-meta.constants';
 import { useTheme } from '../../composables/use-theme';
 import { useDockPanelStore } from '../../stores/dock-panel';
+import { useMarketStatusStore } from '../../stores/market-status';
 import { useSettingsStore } from '../../stores/settings';
 import { useStockContextStore } from '../../stores/stock-context';
 import { useWatchlistStore } from '../../stores/watchlist';
@@ -68,7 +69,7 @@ export const watchWidgetPlugin: PluginDefinition = {
   name: '任务栏盯盘小组件',
   version: '1.0.0',
   description:
-    '在 Windows 任务栏上方常驻一个置顶盯盘迷你条（设置里开关，默认关）：轮播自选盯盘标的的名称 / 现价 / 涨跌幅，阈值触发带提示点；单击迷你条展开气泡看全部候选，点气泡里的标的（或双击迷你条当前标的）自动唤起主窗口并打开该股详情页（左侧列表即盯盘候选）。支持常驻显示 / 鼠标离开自动隐藏两种模式；仅桌面端，迷你条自身不产生任何行情请求。',
+    '在 Windows 任务栏上方常驻一个置顶盯盘迷你条（设置里三态选择，默认关：关闭 / 常驻 / 智能开启，智能开启仅交易日盘中显示）：轮播自选盯盘标的的名称 / 现价 / 涨跌幅，阈值触发带提示点；单击迷你条展开气泡看全部候选，点气泡里的标的（或双击迷你条当前标的）自动唤起主窗口并打开该股详情页（左侧列表即盯盘候选）。支持常驻显示 / 鼠标离开自动隐藏两种模式；仅桌面端，迷你条自身不产生任何行情请求。',
   author: '内置',
   inject: ['watch:repo'],
   apply: async (ctx) => {
@@ -225,11 +226,20 @@ export const watchWidgetPlugin: PluginDefinition = {
       pushLines();
     };
 
+    /** 三态电源 → 条是否应显示（智能态叠加盘中判定；tick 每分钟重算，跨界自动隐现） */
+    const shouldShowBar = computed(() => {
+      const power = settingsStore.watchWidget.power;
+      if (power === WATCH_WIDGET_POWER.OFF) return false;
+      if (power === WATCH_WIDGET_POWER.ALWAYS) return true;
+      // 智能开启：仅交易日盘中显示（盘前 / 盘后 / 非交易日自动隐藏）
+      return useMarketStatusStore().isAShareIntraday;
+    });
+
     ctx.effect(() =>
       watch(
-        () => settingsStore.watchWidget.enabled,
-        (enabled) => {
-          if (enabled) void ensureBar();
+        shouldShowBar,
+        (show) => {
+          if (show) void ensureBar();
           else void destroyWindows();
         },
         { immediate: true },

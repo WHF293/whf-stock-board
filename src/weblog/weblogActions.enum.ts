@@ -112,6 +112,9 @@ export const WEBLOG_ACTIONS = {
   DATA_EXPORT_CONFIRM: { category: 'business', label: '执行数据导出' },
   DATA_IMPORT_OPEN: { category: 'business', label: '选择导入文件' },
   DATA_IMPORT_CONFIRM: { category: 'business', label: '执行数据导入' },
+  WATCH_WIDGET_POWER_OFF: { category: 'business', label: '任务栏小组件：关闭' },
+  WATCH_WIDGET_POWER_ALWAYS: { category: 'business', label: '任务栏小组件：常驻' },
+  WATCH_WIDGET_POWER_SMART: { category: 'business', label: '任务栏小组件：智能开启' },
 
   // ---------- 系统事件 ----------
   APP_START: { category: 'system', label: '应用启动' },

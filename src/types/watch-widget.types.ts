@@ -1,4 +1,4 @@
-import type { WatchWidgetMode } from '../constants/watch-widget.constants';
+import type { WatchWidgetMode, WatchWidgetPower } from '../constants/watch-widget.constants';
 import type { ThemeColor } from '../constants/theme-color.constants';
 import type { TrendTheme } from '../constants/trend-theme.constants';
 import type { HeaderMarqueeTone } from './plugin.types';
@@ -46,9 +46,12 @@ export interface WatchWidgetPosition {
 
 /** 设置页持久化的任务栏小组件配置 */
 export interface WatchWidgetSettings {
-  /** 总开关（默认关闭） */
-  enabled: boolean;
-  /** 显示模式：常驻显示 / 鼠标离开自动隐藏 */
+  /**
+   * 三态电源（默认关闭）：
+   * off 关闭 / always 常驻显示（原「开启」）/ smart 智能开启（仅交易日盘中显示）
+   */
+  power: WatchWidgetPower;
+  /** 显示模式：常驻显示 / 鼠标离开自动隐藏（条出现后的行为，与 power 正交） */
   mode: WatchWidgetMode;
   /** 鼠标离开多少秒后自动隐藏（hover 模式生效） */
   hideDelaySec: number;

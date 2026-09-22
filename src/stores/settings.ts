@@ -33,6 +33,7 @@ import type { BoardCalendarHeatBasis, BoardCalendarRange } from '../types/board-
 import type { BoardDetailRange } from '../types/board-detail.types';
 import type { WatchWidgetSettings } from '../types/watch-widget.types';
 import { BOARD_DEFAULT_ORDER, normalizeBoardHidden, normalizeBoardOrder } from '../utils/board-order';
+import { migrateWatchWidgetSettings } from '../utils/migrate-watch-widget-settings';
 
 /**
  * 初始设置引导的默认完成态
@@ -98,7 +99,7 @@ interface SettingsState {
   setupCompleted: boolean;
   /** 桌面端 · 点击关闭按钮最小化到托盘（false = 直接关闭应用；浏览器模式无此行为） */
   closeToTray: boolean;
-  /** 桌面端 · 任务栏盯盘小组件（开关 / 显示模式 / 拖动位置；浏览器模式无此行为） */
+  /** 桌面端 · 任务栏盯盘小组件（三态电源 / 显示模式 / 拖动位置；浏览器模式无此行为） */
   watchWidget: WatchWidgetSettings;
 }
 
@@ -214,7 +215,7 @@ export const useSettingsStore = defineStore('settings', {
 
     /**
      * 设置任务栏盯盘小组件配置（局部合并；仅桌面端生效，浏览器模式只保留偏好）
-     * @param patch 配置增量（开关 / 显示模式 / 拖动位置）
+     * @param patch 配置增量（三态电源 / 显示模式 / 拖动位置）
      */
     setWatchWidget(patch: Partial<WatchWidgetSettings>): void {
       this.watchWidget = { ...this.watchWidget, ...patch };
@@ -368,5 +369,12 @@ export const useSettingsStore = defineStore('settings', {
   persist: {
     key: STORAGE_NS_SETTINGS,
     storage: appStorage,
+    // 旧版 watchWidget.enabled（布尔开关）→ power（三态）：水合后就地迁移，
+    // 否则开着小组件的老用户升级后 power 落默认 'off' 被静默关闭
+    afterHydrate: (context) => {
+      migrateWatchWidgetSettings(
+        context.store.watchWidget as Partial<WatchWidgetSettings> & { enabled?: boolean },
+      );
+    },
   },
 });

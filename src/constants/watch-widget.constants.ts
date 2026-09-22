@@ -17,8 +17,21 @@ export const WATCH_WIDGET_MODE = {
 /** 小组件显示模式类型 */
 export type WatchWidgetMode = (typeof WATCH_WIDGET_MODE)[keyof typeof WATCH_WIDGET_MODE];
 
-/** 总开关默认值（默认关闭，用户在设置里显式开启） */
-export const WATCH_WIDGET_ENABLED_DEFAULT = false;
+/** 小组件三态电源（条是否出现；条出现后的行为由 WATCH_WIDGET_MODE 决定，二者正交） */
+export const WATCH_WIDGET_POWER = {
+  /** 关闭：不显示迷你条 */
+  OFF: 'off',
+  /** 常驻：始终显示迷你条（原「开启」） */
+  ALWAYS: 'always',
+  /** 智能开启：仅交易日盘中显示（盘前、盘后、非交易日自动隐藏） */
+  SMART: 'smart',
+} as const satisfies Record<string, string>;
+
+/** 小组件三态电源类型 */
+export type WatchWidgetPower = (typeof WATCH_WIDGET_POWER)[keyof typeof WATCH_WIDGET_POWER];
+
+/** 三态电源默认值（默认关闭，用户在设置里显式选择） */
+export const WATCH_WIDGET_POWER_DEFAULT: WatchWidgetPower = WATCH_WIDGET_POWER.OFF;
 
 /** 显示模式默认值：常驻显示（首次开启先让用户看到，摸鱼隐藏模式由用户显式选择） */
 export const WATCH_WIDGET_MODE_DEFAULT: WatchWidgetMode = WATCH_WIDGET_MODE.ALWAYS;
@@ -28,7 +41,7 @@ export const WATCH_WIDGET_HIDE_DELAY_SEC_DEFAULT = 3;
 
 /** 设置默认值（settings store 初始化用；类型只读引入，与 types 单向依赖不构成环） */
 export const WATCH_WIDGET_SETTINGS_DEFAULT: WatchWidgetSettings = {
-  enabled: WATCH_WIDGET_ENABLED_DEFAULT,
+  power: WATCH_WIDGET_POWER_DEFAULT,
   mode: WATCH_WIDGET_MODE_DEFAULT,
   hideDelaySec: WATCH_WIDGET_HIDE_DELAY_SEC_DEFAULT,
   position: null,
