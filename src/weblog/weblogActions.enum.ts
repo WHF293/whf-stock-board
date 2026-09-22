@@ -100,6 +100,7 @@ export const WEBLOG_ACTIONS = {
   PLUGIN_INSTALL: { category: 'business', label: '安装插件' },
   PLUGIN_INSTALL_OPEN: { category: 'business', label: '打开插件安装' },
   PLUGIN_UNINSTALL: { category: 'business', label: '卸载插件' },
+  PLUGIN_TAKEOVER: { category: 'business', label: '接管内置插件版本' },
   PLUGIN_DB_DROP: { category: 'business', label: '删除插件数据表' },
   PLUGIN_COMMAND_RUN: { category: 'business', label: '执行插件命令' },
   PLUGIN_PANEL_OPEN: { category: 'business', label: '打开插件面板' },

@@ -193,3 +193,13 @@ export const createWatchMonitor = (deps: WatchMonitorDeps): WatchMonitor => {
     },
   };
 };
+
+// 把引擎服务登记进全局服务契约表（与 service.ts 的 watch:repo 同模式）。
+// 原声明在 plugin.ts（404611f），插件本体迁出 zip 分发后落到这里，
+// 供 dsh-watch-widget 等消费方复用同一份盯盘引擎。
+declare module '../../types/plugin.types' {
+  interface AppServiceMap {
+    /** 盯盘引擎只读句柄（由 dsh-sidebar-watch 提供；报价快照经同一份轮询维护） */
+    'watch:monitor': WatchMonitor;
+  }
+}

@@ -1,42 +1,69 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useIntervalFn } from '@vueuse/core';
-import BaseButton from '../../components/ui/BaseButton.vue';
-import BaseCard from '../../components/ui/BaseCard.vue';
-import BaseEmpty from '../../components/ui/BaseEmpty.vue';
-import BaseSwitch from '../../components/ui/BaseSwitch.vue';
-import BaseTag from '../../components/ui/BaseTag.vue';
-import PluginInstallModal from '../../components/plugin/PluginInstallModal.vue';
-import { pluginKernel } from '../../plugin';
-import { usePlugins } from '../../composables/use-plugins';
-import { useUserPlugins } from '../../composables/use-user-plugins';
-import { PLUGIN_STATUS, PLUGIN_STATUS_LABEL, PLUGIN_STATUS_TONE } from '../../constants/plugin.constants';
-import { formatTime } from '../../utils/format-time';
-import { PLUGIN_LAB_EVENT_LIMIT, PLUGIN_LAB_TICK_MS } from './constants';
-import type { PluginRuntimeInfo } from '../../types/plugin.types';
-import type { QuickNoteRepo } from '../quick-note/service';
+import BaseButton from '../components/ui/BaseButton.vue';
+import BaseCard from '../components/ui/BaseCard.vue';
+import BaseEmpty from '../components/ui/BaseEmpty.vue';
+import BaseSwitch from '../components/ui/BaseSwitch.vue';
+import BaseTag from '../components/ui/BaseTag.vue';
+import PluginInstallModal from '../components/plugin/PluginInstallModal.vue';
+import { pluginKernel } from '../plugin';
+import { BUILTIN_PLUGINS } from '../plugins';
+import { usePlugins } from '../composables/use-plugins';
+import { useUserPlugins } from '../composables/use-user-plugins';
+import {
+  PLUGIN_LAB_EVENT_LIMIT,
+  PLUGIN_LAB_TICK_MS,
+  PLUGIN_STATUS,
+  PLUGIN_STATUS_LABEL,
+  PLUGIN_STATUS_TONE,
+  USER_PLUGIN_SOURCE,
+} from '../constants/plugin.constants';
+import { formatTime } from '../utils/format-time';
+import type { PluginRuntimeInfo } from '../types/plugin.types';
 
 /**
- * 插件工坊（插件 dsh-plugin-lab 贡献的页面）
+ * 速记服务在本页用到的最小结构
  *
- * 「宿主能看到什么，插件就能看到什么」：本页全部数据来自内核运行时的只读句柄
- * （`kernel:runtime` 服务）与宿主经 props 注入的 `note:repo` 服务，
- * 页面本身也是通过 `ctx.menu.add()` 注册的 —— 插件能加菜单、能加页面、能读运行时。
- * 启停 / 安装 / 卸载直接复用宿主的 composable 与弹窗，管理能力不只在设置页。
+ * `note:repo` 是速记插件的**私有服务**（由插件自己声明并 provide，不在宿主契约表里），
+ * 宿主这里只声明真正用到的那一个方法 —— 宿主因此不 import 插件源码，插件没装也不影响本页。
  */
-const props = defineProps<{
-  /** 速记仓储（由 dsh-quick-note 提供；该插件被禁用时为 undefined） */
-  noteRepo?: QuickNoteRepo;
-}>();
+interface NoteRepoLike {
+  /** 取最近一条速记 */
+  latest: () => { text: string } | null;
+}
+
+/**
+ * 插件工坊（宿主自带页面，正式功能）
+ *
+ * 本页是插件体系的自省 / 管理窗口：全部数据来自内核运行时的只读句柄
+ * （`pluginKernel.reader()`）与服务容器（`pluginKernel.services`），
+ * 启停 / 安装 / 卸载直接复用宿主的 composable 与弹窗，管理能力不只在设置页。
+ *
+ * 它本身**不是插件**：路径与导航由宿主注册（`ROUTE_PATH.PLUGIN_LAB`），
+ * 因此不会被停用，也不出现在插件清单里，并作为「插件页随插件撤销」的兜底落点。
+ */
 
 const { setEnabled, retry } = usePlugins();
-const { isUserPlugin, uninstall, pendingDbCleanup, resolveDbCleanup } = useUserPlugins();
+const { records, isUserPlugin, uninstall, pendingDbCleanup, resolveDbCleanup } = useUserPlugins();
 
 /** 插件安装弹窗显隐 */
 const installModalOpen = ref(false);
 
 /** 当前处于「待确认卸载」状态的插件 id（再次点击才真正卸载） */
 const confirmingUninstallId = ref('');
+
+/**
+ * 插件的安装来源文案（只有用户安装的插件才有；内置插件返回空串）
+ * @param id 插件 id
+ * @returns 来源文案
+ */
+const sourceLabel = (id: string): string => {
+  const record = records.value.find((item) => item.id === id);
+  if (!record) return '';
+  const from = record.source === USER_PLUGIN_SOURCE.PACKAGE ? 'zip 包安装' : '粘贴代码安装';
+  return BUILTIN_PLUGINS.some((plugin) => plugin.id === id) ? `${from} · 已接管内置版` : from;
+};
 
 /**
  * 请求卸载：第一次点击进入待确认态，第二次点击执行
@@ -102,14 +129,23 @@ const mcpServers = computed(() => {
   return [...pluginKernel.contributions.agent.servers];
 });
 
-/** 速记服务是否可用（跨插件服务消费示例） */
-const noteAvailable = computed(() => props.noteRepo !== undefined);
+/**
+ * 当前生效的速记服务（由 dsh-quick-note 插件提供，未提供时降级）
+ *
+ * 宿主页面直接向服务容器取用：插件挂载 / 卸载后重解析一次即可，
+ * 不必把实现当作 props 注入（页面也就不再依赖谁来挂载它）。
+ */
+const noteRepo = computed<NoteRepoLike | undefined>(() => {
+  void tick.value;
+  void pluginKernel.revision.value;
+  return pluginKernel.services.consumeAs<NoteRepoLike>('note:repo');
+});
+
+/** 速记服务是否可用（插件被禁用时为 false） */
+const noteAvailable = computed(() => noteRepo.value !== undefined);
 
 /** 最近一条速记正文（服务不可用时展示提示） */
-const latestNoteText = computed(() => {
-  void tick.value;
-  return props.noteRepo?.latest()?.text ?? '';
-});
+const latestNoteText = computed(() => noteRepo.value?.latest()?.text ?? '');
 
 /**
  * 贡献点计数的可读文案
@@ -225,7 +261,7 @@ const contributionSummary = (info: PluginRuntimeInfo): string => {
             class="mt-2 flex items-center justify-end gap-2 border-t border-flat-weak pt-2"
           >
             <p class="min-w-0 flex-1 text-xs text-text-tertiary">
-              卸载后移除插件代码（插件产生的本地数据保留，重装后恢复）
+              {{ sourceLabel(info.id) }} · 卸载后移除插件代码（本地数据保留，重装后接着用）
             </p>
             <BaseButton
               :variant="confirmingUninstallId === info.id ? 'danger' : 'ghost'"
@@ -234,6 +270,9 @@ const contributionSummary = (info: PluginRuntimeInfo): string => {
               {{ confirmingUninstallId === info.id ? '确认卸载' : '卸载' }}
             </BaseButton>
           </div>
+          <p v-else class="mt-2 border-t border-flat-weak pt-2 text-xs text-text-tertiary">
+            内置插件 · 随应用分发，只能启停，不能卸载
+          </p>
         </li>
       </ul>
       <BaseEmpty v-if="plugins.length === 0" text="没有任何插件" />

@@ -74,15 +74,24 @@ server/           # vite 中间件：/stock-proxy（仅浏览器 dev 使用）
 **一切能力都由插件贡献**——侧栏面板、菜单、路由、停靠面板、命令、Agent MCP 服务器。
 宿主不硬编码任何具体插件，新增能力应当写成插件而不是改宿主（`MainLayout.vue` 里只保留面板承载与命令转发）。
 
+> **API 文档在根目录 [`PLUGIN_API.md`](./PLUGIN_API.md)**（九个贡献点字段与默认值、ctx 数据层、
+> 十六个宿主服务、六个内置事件、配额与红线的完整清单）。本节只留架构约定；
+> 写插件前先看那份文档，改本节涉及的能力时同步它。
+>
+> **面向第三方（应用内安装）插件作者的独立 wiki 在 [`PLUGIN_WIKI.md`](./PLUGIN_WIKI.md)**（能力边界、
+> 渲染函数速成、五个可抄示例、排障对照表）。宿主改了 `ctx.vue` 成员、`app:ui` 组件集、
+> 预检规则、配额红线时，**两份都要同步**。
+
 ### 内核 API
 
 ```ts
 import { pluginKernel } from '@/plugin';
-pluginKernel.use(plugin, config?)  // 注册并挂载（返回 Disposable）
+pluginKernel.use(definition, options?)   // options: { enabled?: boolean; origin?: 'builtin' | 'user' }
 pluginKernel.unuse(id)             // 彻底移除
 pluginKernel.setEnabled(id, bool)  // 运行期启停（贡献点即撤销/恢复）
 pluginKernel.retry(id)             // 失败插件显式重试
 pluginKernel.list()                // PluginRuntimeInfo[]（status/contributions/error）
+pluginKernel.listSettingsPlugins() // 已挂载且声明 settings 的插件（宿主设置弹窗数据源）
 pluginKernel.revision              // ref<number>：宿主响应式依赖它感知变化
 ```
 
@@ -99,7 +108,7 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
    （同名后注册者覆盖，卸载后恢复前者）。
 3. **类型化事件**：`ctx.on('note:saved', h)` / `ctx.emit`，订阅返回 Disposable 且随插件卸载自动退订。
    新增事件须在 `plugin.types.ts` 的 `AppEventMap` / `AppServiceMap` 里扩展（**插件通过 `declare module` 自行扩展**，
-   见 `src/plugins/quick-note/service.ts`）。
+   示例见插件仓库 `plugins/dsh-quick-note/service.ts` 的 `declare module '../../host/types/plugin.types'`）。
 
 ### 贡献点速查
 
@@ -108,7 +117,7 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
 | 侧栏面板 | `ctx.sidebar.add({ id, title, component, mode, position, order, visibleWhenCollapsed })` | `mode: 'inline' \| 'drawer'`（默认 inline）；`position: 'nav' \| 'footer'`；`order` 越大越靠下，宿主内置项在前 |
 | 菜单 | `ctx.menu.add({ path, title, icon, component, order?, fallbackLanding? })` | **带 `component` 会自动注册路由**（挂在主布局之下），无需再手动 `router.add`；`fallbackLanding: true` 声明本页为「插件页随插件撤销时的兜底落点」（见「宿主接线」的最后一条） |
 | 路由 | `ctx.router.add({ path, component, underLayout? })` | 无菜单入口的隐藏页用这个；`underLayout` 默认 `true` |
-| 停靠面板 | `ctx.dock.add(key, component, title)` | 右侧面板（`openPluginPanel(key)` 打开） |
+| 停靠面板 | `ctx.dock.add({ id, title, component, props? })` | 右侧面板（调用方自己用 `useDockPanelStore().openPluginPanel('<pluginId>#<id>')` 打开；`panel:open` 服务当前不含 dock） |
 | 顶栏条目 | `ctx.header.add({ id, title, icon, component, props?, marquee?, marqueeIntervalMs? })` | 应用**右上角工具条**的插件入口（`panel:open` 服务同样能唤醒）：收起态不展示图标，由宿主按 `marquee()` 返回的行做 Swiper 式上下滑动轮播（间隔默认 4s、下限 1500ms，单行不轮播；行给 `label`/`value` 时名称可截断、数值常显，视窗 171px 固定），点开下拉渲染 `component`（`usePluginPanelHost().close()` 可自行收起）；顺序与显隐在设置页「顶栏工具」编排（`settings.headerOrder` / `hiddenHeaderItems`） |
 | 命令 | `ctx.command.add({ id, title, keys?, run })` | `keys: 'Ctrl+Alt+N'` 自动接管全局快捷键（`command-keys.ts` 解析） |
 | 股票行操作 | `ctx.stockRow.add({ id, title, activeTitle?, icon, order?, isActive?, run })` | 往**自选股表格的「操作」列**注入按钮（宿主不硬编码任何插件）；`isActive` 表达激活态（宿主据此高亮 + 换用 `activeTitle`），适合「盯盘 / 取消盯盘」这类开关动作 |
@@ -120,16 +129,20 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
 1. 建目录 `src/plugins/<your-plugin>/`：`plugin.ts`（导出 `PluginDefinition`）+ 面板 `xxx.vue` + `constants.ts`（文案/阈值入常量）
 2. `plugin.ts` 里 `apply: (ctx) => ctx.sidebar.add({ id, title, component, mode: 'inline', position: 'nav', order })`
 3. 注册到 `src/plugins/index.ts` 的 `BUILTIN_PLUGINS`（宿主按此列表挂载，黑名单见 `stores/plugin.ts`；**改前先按下方「备份与恢复」规范备份**）
-4. 面板内既可用 `pluginLab` 这类宿主导出的公共数据，也可自己 `ctx.provide` 服务给别的插件
+4. 面板内既可消费宿主服务（`ctx.consume`，如 `app:notify` / `kernel:runtime`），也可自己 `ctx.provide` 服务给别人；想看当前挂载了哪些插件、各自贡献了什么，去左侧导航的**插件工坊**页（它不是插件，见下方条目）
 5. 启停无需改宿主：设置页「插件」卡片（`PluginManageModal.vue`）已按 `pluginKernel.list()` 自动渲染
 
 ### 宿主接线（别绕开）
 
 - `main.ts` 在 `app.use(router)` **之前**调 `installPlugins(pinia)`（`plugin/setup.ts`）：
-  先 provide 宿主服务（`app:version` / `kernel:runtime` / `app:navigate` / `panel:open` / `app:notify`），再挂插件，
+  先 provide 十六个宿主服务（`app:version` / `kernel:runtime` / `app:navigate` / `panel:open` / `panel:close` /
+  `app:notify` / `app:stock-search` / `app:stock-picker` / `app:stock-open` / `app:watchlist` / `app:polling` /
+  `app:ui` / `app:http` / `app:quotes` / `app:market` / `app:format`，清单以
+  `types/plugin.types.ts` 的 `AppServiceMap` 为准），再挂插件，
   再 `attachPluginRoutes(router, { onVanishedRoute })`（订阅路由注册表版本号，把插件注册 / 卸载翻译成 `addRoute` / 摘除；
   **用户正停留的插件页随插件被撤销时**回调 `onVanishedRoute`，宿主在 `recoverVanishedRoute` 里按
-  「声明 `fallbackLanding` 的页面 → 侧栏第一个菜单 → 宿主首页」三级递退接走用户，并 `replace` 过去 + 浮窗说明原因），
+  「声明了 `fallbackLanding` 的页面（宿主 `MENU_ITEMS` 里的自带页优先，再是插件声明的）→ 侧栏第一个菜单 → 宿主首页」
+  三级递退接走用户，并 `replace` 过去 + 浮窗说明原因），
   随后**异步挂载用户插件**，最后 `router.afterEach` 广播 `route:changed`
 - 侧栏面板渲染：`components/plugin/SidebarPanelHost.vue`（inline，折叠时不挂载）+ `SidebarPanelEntry.vue`（drawer 入口按钮）+ `PluginPanelDrawer.vue`（抽屉承载）
 - 插件存储：`ctx.storage` 落在 `whf:app` 整包的 `plugin:<pluginId>` 命名空间下，**插件之间天然隔离**
@@ -138,6 +151,28 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
   插件 `ctx.consume('app:notify')` 即可弹右下角提醒（tone 走涨跌 token，自动跟随 `data-trend`）。
   承载组件由 `MainLayout` 渲染一次，**与发起它的插件面板是否挂载无关**——需要长期生效的提醒（如盯盘到价）必须走这里，
   不能挂在面板组件里（面板折叠即卸载）
+- **第三方（用户插件）的三条补给通道**（2026-09-21 起）：用户插件是运行时 Blob 动态 import 的，
+  `import` / `template` 一律拿不到东西，因此宿主代为下发 —— ① `ctx.vue`（h/ref/computed…，写渲染函数用）
+  ② `app:ui`（宿主十二个基础组件 + `confirm()`，承载组件 `PluginConfirmHost` 挂在 MainLayout）
+  ③ `app:http`（受 `STOCK_PROXY_ALLOWED_HOSTS` 约束）/ `app:quotes`（批量报价）
+  ④ `app:stock-open`（打开个股）/ `app:watchlist`（自选只读）/ `app:polling`（轮询调度）
+  ⑤ `app:stock-picker`（选股弹窗；与 `confirm()` 同范式：宿主渲染 `StockSearchModal`，
+  承载组件 `PluginStockPickerHost` 挂在 MainLayout，Promise 回传 `SearchResult | null`）
+  —— 这几类过去只能靠 import 宿主内部模块（`useStockOpen` / `stores/watchlist` /
+  `composables/polling-scheduler` / `StockSearchModal`），官方插件改成 zip 分发后必须走服务。
+  改这几个服务等于改第三方插件的地板，务必同步 PLUGIN_API.md 与 PLUGIN_WIKI.md
+
+### 插件工坊不是插件（v2.6.2 起转正）
+
+「插件工坊」最早是一个演示用的内置插件，现已**转正为宿主自带功能**：页面在 `src/views/PluginLabView.vue`，
+路径与导航由 `ROUTE_PATH.PLUGIN_LAB` + `MENU_ITEMS` 注册（和「市场总览」同一层），不在 `BUILTIN_PLUGINS` 里。
+
+- 它是**插件体系的自省窗口**：内核概览、插件清单（启停 / 安装 / 卸载）、贡献点总览、生效服务、最近事件，
+  数据全部取自 `pluginKernel`（运行时只读句柄 + 服务容器 + 贡献注册表），不需要也不该走 props 注入。
+- 它**不可被停用**，于是「插件页随插件撤销」始终有一个可用落点：兜底声明写在 `MENU_ITEMS` 条目的
+  `fallbackLanding: true` 上，由 `recoverVanishedRoute` 与插件侧的同类声明一起解析（宿主页优先）。
+- 反过来：**宿主 page 若要用某个插件的能力，直接向服务容器取（`pluginKernel.services.consume`），并允许它缺席**——
+  插件可停用，页面不能因此崩。
 
 ### 面板挂载语义（决定「后台任务该放哪」，别踩）
 
@@ -192,32 +227,88 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
 除源码级插件外，应用支持**运行时安装**：设置页「插件」→「安装插件」（`PluginInstallModal.vue`）。
 
 - **插件格式**：预构建 ESM JS，`export default { …PluginDefinition }`（或 `export const plugin`）。
-  面板组件用渲染函数 `h()` 写——生产构建不含 Vue 运行时模板编译器，`<template>` 字符串不可用
-- **加载链**：`plugin/user-plugin-loader.ts` 把代码包成 Blob URL 动态 `import()`（CSP 无限制：浏览器侧无
-  CSP meta、Tauri `csp: null`）→ `validateUserPluginDefinition` 结构校验（id 规则 / 必填字段 / 占用检查，
-  **纯函数**可被烟雾测试直跑）→ `pluginKernel.use(def, { origin: 'user' })`
+  面板组件用渲染函数写——生产构建不含 Vue 运行时模板编译器，`<template>` 字符串不可用
+- ⚠️ **插件代码里不能写 `import`（2026-09-20 实测）**：用户插件是 Blob URL 动态 `import()` 的，
+  拿不到 Vite 的依赖解析 —— 裸包名报 `Failed to resolve module specifier "vue"`，绝对路径报
+  `base scheme isn't hierarchical`。
+- 🛡️ **能力已由宿主代发（2026-09-21 起）**：第三方要写有状态的 UI，直接用
+  `ctx.vue`（h / ref / computed / watch / onMounted / onUnmounted / nextTick）与
+  `app:ui`（Button / Input / Switch / Tag / Card / Empty / Tabs / Table / Modal / Drawer / Skeleton / Icon
+  + `confirm()`），要取数用 `app:http`（受白名单约束）/ `app:quotes` / `app:market`，
+  要打开个股用 `app:stock-open`、读自选股用 `app:watchlist`、后台轮询用 `app:polling`、
+  让用户挑股票用 `app:stock-picker`、关自己面板用 `panel:close`。Tailwind 类仍然只有宿主源码里出现过的才有 CSS——
+  所以**首选宿主组件，而不是自己堆类名**
+- 🛡️ **静态预检（`plugin/user-plugin-lint.ts`，纯函数）**：`import` / `export … from` / `import()` /
+  `template:'…'` 这四类在安装前的「解析预览」就被拦下并报**行号**；Tailwind 任意类只给提醒不拦。
+  改这套规则 = 改第三方作者的试错成本，务必同步 `PLUGIN_API.md` §0
+- 📦 **分发形态是构建产物（zip 包优先）**：`utils/plugin-package.ts`（纯函数）用 fflate 解包 →
+  剥掉唯一顶层目录 → 读 `manifest.json`（`id` 必填；`entry` 默认 `main.js`；`readme` 默认 `README.md`）→
+  取入口产物代码；无清单时若包内只有一份 js 就按单文件包处理。随后走同一条加载链，
+  安装前 `checkManifestConsistency` 校验清单 `id` / `version` 与产物导出一致（**不一致直接报错**，
+  绝不静默取一边）。面向作者的包格式说明在 `PLUGIN_WIKI.md` §8.2
+- **加载链**：`plugin/user-plugin-loader.ts`（先 `lintUserPluginCode` → 再 Blob URL 动态 `import()`，
+  CSP 无限制：浏览器侧无 CSP meta、Tauri `csp: null`）→ `validateUserPluginDefinition` 结构校验
+  （id 规则 / 必填字段 / 占用检查，**纯函数**可被烟雾测试直跑）→ `pluginKernel.use(def, { origin: 'user' })`
 - **持久化**：代码原文存 `stores/user-plugins.ts`（命名空间 `plugin.user`，上限 50 条 / 单份 512KB）；
   启动时 `setup.ts` 异步重挂，并按启动路径快照还原「直刷插件路由被 404 兜底带走」的场景
-- **管理**：启停与内置插件同一套黑名单语义；管理弹窗里用户插件有「卸载」（两段确认）——内核 `unuse`
-  + 删持久化，**插件运行时数据保留**（重装恢复）
+- **管理**：启停与内置插件同一套黑名单语义；管理弹窗 / 插件工坊里用户插件有「卸载」（两段确认）——内核 `unuse`
+  + 删持久化，**插件运行时数据保留**（重装恢复）；卡片会标安装来源（`zip 包安装` / `粘贴代码安装`，
+  接管同名内置时加「· 已接管内置版」），内置插件则注明「随应用分发，只能启停，不能卸载」
+- **同 id 的三种命运**（1.0 口径，别再退回「报错了事」）：① 已装过 → **升级 / 覆盖重装**（数据表保留）；
+  ② 与内置插件同 id → **接管内置版**（`setup.ts` 启动装配跳过被接管的内置项；卸载后立刻把内置实现挂回来）；
+  ③ 首次安装 → 正常挂载。三者都在安装弹窗预览里写明，按钮文案随之变成「确认升级」/「确认接管安装」
 - **信任级别**：插件代码与应用同权限执行（无沙箱），安装弹窗有固定风险提示；写操作类插件需自行确认来源
 
-### 源码级安装 / 卸载的备份与恢复（硬性）
+### 「两种安装」的分工（先分清，再谈卸载）
 
-运行时启停（设置页开关）不碰源文件、天然可逆，无需备份；**改源文件才算「安装」，删除才算「卸载」，这两步必须走备份流程**：
+同一个词「安装 / 卸载」在两个完全不同的层面上用，混着说必出误会：
 
-1. **安装前备份**：把所有将被改动的宿主文件（至少 `src/plugins/index.ts`，若还涉及 constants / MCP registry / 路由等一并算上）按原相对路径备份到 `.ai/plugin-backups/<pluginId>/`，并在该目录写 `manifest.json`：`{ pluginId, files: [相对路径...], backupAt, note }`
+| 层面 | 谁在做 | 装进去的样子 | 卸载的样子 |
+| --- | --- | --- | --- |
+| **源码集成**（开发者侧） | 改源码的人 | 插件源码在 `src/plugins/<id>/`，并登记进 `BUILTIN_PLUGINS` → **编译进应用** | 删源码 + 撤登记 → 下次构建后应用里彻底没有它（只保留了备份 / git 历史 / 已发布的 zip 包） |
+| **应用内安装**（运行时侧） | 用户 | zip 包 / 粘贴代码 → 存进 `plugin.user` 并在运行时动态挂载 | 插件工坊 / 管理弹窗里的「卸载」（两段确认 + 数据表处置） |
+
+**要点**：源码集成的插件，运行时**不知道**它是「装」进来的 —— 它天生就是应用的一部分，
+所以应用内的卸载 UI **永远不会**给它显示「卸载」按钮；想让它变成可卸载的应用内插件，
+做法是把它**从源码里移出去**，重新以 zip 产物包的形式分发。
+反过来，也不要指望「应用内卸载」能删掉源码 —— 它对源文件一无所知。
+
+**本仓库当前状态**：四个官方插件（主线 / 股息筛选 / 速记 / 自选盯盘）已全部走「应用内安装」形态 ——
+`src/plugins/` 下**没有任何插件源码**，`BUILTIN_PLUGINS` 是空数组。它们的源码、清单与产物包都在
+**独立仓库 `whf-stock-board-plugin`**：改插件 UI / 逻辑、升版本、出包都在那边做
+（`node scripts/build-plugins.mjs`），产物 `plugins-dist/<id>-<version>.zip` 也在那边入库。
+> ⚠️ **它的目录位置不由本仓库假定**（不保证与本仓库同级）：需要跨仓库联动时用参数显式指路 ——
+> 出包用 `--host <本仓库根>` 让它回写样式白名单，本仓库侧读产物用环境变量 `WHF_PLUGIN_DIST`。
+本仓库只保留**宿主能力**：插件内核（`src/plugin/`）、样式白名单（`src/assets/styles/plugin-classes.txt`）、
+静态预检（`src/plugin/user-plugin-lint.ts`）与插件开发文档（`PLUGIN_API.md` / `PLUGIN_WIKI.md`）。
+
+### 源码集成插件：增删时的备份与恢复（硬性）
+
+增删**源码文件**才算「安装 / 卸载」，运行时启停（设置页开关）不碰源文件、天然可逆，无需备份。
+下面两步必须走备份流程：
+
+1. **安装前备份**：把所有将被改动的宿主文件（至少 `src/plugins/index.ts`，若还涉及 constants / MCP registry / 路由等一并算上）按原相对路径备份到 `.ai/plugin-backups/<pluginId>/`，并在该目录写 `manifest.json`：`{ pluginId, files: [相对路径...], backupAt, note }`。
+   （四个官方插件的源码副本已清掉 —— 它们在独立仓库里有完整源码与 git 历史，本仓库不留第二份）
 2. **卸载时恢复**：先删插件目录 `src/plugins/<pluginId>/`，再把备份文件按 `manifest.json` 清单逐一写回原路径，恢复后跑 `pnpm lint` + `pnpm build` 验证
 3. **git 是第二道保险，不替代本流程**：`.ai/` 不入库，备份只在本机有效；git 干净时 `git checkout -- <file>` 也可用，但 manifest 备份是硬性兜底
 4. 插件自己的运行时数据（`whf:app` 整包里 `plugin:<pluginId>` 命名空间）卸载插件时**不清理**，重装后数据仍在——要彻底清数据需用户在设置页确认
+5. **改官方插件不用再走「临时恢复源码」流程**：本仓库已不再持有它们的源码 ——
+   ① 去插件仓库改 `plugins/<id>/` 下的源码（宿主类型与常量从那边 `host/` 的契约快照取，
+   快照由 `node scripts/sync-host-contract.mjs` 从本仓库 `src/` 同步，改了宿主契约就跑一次）；
+   ② `node scripts/build-plugins.mjs <id> --host <本仓库根>` 出包，
+   顺带把产物用到的 Tailwind 类回写进本仓库的 `src/assets/styles/plugin-classes.txt`；
+   ③ 本仓库侧只需重跑样式审计冒烟（见下）。**别把插件源码搬回 `src/plugins/`** ——
+   那会让它重新变回「源码集成」，应用内就再也卸载不掉了
 
 ### 自检口径
 
 改完内核或新增插件，除 `pnpm lint` + `pnpm build` 外**必须跑内核烟雾测试**：
 
 ```bash
-node .ai/tmp/plugin-kernel-smoke.mjs   # 71 项断言：挂载/卸载/贡献点可逆/order 排序/依赖收敛/环形依赖/失败回滚/服务覆盖恢复/事件退订/清理逆序/菜单自动路由/存储隔离/快捷键解析/Agent 贡献点/revision/ctx.db 降级通道全链路
-node "C:/Users/ChenYj/.workbuddy/skills/ts-smoke-harness/scripts/run-ts-smoke.mjs" --test .ai/tmp/plugin-db-smoke.mjs   # 26 项：ctx.db 纯函数层（表名校验/DDL/序列化）
+node .ai/tmp/plugin-kernel-smoke.mjs   # 150 项断言：挂载/卸载/贡献点可逆/order 排序/依赖收敛/环形依赖/失败回滚/服务覆盖恢复/事件退订/清理逆序/菜单自动路由/存储隔离/快捷键解析/Agent 贡献点/revision/ctx.db 降级通道全链路
+node "C:/Users/ChenYj/.workbuddy/skills/ts-smoke-harness/scripts/run-ts-smoke.mjs" --test .ai/tmp/plugin-db-smoke.mjs   # 38 项：ctx.db 纯函数层（表名校验/DDL/序列化/真 SQLite 执行）
+node "C:/Users/ChenYj/.workbuddy/skills/ts-smoke-harness/scripts/run-ts-smoke.mjs" --test .ai/tmp/plugin-zip-smoke.mjs  # zip 产物包回验（解包/静态预检/真机执行/清单一致性）；产物目录用 `WHF_PLUGIN_DIST` 指定插件仓库的 `plugins-dist`（**不要假定它在哪**）
+node .ai/tmp/plugin-doc-lint-smoke.mjs   # 176 项：插件文档 ↔ 契约一致性（服务/事件/UI 组件/贡献点双向比对、计数文案、章节交叉引用是否指向存在的标题）。**改了契约或动了 PLUGIN_API.md / PLUGIN_WIKI.md / README 的插件段就必须跑** —— 纯 node 直跑，不要经 harness
 ```
 
 问自己一句：「这个能力是插件贡献的，还是我又改宿主硬编码了？插件卸载后它真的消失了吗？」

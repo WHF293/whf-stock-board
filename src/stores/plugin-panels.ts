@@ -17,6 +17,10 @@ interface PluginPanelsState {
   headerItemKey: string;
   /** 顶栏展开请求序号（同 revealSeq 的理由：连续两次请求同一个条目也要能重放） */
   headerSeq: number;
+  /** 请求收起的顶栏条目全局键（空串 = 无请求） */
+  headerCloseKey: string;
+  /** 顶栏收起请求序号（同 headerSeq 的理由） */
+  headerCloseSeq: number;
 }
 
 /**
@@ -33,6 +37,8 @@ export const usePluginPanelsStore = defineStore('pluginPanels', {
     revealSeq: 0,
     headerItemKey: '',
     headerSeq: 0,
+    headerCloseKey: '',
+    headerCloseSeq: 0,
   }),
 
   getters: {
@@ -74,6 +80,18 @@ export const usePluginPanelsStore = defineStore('pluginPanels', {
     requestHeaderOpen(itemKey: string): void {
       this.headerItemKey = itemKey;
       this.headerSeq += 1;
+    },
+
+    /**
+     * 请求收起某个顶栏条目的下拉面板（`panel:close` 服务的顶栏分支）
+     *
+     * 下拉的展开态是 `HeaderItemHost` 的本地 state，宿主因此只能「发意图」：
+     * 这里记 key + 递增序号，由对应条目自己 watch 并收起。
+     * @param itemKey 条目全局键（`<pluginId>#<id>`）
+     */
+    requestHeaderClose(itemKey: string): void {
+      this.headerCloseKey = itemKey;
+      this.headerCloseSeq += 1;
     },
   },
 });

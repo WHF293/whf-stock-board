@@ -12,7 +12,7 @@ import type { HeaderRenderItem } from "../types/header.types";
  * 纯渲染组件：条目列表与全部动作由使用方（MainLayout）提供 ——
  * 同一份模板渲染在三个位置：浏览器是页面 header 右侧；Tauri 桌面端在自绘
  * TitleBar 的左侧工具位（#leading-tools：交易状态 / Agent）与右侧工具条
- * （#tools：明暗 / 搜索 / 白皮书），页面 header 只渲染插件条目。
+ * （#tools：明暗 / 搜索 / 白皮书 + 插件条目如盯盘），页面 header 为空。
  */
 defineProps<{
   /** 顶栏渲染项：宿主自带项（按 id 分支）与插件条目（渲染 HeaderItemHost） */

@@ -18,6 +18,7 @@ import StockDetailView from '../views/StockDetailView.vue';
 import SystemLogView from '../views/SystemLogView.vue';
 import NotFoundView from '../views/NotFoundView.vue';
 import WhitepaperView from '../views/WhitepaperView.vue';
+import PluginLabView from '../views/PluginLabView.vue';
 
 /** 路由切换顶部进度条：钩子在路由表定义后立即挂载 */
 NProgress.configure({ showSpinner: false, speed: 300, minimum: 0.2 });
@@ -91,6 +92,13 @@ const routes = [
         path: ROUTE_PATH.STOCK_ACCOUNT,
         component: StockAccountView,
         meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.STOCK_ACCOUNT] },
+      },
+      // 插件工坊：宿主自带的插件自省与管理页（原为一个内置插件，v2.6.2 起转正为正式功能，
+      // 因此不受插件启停影响，也不再出现在插件清单里）
+      {
+        path: ROUTE_PATH.PLUGIN_LAB,
+        component: PluginLabView,
+        meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.PLUGIN_LAB] },
       },
       // 板块历史净流入：市场榜单-板块净流入「查看历史净流入」进入；不入左侧导航
       {

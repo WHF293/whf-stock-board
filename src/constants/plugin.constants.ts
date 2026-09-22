@@ -97,8 +97,27 @@ export const PLUGIN_STATUS_TONE: Record<
 /** 插件日志前缀（内核统一 `[plugin:<id>]` 形态） */
 export const PLUGIN_LOG_PREFIX = '[plugin]';
 
+/**
+ * 第三方插件产物的**运行时桥**全局键
+ *
+ * 为什么需要一个全局：`ctx.vue` 只在 `apply(ctx)` 那一刻才存在，而打包出来的
+ * `.vue` 产物里有 `_hoisted_1 = createElementVNode(...)` 这类**模块顶层**求值，
+ * 它发生在产物被 import 的瞬间 —— 早于 apply。桥在装配期就挂到 `globalThis`，
+ * 产物的 vue 别名模块（打包时由 `scripts/build-plugins.mjs` 生成）从它取同一份实例，
+ * 于是插件产物与宿主共用**唯一一个 Vue**，不会出现两份互不相通的响应式系统。
+ *
+ * 桥本身**只暴露 vue**（冻结对象、单一用途），不是给插件开的宿主能力后门。
+ */
+export const PLUGIN_RUNTIME_BRIDGE_KEY = '__WHF_PLUGIN_RUNTIME__';
+
 /** 内核事件环形缓冲容量（插件工坊「最近事件」用，超出丢弃最旧一条） */
 export const PLUGIN_EVENT_HISTORY_MAX = 200;
+
+/** 插件工坊「最近事件」最多展示的条数 */
+export const PLUGIN_LAB_EVENT_LIMIT = 12;
+
+/** 插件工坊事件心跳间隔（毫秒）：事件环形缓冲不是响应式的，用它驱动定时刷新 */
+export const PLUGIN_LAB_TICK_MS = 1000;
 
 /** 事件名合法形态：`namespace:action` 或纯标识符（宽松，仅用于日志可读性） */
 export const PLUGIN_EVENT_NAME_PATTERN = /^[a-z][a-z0-9:_-]*$/i;
@@ -171,11 +190,55 @@ export const USER_PLUGIN_CODE_MAX_LENGTH = 512 * 1024;
 /** 用户插件持久化条目数上限（防误贴超大文件刷爆存储） */
 export const USER_PLUGIN_RECORD_MAX = 50;
 
+/**
+ * 插件 zip 包内的清单文件名
+ *
+ * 第三方插件导入的是**构建产物包**：清单只描述包（谁做的、入口在哪），
+ * 真正跑起来的是入口产物导出的定义。二者不一致时以产物为准并报错（见下方说明）。
+ */
+export const USER_PLUGIN_MANIFEST_FILE = 'manifest.json';
+
+/** 清单里没写 entry 时的默认入口文件名 */
+export const USER_PLUGIN_ENTRY_DEFAULT = 'main.js';
+
+/** 清单里没写 readme 时的默认说明文件名（存在才展示，缺失不报错） */
+export const USER_PLUGIN_README_DEFAULT = 'README.md';
+
+/** zip 包体积上限（8MB：产物本体受 512KB 约束，富余留给 README / 资源） */
+export const USER_PLUGIN_PACKAGE_MAX_BYTES = 8 * 1024 * 1024;
+
+/** zip 包选择框的 accept（同时给出扩展名与 MIME，各平台表现不一） */
+export const USER_PLUGIN_PACKAGE_ACCEPT = '.zip,application/zip,application/x-zip-compressed';
+
+/**
+ * 用户插件的安装来源（只做展示与统计，不参与启停判定）
+ *
+ * `zip` = 第三方打包产物；`code` = 粘贴 / 选择单文件 JS。
+ */
+export const USER_PLUGIN_SOURCE = {
+  /** 导入 zip 产物包 */
+  PACKAGE: 'zip',
+  /** 粘贴或选择单文件 JS */
+  CODE: 'code',
+} as const;
+
 /** 用户插件代码动态 import 时的 Blob MIME（ESM 模块） */
 export const USER_PLUGIN_BLOB_MIME = 'text/javascript';
 
 /** 用户插件缺省作者文案（定义里没写 author 时展示用） */
 export const USER_PLUGIN_AUTHOR_LABEL = '用户安装';
+
+/**
+ * 第三方插件预检报错里指向文档的提示语
+ *
+ * 用户插件拿不到 vue 等依赖（运行时 Blob 动态 import，见 PLUGIN_API.md §0），
+ * 报错必须同时告诉作者「去哪找替代品」，否则他只会卡在第一步。
+ */
+export const USER_PLUGIN_LINT_DOC_HINT =
+  '可用能力清单见仓库根目录 PLUGIN_API.md。';
+
+/** 预检单类问题最多报几条（超出截断，避免长篇刷屏） */
+export const USER_PLUGIN_LINT_MAX_ISSUES = 3;
 
 /** 「插件页随插件撤销」浮窗的来源标签（宿主收尾时提示用户页面为什么变了） */
 export const PLUGIN_VANISHED_NOTICE_SOURCE = '插件管理';

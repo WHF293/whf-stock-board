@@ -1,9 +1,7 @@
 import { useRouter } from 'vue-router';
-import { useDockPanelStore } from '../stores/dock-panel';
-import { useStockContextStore, type ContextStock } from '../stores/stock-context';
-import { ROUTE_PATH } from '../constants/router-meta.constants';
+import { createStockOpenService } from '../plugin/app-services';
 import { normalizeAShareCode } from '../utils/normalize-a-share-code';
-import { trackAction } from '../weblog/weblogActions';
+import type { ContextStock } from '../stores/stock-context';
 
 /**
  * 全站统一的个股打开交互：
@@ -13,40 +11,17 @@ import { trackAction } from '../weblog/weblogActions';
  *   详情页左侧列表即可一键切换同批股票）
  *
  * 配合 BaseTable 的 enableDblclickNav（单击延迟合并）或原生 dblclick 使用
+ *
+ * 真正的实现在 `createStockOpenService`（`plugin/app-services.ts`）——
+ * 同一份行为还要经 `app:stock-open` 服务交给插件，两边不能各写一套：
+ * 差异只会体现在「详情页左侧来源列表对不对」这种长期用才看得出的地方。
  * @returns openSidebar 单击开侧栏；openPage 双击跳详情页；toContextList 行数组映射
  */
 export const useStockOpen = () => {
-  const dockPanel = useDockPanelStore();
-  const stockContext = useStockContextStore();
   const router = useRouter();
-
-  /**
-   * 单击：打开个股详情侧栏（携带 list 时同步写入上下文，
-   * 供侧栏「打开详情页」按钮跳转后展示来源列表）
-   * @param symbol 个股符号
-   * @param list 来源股票列表（如全局搜索结果；可不传）
-   */
-  const openSidebar = (symbol: string, list?: ContextStock[]): void => {
-    if (list && list.length > 0) {
-      stockContext.setContext(list);
-    }
-    trackAction('STOCK_OPEN_SIDEBAR', { target: symbol });
-    dockPanel.openStock(symbol);
-  };
-
-  /**
-   * 双击：关闭侧栏并进入股票详情整页
-   * @param symbol 个股符号
-   * @param list 来源股票列表；不传时写入仅当前一只（避免残留上一批列表）
-   */
-  const openPage = (symbol: string, list?: ContextStock[]): void => {
-    stockContext.setContext(
-      list && list.length > 0 ? list : [{ symbol: normalizeAShareCode(symbol), name: '', price: null, changePercent: null }],
-    );
-    trackAction('STOCK_OPEN_PAGE', { target: symbol });
-    dockPanel.close();
-    void router.push(`${ROUTE_PATH.STOCK_DETAIL}/${symbol}`);
-  };
+  const service = createStockOpenService((path) => {
+    void router.push(path);
+  });
 
   /**
    * 把表格行数组映射为详情页上下文列表
@@ -73,5 +48,9 @@ export const useStockOpen = () => {
       changePercent: (row as { changePercent?: number | null }).changePercent ?? null,
     }));
 
-  return { openSidebar, openPage, toContextList };
+  return {
+    openSidebar: service.openSidebar,
+    openPage: service.openPage,
+    toContextList,
+  };
 };

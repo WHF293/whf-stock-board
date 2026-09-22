@@ -6,6 +6,7 @@
  * 卸载时被一并撤销。
  */
 import { PLUGIN_LOG_PREFIX, PLUGIN_STORAGE_NAMESPACE_PREFIX } from '../constants/plugin.constants';
+import * as vueRuntime from 'vue';
 import { appStorage } from '../utils/app-local-storage';
 import {
   loadPluginStorage,
@@ -14,6 +15,7 @@ import {
 } from '../api/plugin-storage-db.api';
 import { createDisposable } from './disposable';
 import { createPluginDatabase } from './database';
+import { createPluginSettingsStore } from './settings';
 import type { DisposableBag } from './disposable';
 import type { PluginEventBus } from './events';
 import type { PluginServiceContainer } from './services';
@@ -26,7 +28,10 @@ import type {
   PluginContext,
   PluginDatabase,
   PluginLogger,
+  PluginSettingsDeclaration,
+  PluginSettingsStore,
   PluginStorage,
+  PluginVueRuntime,
 } from '../types/plugin.types';
 
 /**
@@ -121,11 +126,22 @@ export class PluginContextImpl implements PluginContext {
   /** 当前插件 id */
   readonly pluginId: string;
 
+  /**
+   * Vue 运行时句柄（第三方插件的能力入口）
+   *
+   * 用户插件是运行时动态 import 的字符串，写 `import { h } from 'vue'` 拿不到包，
+   * 因此这一套由宿主代持并以 `ctx.vue` 下发 —— 不再需要插件自己去引 vue。
+   */
+  readonly vue: PluginVueRuntime = vueRuntime;
+
   /** 当前插件配置（只读） */
   readonly config: PluginConfig;
 
   /** 插件自有持久化 */
   readonly storage: PluginStorage;
+
+  /** 插件设置（清单 settings 字段的运行时存取） */
+  readonly settings: PluginSettingsStore;
 
   /** 插件通用数据库（每插件独立表，插件永不直接访问 SQL） */
   readonly db: PluginDatabase;
@@ -152,6 +168,7 @@ export class PluginContextImpl implements PluginContext {
    * @param events 事件总线
    * @param services 服务容器
    * @param contributions 贡献点写入器集合
+   * @param settingsDeclaration 清单里的设置声明（缺省视为无可配置项）
    */
   constructor(
     pluginId: string,
@@ -160,6 +177,7 @@ export class PluginContextImpl implements PluginContext {
     events: PluginEventBus,
     services: PluginServiceContainer,
     contributions: PluginContributorSet,
+    settingsDeclaration?: PluginSettingsDeclaration,
   ) {
     this.pluginId = pluginId;
     this.config = config;
@@ -168,6 +186,7 @@ export class PluginContextImpl implements PluginContext {
     this.services = services;
     this.contributions = contributions;
     this.storage = createPluginStorage(pluginId);
+    this.settings = createPluginSettingsStore(this.storage, settingsDeclaration?.fields ?? []);
     this.db = createPluginDatabase(pluginId);
     this.logger = createLogger(pluginId);
   }
