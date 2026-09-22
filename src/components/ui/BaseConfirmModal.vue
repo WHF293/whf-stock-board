@@ -102,14 +102,15 @@ onBeforeUnmount(() => {
       >
         <!-- 遮罩（独立点击关闭，避免冒泡到卡片） -->
         <div class="absolute inset-0 bg-black/45" @click="onCancel" />
-        <!-- 卡片 -->
+        <!-- 卡片：限高 + 纵向 flex —— 标题 / 操作栏固定，正文区内部滚动，
+             保证条目再多弹窗也不会超出视口（矮窗口下是唯一可靠约束） -->
         <div
-          class="relative z-10 w-full rounded-lg bg-surface shadow-2xl"
+          class="relative z-10 flex max-h-full w-full flex-col rounded-lg bg-surface shadow-2xl"
           :class="maxWidthClass"
           @click.stop
         >
           <!-- 标题栏 -->
-          <div class="flex items-center justify-between gap-2 border-b border-flat-weak px-5 py-3.5">
+          <div class="flex shrink-0 items-center justify-between gap-2 border-b border-flat-weak px-5 py-3.5">
             <h3 class="truncate text-base font-semibold text-text">
               <slot name="title">{{ title }}</slot>
             </h3>
@@ -122,12 +123,12 @@ onBeforeUnmount(() => {
               <MenuIcon name="close" :size="16" />
             </button>
           </div>
-          <!-- 正文 -->
-          <div class="px-5 py-4 text-sm text-text-secondary">
+          <!-- 正文：flex-1 + min-h-0 才能在纵向 flex 里被压缩，超高时内部滚动 -->
+          <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4 text-sm text-text-secondary">
             <slot>{{ content }}</slot>
           </div>
           <!-- 操作栏（#footer-extra 放左侧附加动作，如「恢复默认」；留空时与原布局一致） -->
-          <div class="flex items-center justify-between gap-2 border-t border-flat-weak px-5 py-3">
+          <div class="flex shrink-0 items-center justify-between gap-2 border-t border-flat-weak px-5 py-3">
             <div class="flex items-center gap-2">
               <slot name="footer-extra" />
             </div>

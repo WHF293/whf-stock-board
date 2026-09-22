@@ -4,6 +4,7 @@ import {
   DataZoomComponent,
   GridComponent,
   LegendComponent,
+  MarkAreaComponent,
   MarkLineComponent,
   MarkPointComponent,
   TooltipComponent,
@@ -31,5 +32,6 @@ use([
   DataZoomComponent,
   MarkPointComponent,
   MarkLineComponent,
+  MarkAreaComponent,
   AxisPointerComponent,
 ]);

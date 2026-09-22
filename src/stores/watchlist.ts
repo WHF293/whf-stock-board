@@ -35,28 +35,43 @@ export const useWatchlistStore = defineStore('watchlist', {
     allSymbols: (state: WatchlistState): string[] => [
       ...new Set(state.groups.flatMap((group) => group.stocks.map((stock) => stock.symbol))),
     ],
+
+    /**
+     * 某只票当前所在的分组 id 列表（分组归属弹窗的初始勾选态）
+     *
+     * 取函数形态：归属随参数变化，调用方传入符号即时求值
+     * @param state store 状态
+     * @returns 接收符号、返回该票所在分组 id 列表的函数
+     */
+    groupIdsOfSymbol:
+      (state: WatchlistState) =>
+      (symbol: string): string[] => {
+        const normalized = toFullSymbol(symbol);
+        return state.groups
+          .filter((group) => group.stocks.some((stock) => stock.symbol === normalized))
+          .map((group) => group.id);
+      },
   },
 
   actions: {
     /**
-     * 添加自选股到指定分组（全站按符号去重，已存在则不重复添加）
+     * 添加自选股到指定分组（**按分组去重**：同一只票可以同时属于多个分组，
+     * 查重只在目标分组内进行，加到别的分组不受影响）
      * @param stock 自选股条目
      * @param groupId 目标分组 id，缺省加入默认组
-     * @returns 是否成功加入（false 表示已存在于任一分组）
+     * @returns 是否成功加入（false = 目标分组内已有 / 分组不存在 / 符号非法）
      */
     addStock(stock: WatchlistStock, groupId: string = DEFAULT_GROUP_ID): boolean {
       const symbol = toFullSymbol(stock.symbol);
       if (!WATCHLIST_SYMBOL_PATTERN.test(symbol)) {
         return false;
       }
-      const exists = this.groups.some((group) =>
-        group.stocks.some((item) => item.symbol === symbol),
-      );
-      if (exists) {
-        return false;
-      }
       const target = this.groups.find((group) => group.id === groupId);
       if (!target) {
+        return false;
+      }
+      const exists = target.stocks.some((item) => item.symbol === symbol);
+      if (exists) {
         return false;
       }
       target.stocks.push({ ...stock, symbol });
@@ -155,6 +170,44 @@ export const useWatchlistStore = defineStore('watchlist', {
         if (group.stocks.length !== before) {
           this.$persist();
         }
+      }
+    },
+
+    /**
+     * 按目标分组集合同步某只票的归属（自选股表格「编辑」弹窗确认后调用）
+     *
+     * 与 `addStockToGroups` 的区别：这是**幂等同步**而不是只做添加 ——
+     * 在 `groupIds` 里而组内没有则加入，不在 `groupIds` 里而组内有则移除，
+     * 因此「取消勾选」也能生效；传空数组 = 从全部分组移除（等于删自选）。
+     * 无论归属是否变化，都保留原有条目的 `addedAt`（只更新名称）。
+     * @param stock 自选股条目（用于加入新分组时播种名称）
+     * @param groupIds 目标分组 id 列表（勾选结果）
+     */
+    syncStockGroups(stock: WatchlistStock, groupIds: string[]): void {
+      const symbol = toFullSymbol(stock.symbol);
+      if (!WATCHLIST_SYMBOL_PATTERN.test(symbol)) {
+        return;
+      }
+      const wanted = new Set(groupIds);
+      let changed = false;
+      for (const group of this.groups) {
+        const index = group.stocks.findIndex((item) => item.symbol === symbol);
+        if (wanted.has(group.id)) {
+          if (index < 0) {
+            group.stocks.push({ ...stock, symbol });
+            changed = true;
+          } else if (group.stocks[index].name !== stock.name) {
+            // 名称可能因上游改名而变化，同步时顺手刷新（symbol 与顺序不动）
+            group.stocks[index].name = stock.name;
+            changed = true;
+          }
+        } else if (index >= 0) {
+          group.stocks.splice(index, 1);
+          changed = true;
+        }
+      }
+      if (changed) {
+        this.$persist();
       }
     },
 

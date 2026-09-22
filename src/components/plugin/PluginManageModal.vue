@@ -5,12 +5,14 @@ import BaseEmpty from '../ui/BaseEmpty.vue';
 import BaseModal from '../ui/BaseModal.vue';
 import BaseSwitch from '../ui/BaseSwitch.vue';
 import BaseTag from '../ui/BaseTag.vue';
+import { BUILTIN_PLUGINS } from '../../plugins';
 import { usePlugins } from '../../composables/use-plugins';
 import { useUserPlugins } from '../../composables/use-user-plugins';
 import {
   PLUGIN_STATUS,
   PLUGIN_STATUS_LABEL,
   PLUGIN_STATUS_TONE,
+  USER_PLUGIN_SOURCE,
 } from '../../constants/plugin.constants';
 import type { PluginRuntimeInfo } from '../../types/plugin.types';
 
@@ -24,10 +26,22 @@ import type { PluginRuntimeInfo } from '../../types/plugin.types';
 const open = defineModel<boolean>('open', { required: true });
 
 const { plugins, mountedCount, setEnabled, retry } = usePlugins();
-const { isUserPlugin, uninstall, pendingDbCleanup, resolveDbCleanup } = useUserPlugins();
+const { records, isUserPlugin, uninstall, pendingDbCleanup, resolveDbCleanup } = useUserPlugins();
 
 /** 当前处于「待确认卸载」状态的插件 id（再次点击才真正卸载） */
 const confirmingUninstallId = ref('');
+
+/**
+ * 插件的安装来源文案（只有用户安装的插件才有；内置插件返回空串）
+ * @param id 插件 id
+ * @returns 来源文案
+ */
+const sourceLabel = (id: string): string => {
+  const record = records.value.find((item) => item.id === id);
+  if (!record) return '';
+  const from = record.source === USER_PLUGIN_SOURCE.PACKAGE ? 'zip 包安装' : '粘贴代码安装';
+  return BUILTIN_PLUGINS.some((plugin) => plugin.id === id) ? `${from} · 已接管内置版` : from;
+};
 
 /**
  * 请求卸载：第一次点击进入待确认态，第二次点击执行
@@ -137,7 +151,7 @@ const contributionSummary = (info: PluginRuntimeInfo): string => {
           class="mt-2 flex items-center justify-end gap-2 border-t border-flat-weak pt-2"
         >
           <p class="min-w-0 flex-1 text-xs text-text-tertiary">
-            卸载后移除插件代码（插件产生的本地数据保留，重装后恢复）
+            {{ sourceLabel(info.id) }} · 卸载后移除插件代码（本地数据保留，重装后接着用）
           </p>
           <BaseButton
             :variant="confirmingUninstallId === info.id ? 'danger' : 'ghost'"
@@ -146,6 +160,9 @@ const contributionSummary = (info: PluginRuntimeInfo): string => {
             {{ confirmingUninstallId === info.id ? '确认卸载' : '卸载' }}
           </BaseButton>
         </div>
+        <p v-else class="mt-2 border-t border-flat-weak pt-2 text-xs text-text-tertiary">
+          内置插件 · 随应用分发，只能启停，不能卸载
+        </p>
       </li>
     </ul>
   </BaseModal>

@@ -18,10 +18,20 @@
     "core:window:allow-create",
     "core:window:allow-set-focus",
     "core:webview:allow-create-webview-window",
+    "core:window:allow-set-position",
+    "core:window:allow-set-size",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-unminimize",
+    "core:window:allow-set-always-on-top",
+    "core:window:allow-cursor-position",
     "sql:default",
     "sql:allow-execute",
+    "dialog:allow-open",
+    "dialog:allow-save",
     "fs:allow-mkdir",
     "fs:allow-write-file",
+    "fs:allow-write-text-file",
     "fs:allow-read-dir",
     "fs:allow-read-text-file",
     "fs:allow-exists",
@@ -34,6 +44,12 @@
         },
         {
           "path": "$APPDATA/agent-workspace/**"
+        },
+        {
+          "path": "$APPDATA/backups"
+        },
+        {
+          "path": "$APPDATA/backups/**"
         }
       ]
     },

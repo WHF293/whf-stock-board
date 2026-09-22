@@ -1,6 +1,10 @@
 import { defineStore } from 'pinia';
 import { fetchIsTradingDay, getMarketStatus } from '../api/calendar.api';
-import { MARKET_STATUS } from '../constants/market-status.constants';
+import {
+  A_SHARE_SESSION_END,
+  A_SHARE_SESSION_START,
+  MARKET_STATUS,
+} from '../constants/market-status.constants';
 import { handleSdkError } from '../utils/handle-sdk-error';
 import type { MarketStatus } from '../types/market-status.types';
 
@@ -77,6 +81,32 @@ export const useMarketStatusStore = defineStore('market-status', {
         minutes >= A_SHARE_WINDOW_START &&
         minutes <= A_SHARE_WINDOW_END
       );
+    },
+
+    /**
+     * A 股盘中显示窗口（任务栏小组件「智能开启」消费）：本地时间 09:30 - 15:00（单段连续，含午休）
+     *
+     * 与 isASharePollingWindow 的差异：轮询窗口含集合竞价（09:15 起），显示窗口不含
+     * （09:15-09:30 按「盘前」处理）。**不用 status 判定** —— status 只随 refresh()
+     * （每 10 分钟）重算，跨界最多滞后 10 分钟；本 getter 随 clockTick 每分钟重算。
+     * 交易日历未就绪或拉取失败（isTradingDay === null）时按周一~周五近似放行，
+     * 日历恢复后 refresh 自愈纠正。
+     * @param state store 状态
+     * @returns true 表示处于 A 股盘中显示窗口
+     */
+    isAShareIntraday: (state: MarketStatusState): boolean => {
+      // 依赖 clockTick 触发分钟级重算
+      void state.clockTick;
+      const now = new Date();
+      const minutes = localMinutes(now);
+      if (minutes < A_SHARE_SESSION_START || minutes >= A_SHARE_SESSION_END) {
+        return false;
+      }
+      if (state.isTradingDay === null) {
+        const day = localDay(now);
+        return day >= 1 && day <= 5;
+      }
+      return state.isTradingDay;
     },
 
     /**

@@ -14,6 +14,9 @@ import type { ThemeColor } from '../constants/theme-color.constants';
 import { TREND_THEME_DEFAULT } from '../constants/trend-theme.constants';
 import type { TrendTheme } from '../constants/trend-theme.constants';
 import { WATERMARK_ENABLED_DEFAULT } from '../constants/watermark.constants';
+import { WATCH_WIDGET_SETTINGS_DEFAULT } from '../constants/watch-widget.constants';
+import { CLOSE_TO_TRAY_DEFAULT } from '../constants/window-close.constants';
+import { syncCloseToTray } from '../api/tray.api';
 import { SIDEBAR_COLLAPSED_DEFAULT } from '../constants/sidebar.constants';
 import { WEBLOG_ENABLED_DEFAULT } from '../constants/weblog.constants';
 import { MENU_DEFAULT_ORDER } from '../constants/router-meta.constants';
@@ -28,7 +31,9 @@ import type { HeatmapViewMode } from '../types/heatmap.types';
 import type { PanoramaCnViewMode } from '../constants/panorama.constants';
 import type { BoardCalendarHeatBasis, BoardCalendarRange } from '../types/board-calendar.types';
 import type { BoardDetailRange } from '../types/board-detail.types';
+import type { WatchWidgetSettings } from '../types/watch-widget.types';
 import { BOARD_DEFAULT_ORDER, normalizeBoardHidden, normalizeBoardOrder } from '../utils/board-order';
+import { migrateWatchWidgetSettings } from '../utils/migrate-watch-widget-settings';
 
 /**
  * 初始设置引导的默认完成态
@@ -92,6 +97,10 @@ interface SettingsState {
   agentStockOnly: boolean;
   /** 初始设置引导是否已完成（首次打开软件时弹出引导弹窗，完成 / 关闭后不再出现） */
   setupCompleted: boolean;
+  /** 桌面端 · 点击关闭按钮最小化到托盘（false = 直接关闭应用；浏览器模式无此行为） */
+  closeToTray: boolean;
+  /** 桌面端 · 任务栏盯盘小组件（三态电源 / 显示模式 / 拖动位置；浏览器模式无此行为） */
+  watchWidget: WatchWidgetSettings;
 }
 
 /**
@@ -123,6 +132,8 @@ export const useSettingsStore = defineStore('settings', {
     weblogEnabled: WEBLOG_ENABLED_DEFAULT,
     agentStockOnly: true,
     setupCompleted: resolveSetupCompletedDefault(),
+    closeToTray: CLOSE_TO_TRAY_DEFAULT,
+    watchWidget: { ...WATCH_WIDGET_SETTINGS_DEFAULT },
   }),
 
   actions: {
@@ -188,6 +199,26 @@ export const useSettingsStore = defineStore('settings', {
      */
     setWatermarkEnabled(enabled: boolean): void {
       this.watermarkEnabled = enabled;
+    },
+
+    /**
+     * 设置「点击关闭按钮最小化到托盘」
+     *
+     * 写持久化的同时同步给 Rust 侧（CloseRequested 拦截在 Rust 统一处理）；
+     * 浏览器模式同步为空操作，持久化仅保留偏好。
+     * @param enabled true = 关闭请求仅隐藏窗口；false = 直接关闭应用
+     */
+    setCloseToTray(enabled: boolean): void {
+      this.closeToTray = enabled;
+      void syncCloseToTray(enabled);
+    },
+
+    /**
+     * 设置任务栏盯盘小组件配置（局部合并；仅桌面端生效，浏览器模式只保留偏好）
+     * @param patch 配置增量（三态电源 / 显示模式 / 拖动位置）
+     */
+    setWatchWidget(patch: Partial<WatchWidgetSettings>): void {
+      this.watchWidget = { ...this.watchWidget, ...patch };
     },
 
     /**
@@ -338,5 +369,12 @@ export const useSettingsStore = defineStore('settings', {
   persist: {
     key: STORAGE_NS_SETTINGS,
     storage: appStorage,
+    // 旧版 watchWidget.enabled（布尔开关）→ power（三态）：水合后就地迁移，
+    // 否则开着小组件的老用户升级后 power 落默认 'off' 被静默关闭
+    afterHydrate: (context) => {
+      migrateWatchWidgetSettings(
+        context.store.watchWidget as Partial<WatchWidgetSettings> & { enabled?: boolean },
+      );
+    },
   },
 });

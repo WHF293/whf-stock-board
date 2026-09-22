@@ -4,6 +4,7 @@ import { useRouter } from "vue-router";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import MenuIcon from "../components/ui/MenuIcon.vue";
 import { useSettingsStore } from "../stores/settings";
+import { syncCloseToTray } from "../api/tray.api";
 import { ROUTE_PATH } from "../constants/router-meta.constants";
 
 /**
@@ -61,6 +62,8 @@ const syncMaximized = (): void => {
 
 onMounted(() => {
   syncMaximized();
+  // 把持久化的「关闭按钮最小化到托盘」设置同步给 Rust（启动时一次；此后设置页改动即时同步）
+  void syncCloseToTray(settingsStore.closeToTray);
   void appWindow
     .onResized(() => {
       // 拖拽缩放会连续触发 resize，这里只做轻量查询同步按钮态

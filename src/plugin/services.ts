@@ -54,6 +54,21 @@ export class PluginServiceContainer {
   }
 
   /**
+   * 按**调用方声明的结构**注入一个服务（用于插件私有服务）
+   *
+   * 契约表 `AppServiceMap` 只登记宿主自己提供的服务；插件私有服务（如速记插件的
+   * `note:repo`）由插件自己声明类型，宿主契约里没有它。宿主页面想用时既不该 import
+   * 插件源码（等于把插件钉死在宿主里），也不该把插件私有服务写进全局契约
+   * （卸载后还留着一份永远没人实现的声明）—— 于是走这个「按结构取用」的入口：
+   * 提供方在不在、实现长什么样都不影响消费方编译，运行时拿不到就是 undefined。
+   * @param name 服务名
+   * @returns 服务实现；未提供时 undefined（消费方应自行降级）
+   */
+  consumeAs<T>(name: string): T | undefined {
+    return this.services.get(name) as T | undefined;
+  }
+
+  /**
    * 服务是否已提供
    * @param name 服务名
    * @returns 是否已提供
