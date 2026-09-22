@@ -116,6 +116,7 @@ export const WEBLOG_ACTIONS = {
   WATCH_WIDGET_POWER_OFF: { category: 'business', label: '任务栏小组件：关闭' },
   WATCH_WIDGET_POWER_ALWAYS: { category: 'business', label: '任务栏小组件：常驻' },
   WATCH_WIDGET_POWER_SMART: { category: 'business', label: '任务栏小组件：智能开启' },
+  WATCH_WIDGET_GOTO_PLUGIN_LAB: { category: 'business', label: '任务栏小组件：去插件工坊' },
 
   // ---------- 系统事件 ----------
   APP_START: { category: 'system', label: '应用启动' },

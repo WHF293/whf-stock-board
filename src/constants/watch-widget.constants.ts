@@ -33,6 +33,9 @@ export type WatchWidgetPower = (typeof WATCH_WIDGET_POWER)[keyof typeof WATCH_WI
 /** 三态电源默认值（默认关闭，用户在设置里显式选择） */
 export const WATCH_WIDGET_POWER_DEFAULT: WatchWidgetPower = WATCH_WIDGET_POWER.OFF;
 
+/** 小组件插件的注册 id（设置页按它查内核运行时状态，联动显隐设置项） */
+export const WATCH_WIDGET_PLUGIN_ID = 'dsh-watch-widget';
+
 /** 显示模式默认值：常驻显示（首次开启先让用户看到，摸鱼隐藏模式由用户显式选择） */
 export const WATCH_WIDGET_MODE_DEFAULT: WatchWidgetMode = WATCH_WIDGET_MODE.ALWAYS;
 

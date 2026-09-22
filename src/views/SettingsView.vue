@@ -22,7 +22,16 @@ import { sdk } from "../api/sdk";
 import { MENU_DEFAULT_ORDER, MENU_ITEMS, ROUTE_PATH } from "../constants/router-meta.constants";
 import { HEADER_DEFAULT_ORDER, HOST_HEADER_ITEMS } from "../constants/header.constants";
 import { STOCK_PROXY_PATH } from "../constants/proxy.constants";
-import { WATCH_WIDGET_MODE, WATCH_WIDGET_POWER } from "../constants/watch-widget.constants";
+import {
+  PLUGIN_STATUS,
+  PLUGIN_STATUS_LABEL,
+  PLUGIN_STATUS_TONE,
+} from "../constants/plugin.constants";
+import {
+  WATCH_WIDGET_MODE,
+  WATCH_WIDGET_PLUGIN_ID,
+  WATCH_WIDGET_POWER,
+} from "../constants/watch-widget.constants";
 import {
   POLLING_INTERVAL,
   REFRESH_INTERVAL_OPTIONS,
@@ -99,6 +108,43 @@ const pluginInstallModalOpen = ref(false);
 
 /** 插件清单与已挂载数量（内核状态变化后自动刷新） */
 const { plugins: pluginList, mountedCount } = usePlugins();
+
+// ---------- 任务栏盯盘小组件（设置项随插件运行时状态联动） ----------
+
+/** 小组件插件的内核运行时快照（status / error，随内核版本号自动刷新） */
+const watchWidgetRuntime = computed(
+  () => pluginList.value.find((plugin) => plugin.id === WATCH_WIDGET_PLUGIN_ID) ?? null,
+);
+
+/** 小组件插件是否已挂载（挂载后设置项才会真正生效） */
+const watchWidgetReady = computed(
+  () => watchWidgetRuntime.value?.status === PLUGIN_STATUS.MOUNTED,
+);
+
+/**
+ * 小组件插件未就绪时设置卡片顶部的原因提示
+ * @returns 提示文案；插件已挂载时为空串（不渲染提示行）
+ */
+const watchWidgetUnavailableHint = computed(() => {
+  const runtime = watchWidgetRuntime.value;
+  if (!runtime) return "插件未注册（异常状态），请重启应用；若仍不出现请检查插件清单";
+  if (runtime.status === PLUGIN_STATUS.PENDING) {
+    return "功能未生效：依赖「自选盯盘」插件提供盯盘引擎。请先在插件工坊安装并启用「自选盯盘」，再回到这里配置。";
+  }
+  if (runtime.status === PLUGIN_STATUS.DISABLED) {
+    return "功能未生效：插件已被停用，可在插件工坊重新启用后再配置。";
+  }
+  if (runtime.status === PLUGIN_STATUS.FAILED) {
+    return `插件加载失败：${runtime.error ?? "未知原因"}，可在插件工坊重试。`;
+  }
+  return "";
+});
+
+/** 跳转插件工坊（先收起设置抽屉，避免抽屉盖住目标页） */
+const gotoPluginLab = (): void => {
+  emit("close");
+  void router.push(ROUTE_PATH.PLUGIN_LAB);
+};
 
 /** 编排弹窗里单条菜单的草稿形态（插件来源的项带标记，显隐开关跟着走） */
 interface MenuOrderDraftItem {
@@ -758,9 +804,30 @@ const onProbeProxy = async (): Promise<void> => {
       </div>
     </BaseCard>
 
-    <!-- 任务栏盯盘小组件（仅桌面端生效） -->
+    <!-- 任务栏盯盘小组件（仅桌面端生效；设置项随插件运行时状态联动，未挂载时不显示配置） -->
     <BaseCard title="任务栏盯盘小组件">
-      <div class="space-y-4">
+      <div
+        v-if="!watchWidgetReady"
+        class="flex items-center justify-between gap-4"
+      >
+        <div>
+          <p class="text-sm text-text">
+            常驻盯盘迷你条
+            <BaseTag
+              v-if="watchWidgetRuntime"
+              :tone="PLUGIN_STATUS_TONE[watchWidgetRuntime.status]"
+              class="ml-1"
+            >
+              {{ PLUGIN_STATUS_LABEL[watchWidgetRuntime.status] }}
+            </BaseTag>
+          </p>
+          <p class="mt-0.5 text-xs text-text-tertiary">{{ watchWidgetUnavailableHint }}</p>
+        </div>
+        <BaseButton data-track="WATCH_WIDGET_GOTO_PLUGIN_LAB" @click="gotoPluginLab">
+          去插件工坊
+        </BaseButton>
+      </div>
+      <div v-else class="space-y-4">
         <div class="flex items-center justify-between">
           <div>
             <p class="text-sm text-text">常驻盯盘迷你条</p>

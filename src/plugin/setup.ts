@@ -52,8 +52,11 @@ import { usePluginPanelsStore } from '../stores/plugin-panels';
 import { usePluginStore } from '../stores/plugin';
 import { useNotificationsStore } from '../stores/notifications';
 import { useSettingsStore } from '../stores/settings';
+import { useMarketStatusStore } from '../stores/market-status';
 import { usePluginUiStore } from '../stores/plugin-ui';
 import { useUserPluginsStore } from '../stores/user-plugins';
+import { useTheme } from '../composables/use-theme';
+import { computed } from 'vue';
 import type { VanishedRouteInfo } from '../types/plugin.types';
 import type { Pinia } from 'pinia';
 
@@ -261,6 +264,30 @@ export const installPlugins = (pinia?: Pinia): void => {
   // 自选股只读视图：读能力可以开放，写操作仍归宿主页面 ——
   // 插件一旦能改用户自选股，「谁加的、卸载后要不要撤」就说不清了
   pluginKernel.services.provide('app:watchlist', createWatchlistService(pinia));
+
+  // 市场状态：A 股盘中判定（交易日历 + 分钟级时钟）只有宿主一份实现，
+  // 插件自己算窗口必然与全站口径分叉（如任务栏小组件的「智能开启」）
+  const marketStatusStore = pinia ? useMarketStatusStore(pinia) : useMarketStatusStore();
+  pluginKernel.services.provide('app:market-status', {
+    isIntraday: computed(() => marketStatusStore.isAShareIntraday),
+  });
+
+  // 任务栏小组件配置：UI 与持久化都在宿主（设置页 + settings store），
+  // 插件端只读响应式快照，并经 set 回写窗口拖动位置
+  const widgetSettingsStore = pinia ? useSettingsStore(pinia) : useSettingsStore();
+  pluginKernel.services.provide('app:watch-widget-settings', {
+    settings: computed(() => widgetSettingsStore.watchWidget),
+    set: (patch) => widgetSettingsStore.setWatchWidget(patch),
+  });
+
+  // 主题实时快照：插件要向自己的独立窗口同步主题（WebView2 跨窗口 storage
+  // 事件不可达，只能由主窗口侧推送），三个值与宿主页面完全同源
+  const { isDark } = useTheme();
+  pluginKernel.services.provide('app:theme', {
+    isDark,
+    themeColor: computed(() => widgetSettingsStore.themeColor),
+    trendTheme: computed(() => widgetSettingsStore.trendTheme),
+  });
 
   // 轮询调度：交易窗口 / 失败退避 / 可见性 / 总开关四份策略只有一份实现
   pluginKernel.services.provide('app:polling', createPollingService());
