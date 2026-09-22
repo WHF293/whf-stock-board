@@ -38,7 +38,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  /** 点击删除按钮（只从**当前分组**移除，其余分组的归属不动） */
+  /** 点击删除按钮（宿主据此弹二次确认；确认后只从**当前分组**移除，其余分组的归属不动） */
   remove: [symbol: string];
   /** 点击编辑按钮（由宿主打开分组归属弹窗） */
   edit: [stock: WatchlistStock];
@@ -251,6 +251,7 @@ const columns: TableColumn<WatchlistStock>[] = [
         </button>
         <button
           type="button"
+          data-track="WATCHLIST_REMOVE"
           class="pressable rounded p-1 text-text-tertiary hover:bg-up-weak hover:text-up active:scale-90"
           :title="`从当前分组移除 ${row.name}`"
           :aria-label="`删除 ${row.name}`"

@@ -167,14 +167,72 @@ const onAddStock = (result: SearchResult): void => {
   );
 };
 
+// ---------- 从当前分组移除（操作列删除按钮，二次确认后生效） ----------
+
+/** 移除自选股确认弹窗开关 */
+const showRemoveStockConfirm = ref(false);
+
+/** 待移除的自选股符号（在弹窗回调里消费） */
+const pendingRemoveSymbol = ref<string | null>(null);
+
+/** 待移除的条目（取当前分组内的行数据，用于弹窗文案） */
+const pendingRemoveStock = computed(
+  () =>
+    activeGroup.value?.stocks.find((stock) => stock.symbol === pendingRemoveSymbol.value) ?? null,
+);
+
 /**
- * 移除**当前分组内**的自选股（其余分组的归属不动；跨分组调整走操作列的编辑弹窗）
+ * 该票除当前分组外还归属几个分组
+ *
+ * 用来决定确认文案：还有别的归属时强调「其余分组不受影响」，
+ * 否则说明这是最后一次移除（这票会从自选里彻底消失）。
+ * @returns 其余分组数量
+ */
+const pendingRemoveOtherGroupCount = computed(() => {
+  const symbol = pendingRemoveSymbol.value;
+  if (!symbol) {
+    return 0;
+  }
+  const currentGroupId = activeGroup.value?.id;
+  return watchlistStore
+    .groupIdsOfSymbol(symbol)
+    .filter((groupId) => groupId !== currentGroupId).length;
+});
+
+/** 确认弹窗正文 */
+const removeStockConfirmContent = computed(() => {
+  const stock = pendingRemoveStock.value;
+  if (!stock) {
+    return '';
+  }
+  const otherCount = pendingRemoveOtherGroupCount.value;
+  const tail =
+    otherCount > 0
+      ? `该股仍保留在其余 ${otherCount} 个分组中，不受影响。`
+      : '该股将不再出现在任何分组，之后可用「添加股票」重新加入。';
+  return `确认将「${stock.name}」从「${activeGroup.value?.name ?? ''}」分组移除？${tail}`;
+});
+
+/**
+ * 请求把某只自选股从**当前分组**移除（先弹二次确认，确认后才落库）
  * @param symbol 股票符号
  */
 const onRemoveStock = (symbol: string): void => {
-  if (activeGroup.value) {
-    watchlistStore.removeStock(activeGroup.value.id, symbol);
+  if (!activeGroup.value) {
+    return;
   }
+  pendingRemoveSymbol.value = symbol;
+  showRemoveStockConfirm.value = true;
+};
+
+/** 确认移除（仅当前分组；其他分组的归属不动，跨分组调整走操作列的编辑弹窗） */
+const onConfirmRemoveStock = (): void => {
+  const symbol = pendingRemoveSymbol.value;
+  const groupId = activeGroup.value?.id;
+  if (symbol && groupId) {
+    watchlistStore.removeStock(groupId, symbol);
+  }
+  pendingRemoveSymbol.value = null;
 };
 
 /**
@@ -310,6 +368,16 @@ const onConfirmStockGroups = (groupIds: string[]): void => {
       ok-text="删除"
       ok-variant="danger"
       @ok="onConfirmRemove"
+    />
+
+    <!-- 移除自选股二次确认弹窗（确认后只清当前分组） -->
+    <BaseConfirmModal
+      v-model:open="showRemoveStockConfirm"
+      title="移除自选股"
+      :content="removeStockConfirmContent"
+      ok-text="移除"
+      ok-variant="danger"
+      @ok="onConfirmRemoveStock"
     />
 
     <!-- 添加股票搜索弹窗 -->
