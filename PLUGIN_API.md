@@ -806,6 +806,7 @@ export const examplePlugin: PluginDefinition = {
 ```
 
 登记到 `src/plugins/index.ts` 的 `BUILTIN_PLUGINS`（改前先按 AGENTS.md「源码级安装/卸载的备份与恢复」备份），然后跑：
+（本仓库当前 `src/plugins/` 是空的 —— 四个官方插件的源码都已迁到独立仓库 `../whf-stock-board-plugin`，在那边改源码、出 zip 包。）
 
 ```bash
 pnpm lint && pnpm build

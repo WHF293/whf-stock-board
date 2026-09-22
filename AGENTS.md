@@ -108,7 +108,7 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
    （同名后注册者覆盖，卸载后恢复前者）。
 3. **类型化事件**：`ctx.on('note:saved', h)` / `ctx.emit`，订阅返回 Disposable 且随插件卸载自动退订。
    新增事件须在 `plugin.types.ts` 的 `AppEventMap` / `AppServiceMap` 里扩展（**插件通过 `declare module` 自行扩展**，
-   见 `src/plugins/quick-note/service.ts`）。
+   示例见插件仓库 `../whf-stock-board-plugin/plugins/dsh-quick-note/service.ts` 的 `declare module '../../host/types/plugin.types'`）。
 
 ### 贡献点速查
 
@@ -270,8 +270,15 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
 
 **要点**：源码集成的插件，运行时**不知道**它是「装」进来的 —— 它天生就是应用的一部分，
 所以应用内的卸载 UI **永远不会**给它显示「卸载」按钮；想让它变成可卸载的应用内插件，
-做法是把它**从源码里移出去**，重新以 zip 产物包的形式分发（`node scripts/build-plugins.mjs`）。
+做法是把它**从源码里移出去**，重新以 zip 产物包的形式分发。
 反过来，也不要指望「应用内卸载」能删掉源码 —— 它对源文件一无所知。
+
+**本仓库当前状态**：四个官方插件（主线 / 股息筛选 / 速记 / 自选盯盘）已全部走「应用内安装」形态 ——
+`src/plugins/` 下**没有任何插件源码**，`BUILTIN_PLUGINS` 是空数组。它们的源码、清单与产物包都在
+**独立仓库 `../whf-stock-board-plugin`**（与本仓库同级）：改插件 UI / 逻辑、升版本、出包都在那边做
+（`node scripts/build-plugins.mjs`），产物 `plugins-dist/<id>-<version>.zip` 也在那边入库。
+本仓库只保留**宿主能力**：插件内核（`src/plugin/`）、样式白名单（`src/assets/styles/plugin-classes.txt`）、
+静态预检（`src/plugin/user-plugin-lint.ts`）与插件开发文档（`PLUGIN_API.md` / `PLUGIN_WIKI.md`）。
 
 ### 源码集成插件：增删时的备份与恢复（硬性）
 
@@ -282,12 +289,13 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
 2. **卸载时恢复**：先删插件目录 `src/plugins/<pluginId>/`，再把备份文件按 `manifest.json` 清单逐一写回原路径，恢复后跑 `pnpm lint` + `pnpm build` 验证
 3. **git 是第二道保险，不替代本流程**：`.ai/` 不入库，备份只在本机有效；git 干净时 `git checkout -- <file>` 也可用，但 manifest 备份是硬性兜底
 4. 插件自己的运行时数据（`whf:app` 整包里 `plugin:<pluginId>` 命名空间）卸载插件时**不清理**，重装后数据仍在——要彻底清数据需用户在设置页确认
-5. **已卸载插件要重新出包**：现在是「临时」流程，别图省事改坏常态 ——
-   ① 按 `manifest.json` 把源码恢复到 `src/plugins/<id>/` 并登记回 `BUILTIN_PLUGINS`；
-   ② 在 `scripts/build-plugins.mjs` 的 `TARGETS` **临时**加一条 `{ id, dir, entry }`；
-   ③ `node scripts/build-plugins.mjs <id>` → `plugins-dist/<id>-<version>.zip`（该目录已在 `.gitignore`，不入库）；
-   ④ 回到「已卸载」状态：删掉源码目录、撤登记、**把 TARGETS 改回空数组**。
-   长期把备份目录 / 任何临时路径留在 `TARGETS` 里 = 源码没真卸载，只是换个地方继续参与构建
+5. **改官方插件不用再走「临时恢复源码」流程**：本仓库已不再持有它们的源码 ——
+   ① 去 `../whf-stock-board-plugin` 改 `plugins/<id>/` 下的源码（宿主类型与常量从那边 `host/` 的契约快照取，
+   快照由 `node scripts/sync-host-contract.mjs` 从本仓库 `src/` 同步，改了宿主契约就跑一次）；
+   ② `node scripts/build-plugins.mjs <id> --host ../whf-stock-board` 出包，
+   顺带把产物用到的 Tailwind 类回写进本仓库的 `src/assets/styles/plugin-classes.txt`；
+   ③ 本仓库侧只需重跑样式审计冒烟（见下）。**别把插件源码搬回 `src/plugins/`** ——
+   那会让它重新变回「源码集成」，应用内就再也卸载不掉了
 
 ### 自检口径
 
@@ -296,7 +304,7 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
 ```bash
 node .ai/tmp/plugin-kernel-smoke.mjs   # 150 项断言：挂载/卸载/贡献点可逆/order 排序/依赖收敛/环形依赖/失败回滚/服务覆盖恢复/事件退订/清理逆序/菜单自动路由/存储隔离/快捷键解析/Agent 贡献点/revision/ctx.db 降级通道全链路
 node "C:/Users/ChenYj/.workbuddy/skills/ts-smoke-harness/scripts/run-ts-smoke.mjs" --test .ai/tmp/plugin-db-smoke.mjs   # 38 项：ctx.db 纯函数层（表名校验/DDL/序列化/真 SQLite 执行）
-node "C:/Users/ChenYj/.workbuddy/skills/ts-smoke-harness/scripts/run-ts-smoke.mjs" --test .ai/tmp/plugin-zip-smoke.mjs  # 17 项：plugins-dist 里的 zip 产物包回验（解包/静态预检/真机执行/清单一致性）
+node "C:/Users/ChenYj/.workbuddy/skills/ts-smoke-harness/scripts/run-ts-smoke.mjs" --test .ai/tmp/plugin-zip-smoke.mjs  # zip 产物包回验（解包/静态预检/真机执行/清单一致性）；默认读 ../whf-stock-board-plugin/plugins-dist，可用 WHF_PLUGIN_DIST 覆盖
 ```
 
 问自己一句：「这个能力是插件贡献的，还是我又改宿主硬编码了？插件卸载后它真的消失了吗？」

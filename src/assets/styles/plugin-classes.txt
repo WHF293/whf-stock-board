@@ -1,6 +1,6 @@
-# 官方插件用到的 Tailwind 类名 —— 由 scripts/build-plugins.mjs 自动生成，勿手改
-# 插件源码已不在 src/ 下（改 zip 产物包分发），Tailwind 扫不到它们；
-# 靠这份清单经 theme.css 的 @source 进入产物 CSS。详见 AGENTS.md「第三方插件的样式边界」。
+# 官方插件用到的 Tailwind 类名 —— 由 whf-stock-board-plugin 的 scripts/build-plugins.mjs 自动生成，勿手改
+# 插件源码不在宿主的 src/ 下（独立仓库 + zip 产物包分发），Tailwind 扫不到它们；
+# 靠这份清单经 theme.css 的 @source 进入产物 CSS。详见宿主 AGENTS.md「第三方插件的样式边界」。
 
 absolute
 accent-primary
