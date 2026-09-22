@@ -298,6 +298,15 @@ tauri fetch 绕 webview CORS）。
 - localStorage 单 key `whf:app`，值为命名空间对象；各 store 经 `utils/app-local-storage.ts`（`appStorage`）读写，`persist: { key: STORAGE_NS_*, storage: appStorage }`
 - 明暗模式（useDark）同走 appStorage
 
+## 数据迁移登记规范（硬性，勿漏）
+
+设置页「数据迁移」（导出 / 导入 JSON 文件换机）由登记表驱动：`src/constants/data-port.constants.ts` 的 `DATA_PORT_MANIFEST`。**任何新增本地持久化数据（SQLite 新表 / 新 localStorage 命名空间），必须同步在 manifest 登记一个类别（表名 + 展示名 + writeMode），否则跨机迁移不包含它**。规范全文见 `.ai/开发方案/2026-09-22-客户端-数据导出导入与跨机迁移方案.md`，要点：
+
+- SQLite 表登记进对应 db 的类别（`stock-board` / `agent`），`writeMode: 'replace'`（镜像数据整表覆盖）或 `'upsert'`（配置数据按主键合并）；weblog.db 日志表永不登记
+- localStorage 登记精确命名空间白名单（`nsKeys`），不整包搬；`'auto'` 明暗偏好是有效值，原样搬运
+- **镜像类键禁止登记**（真身在他处，导了制造两份不一致）：`watchlist` / `stock.account`（真身在 SQLite）、`plugin:<id>`（启动水合以 `plugin_storage` 表覆盖 localStorage）、`whf:sector-flow-history` 除外（独立 key，无 SQLite 真身）
+- 导入 = 覆盖式写入 + 写前 `VACUUM INTO` 备份 + 完成后整页 reload（不做内存热同步）；未知类别跳过不报错
+
 ## 发布流程（PC 客户端）
 
 1. 版本号三处同步改：`src-tauri/tauri.conf.json`、`package.json`、`src/constants/app-info.constants.ts`（APP_VERSION，供「检查更新」比较）
