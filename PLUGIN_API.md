@@ -806,7 +806,7 @@ export const examplePlugin: PluginDefinition = {
 ```
 
 登记到 `src/plugins/index.ts` 的 `BUILTIN_PLUGINS`（改前先按 AGENTS.md「源码级安装/卸载的备份与恢复」备份），然后跑：
-（本仓库当前 `src/plugins/` 是空的 —— 四个官方插件的源码都已迁到独立仓库 `../whf-stock-board-plugin`，在那边改源码、出 zip 包。）
+（本仓库当前 `src/plugins/` 是空的 —— 四个官方插件的源码都已迁到独立仓库 `whf-stock-board-plugin`（位置不由本仓库假定），在那边改源码、出 zip 包。）
 
 ```bash
 pnpm lint && pnpm build
@@ -890,7 +890,7 @@ export default {
 | 改了什么 | 必须同步 |
 | --- | --- |
 | `AppServiceMap` / `AppEventMap` / 贡献点类型 | 本文档 + `AGENTS.md`「插件体系」+ `README.md`「插件体系」+ `PLUGIN_WIKI.md`（第三方那份） |
-| 插件会用到的宿主 `types/` / `constants/` | 插件仓库 `../whf-stock-board-plugin`：跑一次 `node scripts/sync-host-contract.mjs` 重出 `host/` 契约快照（那边类型层会直接报错） |
+| 插件会用到的宿主 `types/` / `constants/` | 独立仓库 `whf-stock-board-plugin`（位置不由本仓库假定）：跑一次 `node scripts/sync-host-contract.mjs` 重出 `host/` 契约快照（那边类型层会直接报错） |
 | `ctx.db` 的表 / 列 | Agent MCP 工具描述（`src/agent/mcp/app-tools.ts` 的 `db_query` / `db_execute`） |
 | 新增 / 删除的 API | `SERVER_API.md`（若是网络接口） |
 | 预检规则（允许 / 禁止哪些写法） | 本文档 §0 + §13，以及安装弹窗的说明文案（两者是同一套认知） |

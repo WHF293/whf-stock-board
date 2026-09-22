@@ -108,7 +108,7 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
    （同名后注册者覆盖，卸载后恢复前者）。
 3. **类型化事件**：`ctx.on('note:saved', h)` / `ctx.emit`，订阅返回 Disposable 且随插件卸载自动退订。
    新增事件须在 `plugin.types.ts` 的 `AppEventMap` / `AppServiceMap` 里扩展（**插件通过 `declare module` 自行扩展**，
-   示例见插件仓库 `../whf-stock-board-plugin/plugins/dsh-quick-note/service.ts` 的 `declare module '../../host/types/plugin.types'`）。
+   示例见插件仓库 `plugins/dsh-quick-note/service.ts` 的 `declare module '../../host/types/plugin.types'`）。
 
 ### 贡献点速查
 
@@ -275,8 +275,10 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
 
 **本仓库当前状态**：四个官方插件（主线 / 股息筛选 / 速记 / 自选盯盘）已全部走「应用内安装」形态 ——
 `src/plugins/` 下**没有任何插件源码**，`BUILTIN_PLUGINS` 是空数组。它们的源码、清单与产物包都在
-**独立仓库 `../whf-stock-board-plugin`**（与本仓库同级）：改插件 UI / 逻辑、升版本、出包都在那边做
+**独立仓库 `whf-stock-board-plugin`**：改插件 UI / 逻辑、升版本、出包都在那边做
 （`node scripts/build-plugins.mjs`），产物 `plugins-dist/<id>-<version>.zip` 也在那边入库。
+> ⚠️ **它的目录位置不由本仓库假定**（不保证与本仓库同级）：需要跨仓库联动时用参数显式指路 ——
+> 出包用 `--host <本仓库根>` 让它回写样式白名单，本仓库侧读产物用环境变量 `WHF_PLUGIN_DIST`。
 本仓库只保留**宿主能力**：插件内核（`src/plugin/`）、样式白名单（`src/assets/styles/plugin-classes.txt`）、
 静态预检（`src/plugin/user-plugin-lint.ts`）与插件开发文档（`PLUGIN_API.md` / `PLUGIN_WIKI.md`）。
 
@@ -291,9 +293,9 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
 3. **git 是第二道保险，不替代本流程**：`.ai/` 不入库，备份只在本机有效；git 干净时 `git checkout -- <file>` 也可用，但 manifest 备份是硬性兜底
 4. 插件自己的运行时数据（`whf:app` 整包里 `plugin:<pluginId>` 命名空间）卸载插件时**不清理**，重装后数据仍在——要彻底清数据需用户在设置页确认
 5. **改官方插件不用再走「临时恢复源码」流程**：本仓库已不再持有它们的源码 ——
-   ① 去 `../whf-stock-board-plugin` 改 `plugins/<id>/` 下的源码（宿主类型与常量从那边 `host/` 的契约快照取，
+   ① 去插件仓库改 `plugins/<id>/` 下的源码（宿主类型与常量从那边 `host/` 的契约快照取，
    快照由 `node scripts/sync-host-contract.mjs` 从本仓库 `src/` 同步，改了宿主契约就跑一次）；
-   ② `node scripts/build-plugins.mjs <id> --host ../whf-stock-board` 出包，
+   ② `node scripts/build-plugins.mjs <id> --host <本仓库根>` 出包，
    顺带把产物用到的 Tailwind 类回写进本仓库的 `src/assets/styles/plugin-classes.txt`；
    ③ 本仓库侧只需重跑样式审计冒烟（见下）。**别把插件源码搬回 `src/plugins/`** ——
    那会让它重新变回「源码集成」，应用内就再也卸载不掉了
@@ -305,7 +307,7 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
 ```bash
 node .ai/tmp/plugin-kernel-smoke.mjs   # 150 项断言：挂载/卸载/贡献点可逆/order 排序/依赖收敛/环形依赖/失败回滚/服务覆盖恢复/事件退订/清理逆序/菜单自动路由/存储隔离/快捷键解析/Agent 贡献点/revision/ctx.db 降级通道全链路
 node "C:/Users/ChenYj/.workbuddy/skills/ts-smoke-harness/scripts/run-ts-smoke.mjs" --test .ai/tmp/plugin-db-smoke.mjs   # 38 项：ctx.db 纯函数层（表名校验/DDL/序列化/真 SQLite 执行）
-node "C:/Users/ChenYj/.workbuddy/skills/ts-smoke-harness/scripts/run-ts-smoke.mjs" --test .ai/tmp/plugin-zip-smoke.mjs  # zip 产物包回验（解包/静态预检/真机执行/清单一致性）；默认读 ../whf-stock-board-plugin/plugins-dist，可用 WHF_PLUGIN_DIST 覆盖
+node "C:/Users/ChenYj/.workbuddy/skills/ts-smoke-harness/scripts/run-ts-smoke.mjs" --test .ai/tmp/plugin-zip-smoke.mjs  # zip 产物包回验（解包/静态预检/真机执行/清单一致性）；产物目录用 `WHF_PLUGIN_DIST` 指定插件仓库的 `plugins-dist`（**不要假定它在哪**）
 node .ai/tmp/plugin-doc-lint-smoke.mjs   # 176 项：插件文档 ↔ 契约一致性（服务/事件/UI 组件/贡献点双向比对、计数文案、章节交叉引用是否指向存在的标题）。**改了契约或动了 PLUGIN_API.md / PLUGIN_WIKI.md / README 的插件段就必须跑** —— 纯 node 直跑，不要经 harness
 ```
 
