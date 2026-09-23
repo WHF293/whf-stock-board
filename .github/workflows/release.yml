@@ -9,7 +9,9 @@ permissions:
   contents: write
 
 jobs:
+  # 手动触发仅限仓库所有者（tag 路径已由仓库规则集限制 v* tag 只有管理员能创建）
   build:
+    if: github.event_name != 'workflow_dispatch' || github.actor == 'WHF293'
     strategy:
       fail-fast: false
       matrix:
