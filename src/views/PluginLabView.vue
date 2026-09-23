@@ -1,15 +1,18 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useIntervalFn } from '@vueuse/core';
 import BaseButton from '../components/ui/BaseButton.vue';
 import BaseCard from '../components/ui/BaseCard.vue';
+import BaseConfirmModal from '../components/ui/BaseConfirmModal.vue';
 import BaseEmpty from '../components/ui/BaseEmpty.vue';
 import BaseSwitch from '../components/ui/BaseSwitch.vue';
 import BaseTag from '../components/ui/BaseTag.vue';
 import PluginInstallModal from '../components/plugin/PluginInstallModal.vue';
+import PluginUpdateBar from '../components/plugin/PluginUpdateBar.vue';
 import { pluginKernel } from '../plugin';
 import { BUILTIN_PLUGINS } from '../plugins';
 import { usePlugins } from '../composables/use-plugins';
+import { usePluginUpdate } from '../composables/use-plugin-update';
 import { useUserPlugins } from '../composables/use-user-plugins';
 import {
   PLUGIN_LAB_EVENT_LIMIT,
@@ -17,10 +20,31 @@ import {
   PLUGIN_STATUS,
   PLUGIN_STATUS_LABEL,
   PLUGIN_STATUS_TONE,
+  USER_PLUGIN_INTAKE_UPGRADE_HINT,
   USER_PLUGIN_SOURCE,
+  USER_PLUGIN_SOURCE_LABEL,
 } from '../constants/plugin.constants';
+import {
+  PLUGIN_UPDATE_ACTION_BUSY_LABEL,
+  PLUGIN_UPDATE_ACTION_LABEL,
+  PLUGIN_UPDATE_CHECKING_LABEL,
+  PLUGIN_UPDATE_CHECK_LABEL,
+  PLUGIN_UPDATE_CONFIRM_ALL_HINT,
+  PLUGIN_UPDATE_CONFIRM_ALL_OK,
+  PLUGIN_UPDATE_CONFIRM_ALL_TITLE,
+  PLUGIN_UPDATE_CONFIRM_CANCEL,
+  PLUGIN_UPDATE_CONFIRM_OK,
+  PLUGIN_UPDATE_CONFIRM_TITLE,
+  PLUGIN_UPDATE_LATEST_LABEL,
+  PLUGIN_UPDATE_RELEASE_LINK_LABEL,
+  PLUGIN_UPDATE_REPO_LABEL,
+  PLUGIN_UPDATE_RETRY_LABEL,
+  PLUGIN_UPDATE_SIZE_LABEL,
+  PLUGIN_UPDATE_TAG_LABEL,
+} from '../constants/plugin-update.constants';
 import { formatTime } from '../utils/format-time';
 import type { PluginRuntimeInfo } from '../types/plugin.types';
+import type { PluginUpdateCandidate } from '../types/plugin-update.types';
 
 /**
  * 速记服务在本页用到的最小结构
@@ -46,12 +70,109 @@ interface NoteRepoLike {
 
 const { setEnabled, retry } = usePlugins();
 const { records, isUserPlugin, uninstall, pendingDbCleanup, resolveDbCleanup } = useUserPlugins();
+const {
+  barStatus,
+  candidates,
+  candidateOf,
+  checking,
+  busy,
+  updatingIds,
+  check,
+  applyUpdate,
+  applyAll,
+} = usePluginUpdate();
 
 /** 插件安装弹窗显隐 */
 const installModalOpen = ref(false);
 
 /** 当前处于「待确认卸载」状态的插件 id（再次点击才真正卸载） */
 const confirmingUninstallId = ref('');
+
+/** 待确认更新的插件 id（空串 = 没有待确认项） */
+const pendingUpdateId = ref('');
+
+/** 单包更新确认弹窗显隐 */
+const updateConfirmOpen = ref(false);
+
+/** 批量更新确认弹窗显隐 */
+const updateAllConfirmOpen = ref(false);
+
+/** 待确认更新的候选（弹窗据此渲染版本变化 / 体积 / 说明） */
+const pendingCandidate = computed<PluginUpdateCandidate | undefined>(() =>
+  pendingUpdateId.value.length === 0 ? undefined : candidateOf(pendingUpdateId.value),
+);
+
+/**
+ * 本轮清单的发布页地址（全部更新弹窗「查看更新说明」用）
+ *
+ * 同一份清单里各项的 `releaseUrl` 相同，取首项即可；候选为空时空串（那时弹窗也不会开）。
+ */
+const updateReleaseUrl = computed<string>(() => candidates.value[0]?.releaseUrl ?? '');
+
+/** 「检查更新」按钮文案（随状态变化） */
+const updateCheckText = computed<string>(() => {
+  if (checking.value) return PLUGIN_UPDATE_CHECKING_LABEL;
+  if (barStatus.value === 'fail') return PLUGIN_UPDATE_RETRY_LABEL;
+  if (barStatus.value === 'latest') return PLUGIN_UPDATE_LATEST_LABEL;
+  return PLUGIN_UPDATE_CHECK_LABEL;
+});
+
+/** 开工坊静默检查一次（受 30min 冷却约束；手动点按钮才 force 绕过） */
+onMounted(() => {
+  void check();
+});
+
+/** 手动检查更新：绕过冷却期 */
+const onCheckUpdate = (): void => {
+  void check({ force: true });
+};
+
+/**
+ * 点某个插件的「更新」：先弹确认，确认后才开始下载
+ * @param info 插件运行时信息
+ */
+const onRequestUpdate = (info: PluginRuntimeInfo): void => {
+  if (!candidateOf(info.id)) return;
+  pendingUpdateId.value = info.id;
+  updateConfirmOpen.value = true;
+};
+
+/** 确认更新：关闭弹窗并开始下载安装 */
+const onConfirmUpdate = (): void => {
+  const id = pendingUpdateId.value;
+  pendingUpdateId.value = '';
+  if (id.length === 0) return;
+  void applyUpdate(id);
+};
+
+/** 取消 / 关闭确认弹窗：清掉待确认项 */
+const onCancelUpdate = (): void => {
+  pendingUpdateId.value = '';
+};
+
+/**
+ * 提示条「全部更新」：先弹确认（批量也要确认——一样是下载远程代码并执行，
+ * 影响面还更大），确认后才串行更新
+ */
+const onRequestUpdateAll = (): void => {
+  if (candidates.value.length === 0) return;
+  updateAllConfirmOpen.value = true;
+};
+
+/** 确认批量更新：关闭弹窗并开始串行下载安装 */
+const onConfirmUpdateAll = (): void => {
+  void applyAll();
+};
+
+/**
+ * 某个插件的「可更新」标签文案（无可更新时返回空串，模板据此不渲染）
+ * @param id 插件 id
+ * @returns 标签文案
+ */
+const updateTagOf = (id: string): string => {
+  const candidate = candidateOf(id);
+  return candidate ? PLUGIN_UPDATE_TAG_LABEL(candidate.latestVersion) : '';
+};
 
 /**
  * 插件的安装来源文案（只有用户安装的插件才有；内置插件返回空串）
@@ -61,7 +182,8 @@ const confirmingUninstallId = ref('');
 const sourceLabel = (id: string): string => {
   const record = records.value.find((item) => item.id === id);
   if (!record) return '';
-  const from = record.source === USER_PLUGIN_SOURCE.PACKAGE ? 'zip 包安装' : '粘贴代码安装';
+  const key = (record.source ?? USER_PLUGIN_SOURCE.CODE) as keyof typeof USER_PLUGIN_SOURCE_LABEL;
+  const from = USER_PLUGIN_SOURCE_LABEL[key] ?? USER_PLUGIN_SOURCE_LABEL[USER_PLUGIN_SOURCE.CODE];
   return BUILTIN_PLUGINS.some((plugin) => plugin.id === id) ? `${from} · 已接管内置版` : from;
 };
 
@@ -207,14 +329,31 @@ const contributionSummary = (info: PluginRuntimeInfo): string => {
     <BaseCard title="插件清单">
       <div class="mb-3 flex items-center justify-between gap-4">
         <p class="text-xs text-text-tertiary">在工坊里直接启停、安装与卸载插件</p>
-        <BaseButton
-          variant="ghost"
-          data-track="PLUGIN_INSTALL_OPEN"
-          @click="installModalOpen = true"
-        >
-          安装插件
-        </BaseButton>
+        <div class="flex shrink-0 items-center gap-2">
+          <BaseButton
+            variant="ghost"
+            :disabled="busy"
+            data-track="PLUGIN_UPDATE_CHECK"
+            @click="onCheckUpdate"
+          >
+            {{ updateCheckText }}
+          </BaseButton>
+          <BaseButton
+            variant="ghost"
+            data-track="PLUGIN_INSTALL_OPEN"
+            @click="installModalOpen = true"
+          >
+            安装插件
+          </BaseButton>
+        </div>
       </div>
+      <PluginUpdateBar
+        :status="barStatus"
+        :candidates="candidates"
+        :busy="busy"
+        @check="onCheckUpdate"
+        @update-all="onRequestUpdateAll"
+      />
       <div v-if="pendingDbCleanup" class="mb-3 rounded-card border border-flat-weak px-3 py-2.5">
         <p class="text-xs text-text-secondary">
           「{{ pendingDbCleanup.pluginName }}」已卸载。它在本地数据库有
@@ -239,6 +378,9 @@ const contributionSummary = (info: PluginRuntimeInfo): string => {
                 {{ PLUGIN_STATUS_LABEL[info.status] }}
               </BaseTag>
               <span class="text-xs text-text-tertiary">v{{ info.version }}</span>
+              <BaseTag v-if="updateTagOf(info.id)" tone="primary">
+                {{ updateTagOf(info.id) }}
+              </BaseTag>
               <span class="text-xs text-text-tertiary">{{ info.id }}</span>
             </div>
             <BaseSwitch
@@ -263,6 +405,14 @@ const contributionSummary = (info: PluginRuntimeInfo): string => {
             <p class="min-w-0 flex-1 text-xs text-text-tertiary">
               {{ sourceLabel(info.id) }} · 卸载后移除插件代码（本地数据保留，重装后接着用）
             </p>
+            <BaseButton
+              v-if="candidateOf(info.id)"
+              variant="ghost"
+              :disabled="busy"
+              @click="onRequestUpdate(info)"
+            >
+              {{ updatingIds.includes(info.id) ? PLUGIN_UPDATE_ACTION_BUSY_LABEL : PLUGIN_UPDATE_ACTION_LABEL }}
+            </BaseButton>
             <BaseButton
               :variant="confirmingUninstallId === info.id ? 'danger' : 'ghost'"
               @click="onUninstall(info)"
@@ -392,5 +542,81 @@ const contributionSummary = (info: PluginRuntimeInfo): string => {
     <!-- 插件安装弹窗：zip 包批量入队即自动解析（六步进度 + 包间冲突仲裁）→ 单装 / 批量装；
          粘贴代码走「解析预览 → 确认安装」（与设置页共用同一组件） -->
     <PluginInstallModal v-model:open="installModalOpen" />
+
+    <!-- 更新确认弹窗：必须先确认再下载（否则用户一点「更新」就静默装了远程代码） -->
+    <BaseConfirmModal
+      v-model:open="updateConfirmOpen"
+      :title="pendingCandidate ? PLUGIN_UPDATE_CONFIRM_TITLE(pendingCandidate.name) : ''"
+      :ok-text="PLUGIN_UPDATE_CONFIRM_OK"
+      :cancel-text="PLUGIN_UPDATE_CONFIRM_CANCEL"
+      max-width-class="max-w-lg"
+      @ok="onConfirmUpdate"
+      @cancel="onCancelUpdate"
+    >
+      <div v-if="pendingCandidate" class="space-y-2">
+        <p class="text-text">
+          v{{ pendingCandidate.currentVersion }} → v{{ pendingCandidate.latestVersion }}
+        </p>
+        <p class="text-xs text-text-tertiary">
+          体积 {{ PLUGIN_UPDATE_SIZE_LABEL(pendingCandidate.zipSize) }} ·
+          来源 {{ PLUGIN_UPDATE_REPO_LABEL }}
+        </p>
+        <p v-if="pendingCandidate.changelog" class="whitespace-pre-wrap break-words">
+          {{ pendingCandidate.changelog }}
+        </p>
+        <p class="text-xs text-text-secondary">
+          {{
+            USER_PLUGIN_INTAKE_UPGRADE_HINT(
+              pendingCandidate.currentVersion,
+              pendingCandidate.latestVersion,
+            )
+          }}
+        </p>
+        <a
+          v-if="pendingCandidate.releaseUrl"
+          :href="pendingCandidate.releaseUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="block text-xs text-primary underline underline-offset-2"
+        >
+          {{ PLUGIN_UPDATE_RELEASE_LINK_LABEL }}
+        </a>
+      </div>
+    </BaseConfirmModal>
+
+    <!-- 批量更新确认弹窗：与单包确认同一口径（都要下远程代码），列出每个插件的版本变化 -->
+    <BaseConfirmModal
+      v-model:open="updateAllConfirmOpen"
+      :title="PLUGIN_UPDATE_CONFIRM_ALL_TITLE(candidates.length)"
+      :ok-text="PLUGIN_UPDATE_CONFIRM_ALL_OK(candidates.length)"
+      :cancel-text="PLUGIN_UPDATE_CONFIRM_CANCEL"
+      max-width-class="max-w-lg"
+      @ok="onConfirmUpdateAll"
+    >
+      <div v-if="candidates.length > 0" class="space-y-2">
+        <ul class="space-y-1">
+          <li
+            v-for="candidate in candidates"
+            :key="candidate.id"
+            class="flex items-baseline justify-between gap-3"
+          >
+            <span class="min-w-0 truncate text-text">{{ candidate.name }}</span>
+            <span class="shrink-0 text-xs text-text-tertiary">
+              v{{ candidate.currentVersion }} → v{{ candidate.latestVersion }}
+            </span>
+          </li>
+        </ul>
+        <p class="text-xs text-text-secondary">{{ PLUGIN_UPDATE_CONFIRM_ALL_HINT }}</p>
+        <a
+          v-if="updateReleaseUrl"
+          :href="updateReleaseUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="block text-xs text-primary underline underline-offset-2"
+        >
+          {{ PLUGIN_UPDATE_RELEASE_LINK_LABEL }}
+        </a>
+      </div>
+    </BaseConfirmModal>
   </div>
 </template>

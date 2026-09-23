@@ -33,6 +33,7 @@ import {
   REPO_URL,
 } from "../constants/app-info.constants";
 import { useSettingsStore } from "../stores/settings";
+import { compareVersion } from "../utils/plugin-version";
 import { setWeblogEnabled, trackAction } from "../weblog";
 import {
   DATA_SOURCE_LABEL,
@@ -440,19 +441,6 @@ const pollingDetailRowKey = (row: PollingDetailRow): string => `${row.page}|${ro
 const updateModalOpen = ref(false);
 
 /**
- * 解析版本号为可比较的数字数组（'v0.1.5' -> [0, 1, 5]，缺位补 0）
- * @param tag 版本 tag 或纯版本号
- * @returns 数字数组（长度 3）
- */
-const parseVersion = (tag: string): number[] =>
-  tag
-    .replace(/^v/i, "")
-    .split(".")
-    .map((part) => Number.parseInt(part, 10) || 0)
-    .concat([0, 0, 0])
-    .slice(0, 3);
-
-/**
  * 检查更新：请求 GitHub Releases 最新版，与当前版本比较
  * （api.github.com 免鉴权且 CORS 允许任意来源，浏览器 / Tauri 均可直连）
  */
@@ -475,13 +463,8 @@ const onCheckUpdate = async (): Promise<void> => {
     if (!tag) throw new Error("响应缺少 tag_name");
 
     latestVersion.value = tag.replace(/^v/i, "");
-    const current = parseVersion(APP_VERSION);
-    const latest = parseVersion(tag);
-    const hasNewer =
-      latest[0] !== current[0] ||
-      latest[1] !== current[1] ||
-      latest[2] !== current[2];
-    // 仅当远端严格更新时弹窗，本地更高（未发布）视为最新
+    // 严格比较：本地更高（装了未发布的版本）不算「有新版本」，不该提示降级
+    const hasNewer = compareVersion(tag, APP_VERSION) > 0;
     updateStatus.value = hasNewer ? "newer" : "latest";
     if (hasNewer) {
       updateModalOpen.value = true;

@@ -100,6 +100,8 @@ export const WEBLOG_ACTIONS = {
   PLUGIN_UNINSTALL: { category: 'business', label: '卸载插件' },
   PLUGIN_TAKEOVER: { category: 'business', label: '接管内置插件版本' },
   PLUGIN_DB_DROP: { category: 'business', label: '删除插件数据表' },
+  PLUGIN_UPDATE_CHECK: { category: 'business', label: '检查插件更新' },
+  PLUGIN_UPDATE_INSTALL: { category: 'business', label: '安装插件更新' },
   PLUGIN_COMMAND_RUN: { category: 'business', label: '执行插件命令' },
   PLUGIN_PANEL_OPEN: { category: 'business', label: '打开插件面板' },
   SDK_CACHE_CLEAR: { category: 'business', label: '清空 SDK 缓存' },
