@@ -111,8 +111,8 @@ const onDblclick = (): void => {
       <template v-if="current">
         <span v-if="current.fired" class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
         <span class="min-w-0 flex-1 truncate text-text">{{ current.name }}</span>
-        <span class="shrink-0 tabular-nums text-text-secondary">{{ current.price }}</span>
-        <span class="shrink-0 tabular-nums" :class="HEADER_MARQUEE_TONE_CLASS[current.tone]">
+        <span class="w-16 shrink-0 text-right tabular-nums text-text-secondary">{{ current.price }}</span>
+        <span class="shrink-0 text-right tabular-nums" :class="HEADER_MARQUEE_TONE_CLASS[current.tone]">
           {{ current.percent }}
         </span>
       </template>

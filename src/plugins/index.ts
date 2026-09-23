@@ -20,7 +20,7 @@ import type { PluginDefinition } from '../types/plugin.types';
  * - `dsh-dividend-screen`（股息筛选）→ `dsh-dividend-screen-1.0.0.zip`
  * - `dsh-quick-note`（速记）→ `dsh-quick-note-1.1.0.zip`
  * - `dsh-sidebar-watch`（自选盯盘）→ `dsh-sidebar-watch-1.4.0.zip`（1.4.0 起公开 watch:monitor）
- * - `dsh-watch-widget`（任务栏盯盘小组件，2026-09-22 迁出）→ `dsh-watch-widget-1.0.0.zip`
+ * - `dsh-watch-widget`（任务栏盯盘小组件，2026-09-22 迁出）→ `dsh-watch-widget-1.1.0.zip`（1.1.0 起气泡支持「板块热力」视图）
  *
  * 迁出不等于删干净：以下**宿主侧资产必须保留在本仓**（它们不是插件源码，是宿主职责）：
  * - `src/plugins/watch-widget/constants.ts`：事件协议常量（渲染端 `src/widget/` 与

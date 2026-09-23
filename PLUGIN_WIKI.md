@@ -351,7 +351,7 @@ ctx.settings.reset();
 | `app:ui` | **UI Kit**：十二个宿主组件句柄 + `confirm()`（第 5.4 节） |
 | `app:http` | **受控网络请求**：走宿主上游通道，仅白名单域名（第 5.5 节） |
 | `app:quotes` | **行情报价**：按代码批量取实时快照（第 5.6 节） |
-| `app:market` | **市场剖面**：沪深逐日成交额 / 指定交易日涨停池（重接口，别轮询；第 5.10 节） |
+| `app:market` | **市场剖面**：沪深逐日成交额 / 指定交易日涨停池（重接口，别轮询）+ 行业板块列表（轻接口，可低频轮询；第 5.10 节） |
 | `app:format` | **格式化与涨跌语义**：红涨绿跌、百分比 / 价格 / 相对时间、符号互转、`delay` / `debounce`（第 5.11 节） |
 
 ### 5.1 `app:notify`
@@ -553,9 +553,11 @@ scheduler.isEligible();       // 当前是否允许轮询
 const market = ctx.consume('app:market');
 const series = await market.fetchMarketTurnover();        // [{ date, shanghaiAmount, shenzhenAmount, totalAmount }]
 const pool = await market.fetchLimitUpPool('2026-09-18'); // 涨停池 [{ code, name, price, changePercent, continuousBoardCount, boardAmount, industry }]
+const boards = await market.fetchIndustryBoards();        // 全部行业板块 [{ code, name, changePercent, totalMarketCap }]
 ```
 
-两者都是重量级请求 —— **只能由用户点击触发，不要轮询**。
+成交额与涨停池都是重量级请求 —— **只能由用户点击触发，不要轮询**。
+`fetchIndustryBoards` 是单页轻接口，允许「小组件热力视图激活期间」这类短窗口低频轮询（30s 级），不要做成常驻轮询。
 
 ### 5.11 `app:format` — 格式化与涨跌语义
 

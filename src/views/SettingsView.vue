@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { VueDraggable } from "vue-draggable-plus";
 import BaseButton from "../components/ui/BaseButton.vue";
@@ -16,6 +16,7 @@ import FirstRunSetupModal from "../components/business/FirstRunSetupModal.vue";
 import DataExportModal from "../components/business/DataExportModal.vue";
 import DataImportModal from "../components/business/DataImportModal.vue";
 import { isDataPortAvailable } from "../api/data-port.api";
+import { isAutoStartEnabled } from "../api/autostart.api";
 import { pluginKernel } from "../plugin";
 import { usePlugins } from "../composables/use-plugins";
 import { sdk } from "../api/sdk";
@@ -38,13 +39,11 @@ import {
 } from "../constants/polling.constants";
 import type { TableColumn } from "../types/table.types";
 import { WEBLOG_RETENTION_DAYS } from "../constants/weblog.constants";
-import {
-  APP_VERSION,
-  CHECK_UPDATE_TIMEOUT_MS,
-  RELEASES_LATEST_API,
-  RELEASES_URL,
-  REPO_URL,
-} from "../constants/app-info.constants";
+import { APP_VERSION, REPO_URL } from "../constants/app-info.constants";
+import { getCurrentAppVersion } from "../api/app-update.api";
+import { useAppUpdate } from "../composables/use-app-update";
+import type { AppUpdateStatus } from "../types/app-update.types";
+import type { WeblogActionKey } from "../weblog/weblogActions.enum";
 import { useSettingsStore } from "../stores/settings";
 import { setWeblogEnabled, trackAction } from "../weblog";
 import {
@@ -388,15 +387,31 @@ const resetHeaderOrderDraft = (): void => {
   headerOrderDraft.value = defaultHeaderDraft.value.map((item) => ({ ...item }));
 };
 
-// ---------- 检查更新 ----------
-/** 检查状态：idle 未检查 / checking 检查中 / latest 已是最新 / newer 发现新版 / fail 失败 */
-type UpdateStatus = "idle" | "checking" | "latest" | "newer" | "fail";
+// ---------- 检查更新（与 TitleBar 更新徽标共享同一状态机，见 composables/use-app-update） ----------
+const {
+  status: updateStatus,
+  latestVersion,
+  progressPercent,
+  lastMessage: updateMessage,
+  check: checkUpdate,
+  startDownload: startUpdateDownload,
+  cancelDownload: cancelUpdateDownload,
+  installNow: installUpdateNow,
+} = useAppUpdate();
 
-/** 检查更新状态 */
-const updateStatus = ref<UpdateStatus>("idle");
+/** 当前运行版本（Tauri 下读 tauri.conf.json 的 version，浏览器端回退 APP_VERSION 常量） */
+const currentVersion = ref(APP_VERSION);
 
-/** 最新版本号（去掉 tag 前缀 v） */
-const latestVersion = ref<string>("");
+/** 检查更新按钮的埋点键（随状态分流：检查 / 下载 / 取消下载 / 安装） */
+const UPDATE_TRACK_BY_STATUS: Record<AppUpdateStatus, WeblogActionKey> = {
+  idle: "CHECK_UPDATE",
+  checking: "CHECK_UPDATE",
+  "up-to-date": "CHECK_UPDATE",
+  available: "UPDATE_DOWNLOAD",
+  downloading: "UPDATE_CANCEL_DOWNLOAD",
+  ready: "UPDATE_INSTALL",
+  installing: "UPDATE_INSTALL",
+};
 
 /** 快捷键说明弹窗 */
 const shortcutsModalOpen = ref(false);
@@ -496,74 +511,59 @@ const pollingDetailColumns: TableColumn<PollingDetailRow>[] = [
  */
 const pollingDetailRowKey = (row: PollingDetailRow): string => `${row.page}|${row.target}`;
 
-/** 新版弹窗显隐 */
-const updateModalOpen = ref(false);
+/**
+ * 更新按钮文案（随共享状态机变化；idle 也提示可再次检查）
+ */
+const updateButtonText = computed(() => {
+  switch (updateStatus.value) {
+    case "checking":
+      return "检查中...";
+    case "up-to-date":
+      return "已是最新，再查一次";
+    case "available":
+      return `发现新版 v${latestVersion.value}，点击下载`;
+    case "downloading":
+      return `取消下载（${progressPercent.value}%）`;
+    case "ready":
+      return "立即更新";
+    case "installing":
+      return "更新中...";
+    default:
+      return "检查更新";
+  }
+});
 
 /**
- * 解析版本号为可比较的数字数组（'v0.1.5' -> [0, 1, 5]，缺位补 0）
- * @param tag 版本 tag 或纯版本号
- * @returns 数字数组（长度 3）
+ * 更新按钮点击（按状态机状态分流）
  */
-const parseVersion = (tag: string): number[] =>
-  tag
-    .replace(/^v/i, "")
-    .split(".")
-    .map((part) => Number.parseInt(part, 10) || 0)
-    .concat([0, 0, 0])
-    .slice(0, 3);
-
-/**
- * 检查更新：请求 GitHub Releases 最新版，与当前版本比较
- * （api.github.com 免鉴权且 CORS 允许任意来源，浏览器 / Tauri 均可直连）
- */
-const onCheckUpdate = async (): Promise<void> => {
-  updateStatus.value = "checking";
-  try {
-    const controller = new AbortController();
-    const timer = window.setTimeout(
-      () => controller.abort(),
-      CHECK_UPDATE_TIMEOUT_MS,
-    );
-    const response = await fetch(RELEASES_LATEST_API, {
-      signal: controller.signal,
-      headers: { Accept: "application/vnd.github+json" },
-    });
-    window.clearTimeout(timer);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const release = (await response.json()) as { tag_name?: string };
-    const tag = release.tag_name ?? "";
-    if (!tag) throw new Error("响应缺少 tag_name");
-
-    latestVersion.value = tag.replace(/^v/i, "");
-    const current = parseVersion(APP_VERSION);
-    const latest = parseVersion(tag);
-    const hasNewer =
-      latest[0] !== current[0] ||
-      latest[1] !== current[1] ||
-      latest[2] !== current[2];
-    // 仅当远端严格更新时弹窗，本地更高（未发布）视为最新
-    updateStatus.value = hasNewer ? "newer" : "latest";
-    if (hasNewer) {
-      updateModalOpen.value = true;
-    }
-  } catch (error) {
-    updateStatus.value = "fail";
-    console.error("[settings] check-update", error);
+const onUpdateAction = (): void => {
+  if (updateStatus.value === "downloading") {
+    cancelUpdateDownload();
+    return;
+  }
+  if (updateStatus.value === "available") {
+    void startUpdateDownload();
+    return;
+  }
+  if (updateStatus.value === "ready") {
+    void installUpdateNow();
+    return;
+  }
+  if (updateStatus.value !== "checking" && updateStatus.value !== "installing") {
+    void checkUpdate(false);
   }
 };
 
-/** 检查按钮文案（随状态变化） */
-const updateButtonText = computed(() => {
-  if (updateStatus.value === "checking") return "检查中...";
-  if (updateStatus.value === "latest") return "已是最新";
-  if (updateStatus.value === "fail") return "检查失败，点击重试";
-  return "检查更新";
+onMounted(() => {
+  void getCurrentAppVersion().then((version) => {
+    currentVersion.value = version;
+  });
+  // 校准「开机自动启动」开关显示：注册表是事实源，用户可能在任务管理器里手动改过；
+  // 直接写 store 字段（不经 action），避免校准触发 enable / disable 回写
+  void isAutoStartEnabled().then((enabled) => {
+    settingsStore.launchAtStartup = enabled;
+  });
 });
-
-/** 弹窗「前往下载」：打开 Releases 页 */
-const onGoDownload = (): void => {
-  window.open(RELEASES_URL, "_blank", "noopener");
-};
 
 /** 仓库地址展示文案（去掉协议头，短一些不挤行） */
 const repoDisplayUrl = computed(() => REPO_URL.replace(/^https?:\/\//, ""));
@@ -789,7 +789,7 @@ const onProbeProxy = async (): Promise<void> => {
 
     <!-- 窗口 & 托盘开关（仅桌面端生效） -->
     <BaseCard title="窗口 & 托盘">
-      <div class="flex items-center justify-between">
+      <div class="flex items-center justify-between gap-4 border-b border-flat-weak pb-4">
         <div>
           <p class="text-sm text-text">关闭按钮最小化到托盘</p>
           <p class="mt-0.5 text-xs text-text-tertiary">
@@ -800,6 +800,19 @@ const onProbeProxy = async (): Promise<void> => {
           :model-value="settingsStore.closeToTray"
           data-track="CLOSE_TO_TRAY_TOGGLE"
           @update:model-value="settingsStore.setCloseToTray"
+        />
+      </div>
+      <div class="flex items-center justify-between gap-4 pt-4">
+        <div>
+          <p class="text-sm text-text">开机自动启动</p>
+          <p class="mt-0.5 text-xs text-text-tertiary">
+            开启后随当前用户登录自动启动应用（写入系统启动项，可在任务管理器「启动应用」里查看或关闭）；默认关闭
+          </p>
+        </div>
+        <BaseSwitch
+          :model-value="settingsStore.launchAtStartup"
+          data-track="LAUNCH_AT_STARTUP_TOGGLE"
+          @update:model-value="settingsStore.setLaunchAtStartup"
         />
       </div>
     </BaseCard>
@@ -1065,9 +1078,9 @@ const onProbeProxy = async (): Promise<void> => {
       <div class="flex items-center justify-between gap-4">
         <div class="min-w-0">
           <p class="text-sm text-text">
-            当前版本 v{{ APP_VERSION }}
+            当前版本 v{{ currentVersion }}
             <BaseTag
-              v-if="updateStatus === 'latest'"
+              v-if="updateStatus === 'up-to-date'"
               tone="primary"
               class="ml-1"
             >
@@ -1075,14 +1088,17 @@ const onProbeProxy = async (): Promise<void> => {
             </BaseTag>
           </p>
           <p class="mt-0.5 text-xs text-text-tertiary">
-            对比 GitHub Releases 最新版本
+            启动时自动检查更新；发现新版可在标题栏徽标或此处直接下载安装
+          </p>
+          <p v-if="updateMessage" class="mt-0.5 text-xs text-text-tertiary">
+            {{ updateMessage }}
           </p>
         </div>
         <BaseButton
           variant="ghost"
-          :disabled="updateStatus === 'checking'"
-          data-track="CHECK_UPDATE"
-          @click="onCheckUpdate"
+          :disabled="updateStatus === 'checking' || updateStatus === 'installing'"
+          :data-track="UPDATE_TRACK_BY_STATUS[updateStatus]"
+          @click="onUpdateAction"
         >
           {{ updateButtonText }}
         </BaseButton>
@@ -1147,31 +1163,6 @@ const onProbeProxy = async (): Promise<void> => {
       <p class="mt-3 text-xs leading-5 text-text-tertiary">
         实际刷新间隔 = max（上方设置的刷新间隔，各任务的间隔下限）。页面隐藏或切走时暂停，恢复可见立即补刷；请求失败按指数退避（2s 起、封顶 60s），成功后恢复。系统日志页的 10 秒自动刷新为独立定时器，不受「行情自动刷新」总开关管理。
       </p>
-    </BaseConfirmModal>
-
-    <!-- 发现新版本弹窗：展示版本号与下载地址 -->
-    <BaseConfirmModal
-      v-model:open="updateModalOpen"
-      title="发现新版本"
-      :ok-text="'前往下载'"
-      cancel-text="关闭"
-      @ok="onGoDownload"
-    >
-      <p class="text-sm text-text">
-        最新版本
-        <span class="font-semibold text-primary">v{{ latestVersion }}</span>
-        <span class="text-text-tertiary">（当前 v{{ APP_VERSION }}）</span>
-      </p>
-      <p class="mt-2 text-xs text-text-tertiary">下载地址：</p>
-      <a
-        :href="RELEASES_URL"
-        target="_blank"
-        rel="noopener"
-        class="mt-1 block break-all text-xs text-primary underline underline-offset-2"
-        @click="updateModalOpen = false"
-      >
-        {{ RELEASES_URL }}
-      </a>
     </BaseConfirmModal>
 
     <!-- 插件管理弹窗：列表 + 启停 + 重试 + 用户插件卸载 -->

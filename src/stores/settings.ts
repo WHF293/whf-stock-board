@@ -16,6 +16,8 @@ import type { TrendTheme } from '../constants/trend-theme.constants';
 import { WATERMARK_ENABLED_DEFAULT } from '../constants/watermark.constants';
 import { WATCH_WIDGET_SETTINGS_DEFAULT } from '../constants/watch-widget.constants';
 import { CLOSE_TO_TRAY_DEFAULT } from '../constants/window-close.constants';
+import { LAUNCH_AT_STARTUP_DEFAULT } from '../constants/autostart.constants';
+import { setAutoStartEnabled } from '../api/autostart.api';
 import { syncCloseToTray } from '../api/tray.api';
 import { SIDEBAR_COLLAPSED_DEFAULT } from '../constants/sidebar.constants';
 import { WEBLOG_ENABLED_DEFAULT } from '../constants/weblog.constants';
@@ -99,6 +101,8 @@ interface SettingsState {
   setupCompleted: boolean;
   /** 桌面端 · 点击关闭按钮最小化到托盘（false = 直接关闭应用；浏览器模式无此行为） */
   closeToTray: boolean;
+  /** 桌面端 · 开机自动启动（写入系统启动项，随用户登录启动；默认关闭；浏览器模式无此行为） */
+  launchAtStartup: boolean;
   /** 桌面端 · 任务栏盯盘小组件（三态电源 / 显示模式 / 拖动位置；浏览器模式无此行为） */
   watchWidget: WatchWidgetSettings;
 }
@@ -133,6 +137,7 @@ export const useSettingsStore = defineStore('settings', {
     agentStockOnly: true,
     setupCompleted: resolveSetupCompletedDefault(),
     closeToTray: CLOSE_TO_TRAY_DEFAULT,
+    launchAtStartup: LAUNCH_AT_STARTUP_DEFAULT,
     watchWidget: { ...WATCH_WIDGET_SETTINGS_DEFAULT },
   }),
 
@@ -211,6 +216,18 @@ export const useSettingsStore = defineStore('settings', {
     setCloseToTray(enabled: boolean): void {
       this.closeToTray = enabled;
       void syncCloseToTray(enabled);
+    },
+
+    /**
+     * 设置「开机自动启动」
+     *
+     * 写持久化的同时经 autostart 插件写 / 移除系统启动项（Windows = HKCU Run 注册表键）；
+     * 浏览器模式同步为空操作，持久化仅保留偏好。
+     * @param enabled true = 随用户登录自动启动；false = 移除启动项
+     */
+    setLaunchAtStartup(enabled: boolean): void {
+      this.launchAtStartup = enabled;
+      void setAutoStartEnabled(enabled);
     },
 
     /**
