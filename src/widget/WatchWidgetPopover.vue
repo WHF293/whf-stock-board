@@ -30,8 +30,8 @@ import type {
  * - 悬浮在迷你条正上方（位置与尺寸由主窗口插件按视图与行数设定，本窗口只管渲染）；
  * - 数据与迷你条共用同一事件：挂载时发一次快照请求，之后随推送刷新；
  * - 头部图标按「候选列表 → 板块热力 → 大盘走势」循环切换（板块热力 = 市场总览
- *   「板块热力」迷你版：行业板块 Top N；大盘走势 = 上证 / 深证 / 创业板指 / 恒生
- *   四指数行情），切换经 popover-view 事件上报主窗口重算窗口高度；
+ *   「板块热力」迷你版：行业板块 Top N；大盘走势 = 市场总览同款 10 指数（A 股 4 + 海外 6
+ *   指数行情），切换经 popover-view 事件上报主窗口重算窗口高度；
  * - 挂载时也上报一次当前视图：窗口销毁重建后组件态重置，主窗口侧的视图记忆随之自愈；
  * - 单击列表行 → 主窗口唤起 + 跳详情整页（左列 = 盯盘候选）；
  *   「收起」按钮走与迷你条单击相同的切换事件（展开态下即隐藏）。
@@ -41,7 +41,7 @@ import type {
 const rows = ref<WatchWidgetRow[]>([]);
 /** 热力板块快照（主窗口推送，已按总市值排序取 Top N） */
 const heatBoards = ref<WatchWidgetHeatmapPayload['boards']>([]);
-/** 大盘指数快照（主窗口推送：上证 / 深证 / 创业板指 / 恒生） */
+/** 大盘指数快照（主窗口推送：市场总览同款 10 指数，上游缺行自动缺省） */
 const indexes = ref<WatchWidgetIndexesPayload['indexes']>([]);
 /** 当前内容视图（窗口隐藏复用期间组件不卸载，视图状态天然保持） */
 const view = ref<WatchWidgetPopoverView>(WATCH_WIDGET_POPOVER_VIEW.LIST);
@@ -277,7 +277,7 @@ const heatTiles = computed<HeatTile[]>(() => {
         暂无板块数据：宿主 app:market 服务未就绪或上游拉取失败，稍后再试
       </p>
     </div>
-    <!-- 大盘走势视图：上证 / 深证 / 创业板指 / 恒生四指数行情（仅展示无任何交互） -->
+    <!-- 大盘走势视图：市场总览同款 10 指数行情（仅展示无任何交互） -->
     <div v-else class="min-h-0 flex-1 overflow-y-auto">
       <p v-if="indexes.length === 0" class="px-3 py-4 leading-relaxed text-text-tertiary">
         暂无指数数据：宿主 app:market 服务未就绪或上游拉取失败，稍后再试
