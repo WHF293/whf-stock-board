@@ -3,6 +3,7 @@ import { onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import MenuIcon from "../components/ui/MenuIcon.vue";
+import UpdateBadge from "../components/business/UpdateBadge.vue";
 import { useSettingsStore } from "../stores/settings";
 import { syncCloseToTray } from "../api/tray.api";
 import { ROUTE_PATH } from "../constants/router-meta.constants";
@@ -134,11 +135,16 @@ const closeWindow = (): void => {
       <slot name="leading-tools" />
     </div>
 
-    <!-- 右侧：顶栏工具条（slot，MainLayout 传入）+ 窗口控制按钮。
+    <!-- 右侧：顶栏工具条（slot，MainLayout 传入）+ 更新徽标 + 窗口控制按钮。
          工具条按钮不带 drag-region 属性，点击不会误触发拖拽 -->
     <div class="flex h-full items-stretch">
       <div class="flex items-center pr-2">
         <slot name="tools" />
+      </div>
+
+      <!-- 自动更新徽标：发现新版 → 下载进度 → 立即更新（无新版时不渲染） -->
+      <div class="flex items-center">
+        <UpdateBadge />
       </div>
 
       <!-- 窗口控制按钮：不带 drag-region 属性，点击/双击不会误触发拖拽或最大化 -->

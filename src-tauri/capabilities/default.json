@@ -27,6 +27,7 @@
     "core:window:allow-cursor-position",
     "sql:default",
     "sql:allow-execute",
+    "autostart:default",
     "dialog:allow-open",
     "dialog:allow-save",
     "fs:allow-mkdir",
@@ -36,6 +37,8 @@
     "fs:allow-read-text-file",
     "fs:allow-exists",
     "fs:allow-remove",
+    "fs:allow-open",
+    "fs:allow-write",
     {
       "identifier": "fs:scope",
       "allow": [
@@ -50,6 +53,12 @@
         },
         {
           "path": "$APPDATA/backups/**"
+        },
+        {
+          "path": "$APPDATA/updates"
+        },
+        {
+          "path": "$APPDATA/updates/**"
         }
       ]
     },

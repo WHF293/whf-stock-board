@@ -107,6 +107,9 @@ export const WEBLOG_ACTIONS = {
   SDK_CACHE_CLEAR: { category: 'business', label: '清空 SDK 缓存' },
   PROXY_PROBE: { category: 'business', label: '代理自检' },
   CHECK_UPDATE: { category: 'business', label: '检查更新' },
+  UPDATE_DOWNLOAD: { category: 'business', label: '下载更新包' },
+  UPDATE_CANCEL_DOWNLOAD: { category: 'business', label: '取消下载更新包' },
+  UPDATE_INSTALL: { category: 'business', label: '立即更新（安装新版本）' },
   SHORTCUTS_VIEW: { category: 'business', label: '查看快捷键说明' },
   REPO_OPEN: { category: 'business', label: '打开 GitHub 仓库' },
   DATA_EXPORT_OPEN: { category: 'business', label: '打开数据导出' },
@@ -117,6 +120,7 @@ export const WEBLOG_ACTIONS = {
   WATCH_WIDGET_POWER_ALWAYS: { category: 'business', label: '任务栏小组件：常驻' },
   WATCH_WIDGET_POWER_SMART: { category: 'business', label: '任务栏小组件：智能开启' },
   WATCH_WIDGET_GOTO_PLUGIN_LAB: { category: 'business', label: '任务栏小组件：去插件工坊' },
+  LAUNCH_AT_STARTUP_TOGGLE: { category: 'business', label: '开机自动启动开关' },
 
   // ---------- 系统事件 ----------
   APP_START: { category: 'system', label: '应用启动' },

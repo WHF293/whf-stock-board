@@ -37,6 +37,44 @@ fn get_work_area() -> Option<(i32, i32, i32, i32)> {
   window_syscmd::primary_work_area()
 }
 
+/// 启动下载好的安装包执行更新（自动更新链路最后一步，仅 Windows 有实现）
+///
+/// 以 `/S`（NSIS 静默安装）+ `/R`（安装成功后自动重启应用，见 NSIS 模板
+/// `.onInstSuccess`）参数 detached 启动安装包，随即退出当前应用：先退出
+/// 释放主程序文件锁，安装包检测不到运行中的应用，静默安装无需弹窗交互。
+/// spawn 失败返回 Err（前端保持运行并可重试）；spawn 成功后本进程退出。
+#[tauri::command]
+fn install_update(app: tauri::AppHandle, installer_path: String) -> Result<(), String> {
+  run_installer_and_exit(&app, &installer_path)
+}
+
+/// Windows 实现：detached 启动安装包（不随父进程退出而被杀）+ 退出本应用
+#[cfg(windows)]
+fn run_installer_and_exit(app: &tauri::AppHandle, installer_path: &str) -> Result<(), String> {
+  use std::os::windows::process::CommandExt;
+  use std::process::Command;
+
+  /// 子进程不继承控制台（无窗口闪烁）
+  const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+  /// 子进程与父进程生命周期解耦（父进程 exit(0) 后安装包继续运行）
+  const DETACHED_PROCESS: u32 = 0x0000_0008;
+
+  Command::new(installer_path)
+    .args(["/S", "/R"])
+    .creation_flags(DETACHED_PROCESS | CREATE_NO_WINDOW)
+    .spawn()
+    .map(|_| ())
+    .map_err(|error| format!("启动安装包失败: {error}"))?;
+  app.exit(0);
+  Ok(())
+}
+
+/// 非 Windows 平台占位（自动更新仅 Windows 发版产物支持）
+#[cfg(not(windows))]
+fn run_installer_and_exit(_app: &tauri::AppHandle, _installer_path: &str) -> Result<(), String> {
+  Err("自动更新仅支持 Windows 客户端".to_string())
+}
+
 /// 构建系统托盘：左键单击显示主窗口，菜单提供「显示主窗口 / 退出」；
 /// 真正的退出只走托盘菜单「退出」（`app.exit`），关闭按钮的语义由
 /// `on_window_event` 的 CloseRequested 拦截逻辑决定。
@@ -674,6 +712,12 @@ pub fn run() {
   tauri::Builder::default()
     .plugin(tauri_plugin_http::init())
     .plugin(tauri_plugin_opener::init())
+    // 开机自动启动（Windows 写 HKCU Run 注册表键，无需提权；启停在设置页经 JS API 控制，
+    // 注册表为持久事实源，应用内不做启动时强制回写）
+    .plugin(tauri_plugin_autostart::init(
+      tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+      None,
+    ))
     .plugin(
       tauri_plugin_sql::Builder::default()
         .add_migrations("sqlite:agent.db", agent_db_migrations())
@@ -684,7 +728,11 @@ pub fn run() {
     .plugin(tauri_plugin_fs::init())
     .plugin(tauri_plugin_dialog::init())
     .manage(CloseToTrayEnabled(AtomicBool::new(false)))
-    .invoke_handler(tauri::generate_handler![set_close_to_tray, get_work_area])
+    .invoke_handler(tauri::generate_handler![
+      set_close_to_tray,
+      get_work_area,
+      install_update
+    ])
     .on_window_event(|window, event| {
       // 关闭语义统一在 Rust 侧收口：自绘标题栏 × / Alt+F4 / 任务栏关闭都触发
       // CloseRequested。启用「最小化到托盘」时只隐藏窗口（阻止本次关闭），
