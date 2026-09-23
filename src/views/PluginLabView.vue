@@ -389,7 +389,8 @@ const contributionSummary = (info: PluginRuntimeInfo): string => {
       <BaseEmpty v-else text="暂无事件" />
     </BaseCard>
 
-    <!-- 插件安装弹窗：粘贴代码 / 选本地 .js → 解析预览 → 确认安装（与设置页共用同一组件） -->
+    <!-- 插件安装弹窗：zip 包批量入队即自动解析（六步进度 + 包间冲突仲裁）→ 单装 / 批量装；
+         粘贴代码走「解析预览 → 确认安装」（与设置页共用同一组件） -->
     <PluginInstallModal v-model:open="installModalOpen" />
   </div>
 </template>
