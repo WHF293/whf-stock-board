@@ -6,6 +6,7 @@
  * PLUGIN_API.md / PLUGIN_WIKI.md 的服务清单（AGENTS.md §12 的同步义务）。
  */
 import { fetchZtPool } from '../api/event.api';
+import { fetchIndustryBoards } from '../api/board.api';
 import { fetchMarketTurnover } from '../api/turnover.api';
 import { createPollingScheduler } from '../composables/polling-scheduler';
 import { NUMBER_PLACEHOLDER } from '../constants/format.constants';
@@ -35,6 +36,7 @@ import type { ContextStock } from '../stores/stock-context';
 import type { Pinia } from 'pinia';
 import type {
   FormatService,
+  IndustryBoardSnapshot,
   LimitUpPoolMember,
   MarketService,
   PollingService,
@@ -82,13 +84,22 @@ export const createFormatService = (): FormatService => ({
 /**
  * `app:market` 的实现
  *
- * 涨停池做了**显式字段映射**（而不是原样透传 stock-sdk 的 ZTPoolItem）：
- * 上游返回的成员约有 18 个字段且随版本漂移，这里只承诺 `LimitUpPoolMember`
- * 里声明的那些，插件拿到的结构因此长期稳定。
+ * 涨停池与行业板块都做了**显式字段映射**（而不是原样透传上游类型）：
+ * 上游字段名与口径随版本变化，这里只承诺契约类型里声明的那些，
+ * 插件拿到的结构因此长期稳定。
  * @returns 市场剖面服务
  */
 export const createMarketService = (): MarketService => ({
   fetchMarketTurnover: async () => fetchMarketTurnover(),
+  fetchIndustryBoards: async (): Promise<IndustryBoardSnapshot[]> => {
+    const boards = await fetchIndustryBoards();
+    return boards.map((board) => ({
+      code: board.code,
+      name: board.name,
+      changePercent: board.changePercent,
+      totalMarketCap: board.totalMarketCap,
+    }));
+  },
   fetchLimitUpPool: async (date?: string): Promise<LimitUpPoolMember[]> => {
     const items = await fetchZtPool('zt', date);
     return items.map((item) => ({
