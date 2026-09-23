@@ -8,8 +8,9 @@ import type { TradeMarkType } from '../../utils/trade-marks';
  * 形状 = 三段组合：锚点小圆点 + 竖向连接线 + 远端圆角矩形徽标（内嵌白色字母）。
  * 一个覆盖物实例 = 一个标注点（totalStep: 2 单点形态），由 KlineChart
  * 在数据 / 标注变化时批量 createOverlay / removeOverlay；
- * 颜色实时读涨跌主题色（B=涨色 / S=跌色 / T=浅黄，切主题即时跟随），
- * 徽标延伸方向由 extendData.side 决定（KlineChart 按「成交价 vs 开盘价」算好传入）。
+ * 颜色实时读涨跌主题色（B=涨色 / S=跌色 / T=橙，切主题即时跟随），
+ * 徽标延伸方向由 extendData.side 决定（KlineChart 按分钟级「成交价 vs 昨收」、
+ * 蜡烛「成交价 vs 开盘价」算好传入）。
  */
 
 /** 覆盖物名（removeOverlay 过滤用） */
@@ -23,11 +24,11 @@ export interface TradePointExtend {
   side: 'above' | 'below';
 }
 
-/** T 点固定浅黄色（买涨卖跌之外的第三语义） */
-const T_COLOR = '#f7dc6f';
+/** T 点固定橙色（买涨卖跌之外的第三语义） */
+const T_COLOR = '#f97316';
 
-/** 锚点小圆点半径（px） */
-const DOT_RADIUS = 4;
+/** 锚点小圆点半径（px；4 的 2/3 ≈ 2.7，2026-09-23 按视觉反馈缩小） */
+const DOT_RADIUS = 2.7;
 
 /** 连接线长度（px） */
 const STEM_LENGTH = 18;
