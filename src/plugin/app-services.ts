@@ -8,6 +8,7 @@
 import { fetchZtPool } from '../api/event.api';
 import { fetchIndustryBoards } from '../api/board.api';
 import { fetchMarketTurnover } from '../api/turnover.api';
+import { fetchWidgetIndexQuotes } from '../api/panorama.api';
 import { createPollingScheduler } from '../composables/polling-scheduler';
 import { NUMBER_PLACEHOLDER } from '../constants/format.constants';
 import { ROUTE_PATH } from '../constants/router-meta.constants';
@@ -110,6 +111,15 @@ export const createMarketService = (): MarketService => ({
       continuousBoardCount: item.continuousBoardCount,
       boardAmount: item.boardAmount,
       industry: item.industry,
+    }));
+  },
+  fetchIndexQuotes: async () => {
+    const quotes = await fetchWidgetIndexQuotes();
+    return quotes.map((quote) => ({
+      code: quote.code,
+      name: quote.name,
+      price: quote.price,
+      changePercent: quote.changePercent,
     }));
   },
 });

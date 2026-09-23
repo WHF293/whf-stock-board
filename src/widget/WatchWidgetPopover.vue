@@ -18,18 +18,20 @@ import { squarifyLayout } from './watch-heatmap-layout';
 import type { TreemapRect } from './watch-heatmap-layout';
 import type {
   WatchWidgetHeatmapPayload,
+  WatchWidgetIndexesPayload,
   WatchWidgetPopoverView,
   WatchWidgetPopoverViewPayload,
   WatchWidgetRow,
 } from '../types/watch-widget.types';
 
 /**
- * 任务栏盯盘小组件 · 气泡（全部盯盘候选列表 / 板块热力双视图）
+ * 任务栏盯盘小组件 · 气泡（候选列表 / 板块热力 / 大盘走势三视图）
  *
  * - 悬浮在迷你条正上方（位置与尺寸由主窗口插件按视图与行数设定，本窗口只管渲染）；
  * - 数据与迷你条共用同一事件：挂载时发一次快照请求，之后随推送刷新；
- * - 头部 flame 图标切换「候选列表 ⇄ 板块热力」（市场总览「板块热力」迷你版：
- *   行业板块 Top N，仅展示无交互），切换经 popover-view 事件上报主窗口重算窗口高度；
+ * - 头部图标按「候选列表 → 板块热力 → 大盘走势」循环切换（板块热力 = 市场总览
+ *   「板块热力」迷你版：行业板块 Top N；大盘走势 = 上证 / 深证 / 创业板指 / 恒生
+ *   四指数行情），切换经 popover-view 事件上报主窗口重算窗口高度；
  * - 挂载时也上报一次当前视图：窗口销毁重建后组件态重置，主窗口侧的视图记忆随之自愈；
  * - 单击列表行 → 主窗口唤起 + 跳详情整页（左列 = 盯盘候选）；
  *   「收起」按钮走与迷你条单击相同的切换事件（展开态下即隐藏）。
@@ -39,6 +41,8 @@ import type {
 const rows = ref<WatchWidgetRow[]>([]);
 /** 热力板块快照（主窗口推送，已按总市值排序取 Top N） */
 const heatBoards = ref<WatchWidgetHeatmapPayload['boards']>([]);
+/** 大盘指数快照（主窗口推送：上证 / 深证 / 创业板指 / 恒生） */
+const indexes = ref<WatchWidgetIndexesPayload['indexes']>([]);
 /** 当前内容视图（窗口隐藏复用期间组件不卸载，视图状态天然保持） */
 const view = ref<WatchWidgetPopoverView>(WATCH_WIDGET_POPOVER_VIEW.LIST);
 
@@ -46,6 +50,21 @@ const view = ref<WatchWidgetPopoverView>(WATCH_WIDGET_POPOVER_VIEW.LIST);
 const settingsStore = useSettingsStore();
 
 const isHeatmap = computed(() => view.value === WATCH_WIDGET_POPOVER_VIEW.HEATMAP);
+const isMarket = computed(() => view.value === WATCH_WIDGET_POPOVER_VIEW.MARKET);
+
+/** 头部标题随视图切换（列表带候选计数，另两视图有自己的语义） */
+const headerTitle = computed(() => {
+  if (isHeatmap.value) return '板块热力';
+  if (isMarket.value) return '大盘走势';
+  return `自选盯盘 · ${rows.value.length}`;
+});
+
+/** 头部切换图标的语义随当前视图（点击切到下一个视图） */
+const viewIcon = computed(() => {
+  if (isHeatmap.value) return 'flame';
+  if (isMarket.value) return 'boards';
+  return 'menu';
+});
 
 /** 行高 / 头高样式（窗口尺寸按同一组常量计算，两侧必须一致，差 1px 就会滚动或留空） */
 const headerStyle = { height: `${WATCH_WIDGET_POPOVER_HEADER_HEIGHT}px` };
@@ -59,8 +78,16 @@ const footerStyle = { height: `${WATCH_WIDGET_POPOVER_FOOTER_PADDING}px` };
 const HEATMAP_VIEWBOX_WIDTH = 274;
 const HEATMAP_VIEWBOX_HEIGHT = 155;
 
+/** 视图循环顺序：候选列表 → 板块热力 → 大盘走势 → 候选列表 */
+const VIEW_CYCLE: readonly WatchWidgetPopoverView[] = [
+  WATCH_WIDGET_POPOVER_VIEW.LIST,
+  WATCH_WIDGET_POPOVER_VIEW.HEATMAP,
+  WATCH_WIDGET_POPOVER_VIEW.MARKET,
+];
+
 let unlistenLines: (() => void) | undefined;
 let unlistenHeatmap: (() => void) | undefined;
+let unlistenIndexes: (() => void) | undefined;
 
 onMounted(() => {
   void (async () => {
@@ -69,6 +96,9 @@ onMounted(() => {
     });
     unlistenHeatmap = await listen<WatchWidgetHeatmapPayload>(WATCH_WIDGET_EVENTS.HEATMAP, (event) => {
       heatBoards.value = event.payload.boards ?? [];
+    });
+    unlistenIndexes = await listen<WatchWidgetIndexesPayload>(WATCH_WIDGET_EVENTS.INDEXES, (event) => {
+      indexes.value = event.payload.indexes ?? [];
     });
     void emit(WATCH_WIDGET_EVENTS.REQUEST);
     // 挂载自报当前视图：主窗口据此校正视图记忆并按正确口径设定窗口尺寸
@@ -79,6 +109,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   unlistenLines?.();
   unlistenHeatmap?.();
+  unlistenIndexes?.();
 });
 
 /**
@@ -94,9 +125,10 @@ const onClose = (): void => {
   void emit(WATCH_WIDGET_EVENTS.POPOVER_TOGGLE);
 };
 
-/** 头部 flame 图标：候选列表 ⇄ 板块热力互切（主窗口按新视图重算窗口高度） */
+/** 头部图标：list → heatmap → market 循环互切（主窗口按新视图重算窗口高度） */
 const onToggleView = (): void => {
-  view.value = isHeatmap.value ? WATCH_WIDGET_POPOVER_VIEW.LIST : WATCH_WIDGET_POPOVER_VIEW.HEATMAP;
+  const next = (VIEW_CYCLE.indexOf(view.value) + 1) % VIEW_CYCLE.length;
+  view.value = VIEW_CYCLE[next] ?? WATCH_WIDGET_POPOVER_VIEW.LIST;
   void emit(WATCH_WIDGET_EVENTS.POPOVER_VIEW, { view: view.value } satisfies WatchWidgetPopoverViewPayload);
 };
 
@@ -164,26 +196,26 @@ const heatTiles = computed<HeatTile[]>(() => {
   <div
     class="flex h-full w-full select-none flex-col overflow-hidden rounded-xl border border-flat-weak bg-surface text-xs shadow-2xl"
   >
-    <!-- 头部：候选计数 + 视图切换（flame，激活高亮） + 收起 -->
+    <!-- 头部：标题随视图（候选计数 / 板块热力 / 大盘走势）+ 循环切换图标 + 收起 -->
     <div
       class="flex shrink-0 items-center justify-between border-b border-flat-weak px-3"
       :style="headerStyle"
     >
       <div class="flex min-w-0 items-center gap-1">
-        <p class="text-text">自选盯盘 · {{ rows.length }}</p>
+        <p class="text-text">{{ headerTitle }}</p>
         <button
           class="pressable rounded-md p-1 leading-none"
-          :class="isHeatmap ? 'text-primary' : 'text-text-tertiary hover:text-text'"
-          title="板块热力"
+          :class="view === VIEW_CYCLE[0] ? 'text-text-tertiary hover:text-text' : 'text-primary'"
+          :title="isMarket ? '大盘走势' : isHeatmap ? '板块热力' : '自选盯盘'"
           @click="onToggleView"
         >
-          <MenuIcon name="flame" :size="14" />
+          <MenuIcon :name="viewIcon" :size="14" />
         </button>
       </div>
       <button class="pressable text-text-tertiary hover:text-text" @click="onClose">收起</button>
     </div>
     <!-- 列表视图：全部盯盘候选（超出行数上限时滚动） -->
-    <div v-if="!isHeatmap" class="min-h-0 flex-1 overflow-y-auto">
+    <div v-if="!isHeatmap && !isMarket" class="min-h-0 flex-1 overflow-y-auto">
       <p v-if="rows.length === 0" class="px-3 py-4 leading-relaxed text-text-tertiary">
         还没有盯盘候选：在自选股「操作」列点「盯盘」，标的就会出现在这里
       </p>
@@ -197,14 +229,14 @@ const heatTiles = computed<HeatTile[]>(() => {
       >
         <span v-if="row.fired" class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
         <span class="min-w-0 flex-1 truncate text-left text-text">{{ row.name }}</span>
-        <span class="shrink-0 tabular-nums text-text-secondary">{{ row.price }}</span>
+        <span class="w-16 shrink-0 text-right tabular-nums text-text-secondary">{{ row.price }}</span>
         <span class="w-14 shrink-0 text-right tabular-nums" :class="HEADER_MARQUEE_TONE_CLASS[row.tone]">
           {{ row.percent }}
         </span>
       </button>
     </div>
     <!-- 热力视图：市场总览「板块热力」迷你版（行业板块 Top N，仅展示无任何交互） -->
-    <div v-else class="min-h-0 flex-1 p-1.5">
+    <div v-else-if="isHeatmap" class="min-h-0 flex-1 p-1.5">
       <svg
         v-if="heatTiles.length > 0"
         class="block h-full w-full"
@@ -244,6 +276,24 @@ const heatTiles = computed<HeatTile[]>(() => {
       <p v-else class="px-3 py-4 leading-relaxed text-text-tertiary">
         暂无板块数据：宿主 app:market 服务未就绪或上游拉取失败，稍后再试
       </p>
+    </div>
+    <!-- 大盘走势视图：上证 / 深证 / 创业板指 / 恒生四指数行情（仅展示无任何交互） -->
+    <div v-else class="min-h-0 flex-1 overflow-y-auto">
+      <p v-if="indexes.length === 0" class="px-3 py-4 leading-relaxed text-text-tertiary">
+        暂无指数数据：宿主 app:market 服务未就绪或上游拉取失败，稍后再试
+      </p>
+      <div
+        v-for="row in indexes"
+        :key="row.code"
+        class="flex w-full items-center gap-2 px-3"
+        :style="rowStyle"
+      >
+        <span class="min-w-0 flex-1 truncate text-left text-text">{{ row.name }}</span>
+        <span class="w-16 shrink-0 text-right tabular-nums text-text-secondary">{{ row.price }}</span>
+        <span class="w-14 shrink-0 text-right tabular-nums" :class="HEADER_MARQUEE_TONE_CLASS[row.tone]">
+          {{ row.percent }}
+        </span>
+      </div>
     </div>
     <div class="shrink-0" :style="footerStyle" />
   </div>

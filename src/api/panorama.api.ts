@@ -124,17 +124,24 @@ export const fetchGlobalIndexPanorama = async (): Promise<PanoramaItem[]> =>
   fetchClist(PANORAMA_GLOBAL_INDEX_FS);
 
 /**
- * 拉取全球指数轻量报价（东财 push2delay ulist 精确 secid 查询，带最新价）
+ * 任务栏盯盘小组件「大盘走势」视图的指数 secids（东财形态，展示顺序即此顺序）
  *
- * 市场总览「全球指数」展开区数据源；腾讯行情源不覆盖日经 225 / KOSPI，
- * 故统一走东财（⚠️ 上游 200 ≠ 有数据，diff 缺失按空处理由上层展示空态）
- * @returns 全球指数报价列表（顺序与 secids 配置一致）
+ * 上证指数 / 深证成指 / 创业板指 / 恒生指数：A股三大指数东财 ulist 直接覆盖，
+ * 恒生与市场总览「全球指数」同形态（100.HSI）—— 四个指数走**同一次请求**，
+ * 避免腾讯 + 东财两套源拼数据（口径分裂，见 plugin.types.ts 的 app:market 设计说明）。
  */
-export const fetchGlobalIndexQuotes = async (): Promise<GlobalIndexQuote[]> => {
+const WIDGET_INDEX_SECIDS = ['1.000001', '0.399001', '0.399006', '100.HSI'] as const;
+
+/**
+ * 按传入 secids 精确查询 ulist 带最新价的轻量报价（全球指数 / 小组件大盘共用）
+ * @param secids 东财 secid 序列（`1.000001` / `100.HSI` 形态）
+ * @returns 报价列表（顺序与 secids 一致；上游 200 ≠ 有数据，diff 缺失返回空数组）
+ */
+const fetchUlistQuotes = async (secids: readonly string[]): Promise<GlobalIndexQuote[]> => {
   const query = [
     'fltt=2',
     `fields=${GLOBAL_INDEX_FIELDS}`,
-    `secids=${PANORAMA_GLOBAL_INDEX_SECIDS.join(',')}`,
+    `secids=${secids.join(',')}`,
   ].join('&');
   const response = await proxyFetch(`${ULIST_URL_BASE}?${query}`);
   if (!response.ok) {
@@ -149,6 +156,26 @@ export const fetchGlobalIndexQuotes = async (): Promise<GlobalIndexQuote[]> => {
     changePercent: typeof raw.f3 === 'number' ? raw.f3 : null,
   }));
 };
+
+/**
+ * 拉取全球指数轻量报价（东财 push2delay ulist 精确 secid 查询，带最新价）
+ *
+ * 市场总览「全球指数」展开区数据源；腾讯行情源不覆盖日经 225 / KOSPI，
+ * 故统一走东财（⚠️ 上游 200 ≠ 有数据，diff 缺失按空处理由上层展示空态）
+ * @returns 全球指数报价列表（顺序与 secids 配置一致）
+ */
+export const fetchGlobalIndexQuotes = async (): Promise<GlobalIndexQuote[]> =>
+  fetchUlistQuotes(PANORAMA_GLOBAL_INDEX_SECIDS);
+
+/**
+ * 拉取任务栏小组件「大盘走势」的指数轻量报价（东财 ulist 单次请求）
+ *
+ * 上证 / 深证 / 创业板指 / 恒生四个指数一次拿齐；仅小组件「大盘视图激活 && 气泡展开」
+ * 期间以 30s 低频轮询（插件侧门控），不触犯「报价类请求别轮询」红线
+ * @returns 指数报价列表（顺序 = WIDGET_INDEX_SECIDS 配置顺序，缺失条目不出现在结果里）
+ */
+export const fetchWidgetIndexQuotes = async (): Promise<GlobalIndexQuote[]> =>
+  fetchUlistQuotes(WIDGET_INDEX_SECIDS);
 
 /**
  * 拉取外盘商品全景（SDK 全球期货接口，futsseapi 源）
