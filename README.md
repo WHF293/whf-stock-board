@@ -5,6 +5,24 @@ A 股看板 SPA（个人学习用）：行情总览 / 自选股 / 行情全景 /
 - **PC 客户端（推荐）**：Tauri 2 打包的 Windows 桌面应用，全部数据源可用（Rust 直连，无 CORS 限制）
 - 网页版 GitHub Pages 已关闭（静态托管无法代理东财接口，仅腾讯源可用）；如需浏览器访问请在本地 `pnpm dev`
 
+## 软件截图
+
+**市场总览**：一眼知晓大盘走势
+
+![市场总览](./docs/screenshots/market-overview.png)
+
+**板块日历**：了解板块一段时间内的赚钱效应
+
+![板块日历](./docs/screenshots/board-calendar.png)
+
+**热点新闻**：多平台热点消息汇总
+
+![热点新闻](./docs/screenshots/hot-news.png)
+
+**插件工坊**：自定义插件实现
+
+![插件工坊](./docs/screenshots/plugin-workshop.png)
+
 ## 技术栈
 
 Vue 3.5 + TypeScript + Vite + vue-router + Pinia + ECharts + Tailwind CSS 4，数据源 [stock-sdk](https://stock-sdk.linkdiary.cn/)（腾讯 / 东方财富）；PC 客户端壳为 Tauri 2。AI 编码代理请先阅读根目录 [AGENTS.md](./AGENTS.md)。
@@ -72,7 +90,7 @@ CI 会在 Windows runner 上自动构建，并创建同名 GitHub Release（`v0.
 
 - **启停入口**：设置页 → 「插件」卡片，可逐个启用/禁用（禁用状态记在本地，插件卸载后其贡献点全部消失）
 - **官方插件走「应用内安装」**（`dsh-mainline` 股票主线 / `dsh-dividend-screen` 股息筛选 / `dsh-quick-note` 速记 / `dsh-sidebar-watch` 自选盯盘）：
-  源码、清单与 zip 产物包都在**独立仓库 `whf-stock-board-plugin`**（位置不由本仓库假定），本仓库 `src/plugins/` 下**没有任何插件源码**
+  源码、清单与 zip 产物包都在**独立仓库 [jx62257070/tauri-plugin](https://github.com/jx62257070/tauri-plugin)**（`whf-stock-board-plugin`），本仓库 `src/plugins/` 下**没有任何插件源码**
   （`BUILTIN_PLUGINS` 是空数组）—— 因此它们在应用里能正常安装 / 卸载，升级也只是再装一次新版本的包
 - **插件工坊**（左侧导航最后一项）是**应用自带页面而不是插件**：可视察当前插件清单、贡献点、服务与事件流，并直接启停 / 安装 / 卸载插件；正因它不可停用，插件页面被停用撤销时有稳定的退回落点
 - **开放给插件的 API**（九个贡献点、`ctx.storage` / `ctx.db` / `ctx.settings`、十六个宿主服务与六个内置事件、配额与红线）见 **[PLUGIN_API.md](./PLUGIN_API.md)**；
@@ -82,7 +100,7 @@ CI 会在 Windows runner 上自动构建，并创建同名 GitHub Release（`v0.
 - **依赖靠服务名**：插件 `inject: ['note:repo']` 声明依赖，未就绪时静默等待、就绪后自动挂载；依赖被禁用则级联暂停，恢复后自动重挂（环形依赖停在等待态，不死循环）
 
 自己写一个插件（例如左侧栏新增面板）只需三步：建目录 `src/plugins/<id>/` 写 `plugin.ts` 与面板组件 → 在 `src/plugins/index.ts` 的 `BUILTIN_PLUGINS` 登记 → 无需改任何宿主代码。字段与约定详见 [AGENTS.md](./AGENTS.md) 的「插件体系」一节。
-（注意：这样写出来的仍是**源码集成**插件，随应用分发、应用内卸载不了。想做成可卸载的插件包 —— 官方四个插件就是这么做的 —— 要把源码放到插件仓库 `whf-stock-board-plugin` 的 `plugins/<id>/` 里出包。）
+（注意：这样写出来的仍是**源码集成**插件，随应用分发、应用内卸载不了。想做成可卸载的插件包 —— 官方四个插件就是这么做的 —— 要把源码放到插件仓库 [jx62257070/tauri-plugin](https://github.com/jx62257070/tauri-plugin) 的 `plugins/<id>/` 里出包。）
 
 ## 开发说明
 
