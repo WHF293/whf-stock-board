@@ -190,6 +190,29 @@ export const useAgentStore = defineStore('agent', () => {
   }
 
   /**
+   * 切换模型（输入框模型下拉的唯一入口）
+   *
+   * 有会话 → 绑定到当前会话并同步内存（`effectiveModel` computed 自动跟随）；
+   * 无会话 → 把该模型设为**默认模型**（会话建立前先改三级回落的兜底，
+   * 下一条消息发送时新建的会话即用此模型）。
+   *
+   * @param modelId 模型 id
+   */
+  async function setSessionModel(modelId: number): Promise<void> {
+    const session = activeSession.value;
+    if (session) {
+      if (session.modelId === modelId) return;
+      await db.updateSessionModel(session.id, modelId);
+      session.modelId = modelId;
+      return;
+    }
+    const target = models.value.find((m) => m.id === modelId);
+    if (!target || target.isDefault) return;
+    // 无会话：改默认模型（saveModel 的 isDefault 语义会自动清其它默认）
+    await upsertModel({ ...target, isDefault: true });
+  }
+
+  /**
    * 删除会话（级联删消息；若删除的是当前会话则回退到列表首个）
    * @param id 会话 id
    */
@@ -521,6 +544,7 @@ export const useAgentStore = defineStore('agent', () => {
     refreshSessions,
     newSession,
     renameSession,
+    setSessionModel,
     removeSession,
     togglePin,
     moveSessionToGroup,

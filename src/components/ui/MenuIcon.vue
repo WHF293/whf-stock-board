@@ -104,6 +104,11 @@ const ICON_PATHS: Record<string, string> = {
   bell: '<path d="M6 9a6 6 0 0 1 12 0c0 4 1.5 5.5 1.5 5.5h-15S6 13 6 9z"/><path d="M10 18a2 2 0 0 0 4 0"/>',
   // 复制：前后两叠圆角矩形
   copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+  // 勾选（菜单当前项标记）
+  check: '<path d="M5 13l4 4L19 7"/>',
+  // 图片（对话附图入口）：相框 + 山形 + 太阳
+  image:
+    '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5.5-5.5L7 19"/>',
   // 使用统计：三根柱 + 基线
   chartBars: '<path d="M4 20h16"/><path d="M7 20v-6"/><path d="M12 20V8"/><path d="M17 20V13"/>',
   // 刷新：断口圆弧 + 箭头

@@ -22,6 +22,13 @@ type CustomFetch = typeof globalThis.fetch;
 export interface HistoryMessage {
   role: 'user' | 'assistant';
   content: string;
+  /**
+   * 用户消息附图（base64 dataURL，多模态 content blocks 重建用）
+   *
+   * ⚠️ 图片块按原样计 token，历史里只带最近 N 条（调用方裁剪，见
+   * CHAT_IMAGE_HISTORY_CARRY），更早的消息只传文本防超上下文。
+   */
+  images?: string[];
 }
 
 /** 一次 agent 运行的 token 用量（尽力采集：模型 / 网关不回 usage_metadata 时整个回调不触发） */
@@ -141,6 +148,8 @@ export interface StartAgentRunParams {
   history: HistoryMessage[];
   /** 本次用户输入 */
   message: string;
+  /** 本次用户输入附图（base64 dataURL，多模态；缺省 = 纯文本） */
+  images?: readonly string[];
   /** 编排的 subagent 定义 */
   subagents: SubagentDef[];
   /** 工具集（内置 MCP 装配；空数组 / 缺省 = 无工具） */
@@ -158,6 +167,42 @@ export interface StartAgentRunParams {
   /** 子 agent 级工具子集（key = subagent id；缺省的子 agent 继承全量 tools） */
   subagentTools?: Map<number, StructuredToolInterface[]>;
 }
+
+/**
+ * 多模态文本块（OpenAI 兼容 content blocks；index signature 对齐 LangChain
+ * BaseContentBlock 的宽结构，否则无法赋给 HumanMessage 的 content 字段）
+ */
+interface TextContentBlock {
+  type: 'text';
+  text: string;
+  [key: string]: unknown;
+}
+
+/** 多模态图片块（OpenAI 兼容 image_url 形态，dataURL 直接内联） */
+interface ImageUrlContentBlock {
+  type: 'image_url';
+  image_url: { url: string };
+  [key: string]: unknown;
+}
+
+/**
+ * 组装 HumanMessage content：无图用纯字符串（不改变既有消息形态），
+ * 有图用 content blocks（文本在前、图片在后，OpenAI 兼容多模态格式）
+ *
+ * @param text 文本
+ * @param images 附图 dataURL 列表（缺省 / 空 = 纯文本）
+ * @returns LangChain 消息 content
+ */
+const toHumanContent = (
+  text: string,
+  images?: readonly string[],
+): string | Array<TextContentBlock | ImageUrlContentBlock> => {
+  if (!images || images.length === 0) return text;
+  return [
+    { type: 'text', text },
+    ...images.map((url) => ({ type: 'image_url' as const, image_url: { url } })),
+  ];
+};
 
 /**
  * 启动一次 agent 运行（流式）
@@ -186,9 +231,11 @@ export function startAgentRun(params: StartAgentRunParams, handlers: AgentRunHan
 
   const messages: BaseMessage[] = [
     ...params.history.map((h) =>
-      h.role === 'user' ? new HumanMessage({ content: h.content }) : new AIMessage({ content: h.content }),
+      h.role === 'user'
+        ? new HumanMessage({ content: toHumanContent(h.content, h.images) })
+        : new AIMessage({ content: h.content }),
     ),
-    new HumanMessage({ content: params.message }),
+    new HumanMessage({ content: toHumanContent(params.message, params.images) }),
   ];
 
   void (async () => {
