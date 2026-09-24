@@ -29,8 +29,8 @@ export const MARKET_STATUS_LABEL: Record<MarketStatus, string> = {
   [MARKET_STATUS.CLOSED]: '休市',
 };
 
-/** A 股盘中显示窗口 · 开始（本地时间分钟数）：09:30（集合竞价 09:15-09:30 按「盘前」处理，不在此窗口） */
-export const A_SHARE_SESSION_START = 9 * 60 + 30;
+/** A 股智能显示窗口 · 开始（本地时间分钟数）：09:00（覆盖集合竞价前的看盘准备时段；仅任务栏小组件「智能开启」消费） */
+export const A_SHARE_SESSION_START = 9 * 60;
 
 /**
  * A 股盘中显示窗口 · 结束（本地时间分钟数，不含）：15:00

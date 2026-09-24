@@ -84,15 +84,15 @@ export const useMarketStatusStore = defineStore('market-status', {
     },
 
     /**
-     * A 股盘中显示窗口（任务栏小组件「智能开启」消费）：本地时间 09:30 - 15:00（单段连续，含午休）
+     * A 股智能显示窗口（任务栏小组件「智能开启」消费）：本地时间 09:00 - 15:00（单段连续，含午休）
      *
-     * 与 isASharePollingWindow 的差异：轮询窗口含集合竞价（09:15 起），显示窗口不含
-     * （09:15-09:30 按「盘前」处理）。**不用 status 判定** —— status 只随 refresh()
+     * 与 isASharePollingWindow 的差异：显示窗口比轮询窗口更宽（09:00 起，覆盖集合竞价前的
+     * 看盘准备时段；轮询窗口 09:15 起）。**不用 status 判定** —— status 只随 refresh()
      * （每 10 分钟）重算，跨界最多滞后 10 分钟；本 getter 随 clockTick 每分钟重算。
      * 交易日历未就绪或拉取失败（isTradingDay === null）时按周一~周五近似放行，
      * 日历恢复后 refresh 自愈纠正。
      * @param state store 状态
-     * @returns true 表示处于 A 股盘中显示窗口
+     * @returns true 表示处于 A 股智能显示窗口
      */
     isAShareIntraday: (state: MarketStatusState): boolean => {
       // 依赖 clockTick 触发分钟级重算
