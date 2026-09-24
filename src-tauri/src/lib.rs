@@ -321,6 +321,28 @@ CREATE TABLE agent_schedule (
 CREATE INDEX idx_schedule_enabled ON agent_schedule(enabled);
 ";
 
+/// agent.db v5：agent_usage（使用统计，UsageStatsView 数据源）
+///
+/// 每次 agent 运行终态记一行（ChatPanel 对话与定时任务执行两条链路都落）：
+/// - 前端「尽力采集」：模型 / 网关不回 usage_metadata 时整行不写，看板按空态处理；
+/// - **session_id 不设外键**：会话删除后用量记录保留（统计口径 = 历史累计，不随会话消失）；
+/// - duration_ms = 前端 startedAt → 终态回调时刻，含工具等待时间，不是纯模型耗时；
+/// - created_at 为毫秒时间戳，看板按本地日键聚合（热力格 / 趋势线扫 idx_usage_created）。
+const AGENT_DB_V5: &str = "
+CREATE TABLE agent_usage (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id    INTEGER NOT NULL,
+  model_name    TEXT    NOT NULL DEFAULT '',
+  model_id      TEXT    NOT NULL DEFAULT '',
+  input_tokens  INTEGER NOT NULL DEFAULT 0,
+  output_tokens INTEGER NOT NULL DEFAULT 0,
+  total_tokens  INTEGER NOT NULL DEFAULT 0,
+  duration_ms   INTEGER NOT NULL DEFAULT 0,
+  created_at    INTEGER NOT NULL
+);
+CREATE INDEX idx_usage_created ON agent_usage(created_at);
+";
+
 /// agent.db 全部迁移（后续版本往后追加，勿改动已有版本）
 fn agent_db_migrations() -> Vec<Migration> {
   vec![
@@ -346,6 +368,12 @@ fn agent_db_migrations() -> Vec<Migration> {
       version: 4,
       description: "create_agent_schedule",
       sql: AGENT_DB_V4,
+      kind: MigrationKind::Up,
+    },
+    Migration {
+      version: 5,
+      description: "create_agent_usage",
+      sql: AGENT_DB_V5,
       kind: MigrationKind::Up,
     },
   ]

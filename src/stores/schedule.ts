@@ -13,6 +13,7 @@ import { defineStore } from 'pinia';
 import * as db from '@/composables/use-agent-db';
 import { useAgentStore } from '@/stores/agent';
 import { runScheduleTask } from '@/agent/schedule-runner';
+import { fetchIsTradingDay } from '@/api/calendar.api';
 import { minuteBucket } from '@/utils/minute-bucket';
 import { SCHEDULE_DURATIONS, SCHEDULE_RUN_STATUS, SCHEDULE_TICK_MS } from '@/constants/schedule.constants';
 import type { AgentProfile, ChatSession, ModelConfig, SubagentDef } from '@/types/agent.types';
@@ -32,6 +33,31 @@ export const useScheduleStore = defineStore('schedule', () => {
   let ticker: number | null = null;
   /** 心跳防重入（上一轮 tick 里若有任务在执行，30s 后的下轮跳过判定） */
   let ticking = false;
+
+  /** 交易日判定缓存（按天；同一天只查一次日历，避免多任务重复请求） */
+  let tradingDayCache: { day: string; result: boolean } | null = null;
+
+  /**
+   * 今天是否 A 股交易日（store 层按天缓存 + SDK 日历实例缓存两层收敛）
+   *
+   * 日历获取失败不缓存、按 false 处理：本轮跳过交易日任务，同一分钟内的
+   * 下一 tick 自动重试（同分钟去重只在真正触发后才生效），不误标任务错误。
+   *
+   * @returns true = 今天是交易日；false = 非交易日或日历暂不可用
+   */
+  async function isTradingDayToday(): Promise<boolean> {
+    const now = new Date();
+    const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    if (tradingDayCache?.day === day) return tradingDayCache.result;
+    try {
+      const result = await fetchIsTradingDay();
+      tradingDayCache = { day, result };
+      return result;
+    } catch (error) {
+      console.warn('[schedule] 交易日历获取失败，本轮跳过交易日任务：', error);
+      return false;
+    }
+  }
 
   /* --------------------------------- 初始化 -------------------------------- */
 
@@ -185,16 +211,25 @@ export const useScheduleStore = defineStore('schedule', () => {
 
   /**
    * 到期判定（单个任务）
+   *
+   * trading_day 在时刻匹配后追加交易日判定：先本地短路周末（零成本），
+   * 再查日历（按天缓存；日历暂不可用按 false 处理，同分钟内的下轮重试）。
+   *
    * @param task 任务
    * @param now 当前时刻
    * @param bucket 当前分钟桶
    * @returns 是否应在本轮触发
    */
-  function isDue(task: ScheduleTask, now: Date, bucket: number): boolean {
+  async function isDue(task: ScheduleTask, now: Date, bucket: number): Promise<boolean> {
     if (!task.enabled) return false;
     if (task.expiresAt !== null && now.getTime() >= task.expiresAt) return false;
     if (task.hour !== now.getHours() || task.minute !== now.getMinutes()) return false;
     if (task.scheduleType === 'weekly' && task.weekday !== now.getDay()) return false;
+    if (task.scheduleType === 'trading_day') {
+      const day = now.getDay();
+      if (day === 0 || day === 6) return false;
+      if (!(await isTradingDayToday())) return false;
+    }
     // 同分钟只触发一次（触发即写 last_run_at，这里读内存态即可）
     if (task.lastRunAt !== null && minuteBucket(task.lastRunAt) === bucket) return false;
     return true;
@@ -208,7 +243,7 @@ export const useScheduleStore = defineStore('schedule', () => {
       const now = new Date();
       const bucket = minuteBucket(now.getTime());
       for (const task of [...tasks.value]) {
-        if (!isDue(task, now, bucket)) continue;
+        if (!(await isDue(task, now, bucket))) continue;
         await runNow(task);
       }
     } finally {

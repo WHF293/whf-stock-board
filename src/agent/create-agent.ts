@@ -24,10 +24,29 @@ export interface HistoryMessage {
   content: string;
 }
 
+/** 一次 agent 运行的 token 用量（尽力采集：模型 / 网关不回 usage_metadata 时整个回调不触发） */
+export interface AgentRunUsage {
+  /** 输入 token（本次运行各模型调用之和） */
+  inputTokens: number;
+  /** 输出 token（本次运行各模型调用之和） */
+  outputTokens: number;
+  /** 总 token（各模型调用 total_tokens 之和，按上游原值累加，可能与 input+output 有出入） */
+  totalTokens: number;
+}
+
 /** 一次 agent 运行的事件回调 */
 export interface AgentRunHandlers {
   /** 文本增量（未平滑的原始速率，调用方负责缓冲） */
   onDelta: (text: string) => void;
+  /**
+   * 尽力采集到的本次运行 token 用量
+   *
+   * 在 onDone / onError 之前触发；仅当流里出现过非零 usage_metadata 时才触发
+   * （OpenAI 兼容端点普遍随最后一个流式分片回 usage，部分网关不回 → 整次运行无记录）。
+   *
+   * @param usage 聚合后的 token 用量
+   */
+  onUsage?: (usage: AgentRunUsage) => void;
   /**
    * 模型发起工具调用（工具卡「运行中」态的提前信号；实际执行结果由 MCP sink 回填）
    * @param event 工具调用事件
@@ -176,6 +195,8 @@ export function startAgentRun(params: StartAgentRunParams, handlers: AgentRunHan
     let full = '';
     /** 流式工具调用累计（按 chunk 的 index 归并 args 分片，name/id 出现在首个分片） */
     const pendingCalls = new Map<number, { id: string; name: string; argsText: string }>();
+    /** 用量归集表（按消息 id 去重，usage 随消息收尾分片到达，取最后一次写入） */
+    const usageSamples = new Map<string, AgentRunUsage>();
     try {
       const stream = await agent.stream(
         {
@@ -190,18 +211,22 @@ export function startAgentRun(params: StartAgentRunParams, handlers: AgentRunHan
         for (const call of extractToolRequests(chunk, pendingCalls)) {
           handlers.onToolRequest?.(call);
         }
+        collectUsageSample(chunk, usageSamples);
         const text = extractAiText(chunk);
         if (text) {
           full += text;
           handlers.onDelta(text);
         }
       }
+      emitUsage(handlers, usageSamples);
       handlers.onDone(full, false);
     } catch (error) {
       if (controller.signal.aborted) {
+        emitUsage(handlers, usageSamples);
         handlers.onDone(full, true);
         return;
       }
+      emitUsage(handlers, usageSamples);
       handlers.onError(error instanceof Error ? error.message : String(error));
     }
   })();
@@ -247,6 +272,69 @@ function extractToolRequests(
     }
   }
   return updates;
+}
+
+/**
+ * 从流式块中提取 usage_metadata（LangChain AIMessageChunk 的标准字段）
+ *
+ * OpenAI 兼容端点通常随最后一个流式分片返回；部分网关不支持 stream_options
+ * 直接不回 → 返回 null，调用方按「无用量」处理。
+ *
+ * @param chunk 消息块
+ * @returns token 用量；缺失或三项全 0 时返回 null
+ */
+function extractUsage(chunk: unknown): AgentRunUsage | null {
+  if (!chunk || typeof chunk !== 'object') return null;
+  const meta = (chunk as { usage_metadata?: unknown }).usage_metadata;
+  if (!meta || typeof meta !== 'object') return null;
+  const fields = meta as Record<string, unknown>;
+  /**
+   * 字段取数兜底（非有限数值按 0）
+   * @param v 原始值
+   * @returns 数值
+   */
+  const toNum = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+  const input = toNum(fields.input_tokens);
+  const output = toNum(fields.output_tokens);
+  const total = toNum(fields.total_tokens);
+  if (input === 0 && output === 0 && total === 0) return null;
+  return { inputTokens: input, outputTokens: output, totalTokens: total };
+}
+
+/**
+ * 归集一次用量样本（按消息 id 去重）
+ *
+ * 同一条消息的多个流式分片共享同一个 chunk.id，usage 通常只随收尾分片出现一次；
+ * 按 id 覆盖写 = 同消息取最后一次，多模型调用（工具链 / subagent）各自成桶互不覆盖。
+ * 无 id 的样本按流内序号独立成桶（usage 只随收尾分片出现，逐条成桶不会重复计数）。
+ *
+ * @param chunk 消息块
+ * @param samples 跨 chunk 复用的归集表
+ */
+function collectUsageSample(chunk: unknown, samples: Map<string, AgentRunUsage>): void {
+  const usage = extractUsage(chunk);
+  if (!usage) return;
+  const id = (chunk as { id?: unknown }).id;
+  const key = typeof id === 'string' && id ? id : `anonymous-${samples.size}`;
+  samples.set(key, usage);
+}
+
+/**
+ * 聚合归集表并触发 onUsage（空表不触发 = 整次运行无用量记录）
+ * @param handlers 事件回调
+ * @param samples 用量归集表
+ */
+function emitUsage(handlers: AgentRunHandlers, samples: Map<string, AgentRunUsage>): void {
+  if (samples.size === 0) return;
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let totalTokens = 0;
+  for (const sample of samples.values()) {
+    inputTokens += sample.inputTokens;
+    outputTokens += sample.outputTokens;
+    totalTokens += sample.totalTokens;
+  }
+  handlers.onUsage?.({ inputTokens, outputTokens, totalTokens });
 }
 
 /**

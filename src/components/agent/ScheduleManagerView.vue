@@ -2,6 +2,8 @@
 import { computed, reactive, ref } from 'vue';
 import dayjs from 'dayjs';
 import { useScheduleStore } from '@/stores/schedule';
+import { useNotificationsStore } from '@/stores/notifications';
+import { NOTIFY_TONE, NOTIFY_QUICK_TIMEOUT_MS } from '@/constants/notify.constants';
 import {
   SCHEDULE_DURATIONS,
   SCHEDULE_DEFAULT_DURATION,
@@ -10,6 +12,9 @@ import {
   SCHEDULE_WEEKDAY_LABELS,
 } from '@/constants/schedule.constants';
 import type { ScheduleDurationKey, ScheduleFormInput, ScheduleTask, ScheduleType } from '@/types/schedule.types';
+import { copyTextToClipboard } from '@/utils/copy-text-to-clipboard';
+import { scheduleTaskToJson } from '@/utils/schedule-task-to-json';
+import { parseScheduleTaskJson } from '@/utils/parse-schedule-task-json';
 import BaseButton from '@/components/ui/BaseButton.vue';
 import BaseConfirmModal from '@/components/ui/BaseConfirmModal.vue';
 import BaseEmpty from '@/components/ui/BaseEmpty.vue';
@@ -26,6 +31,7 @@ import MenuIcon from '@/components/ui/MenuIcon.vue';
  *   执行都发生在任务绑定会话里，可通过「查看会话」跳回对话视图查看结果。
  */
 const store = useScheduleStore();
+const notifications = useNotificationsStore();
 
 const emit = defineEmits<{
   /** 返回对话视图 */
@@ -51,6 +57,7 @@ const draftTime = ref('15:00');
 /** 周期选项（value 定型为 ScheduleType，避免模板内断言） */
 const SCHEDULE_TYPE_OPTIONS: ReadonlyArray<{ value: ScheduleType; label: string }> = [
   { value: 'daily', label: '每天' },
+  { value: 'trading_day', label: '交易日' },
   { value: 'weekly', label: '每周' },
 ];
 
@@ -171,10 +178,11 @@ const STATUS_META: Record<string, { label: string; class: string }> = {
 /**
  * 周期描述文案
  * @param task 任务
- * @returns 形如 `每天 15:00` / `每周三 15:00`
+ * @returns 形如 `每天 15:00` / `每个交易日 15:00` / `每周三 15:00`
  */
 const scheduleLabel = (task: ScheduleTask): string => {
   const time = `${pad(task.hour)}:${pad(task.minute)}`;
+  if (task.scheduleType === 'trading_day') return `每个交易日 ${time}`;
   return task.scheduleType === 'daily'
     ? `每天 ${time}`
     : `每${SCHEDULE_WEEKDAY_LABELS[task.weekday ?? 0]} ${time}`;
@@ -211,6 +219,67 @@ const lastRunClass = (task: ScheduleTask): string =>
   STATUS_META[task.lastRunStatus ?? '']?.class ?? 'text-text-tertiary';
 
 /* --------------------------------- 操作动作 -------------------------------- */
+
+/**
+ * 复制任务 JSON 到剪贴板（跨电脑迁移：只含计划字段，不含会话 / 有效期等本地状态）
+ * @param task 任务
+ */
+const copyTaskJson = async (task: ScheduleTask): Promise<void> => {
+  const ok = await copyTextToClipboard(scheduleTaskToJson(task));
+  notifications.push({
+    title: ok ? '任务 JSON 已复制' : '复制失败，请重试',
+    body: ok ? '在另一台电脑的定时任务页点「导入 JSON」即可创建同款任务' : undefined,
+    tone: ok ? NOTIFY_TONE.PRIMARY : NOTIFY_TONE.UP,
+    timeoutMs: NOTIFY_QUICK_TIMEOUT_MS,
+  });
+};
+
+/**
+ * 从剪贴板导入任务 JSON：读取 → 解析校验 → 回填新建表单，用户确认后保存
+ *
+ * 与「复制 JSON」配套（电脑1 复制 → 电脑2 导入，剪贴板就是中转站）；
+ * 不直接建任务——回填表单让人过目/可改，误贴了别的 JSON 点取消即可。
+ */
+const importFromClipboard = async (): Promise<void> => {
+  let text: string;
+  try {
+    text = await navigator.clipboard.readText();
+  } catch {
+    notifications.push({
+      title: '读取剪贴板失败',
+      body: '请检查系统剪贴板权限后重试',
+      tone: NOTIFY_TONE.UP,
+      timeoutMs: NOTIFY_QUICK_TIMEOUT_MS,
+    });
+    return;
+  }
+  const result = parseScheduleTaskJson(text);
+  if (!result.ok) {
+    notifications.push({
+      title: '导入失败',
+      body: result.error,
+      tone: NOTIFY_TONE.UP,
+      timeoutMs: NOTIFY_QUICK_TIMEOUT_MS,
+    });
+    return;
+  }
+  const form = result.form;
+  draft.name = form.name;
+  draft.prompt = form.prompt;
+  draft.scheduleType = form.scheduleType;
+  draft.weekday = form.weekday ?? 1;
+  draft.durationKey = form.durationKey;
+  draftTime.value = `${pad(form.hour)}:${pad(form.minute)}`;
+  formError.value = '';
+  editingId.value = null;
+  formMode.value = 'create';
+  notifications.push({
+    title: '已导入任务配置',
+    body: '有效期自本机重新起算，确认无误后点「保存」',
+    tone: NOTIFY_TONE.PRIMARY,
+    timeoutMs: NOTIFY_QUICK_TIMEOUT_MS,
+  });
+};
 
 /**
  * 立即测试（与心跳共用 runNow；执行中按钮禁用）
@@ -269,10 +338,16 @@ const deleteConfirmText = computed(() =>
       </button>
       <h2 class="text-sm font-semibold text-text">定时任务</h2>
       <div class="flex-1" />
-      <BaseButton v-if="formMode === 'closed'" variant="primary" @click="openCreate">
-        <MenuIcon name="plus" :size="14" />
-        新建任务
-      </BaseButton>
+      <template v-if="formMode === 'closed'">
+        <BaseButton variant="ghost" @click="void importFromClipboard()">
+          <MenuIcon name="clipboardPaste" :size="14" />
+          导入 JSON
+        </BaseButton>
+        <BaseButton variant="primary" @click="openCreate">
+          <MenuIcon name="plus" :size="14" />
+          新建任务
+        </BaseButton>
+      </template>
     </div>
 
     <!-- 表单态：新建 / 编辑共用 -->
@@ -401,6 +476,15 @@ const deleteConfirmText = computed(() =>
               @click="openEdit(task)"
             >
               <MenuIcon name="pencil" :size="15" />
+            </button>
+            <button
+              type="button"
+              class="pressable rounded p-1.5 text-text-tertiary hover:bg-flat-weak hover:text-text"
+              title="复制 JSON"
+              aria-label="复制任务 JSON"
+              @click="void copyTaskJson(task)"
+            >
+              <MenuIcon name="copy" :size="15" />
             </button>
             <button
               type="button"

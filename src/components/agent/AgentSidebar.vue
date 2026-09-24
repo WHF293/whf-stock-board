@@ -11,14 +11,16 @@ import SessionTree from './SessionTree.vue';
  * Agent 页面左栏（页面级，非全局侧栏）
  *
  * 自上而下：新建对话主按钮 → Skills/MCP/Model/Agents 管理入口（带角标）
- * → 会话树（分组折叠 + 拖拽排序 + ⋯ 菜单）。收起态：新建会话 + 管理图标
- * + 新建分组，展开按钮挪到底部。
+ * → 会话树（分组折叠 + 拖拽排序 + ⋯ 菜单）→ 底部「使用统计」入口。
+ * 收起态：新建会话 + 管理图标 + 新建分组，底部使用统计与展开按钮。
  */
 const emit = defineEmits<{
   /** 点击管理入口，key 标识目标弹窗 */
   (e: 'open-manager', key: AgentManagerKey): void;
   /** 点击「定时任务」入口：右区切换为定时任务管理视图 */
   (e: 'open-schedule'): void;
+  /** 点击「使用统计」入口：右区切换为使用统计看板 */
+  (e: 'open-stats'): void;
 }>();
 
 const store = useAgentStore();
@@ -101,14 +103,26 @@ const onNewChat = (): void => {
           <MenuIcon name="folder" :size="18" />
         </button>
       </nav>
-      <button
-        type="button"
-        class="pressable mt-auto rounded-lg p-2 text-text-tertiary hover:bg-flat-weak hover:text-text"
-        aria-label="展开侧栏"
-        @click="store.sidebarCollapsed = false"
-      >
-        <MenuIcon name="panelLeft" :size="18" />
-      </button>
+      <!-- 底部：使用统计 + 展开侧栏 -->
+      <div class="mt-auto flex flex-col items-center gap-1 pb-1">
+        <button
+          type="button"
+          class="pressable rounded-lg p-2 text-text-tertiary transition-colors hover:bg-flat-weak hover:text-text"
+          title="使用统计"
+          aria-label="使用统计"
+          @click="emit('open-stats')"
+        >
+          <MenuIcon name="chartBars" :size="18" />
+        </button>
+        <button
+          type="button"
+          class="pressable rounded-lg p-2 text-text-tertiary hover:bg-flat-weak hover:text-text"
+          aria-label="展开侧栏"
+          @click="store.sidebarCollapsed = false"
+        >
+          <MenuIcon name="panelLeft" :size="18" />
+        </button>
+      </div>
     </div>
 
     <!-- 展开态内容（固定 w-64：宽度动画期间文字不换行挤压，仅整体淡入淡出） -->
@@ -158,8 +172,31 @@ const onNewChat = (): void => {
 
       <!-- 会话树（滚动区；收起态仍挂载，供新建分组弹窗复用） -->
       <div class="min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-3">
-        <p class="px-1.5 pb-1 text-xs font-medium text-text-tertiary">会话</p>
+        <div class="flex items-center justify-between px-1.5 pb-1">
+          <p class="text-xs font-medium text-text-tertiary">会话</p>
+          <button
+            type="button"
+            class="pressable rounded p-1 text-text-tertiary transition-colors hover:bg-flat-weak hover:text-text"
+            title="新建分组"
+            aria-label="新建分组"
+            @click="sessionTreeRef?.openNewGroup()"
+          >
+            <MenuIcon name="plus" :size="12" />
+          </button>
+        </div>
         <SessionTree ref="sessionTreeRef" />
+      </div>
+
+      <!-- 底部：使用统计入口（左栏最下，与收起态图标位对应） -->
+      <div class="shrink-0 border-t border-flat-weak px-3 py-2">
+        <button
+          type="button"
+          class="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-text-secondary transition-colors hover:bg-flat-weak hover:text-text"
+          @click="emit('open-stats')"
+        >
+          <MenuIcon name="chartBars" :size="16" class="text-text-tertiary" />
+          <span class="flex-1 text-left">使用统计</span>
+        </button>
       </div>
     </div>
   </aside>

@@ -14,6 +14,7 @@ import { AGENT_DB_URL } from '@/constants/agent.constants';
 import type {
   AccessScope,
   AgentProfile,
+  AgentUsageRow,
   ChatGroup,
   ChatMessage,
   ChatSession,
@@ -1238,4 +1239,83 @@ export async function markScheduleRun(id: number, status: string): Promise<void>
     status,
     id,
   ]);
+}
+
+/* --------------------------------- 用量（使用统计） -------------------------------- */
+
+/**
+ * agent_usage 行 → AgentUsageRow
+ * @param r DB 原始行
+ * @returns 用量记录对象
+ */
+function toUsageRow(r: Row): AgentUsageRow {
+  return {
+    id: num(r.id),
+    sessionId: num(r.session_id),
+    modelName: str(r.model_name),
+    modelId: str(r.model_id),
+    inputTokens: num(r.input_tokens),
+    outputTokens: num(r.output_tokens),
+    totalTokens: num(r.total_tokens),
+    durationMs: num(r.duration_ms),
+    createdAt: num(r.created_at),
+  };
+}
+
+/**
+ * 写入一次运行用量（每次 agent 运行终态一行）
+ *
+ * ⚠️ 尽力采集的写入方约定：tokens 三项为 0 的记录没有统计价值，
+ * 由调用方（onUsage 回调只在非空时触发）保证不落零行，这里不做二次校验。
+ *
+ * @param usage 用量数据
+ * @param usage.sessionId 运行所在会话 id（无外键，会话删除后记录保留）
+ * @param usage.modelName 模型展示名（趋势线按它分线）
+ * @param usage.modelId 请求模型 id
+ * @param usage.inputTokens 输入 token
+ * @param usage.outputTokens 输出 token
+ * @param usage.totalTokens 总 token
+ * @param usage.durationMs 运行时长（startedAt → 终态回调）
+ */
+export async function insertUsage(usage: {
+  sessionId: number;
+  modelName: string;
+  modelId: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  durationMs: number;
+}): Promise<void> {
+  const db = await getAgentDb();
+  await db.execute(
+    `INSERT INTO agent_usage
+       (session_id, model_name, model_id, input_tokens, output_tokens, total_tokens, duration_ms, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [
+      usage.sessionId,
+      usage.modelName,
+      usage.modelId,
+      usage.inputTokens,
+      usage.outputTokens,
+      usage.totalTokens,
+      usage.durationMs,
+      Date.now(),
+    ],
+  );
+}
+
+/**
+ * 用量记录列表（创建时间升序）
+ * @param fromTs 起始毫秒时间戳（含）；缺省 = 全量
+ * @returns 用量记录数组
+ */
+export async function listUsage(fromTs?: number): Promise<AgentUsageRow[]> {
+  const db = await getAgentDb();
+  const rows =
+    fromTs === undefined
+      ? await db.select<Row[]>('SELECT * FROM agent_usage ORDER BY created_at, id')
+      : await db.select<Row[]>('SELECT * FROM agent_usage WHERE created_at >= $1 ORDER BY created_at, id', [
+          fromTs,
+        ]);
+  return rows.map(toUsageRow);
 }

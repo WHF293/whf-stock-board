@@ -9,8 +9,11 @@ import {
   CHAT_INPUT_MAX_ROWS,
   SESSION_DEFAULT_TITLE,
 } from '@/constants/agent.constants';
-import { listMessages, insertMessage, updateMessage } from '@/composables/use-agent-db';
+import { listMessages, insertMessage, updateMessage, insertUsage } from '@/composables/use-agent-db';
 import { resolveAgentSystemPrompt } from '@/utils/agent-prompt';
+import { copyTextToClipboard } from '@/utils/copy-text-to-clipboard';
+import { useNotificationsStore } from '@/stores/notifications';
+import { NOTIFY_TONE, NOTIFY_QUICK_TIMEOUT_MS } from '@/constants/notify.constants';
 import { SmoothStreamer } from '@/agent/smooth-streamer';
 import { startAgentRun, type AgentRunHandle, type HistoryMessage } from '@/agent/create-agent';
 import { buildRunContext, type RunContext } from '@/agent/run-context';
@@ -398,6 +401,18 @@ const send = async (): Promise<void> => {
       },
       {
         onDelta: (delta) => streamer.push(delta),
+        // 尽力采集的用量落库（模型不回 usage 不触发；失败静默，不影响对话）
+        onUsage: (usage) => {
+          void insertUsage({
+            sessionId,
+            modelName: model.name,
+            modelId: model.modelId,
+            inputTokens: usage.inputTokens,
+            outputTokens: usage.outputTokens,
+            totalTokens: usage.totalTokens,
+            durationMs: Date.now() - run.startedAt,
+          }).catch(() => undefined);
+        },
         // 模型刚发起调用即插卡（结果由 sink 回填），避免长工具链「静默等待」
         onToolRequest: (event) =>
           upsertToolPart(parts, {
@@ -462,6 +477,23 @@ const askAgent = (text: string): void => {
  */
 const onAppAsk = (text: string): void => {
   askAgent(text);
+};
+
+/* --------------------------------- 复制消息 -------------------------------- */
+
+const notifications = useNotificationsStore();
+
+/**
+ * 复制消息文案到剪贴板并弹轻提示（成功/失败都走右侧浮窗，2s 自动消失）
+ * @param content 消息纯文本
+ */
+const copyMessage = async (content: string): Promise<void> => {
+  const ok = await copyTextToClipboard(content);
+  notifications.push({
+    title: ok ? '复制成功' : '复制失败，请重试',
+    tone: ok ? NOTIFY_TONE.PRIMARY : NOTIFY_TONE.UP,
+    timeoutMs: NOTIFY_QUICK_TIMEOUT_MS,
+  });
 };
 
 /* --------------------------------- 滚动与渲染 ------------------------------- */
@@ -565,7 +597,7 @@ const showWelcome = computed(() => messages.value.length === 0);
 
       <!-- 消息列表 -->
       <div v-else class="mx-auto max-w-3xl space-y-4 px-6 py-6">
-        <div v-for="msg in messages" :key="msg.id">
+        <div v-for="msg in messages" :key="msg.id" class="group">
           <!-- 用户消息：右侧气泡 -->
           <div v-if="msg.role === 'user'" class="flex justify-end">
             <div class="max-w-[85%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm text-on-primary">
@@ -613,6 +645,20 @@ const showWelcome = computed(() => messages.value.length === 0);
             <p v-if="msg.status === 'stopped'" class="mt-1.5 text-xs text-text-tertiary">
               已停止
             </p>
+          </div>
+
+          <!-- 复制：hover 消息行浮现；无文案或助手流式未结束时不显示 -->
+          <div class="mt-1 flex" :class="msg.role === 'user' ? 'justify-end' : 'justify-start'">
+            <button
+              v-if="msg.content && (msg.role === 'user' || msg.status !== 'running')"
+              type="button"
+              class="rounded p-1 text-text-tertiary opacity-0 transition-opacity hover:bg-flat-weak hover:text-text group-hover:opacity-100"
+              title="复制"
+              aria-label="复制消息"
+              @click="void copyMessage(msg.content)"
+            >
+              <MenuIcon name="copy" :size="13" />
+            </button>
           </div>
         </div>
       </div>

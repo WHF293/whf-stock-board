@@ -7,6 +7,9 @@ import type { AgentManagerKey } from '@/types/agent.types';
 import AgentSidebar from '@/components/agent/AgentSidebar.vue';
 import ChatPanel from '@/components/agent/ChatPanel.vue';
 import ScheduleManagerView from '@/components/agent/ScheduleManagerView.vue';
+import UsageStatsView from '@/components/agent/UsageStatsView.vue';
+import AgentWindowTitlebar from '@/components/agent/AgentWindowTitlebar.vue';
+import NotificationHost from '@/components/ui/NotificationHost.vue';
 import ModelManageModal from '@/components/agent/ModelManageModal.vue';
 import SkillManageModal from '@/components/agent/SkillManageModal.vue';
 import McpManageModal from '@/components/agent/McpManageModal.vue';
@@ -16,11 +19,15 @@ import AgentProfileManageModal from '@/components/agent/AgentProfileManageModal.
  * Agent 分析页（方案 §4：页面级双栏布局）
  *
  * - 浏览器端整页降级提示（Agent 运行时依赖 Tauri：SQLite / http fetch / fs）；
- * - 左栏 AgentSidebar（新建对话 + 管理入口 + 定时任务入口 + 会话树）+ 右侧主区：
- *   对话视图（ChatPanel）与定时任务管理视图（ScheduleManagerView）二选一渲染；
- * - ChatPanel 用 v-show 保留运行状态（切去任务页不打断进行中的对话），
- *   任务管理页用 v-if 按需挂载；四个管理弹窗均为真 CRUD 落库；
- * - standalone（独立 WebviewWindow）：占满整个 webview（h-dvh、无圆角卡片边距）
+ * - 左栏 AgentSidebar（新建对话 + 管理入口 + 定时任务入口 + 会话树 + 使用统计）+ 右侧主区：
+ *   对话视图（ChatPanel）、定时任务管理（ScheduleManagerView）与使用统计看板
+ *   （UsageStatsView）三选一渲染；
+ * - ChatPanel 用 v-show 保留运行状态（切去任务页 / 统计页不打断进行中的对话），
+ *   任务管理页与统计页用 v-if 按需挂载；四个管理弹窗均为真 CRUD 落库；
+ * - standalone（独立 WebviewWindow）：decorations:false + 自定义标题栏
+ *   （AgentWindowTitlebar，与主窗口同款交互），并挂 NotificationHost——
+ *   通知浮窗宿主只在 MainLayout 渲染过，独立窗口不经 MainLayout，必须自带一份
+ *   （复制成功 / 任务导入等 toast 才有容器；内嵌模式不挂，避免与 MainLayout 双份）
  */
 defineProps<{
   /** 独立窗口模式（/agent-window 路由注入）：高度撑满 webview、去卡片圆角 */
@@ -33,8 +40,8 @@ const scheduleStore = useScheduleStore();
 /** 当前 Tauri 环境（模块级判定即可，运行中不会切换） */
 const tauriAvailable = isTauri();
 
-/** 右区视图模式：chat 对话 / schedule 定时任务管理 */
-const viewMode = ref<'chat' | 'schedule'>('chat');
+/** 右区视图模式：chat 对话 / schedule 定时任务管理 / stats 使用统计看板 */
+const viewMode = ref<'chat' | 'schedule' | 'stats'>('chat');
 
 /** ChatPanel 实例（跳转任务会话时强制重读消息，见 onOpenSession） */
 const chatPanelRef = ref<InstanceType<typeof ChatPanel> | null>(null);
@@ -85,38 +92,55 @@ onMounted(() => {
     </div>
   </div>
 
-  <!-- 桌面端：页面级双栏（定高卡片：撑满可视区，输入框始终贴底）；standalone 占满 webview -->
+  <!-- 桌面端：standalone 独立窗口 = 自定义标题栏 + 内容区；内嵌 = 原定高卡片 -->
   <div
     v-else
-    class="flex min-h-0 overflow-hidden border border-flat-weak bg-surface shadow-sm"
-    :class="standalone ? 'h-dvh' : 'h-[calc(100dvh-6.5rem)] rounded-2xl'"
+    class="flex min-h-0 flex-col"
+    :class="standalone ? 'h-dvh' : 'h-[calc(100dvh-6.5rem)]'"
   >
-    <AgentSidebar @open-manager="openManager = $event" @open-schedule="viewMode = 'schedule'" />
+    <!-- 独立窗口标题栏（decorations:false，主窗口同款三键与拖拽；内嵌不渲染） -->
+    <AgentWindowTitlebar v-if="standalone" />
 
-    <!-- 右区主视图：对话（v-show 保留运行状态） / 定时任务管理（v-if 按需挂载） -->
-    <ChatPanel v-show="viewMode === 'chat'" ref="chatPanelRef" @open-manager="openManager = $event" />
-    <ScheduleManagerView
-      v-if="viewMode === 'schedule'"
-      @back="viewMode = 'chat'"
-      @open-session="onOpenSession"
-    />
+    <!-- 内容区双栏：standalone 占满余下高度；内嵌保留卡片圆角与边框 -->
+    <div
+      class="flex min-h-0 flex-1 overflow-hidden bg-surface"
+      :class="standalone ? '' : 'rounded-2xl border border-flat-weak shadow-sm'"
+    >
+      <AgentSidebar
+        @open-manager="openManager = $event"
+        @open-schedule="viewMode = 'schedule'"
+        @open-stats="viewMode = 'stats'"
+      />
 
-    <!-- 管理弹窗（Skills / MCP / Model / Agents） -->
-    <ModelManageModal
-      :open="openManager === 'model'"
-      @update:open="onManagerOpenChange"
-    />
-    <SkillManageModal
-      :open="openManager === 'skills'"
-      @update:open="onManagerOpenChange"
-    />
-    <McpManageModal
-      :open="openManager === 'mcp'"
-      @update:open="onManagerOpenChange"
-    />
-    <AgentProfileManageModal
-      :open="openManager === 'agents'"
-      @update:open="onManagerOpenChange"
-    />
+      <!-- 右区主视图：对话（v-show 保留运行状态） / 定时任务管理、使用统计（v-if 按需挂载） -->
+      <ChatPanel v-show="viewMode === 'chat'" ref="chatPanelRef" @open-manager="openManager = $event" />
+      <ScheduleManagerView
+        v-if="viewMode === 'schedule'"
+        @back="viewMode = 'chat'"
+        @open-session="onOpenSession"
+      />
+      <UsageStatsView v-if="viewMode === 'stats'" @back="viewMode = 'chat'" />
+
+      <!-- 管理弹窗（Skills / MCP / Model / Agents） -->
+      <ModelManageModal
+        :open="openManager === 'model'"
+        @update:open="onManagerOpenChange"
+      />
+      <SkillManageModal
+        :open="openManager === 'skills'"
+        @update:open="onManagerOpenChange"
+      />
+      <McpManageModal
+        :open="openManager === 'mcp'"
+        @update:open="onManagerOpenChange"
+      />
+      <AgentProfileManageModal
+        :open="openManager === 'agents'"
+        @update:open="onManagerOpenChange"
+      />
+    </div>
+
+    <!-- 独立窗口自带通知浮窗宿主（MainLayout 的只在主窗口存在） -->
+    <NotificationHost v-if="standalone" />
   </div>
 </template>

@@ -55,3 +55,9 @@ export const SCHEDULE_RUN_STATUS = {
   /** 解析不出可用模型（会话 / 配置 / 默认三级都落空） */
   noModel: 'no_model',
 } as const;
+
+/** 任务导出 JSON 的 kind 标记（导入时校验，避免贴入无关 JSON 误建任务） */
+export const SCHEDULE_JSON_KIND = 'whf-stock-board/schedule-task';
+
+/** 任务导出 JSON 的结构版本（字段变更时递增，导入按版本兼容） */
+export const SCHEDULE_JSON_VERSION = 1;

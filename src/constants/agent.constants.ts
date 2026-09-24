@@ -11,8 +11,8 @@ export const AGENT_DB_URL = 'sqlite:agent.db';
 /** 会话默认标题 */
 export const SESSION_DEFAULT_TITLE = '新对话';
 
-/** 默认分组名（DB 里不存在 id=0 的组，仅作 UI 兜底） */
-export const UNGROUPED_LABEL = '未分组';
+/** 默认分组名（DB 里不存在 id=0 的组，仅作 UI 兜底；王总口径：不叫「未分组」叫「临时会话」） */
+export const UNGROUPED_LABEL = '临时会话';
 
 /** 聊天输入框起步行数（打开就是两行高） */
 export const CHAT_INPUT_MIN_ROWS = 2;

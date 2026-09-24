@@ -23,6 +23,7 @@ import {
   insertMessage,
   updateMessage,
   markScheduleRun,
+  insertUsage,
 } from '@/composables/use-agent-db';
 import { resolveAgentSystemPrompt } from '@/utils/agent-prompt';
 import { upsertToolPart } from '@/utils/upsert-tool-part';
@@ -182,6 +183,9 @@ export async function runScheduleTask(params: RunScheduleTaskParams): Promise<'o
       })();
     };
 
+    /** 运行起点（用量记录的 durationMs 口径） */
+    const startedAt = Date.now();
+
     startAgentRun(
       {
         model,
@@ -198,6 +202,18 @@ export async function runScheduleTask(params: RunScheduleTaskParams): Promise<'o
       },
       {
         onDelta: (delta) => streamer.push(delta),
+        // 尽力采集的用量落库（模型不回 usage 不触发；失败静默，不影响任务状态）
+        onUsage: (usage) => {
+          void insertUsage({
+            sessionId,
+            modelName: model.name,
+            modelId: model.modelId,
+            inputTokens: usage.inputTokens,
+            outputTokens: usage.outputTokens,
+            totalTokens: usage.totalTokens,
+            durationMs: Date.now() - startedAt,
+          }).catch(() => undefined);
+        },
         onToolRequest: (event) =>
           upsertToolPart(parts, {
             callId: event.id,

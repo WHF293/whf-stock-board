@@ -3,7 +3,7 @@
  */
 
 /** 调度周期类型（表列 schedule_type） */
-export type ScheduleType = 'daily' | 'weekly';
+export type ScheduleType = 'daily' | 'weekly' | 'trading_day';
 
 /** 有效期档位（表列 duration_key；档位 → 时长折算见 schedule.constants.ts） */
 export type ScheduleDurationKey = '1w' | '1m' | '3m' | '6m';
@@ -24,7 +24,7 @@ export interface ScheduleTask {
   hour: number;
   /** 执行时刻 · 分（0-59，本机时区） */
   minute: number;
-  /** 每周执行日（0=周日 … 6=周六；仅 weekly 有值） */
+  /** 每周执行日（0=周日 … 6=周六；仅 weekly 有值，daily / trading_day 为 null） */
   weekday: number | null;
   /** 有效期档位 */
   durationKey: ScheduleDurationKey;
@@ -54,7 +54,7 @@ export interface ScheduleFormInput {
   hour: number;
   /** 执行时刻 · 分（0-59） */
   minute: number;
-  /** 每周执行日（0-6；仅 weekly） */
+  /** 每周执行日（0-6；仅 weekly 有值，daily / trading_day 为 null） */
   weekday: number | null;
   /** 有效期档位 */
   durationKey: ScheduleDurationKey;
