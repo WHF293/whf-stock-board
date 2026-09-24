@@ -283,3 +283,19 @@ export interface CreateSessionInput {
 
 /** 左栏管理入口 key */
 export type AgentManagerKey = 'skills' | 'mcp' | 'model' | 'agents';
+
+/** agent_usage 表行（agent.db V5，使用统计看板数据源；每次 agent 运行终态一行） */
+export interface AgentUsageRow {
+  id: number;
+  sessionId: number;
+  /** 模型展示名（ModelConfig.name，看板趋势线按它分线） */
+  modelName: string;
+  /** 请求模型 id（ModelConfig.modelId） */
+  modelId: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  /** 运行时长（startedAt → 终态回调，含工具等待） */
+  durationMs: number;
+  createdAt: number;
+}

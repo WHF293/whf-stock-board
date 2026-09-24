@@ -11,8 +11,8 @@ export const AGENT_DB_URL = 'sqlite:agent.db';
 /** 会话默认标题 */
 export const SESSION_DEFAULT_TITLE = '新对话';
 
-/** 默认分组名（DB 里不存在 id=0 的组，仅作 UI 兜底） */
-export const UNGROUPED_LABEL = '未分组';
+/** 默认分组名（DB 里不存在 id=0 的组，仅作 UI 兜底；王总口径：不叫「未分组」叫「临时会话」） */
+export const UNGROUPED_LABEL = '临时会话';
 
 /** 聊天输入框起步行数（打开就是两行高） */
 export const CHAT_INPUT_MIN_ROWS = 2;
@@ -70,49 +70,6 @@ export const DEFAULT_AGENT_SYSTEM_PROMPT = `# 角色
 # 合规底线
 所有内容仅作信息参考，不构成投资建议。严禁给出确定买卖指令、目标价与仓位建议，不编造数据，拒绝内幕消息与配资相关提问。股市有风险，投资需谨慎。`;
 
-/** 日常模式系统提示词（「仅金融问答」开关关闭时使用：不限领域，保留同一套编排与合规要求） */
-export const GENERAL_AGENT_SYSTEM_PROMPT = `# 角色
-你是一个可调用工具与专业子 agent 的通用助手，不对话题设限（旅游规划、日程安排、编程、金融等都可以回答）。
-
-# 编排
-当问题落在金融领域（市场行情、资金流向、宏观政策、外围市场、消息面、财报、技术面、个股复盘等）时，按下列路由把子问题分发给对应子 agent，再汇总结论：
-- 大盘与指数走势、板块涨跌、盘面归因、涨停与异动 → market_review_analyst
-- 大盘与板块资金流、个股主力资金、北向、龙虎榜、大宗交易 → capital_flow_analyst
-- 宏观政策、监管、事件传导、外围市场联动 → macro_policy_analyst
-- 消息面、热点题材、舆情 → news_sentiment_analyst
-- 公司基本面、财报、估值 → stock_research_analyst
-- 技术面、指标、量价、策略回测 → technical_analyst
-- 个股走势复盘、涨跌归因、情景推演 → stock_review_analyst
-其他领域的问题直接回答，必要时自行调用可用工具；一次派发一个子问题，描述要带足上下文。
-
-# 输出规范
-结论先行，证据随后；关键数字标注数据时点；不确定就说不确定；不编造数据。
-
-# 合规底线
-所有内容仅作信息参考，不构成投资建议。严禁给出确定买卖指令、目标价与仓位建议，不编造数据，拒绝内幕消息与配资相关提问。`;
-
-/**
- * Agent 问答模式（对应设置项 `settings.agentStockOnly`）
- *
- * ⚠️ 与 `utils/agent-prompt.ts` 的提示词解析是一对：`stockOnly` 既决定用哪套
- * 内置提示词，也决定自定义提示词要不要追加金融边界。新增模式需同步这两处。
- */
-export const AGENT_MODES = [
-  {
-    /** 模式名（分段控件文案） */
-    label: '专业模式',
-    /** 是否仅承接金融领域问题（= settings.agentStockOnly） */
-    stockOnly: true,
-    /** 一行说明（显示在控件右侧，让用户不用猜当前模式的含义） */
-    hint: '只回答金融 / 股票相关问题',
-  },
-  {
-    label: '日常模式',
-    stockOnly: false,
-    hint: '不限话题，什么都能聊',
-  },
-] as const;
-
 /** 左栏管理入口（图标 key 见 MenuIcon.ICON_PATHS） */
 export const AGENT_MANAGER_ENTRIES = [
   { key: 'skills', label: 'Skills', icon: 'book' },
@@ -131,6 +88,36 @@ export const WELCOME_SCENES = [
   { label: '资金解读', prompt: '解读一下今天大盘主力资金流向，说明结构上的含义。' },
   { label: '盘面归因', prompt: '复盘今天的盘面，给涨幅居前的板块做归因分析。' },
 ] as const;
+
+/**
+ * 输入框上方常驻快捷分析按钮（点击直接发送给 agent）
+ *
+ * 与欢迎态 chips 的区别：这里是高频刚需的一键分析（直接发送），欢迎态是探索型场景（预填）。
+ * 文案要求自包含且具体：主 agent 靠它拆解路由，问题越具体派发质量越高。
+ * 选择标准：发挥现有工具集强项（行情 / 资金 / 新闻 / 涨停池 / 自选股库），不依赖特定时点。
+ */
+export const QUICK_PROMPTS = [
+  {
+    label: '大盘走势',
+    prompt: '今天大盘走势怎么样？结合指数表现、成交额、板块结构与涨跌分布给出归因分析。',
+  },
+  {
+    label: '消息面汇总',
+    prompt: '汇总当前市场的重要财经消息与热点题材，按利好/利空分类，指出对市场和板块的可能影响。',
+  },
+  {
+    label: '资金流向分析',
+    prompt: '分析最近 10 个交易日大盘与板块的主力资金流向，指出资金在向哪些板块迁移、与涨跌幅有无背离。',
+  },
+  {
+    label: '涨停与情绪',
+    prompt: '复盘最近的涨停股池与盘口异动，评估当前市场情绪温度和赚钱效应。',
+  },
+  {
+    label: '自选股诊断',
+    prompt: '先查询我的自选股列表，再对每只票结合走势、资金与最新消息做简要诊断，并给出后续关注建议。',
+  },
+] as const satisfies ReadonlyArray<{ label: string; prompt: string }>;
 
 /** 平滑缓冲层：目标排空时间（毫秒）——突发积压期望在此时长内追平 */
 export const STREAM_TARGET_DRAIN_MS = 1500;

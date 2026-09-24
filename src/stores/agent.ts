@@ -151,6 +151,16 @@ export const useAgentStore = defineStore('agent', () => {
     counts.value = await db.getAgentCounts();
   }
 
+  /**
+   * 从 DB 重读会话树（不选中新会话、不动当前会话）
+   *
+   * 供定时任务等旁路写入方（创建绑定会话）刷新内存态使用——`init()` 有幂等
+   * 守卫、二次调用不会重跑，旁路落库后必须走这里才能在会话树里看到新会话。
+   */
+  async function refreshSessions(): Promise<void> {
+    sessions.value = await db.listSessions();
+  }
+
   /* --------------------------------- 会话操作 -------------------------------- */
 
   /**
@@ -508,6 +518,7 @@ export const useAgentStore = defineStore('agent', () => {
     sessionsOfGroup,
     init,
     refreshCounts,
+    refreshSessions,
     newSession,
     renameSession,
     removeSession,

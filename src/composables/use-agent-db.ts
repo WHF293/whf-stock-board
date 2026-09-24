@@ -14,6 +14,7 @@ import { AGENT_DB_URL } from '@/constants/agent.constants';
 import type {
   AccessScope,
   AgentProfile,
+  AgentUsageRow,
   ChatGroup,
   ChatMessage,
   ChatSession,
@@ -32,6 +33,7 @@ import type {
   Skill,
   SubagentDef,
 } from '@/types/agent.types';
+import type { SaveScheduleInput, ScheduleTask } from '@/types/schedule.types';
 
 /** 连接单例（Database.load 自带插件 migration；首连时补 PRAGMA） */
 let dbPromise: Promise<Database> | null = null;
@@ -1102,4 +1104,218 @@ export async function setSubagentEnabled(id: number, enabled: boolean): Promise<
 export async function deleteSubagent(id: number): Promise<void> {
   const db = await getAgentDb();
   await db.execute('DELETE FROM subagent WHERE id = $1', [id]);
+}
+
+/* --------------------------------- 定时任务 CRUD -------------------------------- */
+
+/**
+ * agent_schedule 行 → ScheduleTask
+ * @param r DB 原始行
+ * @returns 定时任务对象
+ */
+function toScheduleTask(r: Row): ScheduleTask {
+  return {
+    id: num(r.id),
+    name: str(r.name),
+    prompt: str(r.prompt),
+    sessionId: num(r.session_id),
+    scheduleType: str(r.schedule_type, 'daily') as ScheduleTask['scheduleType'],
+    hour: num(r.hour),
+    minute: num(r.minute),
+    weekday: numOrNull(r.weekday),
+    durationKey: str(r.duration_key, '1m') as ScheduleTask['durationKey'],
+    expiresAt: numOrNull(r.expires_at),
+    enabled: bool(r.enabled),
+    lastRunAt: numOrNull(r.last_run_at),
+    lastRunStatus: (r.last_run_status as string | null) ?? null,
+    createdAt: num(r.created_at),
+    updatedAt: num(r.updated_at),
+  };
+}
+
+/**
+ * 全量定时任务列表（创建时间升序）
+ * @returns 任务数组
+ */
+export async function listSchedules(): Promise<ScheduleTask[]> {
+  const db = await getAgentDb();
+  const rows = await db.select<Row[]>('SELECT * FROM agent_schedule ORDER BY id');
+  return rows.map(toScheduleTask);
+}
+
+/**
+ * 新增定时任务（会话与过期时间由调用方先定好）
+ * @param input 任务字段
+ * @returns 新任务 id
+ */
+export async function createSchedule(input: SaveScheduleInput): Promise<number> {
+  const db = await getAgentDb();
+  const now = Date.now();
+  const result = await db.execute(
+    `INSERT INTO agent_schedule
+       (name, prompt, session_id, schedule_type, hour, minute, weekday, duration_key,
+        expires_at, enabled, created_at, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,1,$10,$11)`,
+    [
+      input.name,
+      input.prompt,
+      input.sessionId,
+      input.scheduleType,
+      input.hour,
+      input.minute,
+      input.weekday,
+      input.durationKey,
+      input.expiresAt,
+      now,
+      now,
+    ],
+  );
+  return Number(result.lastInsertId);
+}
+
+/**
+ * 更新定时任务计划字段（不含启停与上次执行状态）
+ *
+ * ⚠️ 会话与过期时间不在编辑范围：session_id 是任务的锚点不随编辑变；
+ * expiresAt 编辑时不变（需要延期可后续加「续期」能力，避免误存丢失剩余时长）。
+ * @param id 任务 id
+ * @param input 计划字段
+ */
+export async function updateSchedule(
+  id: number,
+  input: Omit<SaveScheduleInput, 'sessionId' | 'expiresAt'>,
+): Promise<void> {
+  const db = await getAgentDb();
+  await db.execute(
+    `UPDATE agent_schedule SET name=$1, prompt=$2, schedule_type=$3, hour=$4, minute=$5,
+       weekday=$6, duration_key=$7, updated_at=$8
+     WHERE id=$9`,
+    [
+      input.name,
+      input.prompt,
+      input.scheduleType,
+      input.hour,
+      input.minute,
+      input.weekday,
+      input.durationKey,
+      Date.now(),
+      id,
+    ],
+  );
+}
+
+/**
+ * 启用 / 停用定时任务（停用保留配置，心跳跳过）
+ * @param id 任务 id
+ * @param enabled 是否启用
+ */
+export async function setScheduleEnabled(id: number, enabled: boolean): Promise<void> {
+  const db = await getAgentDb();
+  await db.execute('UPDATE agent_schedule SET enabled = $1, updated_at = $2 WHERE id = $3', [
+    enabled ? 1 : 0,
+    Date.now(),
+    id,
+  ]);
+}
+
+/**
+ * 删除定时任务（绑定会话保留：里面的历史执行记录还有价值，由用户自行决定是否删会话）
+ * @param id 任务 id
+ */
+export async function deleteSchedule(id: number): Promise<void> {
+  const db = await getAgentDb();
+  await db.execute('DELETE FROM agent_schedule WHERE id = $1', [id]);
+}
+
+/**
+ * 记录一次触发（last_run_at = 当前时刻；**必须在启动执行前调用**，同一分钟去重靠它）
+ * @param id 任务 id
+ * @param status 本次执行结果状态（触发时先写 'running'，结束时覆写）
+ */
+export async function markScheduleRun(id: number, status: string): Promise<void> {
+  const db = await getAgentDb();
+  await db.execute('UPDATE agent_schedule SET last_run_at = $1, last_run_status = $2 WHERE id = $3', [
+    Date.now(),
+    status,
+    id,
+  ]);
+}
+
+/* --------------------------------- 用量（使用统计） -------------------------------- */
+
+/**
+ * agent_usage 行 → AgentUsageRow
+ * @param r DB 原始行
+ * @returns 用量记录对象
+ */
+function toUsageRow(r: Row): AgentUsageRow {
+  return {
+    id: num(r.id),
+    sessionId: num(r.session_id),
+    modelName: str(r.model_name),
+    modelId: str(r.model_id),
+    inputTokens: num(r.input_tokens),
+    outputTokens: num(r.output_tokens),
+    totalTokens: num(r.total_tokens),
+    durationMs: num(r.duration_ms),
+    createdAt: num(r.created_at),
+  };
+}
+
+/**
+ * 写入一次运行用量（每次 agent 运行终态一行）
+ *
+ * ⚠️ 尽力采集的写入方约定：tokens 三项为 0 的记录没有统计价值，
+ * 由调用方（onUsage 回调只在非空时触发）保证不落零行，这里不做二次校验。
+ *
+ * @param usage 用量数据
+ * @param usage.sessionId 运行所在会话 id（无外键，会话删除后记录保留）
+ * @param usage.modelName 模型展示名（趋势线按它分线）
+ * @param usage.modelId 请求模型 id
+ * @param usage.inputTokens 输入 token
+ * @param usage.outputTokens 输出 token
+ * @param usage.totalTokens 总 token
+ * @param usage.durationMs 运行时长（startedAt → 终态回调）
+ */
+export async function insertUsage(usage: {
+  sessionId: number;
+  modelName: string;
+  modelId: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  durationMs: number;
+}): Promise<void> {
+  const db = await getAgentDb();
+  await db.execute(
+    `INSERT INTO agent_usage
+       (session_id, model_name, model_id, input_tokens, output_tokens, total_tokens, duration_ms, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [
+      usage.sessionId,
+      usage.modelName,
+      usage.modelId,
+      usage.inputTokens,
+      usage.outputTokens,
+      usage.totalTokens,
+      usage.durationMs,
+      Date.now(),
+    ],
+  );
+}
+
+/**
+ * 用量记录列表（创建时间升序）
+ * @param fromTs 起始毫秒时间戳（含）；缺省 = 全量
+ * @returns 用量记录数组
+ */
+export async function listUsage(fromTs?: number): Promise<AgentUsageRow[]> {
+  const db = await getAgentDb();
+  const rows =
+    fromTs === undefined
+      ? await db.select<Row[]>('SELECT * FROM agent_usage ORDER BY created_at, id')
+      : await db.select<Row[]>('SELECT * FROM agent_usage WHERE created_at >= $1 ORDER BY created_at, id', [
+          fromTs,
+        ]);
+  return rows.map(toUsageRow);
 }

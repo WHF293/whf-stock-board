@@ -95,8 +95,6 @@ interface SettingsState {
   detailChartPeriod: ChartPeriod;
   /** 系统日志 · 采集开关（关闭后不再记录报错与行为，仅保留系统类事件） */
   weblogEnabled: boolean;
-  /** Agent 分析 · 仅股票问答开关（开启时使用仅股票系统提示词；关闭后移除话题限制） */
-  agentStockOnly: boolean;
   /** 初始设置引导是否已完成（首次打开软件时弹出引导弹窗，完成 / 关闭后不再出现） */
   setupCompleted: boolean;
   /** 桌面端 · 点击关闭按钮最小化到托盘（false = 直接关闭应用；浏览器模式无此行为） */
@@ -134,7 +132,6 @@ export const useSettingsStore = defineStore('settings', {
     chartSubIndicators: [...CHART_SUB_INDICATORS_DEFAULT],
     detailChartPeriod: CHART_PERIOD_DEFAULT,
     weblogEnabled: WEBLOG_ENABLED_DEFAULT,
-    agentStockOnly: true,
     setupCompleted: resolveSetupCompletedDefault(),
     closeToTray: CLOSE_TO_TRAY_DEFAULT,
     launchAtStartup: LAUNCH_AT_STARTUP_DEFAULT,
@@ -368,14 +365,6 @@ export const useSettingsStore = defineStore('settings', {
     setWeblogEnabled(enabled: boolean): void {
       this.weblogEnabled = enabled;
     },
-
-  /**
-   * 设置 Agent 分析仅股票问答开关
-   * @param enabled true 仅股票问答（默认），false 移除话题限制
-   */
-  setAgentStockOnly(enabled: boolean): void {
-    this.agentStockOnly = enabled;
-  },
 
   /** 标记初始设置引导已完成（无论用户点了「开始使用」还是直接关闭，都不再弹出） */
   completeSetup(): void {

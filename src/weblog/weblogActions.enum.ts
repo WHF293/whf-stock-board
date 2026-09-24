@@ -95,7 +95,6 @@ export const WEBLOG_ACTIONS = {
   HEADER_ORDER_RESET: { category: 'business', label: '顶栏顺序重置' },
   HEADER_VISIBILITY_TOGGLE: { category: 'business', label: '顶栏条目显隐' },
   HEADER_ITEM_OPEN: { category: 'business', label: '打开顶栏工具' },
-  PLUGIN_MANAGE_OPEN: { category: 'business', label: '打开插件管理' },
   PLUGIN_TOGGLE: { category: 'business', label: '插件启停' },
   PLUGIN_INSTALL: { category: 'business', label: '安装插件' },
   PLUGIN_INSTALL_OPEN: { category: 'business', label: '打开插件安装' },
@@ -116,10 +115,6 @@ export const WEBLOG_ACTIONS = {
   DATA_EXPORT_CONFIRM: { category: 'business', label: '执行数据导出' },
   DATA_IMPORT_OPEN: { category: 'business', label: '选择导入文件' },
   DATA_IMPORT_CONFIRM: { category: 'business', label: '执行数据导入' },
-  WATCH_WIDGET_POWER_OFF: { category: 'business', label: '任务栏小组件：关闭' },
-  WATCH_WIDGET_POWER_ALWAYS: { category: 'business', label: '任务栏小组件：常驻' },
-  WATCH_WIDGET_POWER_SMART: { category: 'business', label: '任务栏小组件：智能开启' },
-  WATCH_WIDGET_GOTO_PLUGIN_LAB: { category: 'business', label: '任务栏小组件：去插件工坊' },
   LAUNCH_AT_STARTUP_TOGGLE: { category: 'business', label: '开机自动启动开关' },
 
   // ---------- 系统事件 ----------

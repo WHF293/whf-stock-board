@@ -105,6 +105,14 @@ interface QuoteDigest extends QuoteTableRow {
   volume: number;
   /** 行情时间（原始字符串） */
   time: string;
+  /** 市盈率 TTM（倍；缺失 null） */
+  pe: number | null;
+  /** 市净率（倍；缺失 null） */
+  pb: number | null;
+  /** 总市值（亿；缺失 null） */
+  totalMarketCap: number | null;
+  /** 流通市值（亿；缺失 null） */
+  circulatingMarketCap: number | null;
 }
 
 /**
@@ -125,6 +133,14 @@ const toDigest = (q: Record<string, unknown>): QuoteDigest => ({
   volume: Number(q.volume ?? 0),
   amount: Number(q.amount ?? 0),
   turnoverRate: q.turnoverRate === undefined || q.turnoverRate === null ? null : Number(q.turnoverRate),
+  pe: q.pe === undefined || q.pe === null ? null : Number(q.pe),
+  pb: q.pb === undefined || q.pb === null ? null : Number(q.pb),
+  totalMarketCap:
+    q.totalMarketCap === undefined || q.totalMarketCap === null ? null : Number(q.totalMarketCap),
+  circulatingMarketCap:
+    q.circulatingMarketCap === undefined || q.circulatingMarketCap === null
+      ? null
+      : Number(q.circulatingMarketCap),
   time: String(q.time ?? ''),
 });
 
@@ -145,7 +161,7 @@ export const STOCK_SDK_MCP_SERVER: BuiltinMcpServer = {
     entry({
       name: 'get_quotes',
       description:
-        '批量获取 A 股实时行情快照（价格/涨跌幅/开高低收/成交量额/换手率）。symbols 支持 600519 / sh600519 / SH600519 等形态',
+        '批量获取 A 股实时行情快照（价格/涨跌幅/开高低收/成交量额/换手率/市盈率TTM/市净率/总市值与流通市值）。symbols 支持 600519 / sh600519 / SH600519 等形态',
       schema: z.object({
         symbols: z.array(z.string()).min(1).max(50).describe('股票代码列表（≤50 只）'),
       }),
