@@ -288,6 +288,39 @@ const AGENT_DB_V3: &str = "
 ALTER TABLE subagent ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1;
 ";
 
+/// agent.db v4：定时任务（Agent 分析）
+///
+/// 每条任务绑定一个专属会话（session_id），到期由前端心跳触发执行，
+/// 执行过程（用户 prompt + agent 回答 + 工具卡）全部落在该会话的 chat_message 里。
+///
+/// 口径说明：
+/// - schedule_type：'daily'（每天）/ 'weekly'（每周；weekday 0-6，0=周日，仅此类型有值）；
+/// - duration_key：有效期档位（'1w' | '1m' | '3m' | '6m'），expires_at 由前端按创建时刻
+///   + 档位折算落库（毫秒时间戳），到期后心跳跳过、UI 标灰；执行期不校验过期回拨；
+/// - **session_id 不设外键**：任务会话被用户手动删除时不阻塞删除，心跳执行前校验
+///   会话存在性，不存在则自动禁用任务并记 last_run_status='session_missing'；
+/// - last_run_at 同一分钟去重由前端保证（写库先于执行，见 stores/schedule.ts）。
+const AGENT_DB_V4: &str = "
+CREATE TABLE agent_schedule (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  name            TEXT    NOT NULL,
+  prompt          TEXT    NOT NULL,
+  session_id      INTEGER NOT NULL,
+  schedule_type   TEXT    NOT NULL,
+  hour            INTEGER NOT NULL,
+  minute          INTEGER NOT NULL,
+  weekday         INTEGER,
+  duration_key    TEXT    NOT NULL DEFAULT '1m',
+  expires_at      INTEGER,
+  enabled         INTEGER NOT NULL DEFAULT 1,
+  last_run_at     INTEGER,
+  last_run_status TEXT,
+  created_at      INTEGER NOT NULL,
+  updated_at      INTEGER NOT NULL
+);
+CREATE INDEX idx_schedule_enabled ON agent_schedule(enabled);
+";
+
 /// agent.db 全部迁移（后续版本往后追加，勿改动已有版本）
 fn agent_db_migrations() -> Vec<Migration> {
   vec![
@@ -307,6 +340,12 @@ fn agent_db_migrations() -> Vec<Migration> {
       version: 3,
       description: "add_subagent_enabled",
       sql: AGENT_DB_V3,
+      kind: MigrationKind::Up,
+    },
+    Migration {
+      version: 4,
+      description: "create_agent_schedule",
+      sql: AGENT_DB_V4,
       kind: MigrationKind::Up,
     },
   ]

@@ -17,6 +17,8 @@ import SessionTree from './SessionTree.vue';
 const emit = defineEmits<{
   /** 点击管理入口，key 标识目标弹窗 */
   (e: 'open-manager', key: AgentManagerKey): void;
+  /** 点击「定时任务」入口：右区切换为定时任务管理视图 */
+  (e: 'open-schedule'): void;
 }>();
 
 const store = useAgentStore();
@@ -82,6 +84,15 @@ const onNewChat = (): void => {
         </button>
         <button
           type="button"
+          class="pressable rounded-lg p-2 text-text-tertiary transition-colors hover:bg-flat-weak hover:text-text"
+          title="定时任务"
+          aria-label="定时任务"
+          @click="emit('open-schedule')"
+        >
+          <MenuIcon name="bell" :size="18" />
+        </button>
+        <button
+          type="button"
           class="pressable mt-2 rounded-lg p-2 text-text-tertiary transition-colors hover:bg-flat-weak hover:text-text"
           title="新建分组"
           aria-label="新建分组"
@@ -134,6 +145,14 @@ const onNewChat = (): void => {
           >
             {{ BADGE_BY_KEY[entry.key] }}
           </span>
+        </button>
+        <button
+          type="button"
+          class="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-text-secondary transition-colors hover:bg-flat-weak hover:text-text"
+          @click="emit('open-schedule')"
+        >
+          <MenuIcon name="bell" :size="16" class="text-text-tertiary" />
+          <span class="flex-1 text-left">定时任务</span>
         </button>
       </nav>
 

@@ -2,10 +2,9 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import type { StructuredToolInterface } from '@langchain/core/tools';
 import { useAgentStore } from '@/stores/agent';
-import { useSettingsStore } from '@/stores/settings';
 import {
   WELCOME_SCENES,
-  AGENT_MODES,
+  QUICK_PROMPTS,
   CHAT_INPUT_MIN_ROWS,
   CHAT_INPUT_MAX_ROWS,
   SESSION_DEFAULT_TITLE,
@@ -16,8 +15,9 @@ import { SmoothStreamer } from '@/agent/smooth-streamer';
 import { startAgentRun, type AgentRunHandle, type HistoryMessage } from '@/agent/create-agent';
 import { buildRunContext, type RunContext } from '@/agent/run-context';
 import { getMcpRuntime } from '@/agent/mcp/registry';
-import { MCP_UI_PAYLOAD_MAX_BYTES } from '@/agent/mcp/constants';
 import { resolveInputHeight } from '@/utils/chat-input-height';
+import { upsertToolPart } from '@/utils/upsert-tool-part';
+import { guardUiPayload } from '@/utils/guard-ui-payload';
 import type { ChatMessage, MessageStatus, SubagentDef, ToolCallPart } from '@/types/agent.types';
 import type { AgentManagerKey } from '@/types/agent.types';
 import MenuIcon from '@/components/ui/MenuIcon.vue';
@@ -32,7 +32,6 @@ import ToolCallCard from './ToolCallCard.vue';
  * - 思考中：消息 running 且尚无可见文本 → spinner + 耗时；停止按钮可中断。
  */
 const store = useAgentStore();
-const settings = useSettingsStore();
 
 const emit = defineEmits<{
   /** 请求打开管理弹窗（模型徽标点击等） */
@@ -57,6 +56,21 @@ const loadMessages = async (sessionId: number): Promise<void> => {
   if (messagesBySession[sessionId]) return;
   messagesBySession[sessionId] = await listMessages(sessionId);
 };
+
+/**
+ * 强制重读某会话消息（缓存失效重建）
+ *
+ * 旁路写入方（定时任务执行器在任务会话里落库）完成后的刷新入口：
+ * 缓存命中守卫会让常规切换读不到新消息，宿主跳转任务会话时必须显式调它。
+ *
+ * @param sessionId 会话 id
+ */
+const reloadSession = async (sessionId: number): Promise<void> => {
+  delete messagesBySession[sessionId];
+  await loadMessages(sessionId);
+};
+
+defineExpose({ reloadSession });
 
 watch(
   () => store.currentSessionId,
@@ -86,19 +100,11 @@ const currentProfile = computed(() => store.activeProfile);
  */
 const currentModel = computed(() => store.effectiveModel);
 
-/** 是否专业模式（仅金融领域；对应设置项 agentStockOnly） */
-const stockOnly = computed(() => settings.agentStockOnly);
-
-/** 当前模式定义（分段控件高亮 + 右侧说明文案的数据源） */
-const activeMode = computed(
-  () => AGENT_MODES.find((mode) => mode.stockOnly === stockOnly.value) ?? AGENT_MODES[0],
-);
-
 /**
  * 当前 Agent 配置是否自定义了系统提示词
  *
- * 有值时内置提示词会被整体替换，模式开关只剩「追加金融边界」这一层作用，
- * UI 必须显式说明，否则用户会以为开关失灵（这正是改造前的老问题）。
+ * 有值时内置提示词会被整体替换，金融边界只剩「自动追加 STOCK_ONLY_GUARD」这一层兜底，
+ * UI 必须显式说明，否则用户会以为自定义提示词绕过了专业模式约束。
  */
 const hasCustomPrompt = computed(() => Boolean(currentProfile.value?.systemPrompt?.trim()));
 
@@ -155,47 +161,10 @@ const toolCards = (msg: ChatMessage): ToolCallPart[] =>
   (msg.parts ?? []).filter((part): part is ToolCallPart => part.type === 'tool_call');
 
 /**
- * 工具卡 upsert（流式提前信号与运行时事件共用，按 callId 配对）
- * @param list 目标消息的 parts 数组
- * @param patch 写入字段（callId + toolName 为必需，其余增量覆盖）
- * @returns 该调用对应的卡片块
+ * 工具卡 upsert（流式提前信号与运行时事件共用，按 callId 配对）→ 见 utils/upsert-tool-part.ts
+ * UI 载荷体积守卫（超限丢弃、卡片退化纯文本）→ 见 utils/guard-ui-payload.ts
+ * 两份实现抽到 utils：对话流与定时任务执行链路（schedule-runner）共用，避免行为漂移。
  */
-const upsertToolPart = (
-  list: ToolCallPart[],
-  patch: Partial<ToolCallPart> & { callId: string; toolName: string },
-): ToolCallPart => {
-  const existing = list.find((part) => part.callId === patch.callId);
-  if (existing) {
-    Object.assign(existing, patch);
-    return existing;
-  }
-  const created: ToolCallPart = {
-    type: 'tool_call',
-    callId: patch.callId,
-    toolName: patch.toolName,
-    serverKey: patch.serverKey,
-    state: patch.state ?? 'running',
-    argsText: patch.argsText ?? '',
-    resultText: patch.resultText,
-    durationMs: patch.durationMs,
-    ui: patch.ui,
-  };
-  list.push(created);
-  return created;
-};
-
-/**
- * UI 载荷体积守卫：超限时只保留资源地址（卡片退化为文本形态），避免消息表膨胀
- * @param payload 工具结构化结果
- * @returns 可持久化的载荷；超限或不可序列化返回 null
- */
-const guardPayload = (payload: Record<string, unknown>): Record<string, unknown> | null => {
-  try {
-    return JSON.stringify(payload).length > MCP_UI_PAYLOAD_MAX_BYTES ? null : payload;
-  } catch {
-    return null;
-  }
-};
 
 /* --------------------------------- 运行注册表 ------------------------------- */
 
@@ -376,7 +345,7 @@ const send = async (): Promise<void> => {
         resultText: event.resultText,
         durationMs: event.durationMs,
         ...(event.ui
-          ? { ui: { resourceUri: event.ui.resourceUri, payload: guardPayload(event.ui.payload) ?? {} } }
+          ? { ui: { resourceUri: event.ui.resourceUri, payload: guardUiPayload(event.ui.payload) ?? {} } }
           : {}),
       });
     },
@@ -414,9 +383,9 @@ const send = async (): Promise<void> => {
     handle: startAgentRun(
       {
         model,
-        // 模式开关是硬边界：Agent 配置自定义了提示词时，专业模式下强制追加金融边界，
+        // 专业模式是唯一模式：Agent 配置自定义了提示词时强制追加金融边界，
         // 不允许自定义提示词把「仅金融」这条约束顶掉（详见 utils/agent-prompt.ts）
-        systemPrompt: resolveAgentSystemPrompt(profile?.systemPrompt, stockOnly.value),
+        systemPrompt: resolveAgentSystemPrompt(profile?.systemPrompt),
         history,
         message: userContent,
         subagents: runContext.subagents,
@@ -468,13 +437,14 @@ const stop = (): void => {
 };
 
 /**
- * MCP App 的 `ui/message`：把 App 里点出来的追问交给 Agent
+ * 一键追问 Agent：把一段文本交给对话流
  *
- * 运行中只预填（不打断当前运行），空闲则直接发送——与场景 chips 的交互一致。
+ * 空闲直接发送；运行中只预填（不打断当前运行）。快捷分析按钮与 MCP App 的
+ * `ui/message` 追问共用此语义。
  *
- * @param text App 发起的追问文本
+ * @param text 追问文本（前后空白会被裁掉，纯空白忽略）
  */
-const onAppAsk = (text: string): void => {
+const askAgent = (text: string): void => {
   const content = text.trim();
   if (!content) return;
   draft.value = content;
@@ -483,6 +453,15 @@ const onAppAsk = (text: string): void => {
     return;
   }
   void send();
+};
+
+/**
+ * MCP App 的 `ui/message`：把 App 里点出来的追问交给 Agent（见 askAgent）
+ *
+ * @param text App 发起的追问文本
+ */
+const onAppAsk = (text: string): void => {
+  askAgent(text);
 };
 
 /* --------------------------------- 滚动与渲染 ------------------------------- */
@@ -646,32 +625,27 @@ const showWelcome = computed(() => messages.value.length === 0);
       </p>
     </div>
 
-    <!-- 模式切换：专业模式（仅金融）/ 日常模式（不限话题）——决定系统提示词与问答边界 -->
-    <div class="mx-auto flex w-full max-w-3xl shrink-0 flex-wrap items-center gap-x-2.5 gap-y-1 px-6">
-      <div class="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-flat-weak p-0.5">
+    <!-- 专业模式说明：仅当 Agent 配置自带提示词时提示金融边界由代码兜底 -->
+    <div v-if="hasCustomPrompt" class="mx-auto w-full max-w-3xl shrink-0 px-6">
+      <span class="block truncate text-xs text-text-tertiary">
+        当前配置「{{ currentProfile?.name }}」自带提示词，已自动叠加金融领域边界（仅回答金融 / 股票相关问题）
+      </span>
+    </div>
+
+    <!-- 快捷分析按钮：一键发送（agent 运行中点击则填入输入框，不打断当前回答） -->
+    <div v-if="!showWelcome" class="mx-auto w-full max-w-3xl shrink-0 px-6 pt-1">
+      <div class="flex flex-wrap gap-1.5">
         <button
-          v-for="mode in AGENT_MODES"
-          :key="mode.label"
+          v-for="quick in QUICK_PROMPTS"
+          :key="quick.label"
           type="button"
-          class="rounded-full px-3 py-1 text-xs font-medium transition-colors"
-          :class="
-            stockOnly === mode.stockOnly
-              ? 'bg-surface text-primary shadow-sm'
-              : 'text-text-tertiary hover:text-text'
-          "
-          :aria-pressed="stockOnly === mode.stockOnly"
-          @click="settings.setAgentStockOnly(mode.stockOnly)"
+          class="rounded-full border border-flat-weak bg-surface px-3 py-1 text-xs text-text-secondary transition-colors hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
+          :disabled="!currentModel"
+          @click="askAgent(quick.prompt)"
         >
-          {{ mode.label }}
+          {{ quick.label }}
         </button>
       </div>
-      <span class="min-w-0 flex-1 truncate text-xs text-text-tertiary">
-        {{ activeMode.hint }}
-        <template v-if="hasCustomPrompt">
-          · 当前配置「{{ currentProfile?.name }}」自带提示词
-          <template v-if="stockOnly">（已自动叠加金融边界）</template>
-        </template>
-      </span>
     </div>
 
     <!-- 输入区（胶囊，悬浮于底部） -->
