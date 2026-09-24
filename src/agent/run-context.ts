@@ -24,6 +24,12 @@
  * 3. **profile 里的 mcpIds / skillIds 不参与装配。**
  *    它们是历史字段（当时资源没有 id），现在授权只有一个事实源即 resource_grant；
  *    再读它们就会出现「两处都能勾、两处不一致」的经典问题。
+ *
+ * 4. **对话级强制包含（forced）只放宽授权，不放宽启停。**
+ *    输入框 + 菜单显式勾选的资源以 `forcedMcpIds` / `forcedSkillIds` 传入：
+ *    绕过 scope/grant 判定（用户显式选择 > 配置层授权），但停用的资源压根不进
+ *    server 分组 / 不装载，勾了也无效。forced MCP 只并入主 agent；forced skill
+ *    只进主 agent 的声明列表——子 agent 各自的工具与 skill 口径不变。
  */
 import type { StructuredToolInterface } from '@langchain/core/tools';
 import type { McpRuntime, McpToolEventSink } from '@/agent/mcp/types';
@@ -51,6 +57,18 @@ export interface BuildRunContextParams {
   subagents: readonly SubagentDef[];
   /** DB 里的用户 skill 列表（用于读盘装载） */
   userSkills: readonly Skill[];
+  /**
+   * 对话级强制包含的 MCP server 资源 id（输入框 + 菜单显式勾选）
+   *
+   * 绕过 scope/grant 判定（用户显式选择 > 配置层授权），但**不绕过 enabled**——
+   * 停用的服务器不进 server 分组，勾了也无效。只并入主 agent，不扩给子 agent。
+   */
+  forcedMcpIds?: readonly number[];
+  /**
+   * 对话级强制包含的 skill 资源 id（同上；只进主 agent 的声明列表，
+   * 子 agent 的 skillNames 仍按其自身授权收敛）
+   */
+  forcedSkillIds?: readonly number[];
 }
 
 /** 一次运行可用的资源全集（直接喂给 startAgentRun） */
@@ -104,6 +122,9 @@ const open = (
  */
 export const buildRunContext = async (params: BuildRunContextParams): Promise<RunContext> => {
   const { runtime, sink, userSkills } = params;
+  /** 对话级强制包含（+ 菜单勾选）的 MCP / skill 资源 id 集合 */
+  const forcedMcp = new Set(params.forcedMcpIds ?? []);
+  const forcedSkill = new Set(params.forcedSkillIds ?? []);
 
   // --- 授权上下文（读库失败 → 空范围 + 空授权 = 全部开放，与旧行为对齐） ---
   let ctx: AccessContext = { scopes: new Map(), grants: new Map() };
@@ -131,7 +152,11 @@ export const buildRunContext = async (params: BuildRunContextParams): Promise<Ru
   }
   for (const group of groups) {
     const groupTools = group.tools as StructuredToolInterface[];
-    if (open(ctx, 'mcp', group.resourceId, 'main', MAIN_AGENT_ID)) {
+    // forced：对话级强制包含只并入主 agent；子 agent 的工具仍按其自身授权
+    if (
+      forcedMcp.has(group.resourceId) ||
+      open(ctx, 'mcp', group.resourceId, 'main', MAIN_AGENT_ID)
+    ) {
       tools.push(...groupTools);
     }
     for (const subagent of subagents) {
@@ -149,7 +174,9 @@ export const buildRunContext = async (params: BuildRunContextParams): Promise<Ru
   const visibleToSubagent = new Map<number, Set<string>>();
 
   for (const skill of loaded) {
-    const mainOk = open(ctx, 'skill', skill.resourceId, 'main', MAIN_AGENT_ID);
+    // forced：对话级强制包含只给主 agent 声明（虚拟文件并集随 anyone 自动覆盖）
+    const forced = forcedSkill.has(skill.resourceId);
+    const mainOk = forced || open(ctx, 'skill', skill.resourceId, 'main', MAIN_AGENT_ID);
     if (mainOk) mainSkillNames.push(skill.source.name);
     let anyone = mainOk;
     for (const subagent of subagents) {

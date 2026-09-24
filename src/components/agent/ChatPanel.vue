@@ -7,6 +7,8 @@ import {
   QUICK_PROMPTS,
   CHAT_INPUT_MIN_ROWS,
   CHAT_INPUT_MAX_ROWS,
+  CHAT_IMAGE_MAX_COUNT,
+  CHAT_IMAGE_HISTORY_CARRY,
   SESSION_DEFAULT_TITLE,
 } from '@/constants/agent.constants';
 import { listMessages, insertMessage, updateMessage, insertUsage } from '@/composables/use-agent-db';
@@ -17,27 +19,39 @@ import { NOTIFY_TONE, NOTIFY_QUICK_TIMEOUT_MS } from '@/constants/notify.constan
 import { SmoothStreamer } from '@/agent/smooth-streamer';
 import { startAgentRun, type AgentRunHandle, type HistoryMessage } from '@/agent/create-agent';
 import { buildRunContext, type RunContext } from '@/agent/run-context';
-import { getMcpRuntime } from '@/agent/mcp/registry';
+import { getMcpRuntime, listBuiltinMcpServers } from '@/agent/mcp/registry';
+import { BUILTIN_SKILLS } from '@/constants/builtin-skills';
 import { resolveInputHeight } from '@/utils/chat-input-height';
+import { compressImageToDataUrl } from '@/utils/compress-image-to-data-url';
 import { upsertToolPart } from '@/utils/upsert-tool-part';
 import { guardUiPayload } from '@/utils/guard-ui-payload';
 import type { ChatMessage, MessageStatus, SubagentDef, ToolCallPart } from '@/types/agent.types';
-import type { AgentManagerKey } from '@/types/agent.types';
+import type {
+  AgentManagerKey,
+  ComposerResourceKind,
+  ComposerResourceOption,
+  ImagePart,
+  ModelConfig,
+} from '@/types/agent.types';
 import MenuIcon from '@/components/ui/MenuIcon.vue';
 import ToolCallCard from './ToolCallCard.vue';
+import ComposerModelMenu from './ComposerModelMenu.vue';
+import ComposerResourceMenu from './ComposerResourceMenu.vue';
 
 /**
  * Agent 聊天区（方案 §6.2 / §5.3.1）
  *
  * - 无消息 → 欢迎态（问候 + 场景 chips + 胶囊输入框）；有消息 → 消息流；
  * - 发送：未建会话先建会话；用户消息与助手消息均落库；
+ * - 输入框底栏：+ 级联选择器（对话级强制包含 skill/MCP/子代理，发送后保留、
+ *   切会话清空）+ 模型切换下拉（有会话绑定会话 / 无会话设默认）+ 发送/停止；
  * - 流式：运行时增量进 SmoothStreamer，统一消费循环（~30ms）匀速渲染打字机；
  * - 思考中：消息 running 且尚无可见文本 → spinner + 耗时；停止按钮可中断。
  */
 const store = useAgentStore();
 
 const emit = defineEmits<{
-  /** 请求打开管理弹窗（模型徽标点击等） */
+  /** 请求打开管理弹窗（未配置模型时发送引导跳转） */
   (e: 'open-manager', key: AgentManagerKey): void;
 }>();
 
@@ -102,6 +116,222 @@ const currentProfile = computed(() => store.activeProfile);
  * 所以请求用的模型必须由 store 统一给出，避免两处口径不一致。
  */
 const currentModel = computed(() => store.effectiveModel);
+
+/* --------------------------- 对话级强制包含（+ 菜单） --------------------------- */
+
+/**
+ * 对话级强制包含的资源（输入框 + 菜单勾选）
+ *
+ * 语义见 agent/run-context.ts §4：绕过 scope/grant 授权判定（用户显式选择 >
+ * 配置层授权），但停用的资源不在选项列表、勾了也无效。发送后保留，切换会话清空。
+ */
+/** 强制进主 agent 的技能 */
+const selectedSkillIds = ref<number[]>([]);
+/** 强制并入主 agent 的 MCP（不扩给子 agent） */
+const selectedMcpIds = ref<number[]>([]);
+/** 追加参与编排的子代理（发送时与 Agent 配置 subagentIds 取并集） */
+const selectedSubagentIds = ref<number[]>([]);
+
+/** + 菜单技能可选项：内置 skill（随内置启停过滤）在前、用户 skill（enabled）在后 */
+const skillOptions = computed<ComposerResourceOption[]>(() => [
+  ...BUILTIN_SKILLS.filter((skill) => store.isBuiltinEnabled('skill', skill.id)).map((skill) => ({
+    id: skill.id,
+    name: skill.name,
+    description: skill.description,
+  })),
+  ...store.skills
+    .filter((skill) => skill.enabled)
+    .map((skill) => ({ id: skill.id, name: skill.name, description: skill.description ?? '' })),
+]);
+
+/** + 菜单 MCP 可选项：内置（随启停过滤）在前、远端（enabled）在后 */
+const mcpOptions = computed<ComposerResourceOption[]>(() => [
+  ...listBuiltinMcpServers()
+    .filter((server) => store.isBuiltinEnabled('mcp', server.id))
+    .map((server) => ({ id: server.id, name: server.name, description: server.description })),
+  ...store.mcps
+    .filter((mcp) => mcp.enabled)
+    .map((mcp) => ({ id: mcp.id, name: mcp.name, description: mcp.url })),
+]);
+
+/** + 菜单子代理可选项（enabled；store.subagents 已合并内置项的启停状态） */
+const subagentOptions = computed<ComposerResourceOption[]>(() =>
+  store.subagents
+    .filter((subagent) => subagent.enabled)
+    .map((subagent) => ({ id: subagent.id, name: subagent.name, description: subagent.description })),
+);
+
+/** 选中资源 chips（输入框内 textarea 下方；图标区分类别，× 移除） */
+const selectedChips = computed<
+  Array<{ kind: ComposerResourceKind; id: number; name: string; icon: string }>
+>(() => {
+  const chips: Array<{ kind: ComposerResourceKind; id: number; name: string; icon: string }> = [];
+  for (const id of selectedSkillIds.value) {
+    const option = skillOptions.value.find((item) => item.id === id);
+    if (option) chips.push({ kind: 'skill', id, name: option.name, icon: 'book' });
+  }
+  for (const id of selectedMcpIds.value) {
+    const option = mcpOptions.value.find((item) => item.id === id);
+    if (option) chips.push({ kind: 'mcp', id, name: option.name, icon: 'plug' });
+  }
+  for (const id of selectedSubagentIds.value) {
+    const option = subagentOptions.value.find((item) => item.id === id);
+    if (option) chips.push({ kind: 'subagent', id, name: option.name, icon: 'agent' });
+  }
+  return chips;
+});
+
+/**
+ * 切换勾选（+ 菜单与 chips 的 × 共用）
+ * @param kind 类别
+ * @param id 资源 id
+ */
+const toggleSelection = (kind: ComposerResourceKind, id: number): void => {
+  if (kind === 'skill') {
+    selectedSkillIds.value = selectedSkillIds.value.includes(id)
+      ? selectedSkillIds.value.filter((value) => value !== id)
+      : [...selectedSkillIds.value, id];
+    return;
+  }
+  if (kind === 'mcp') {
+    selectedMcpIds.value = selectedMcpIds.value.includes(id)
+      ? selectedMcpIds.value.filter((value) => value !== id)
+      : [...selectedMcpIds.value, id];
+    return;
+  }
+  selectedSubagentIds.value = selectedSubagentIds.value.includes(id)
+    ? selectedSubagentIds.value.filter((value) => value !== id)
+    : [...selectedSubagentIds.value, id];
+};
+
+/**
+ * 模型下拉选择：有会话 = 绑定会话；无会话 = 设为默认模型（语义见 store.setSessionModel）
+ * @param model 选中的模型
+ */
+const onModelSelect = (model: ModelConfig): void => {
+  void store.setSessionModel(model.id);
+};
+
+/* ------------------------------- 对话附图（多模态） ------------------------------ */
+
+/** 本条消息待发附图（base64 dataURL；发送后清空，随文本草稿共享、不按会话隔离） */
+const pendingImages = ref<string[]>([]);
+
+/** 隐藏的文件选择 input（附件按钮触发；WebView2 原生支持 file input） */
+const fileInputRef = ref<HTMLInputElement | null>(null);
+
+/** 当前生效模型是否开启图片输入（模型配置层能力开关的唯一消费点） */
+const supportsImage = computed(() => currentModel.value?.supportsImage === true);
+
+/**
+ * 取消息里的附图 dataURL 列表（用户气泡渲染与历史重建共用）
+ * @param msg 消息
+ * @returns 附图 dataURL 数组（无图 = 空数组）
+ */
+const userImages = (msg: ChatMessage): string[] =>
+  (msg.parts ?? [])
+    .filter((part): part is ImagePart => part.type === 'image')
+    .map((part) => part.dataUrl);
+
+/**
+ * 追加待发附图（粘贴 / 拖拽 / 文件选择三入口共用）
+ *
+ * 能力门控在此统一拦：模型未开启图片输入时 toast 提示（入口按钮已 disabled，
+ * 但粘贴 / 拖拽绕不过按钮，必须在这里兜住）。
+ *
+ * @param files 用户提供的图片文件列表
+ */
+const addImageFiles = async (files: File[]): Promise<void> => {
+  if (files.length === 0) return;
+  if (!supportsImage.value) {
+    notifications.push({
+      title: '当前模型未开启图片输入',
+      body: '可在 Model 管理中开启「图片输入」或切换模型',
+      tone: NOTIFY_TONE.UP,
+      timeoutMs: NOTIFY_QUICK_TIMEOUT_MS,
+    });
+    return;
+  }
+  const room = CHAT_IMAGE_MAX_COUNT - pendingImages.value.length;
+  if (files.length > room) {
+    notifications.push({
+      title: `一次最多附 ${CHAT_IMAGE_MAX_COUNT} 张图`,
+      tone: NOTIFY_TONE.UP,
+      timeoutMs: NOTIFY_QUICK_TIMEOUT_MS,
+    });
+  }
+  for (const file of files.slice(0, Math.max(0, room))) {
+    try {
+      pendingImages.value.push(await compressImageToDataUrl(file));
+    } catch (error) {
+      notifications.push({
+        title: '图片处理失败，已跳过',
+        body: error instanceof Error ? error.message : String(error),
+        tone: NOTIFY_TONE.UP,
+        timeoutMs: NOTIFY_QUICK_TIMEOUT_MS,
+      });
+    }
+  }
+};
+
+/** 打开文件选择器（只挑图片、可多选） */
+const openImagePicker = (): void => {
+  fileInputRef.value?.click();
+};
+
+/**
+ * 文件选择变化 → 追加附图并复位 input（同一文件可再次选择）
+ * @param event change 事件
+ */
+const onFileChange = (event: Event): void => {
+  const input = event.target as HTMLInputElement;
+  void addImageFiles([...(input.files ?? [])]);
+  input.value = '';
+};
+
+/**
+ * 粘贴截图 → 附图（只在剪贴板里有图片时拦截默认行为，不影响文本粘贴）
+ * @param event paste 事件
+ */
+const onPaste = (event: ClipboardEvent): void => {
+  const files = [...(event.clipboardData?.items ?? [])]
+    .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+    .map((item) => item.getAsFile())
+    .filter((file): file is File => file !== null);
+  if (files.length === 0) return;
+  event.preventDefault();
+  void addImageFiles(files);
+};
+
+/**
+ * 拖拽图片文件到输入区 → 附图（容器上已 @dragover.prevent 防浏览器打开图片）
+ * @param event drop 事件
+ */
+const onDrop = (event: DragEvent): void => {
+  const files = [...(event.dataTransfer?.files ?? [])].filter((file) =>
+    file.type.startsWith('image/'),
+  );
+  if (files.length === 0) return;
+  void addImageFiles(files);
+};
+
+/**
+ * 移除待发附图
+ * @param index 缩略图下标
+ */
+const removeImage = (index: number): void => {
+  pendingImages.value.splice(index, 1);
+};
+
+// 切换会话清空对话级强制包含（与消息缓存加载互不影响，各自独立 watch）
+watch(
+  () => store.currentSessionId,
+  () => {
+    selectedSkillIds.value = [];
+    selectedMcpIds.value = [];
+    selectedSubagentIds.value = [];
+  },
+);
 
 /**
  * 当前 Agent 配置是否自定义了系统提示词
@@ -243,18 +473,28 @@ const finalizeRun = (run: ActiveRun): void => {
 };
 
 /**
- * 发送消息
+ * 发送消息（文本与附图至少其一；纯图消息文本可为空）
  */
 const send = async (): Promise<void> => {
   const text = draft.value.trim();
-  if (!text || isRunning.value) return;
+  const images = [...pendingImages.value];
+  if ((!text && images.length === 0) || isRunning.value) return;
 
   if (!currentModel.value) {
     sendHint.value = '尚未配置模型：请先在 Model 管理中添加并设为默认';
     emit('open-manager', 'model');
     return;
   }
+  if (images.length > 0 && !supportsImage.value) {
+    sendHint.value = '当前模型未开启图片输入：请在 Model 管理中开启「图片输入」或切换模型';
+    return;
+  }
   sendHint.value = '';
+
+  // 对话级强制包含快照：无会话时发送会新建会话（触发切换 watch 清空选择），先取值再动会话
+  const forcedSkillIds = [...selectedSkillIds.value];
+  const forcedMcpIds = [...selectedMcpIds.value];
+  const forcedSubagentIds = [...selectedSubagentIds.value];
 
   // 未建会话先建
   let sessionId = store.currentSessionId;
@@ -265,15 +505,22 @@ const send = async (): Promise<void> => {
   const list = messagesBySession[sessionId] ?? [];
   messagesBySession[sessionId] = list;
 
-  // 用户消息落库 + 上屏
+  // 用户消息落库 + 上屏（附图在 parts 里，content 只存文本；纯图消息 content 为空串）
   const userContent = text;
+  const imageParts: ImagePart[] = images.map((dataUrl) => ({ type: 'image', dataUrl }));
   draft.value = '';
+  pendingImages.value = [];
   const userMsg: ChatMessage = {
-    id: await insertMessage({ sessionId, role: 'user', content: userContent }),
+    id: await insertMessage({
+      sessionId,
+      role: 'user',
+      content: userContent,
+      parts: imageParts.length > 0 ? imageParts : null,
+    }),
     sessionId,
     role: 'user',
     content: userContent,
-    parts: null,
+    parts: imageParts.length > 0 ? imageParts : null,
     status: 'done',
     error: null,
     createdAt: Date.now(),
@@ -302,11 +549,19 @@ const send = async (): Promise<void> => {
   list.push(assistantMsg);
   autoscroll();
 
-  // 历史窗口（最近 30 条已完成消息，排除本次）
-  const history: HistoryMessage[] = list
+  // 历史窗口（最近 30 条已完成消息，排除本次；附图只随最近 N 条用户消息携带，
+  // 图片块按原样计 token，全量带图极易超上下文——见 CHAT_IMAGE_HISTORY_CARRY）
+  const recent = list
     .filter((m) => m.id !== assistantMsg.id && (m.status === 'done' || m.status === 'stopped'))
-    .slice(-30)
-    .map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content }));
+    .slice(-30);
+  const imageCarryFrom = recent.length - CHAT_IMAGE_HISTORY_CARRY;
+  const history: HistoryMessage[] = recent.map((m, index) => ({
+    role: m.role === 'user' ? 'user' : 'assistant',
+    content: m.content,
+    ...(m.role === 'user' && index >= imageCarryFrom && userImages(m).length > 0
+      ? { images: userImages(m) }
+      : {}),
+  }));
 
   const model = currentModel.value;
   const profile = currentProfile.value;
@@ -354,8 +609,12 @@ const send = async (): Promise<void> => {
     },
   };
 
-  // 本次参与编排的子 agent（profile.subagentIds 有序；内置 + 用户，失效 id 容错忽略）
-  const subagents = (profile?.subagentIds ?? [])
+  // 本次参与编排的子 agent：Agent 配置 subagentIds ∪ 对话级勾选（配置在前保序、去重；
+  // 内置 + 用户，失效 id 容错忽略；停用项由 buildRunContext 再过滤一遍）
+  const subagentIds = [...(profile?.subagentIds ?? []), ...forcedSubagentIds].filter(
+    (id, index, arr) => arr.indexOf(id) === index,
+  );
+  const subagents = subagentIds
     .map((id) => store.subagents.find((s) => s.id === id))
     .filter((s): s is SubagentDef => s !== undefined);
 
@@ -371,7 +630,15 @@ const send = async (): Promise<void> => {
   };
   try {
     const runtime = await getMcpRuntime();
-    runContext = await buildRunContext({ runtime, sink, subagents, userSkills: store.skills });
+    runContext = await buildRunContext({
+      runtime,
+      sink,
+      subagents,
+      userSkills: store.skills,
+      // 对话级强制包含：绕过授权判定、只并入主 agent（见 agent/run-context.ts §4）
+      forcedMcpIds,
+      forcedSkillIds,
+    });
   } catch (error) {
     console.warn(
       '[agent] 运行上下文装配失败，本次无工具与 skill：' +
@@ -391,6 +658,8 @@ const send = async (): Promise<void> => {
         systemPrompt: resolveAgentSystemPrompt(profile?.systemPrompt),
         history,
         message: userContent,
+        // 多模态：附图走 OpenAI 兼容 image_url content blocks（无图时纯文本，见 create-agent）
+        images: images.length > 0 ? images : undefined,
         subagents: runContext.subagents,
         // 主 agent 工具 + 子 agent 工具子集 + skill 声明（均由授权收敛，见 agent/run-context.ts）
         tools: runContext.tools,
@@ -463,6 +732,8 @@ const askAgent = (text: string): void => {
   const content = text.trim();
   if (!content) return;
   draft.value = content;
+  // 一键追问是自包含的快捷动作，不搭车草稿区里未发送的附图
+  pendingImages.value = [];
   if (isRunning.value) {
     void nextTick(() => inputRef.value?.focus());
     return;
@@ -535,7 +806,7 @@ const showWelcome = computed(() => messages.value.length === 0);
 
 <template>
   <div class="flex h-full min-w-0 flex-1 flex-col bg-flat-weak">
-    <!-- 顶部：侧栏开关 + 模型徽标 + 运行状态（不放标题文案，标题见左侧栏 / 欢迎页） -->
+    <!-- 顶部：侧栏开关 + 运行状态（模型选择已移至输入框底栏） -->
     <header class="flex h-12 shrink-0 items-center gap-3 bg-surface px-4">
       <button
         type="button"
@@ -546,20 +817,6 @@ const showWelcome = computed(() => messages.value.length === 0);
         <MenuIcon name="panelLeft" :size="16" />
       </button>
       <div class="min-w-0 flex-1" />
-      <button
-        type="button"
-        class="flex max-w-[18rem] items-center gap-1.5 rounded-full border border-flat-weak px-2.5 py-1 text-xs text-text-secondary transition-colors hover:border-primary hover:text-primary"
-        :title="
-          currentModel
-            ? `请求参数 model：${currentModel.modelId}\n接口地址：${currentModel.baseUrl}`
-            : '未配置模型'
-        "
-        @click="emit('open-manager', 'model')"
-      >
-        <MenuIcon name="cpu" :size="13" class="shrink-0" />
-        <span class="truncate">{{ currentModel ? currentModel.name : '未配置模型' }}</span>
-        <span v-if="currentModel" class="shrink-0 text-text-tertiary">{{ currentModel.modelId }}</span>
-      </button>
       <span
         class="h-2 w-2 rounded-full"
         :class="isRunning ? 'animate-pulse bg-primary' : 'bg-flat-weak'"
@@ -598,10 +855,22 @@ const showWelcome = computed(() => messages.value.length === 0);
       <!-- 消息列表 -->
       <div v-else class="mx-auto max-w-3xl space-y-4 px-6 py-6">
         <div v-for="msg in messages" :key="msg.id" class="group">
-          <!-- 用户消息：右侧气泡 -->
+          <!-- 用户消息：右侧气泡（文本 + 附图；纯图消息无文本行） -->
           <div v-if="msg.role === 'user'" class="flex justify-end">
             <div class="max-w-[85%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm text-on-primary">
-              <p class="whitespace-pre-wrap break-words">{{ msg.content }}</p>
+              <div
+                v-if="userImages(msg).length > 0"
+                class="mb-1.5 flex flex-wrap justify-end gap-1.5"
+              >
+                <img
+                  v-for="(src, imageIndex) in userImages(msg)"
+                  :key="imageIndex"
+                  :src="src"
+                  class="max-h-44 rounded-xl"
+                  alt="消息附图"
+                />
+              </div>
+              <p v-if="msg.content" class="whitespace-pre-wrap break-words">{{ msg.content }}</p>
             </div>
           </div>
 
@@ -694,40 +963,109 @@ const showWelcome = computed(() => messages.value.length === 0);
       </div>
     </div>
 
-    <!-- 输入区（胶囊，悬浮于底部） -->
+    <!-- 输入区（胶囊，悬浮于底部）：上行 textarea + 强制包含 chips，底栏 + / 模型 / 发送 -->
     <div class="mx-auto w-full max-w-3xl shrink-0 px-6 pb-4 pt-2">
       <div
-        class="flex items-end gap-2 rounded-3xl border border-flat-weak bg-surface px-4 py-3 shadow-sm transition-colors focus-within:border-primary"
+        class="rounded-3xl border border-flat-weak bg-surface px-4 py-3 shadow-sm transition-colors focus-within:border-primary"
+        @dragover.prevent
+        @drop.prevent="onDrop"
       >
         <textarea
           ref="inputRef"
           v-model="draft"
           :rows="CHAT_INPUT_MIN_ROWS"
-          class="flex-1 resize-none bg-transparent text-sm leading-5 text-text outline-none placeholder:text-text-tertiary"
-          placeholder="输入问题，Enter 发送，Shift+Enter 换行"
+          class="w-full resize-none bg-transparent text-sm leading-5 text-text outline-none placeholder:text-text-tertiary"
+          placeholder="输入问题，Enter 发送，Shift+Enter 换行，可粘贴 / 拖入图片"
           @keydown.enter.exact.prevent="void send()"
           @input="syncInputHeight"
+          @paste="onPaste"
         />
-        <!-- 运行中 → 停止按钮；否则发送 -->
-        <button
-          v-if="isRunning"
-          type="button"
-          class="rounded-full bg-flat-weak p-2 text-text transition-opacity hover:opacity-80"
-          aria-label="停止"
-          @click="stop"
-        >
-          <span class="block h-3 w-3 rounded-[2px] bg-current" />
-        </button>
-        <button
-          v-else
-          type="button"
-          class="rounded-full bg-primary p-2 text-on-primary transition-opacity disabled:opacity-40"
-          :disabled="!draft.trim()"
-          aria-label="发送"
-          @click="void send()"
-        >
-          <MenuIcon name="chevronRight" :size="16" />
-        </button>
+        <!-- 待发附图缩略图（粘贴 / 拖拽 / 附件按钮三入口共用；× 移除） -->
+        <div v-if="pendingImages.length > 0" class="mt-1.5 flex flex-wrap gap-1.5">
+          <div v-for="(src, index) in pendingImages" :key="index" class="relative">
+            <img :src="src" class="h-16 w-16 rounded-lg object-cover" alt="待发送图片" />
+            <button
+              type="button"
+              class="absolute -right-1.5 -top-1.5 rounded-full border border-flat-weak bg-surface p-0.5 text-text-tertiary shadow-sm transition-colors hover:text-up"
+              :aria-label="`移除第 ${index + 1} 张图`"
+              @click="removeImage(index)"
+            >
+              <MenuIcon name="close" :size="10" />
+            </button>
+          </div>
+        </div>
+        <!-- 对话级强制包含 chips（+ 菜单勾选；× 移除） -->
+        <div v-if="selectedChips.length > 0" class="mt-1.5 flex flex-wrap gap-1.5">
+          <span
+            v-for="chip in selectedChips"
+            :key="chip.kind + ':' + chip.id"
+            class="flex items-center gap-1 rounded-full bg-primary-weak py-0.5 pl-2 pr-1 text-xs text-primary"
+          >
+            <MenuIcon :name="chip.icon" :size="12" class="shrink-0" />
+            <span class="max-w-[10rem] truncate">{{ chip.name }}</span>
+            <button
+              type="button"
+              class="rounded-full p-0.5 transition-opacity hover:opacity-70"
+              :aria-label="`移除 ${chip.name}`"
+              @click="toggleSelection(chip.kind, chip.id)"
+            >
+              <MenuIcon name="close" :size="11" />
+            </button>
+          </span>
+        </div>
+        <!-- 底栏：+ 资源选择 | 弹性留白 | 模型切换 | 发送/停止 -->
+        <div class="mt-2 flex items-end gap-1.5">
+          <ComposerResourceMenu
+            :skill-options="skillOptions"
+            :mcp-options="mcpOptions"
+            :subagent-options="subagentOptions"
+            :selected-skill-ids="selectedSkillIds"
+            :selected-mcp-ids="selectedMcpIds"
+            :selected-subagent-ids="selectedSubagentIds"
+            @toggle="toggleSelection"
+          />
+          <!-- 附图入口（能力门控见 addImageFiles；粘贴 / 拖拽也可） -->
+          <input
+            ref="fileInputRef"
+            type="file"
+            accept="image/*"
+            multiple
+            class="hidden"
+            @change="onFileChange"
+          />
+          <button
+            type="button"
+            class="rounded-full bg-flat-weak p-2 text-text-tertiary transition-colors hover:bg-flat hover:text-text-secondary disabled:cursor-not-allowed disabled:opacity-40"
+            :disabled="!supportsImage"
+            :title="supportsImage ? '添加图片（支持粘贴 / 拖拽）' : '当前模型未开启图片输入（Model 管理中可开启）'"
+            aria-label="添加图片"
+            @click="openImagePicker"
+          >
+            <MenuIcon name="image" :size="15" />
+          </button>
+          <div class="min-w-0 flex-1" />
+          <ComposerModelMenu :models="store.models" :current="currentModel" @select="onModelSelect" />
+          <!-- 运行中 → 停止按钮；否则发送 -->
+          <button
+            v-if="isRunning"
+            type="button"
+            class="rounded-full bg-flat-weak p-2 text-text transition-opacity hover:opacity-80"
+            aria-label="停止"
+            @click="stop"
+          >
+            <span class="block h-3 w-3 rounded-[2px] bg-current" />
+          </button>
+          <button
+            v-else
+            type="button"
+            class="rounded-full bg-primary p-2 text-on-primary transition-opacity disabled:opacity-40"
+            :disabled="!draft.trim() && pendingImages.length === 0"
+            aria-label="发送"
+            @click="void send()"
+          >
+            <MenuIcon name="chevronRight" :size="16" />
+          </button>
+        </div>
       </div>
       <div class="mt-1.5 text-center text-xs text-text-tertiary">
         {{

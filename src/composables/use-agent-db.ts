@@ -421,6 +421,20 @@ export async function renameSession(id: number, title: string): Promise<void> {
 }
 
 /**
+ * 更新会话绑定的模型（null = 清除绑定，回落 Agent 配置 / 默认模型）
+ * @param id 会话 id
+ * @param modelId 模型 id
+ */
+export async function updateSessionModel(id: number, modelId: number | null): Promise<void> {
+  const db = await getAgentDb();
+  await db.execute('UPDATE chat_session SET model_id = $1, updated_at = $2 WHERE id = $3', [
+    modelId,
+    Date.now(),
+    id,
+  ]);
+}
+
+/**
  * 移动会话到分组（null = 未分组）
  * @param id 会话 id
  * @param groupId 目标分组 id

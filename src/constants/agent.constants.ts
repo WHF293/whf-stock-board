@@ -20,6 +20,23 @@ export const CHAT_INPUT_MIN_ROWS = 2;
 /** 聊天输入框最大行数（超出后框内滚动，不再长高） */
 export const CHAT_INPUT_MAX_ROWS = 5;
 
+/** 单条消息附图压缩后最长边（像素）——多模态模型普遍重采样到 1-2K，缩了无损语义 */
+export const CHAT_IMAGE_MAX_EDGE = 2048;
+
+/** 附图压缩 JPEG 质量（0-1） */
+export const CHAT_IMAGE_JPEG_QUALITY = 0.85;
+
+/** 单条消息附图上限（张）——防误操作批量粘贴撑爆库体积与上下文 */
+export const CHAT_IMAGE_MAX_COUNT = 6;
+
+/**
+ * 历史消息携带附图的条数（最近 N 条用户消息）
+ *
+ * 多模态消息的图片块按原尺寸计 token，全量历史带图极易超上下文（400）；
+ * 更早的消息只带文本，图片语义损失由「最近对话上下文」兜底。
+ */
+export const CHAT_IMAGE_HISTORY_CARRY = 4;
+
 /**
  * 专业模式系统提示词（app_setting 缺省值；profile 未自定义时回落）
  *
