@@ -129,6 +129,7 @@ export const WEBLOG_ERROR_KIND_LABEL = {
   'unhandled-rejection': '未捕获拒绝',
   'vue-error': 'Vue 异常',
   'console-error': '业务错误',
+  'console-warn': '控制台警告',
   'api-error': '接口失败',
   manual: '手动上报',
 } as const;

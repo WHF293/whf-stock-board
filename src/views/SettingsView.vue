@@ -45,7 +45,7 @@ import { useAppUpdate } from "../composables/use-app-update";
 import type { AppUpdateStatus } from "../types/app-update.types";
 import type { WeblogActionKey } from "../weblog/weblogActions.enum";
 import { useSettingsStore } from "../stores/settings";
-import { setWeblogEnabled, trackAction } from "../weblog";
+import { setWeblogEnabled, setWeblogWarnCapture, trackAction } from "../weblog";
 import {
   DATA_SOURCE_LABEL,
   DATA_SOURCE_URL,
@@ -620,6 +620,19 @@ const onToggleWeblog = (enabled: boolean): void => {
   trackAction("LOG_ENABLED_TOGGLE", { target: enabled ? "开启" : "关闭" });
 };
 
+/**
+ * 切换开发者模式：写持久化 + 同步运行期 warn 采集开关
+ *
+ * 开启后 console.warn（含插件内核的 [info] / [warn] 日志）也进入系统日志，
+ * 用于排查插件「静默降级」（如任务栏小组件能力缺失 / 窗口创建失败只打 warn）。
+ * @param enabled 是否开启开发者模式
+ */
+const onToggleWeblogDeveloperMode = (enabled: boolean): void => {
+  settingsStore.setWeblogDeveloperMode(enabled);
+  setWeblogWarnCapture(enabled);
+  trackAction("LOG_DEVELOPER_MODE_TOGGLE", { target: enabled ? "开启" : "关闭" });
+};
+
 /** 进入系统日志页：先收起设置抽屉再跳转，避免抽屉盖住页面 */
 const onOpenSystemLog = (): void => {
   trackAction("NAV_SYSTEM_LOG_OPEN", { target: ROUTE_PATH.SYSTEM_LOG });
@@ -1008,6 +1021,18 @@ const onProbeProxy = async (): Promise<void> => {
         <BaseSwitch
           :model-value="settingsStore.weblogEnabled"
           @update:model-value="onToggleWeblog"
+        />
+      </div>
+      <div class="mt-4 flex items-center justify-between gap-4 border-t border-flat-weak pt-4">
+        <div>
+          <p class="text-sm text-text">开发者模式</p>
+          <p class="mt-0.5 text-xs text-text-tertiary">
+            额外采集 console.warn（含插件的 [info] / [warn] 日志），排查插件静默降级时开启；日志量会变大
+          </p>
+        </div>
+        <BaseSwitch
+          :model-value="settingsStore.weblogDeveloperMode"
+          @update:model-value="onToggleWeblogDeveloperMode"
         />
       </div>
       <div class="mt-4 flex items-center justify-between gap-4 border-t border-flat-weak pt-4">

@@ -127,6 +127,7 @@ export const WEBLOG_ACTIONS = {
   // ---------- 系统事件 ----------
   APP_START: { category: 'system', label: '应用启动' },
   LOG_ENABLED_TOGGLE: { category: 'system', label: '日志采集开关' },
+  LOG_DEVELOPER_MODE_TOGGLE: { category: 'system', label: '日志开发者模式开关' },
   LOG_TAB_SWITCH: { category: 'system', label: '切换日志页签' },
   LOG_FILTER: { category: 'system', label: '日志筛选条件变更' },
   LOG_REFRESH: { category: 'system', label: '刷新日志' },

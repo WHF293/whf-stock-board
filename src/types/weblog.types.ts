@@ -17,6 +17,7 @@ export type WeblogErrorKind =
   | 'unhandled-rejection'
   | 'vue-error'
   | 'console-error'
+  | 'console-warn'
   | 'api-error'
   | 'manual';
 
