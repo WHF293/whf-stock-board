@@ -4,6 +4,8 @@ import { useRoute, useRouter } from 'vue-router';
 import { useEventListener } from '@vueuse/core';
 import type { KLineData } from 'klinecharts';
 import { toFullSymbol } from '../utils/to-full-symbol';
+import { buildStockAnalysisPrompt } from '../utils/build-stock-analysis-prompt';
+import { requestAgentAnalysis } from '../agent/agent-bridge';
 import type { FullQuote } from '../types/stock-quote.types';
 import BaseButton from '../components/ui/BaseButton.vue';
 import BaseCard from '../components/ui/BaseCard.vue';
@@ -15,6 +17,7 @@ import ChartIndicatorConfigButton from '../components/ui/ChartIndicatorConfigBut
 import { useSettingsStore } from '../stores/settings';
 import { useStockContextStore } from '../stores/stock-context';
 import { ROUTE_PATH } from '../constants/router-meta.constants';
+import { HOST_HEADER_ITEM } from '../constants/header.constants';
 import { formatPercent } from '../utils/format-percent';
 import { formatPrice } from '../utils/format-price';
 import KlineChart from '../components/charts/KlineChart.vue';
@@ -66,6 +69,18 @@ const symbol = computed<string>(() => toFullSymbol(String(route.params.symbol ??
 
 /** 当前股票是否已加入自选（任一分组） */
 const isInWatchlist = computed(() => watchlistStore.allSymbols.includes(symbol.value));
+
+/** 「AI 分析」入口跟随顶栏「Agent 分析」条目的显隐开关（设置 → 布局编排 → 右上角工具编排） */
+const agentEntryVisible = computed(() =>
+  !settingsStore.hiddenHeaderItems.includes(HOST_HEADER_ITEM.AGENT),
+);
+
+/** 「AI 分析」：把当前个股交给 Agent 做短期综合分析（消息 / 资金 / 情绪 / 外围 / 政策 + 多空震荡结论） */
+const onAiAnalysis = (): void => {
+  void requestAgentAnalysis(
+    buildStockAnalysisPrompt({ name: quoteRef.value?.name ?? '', symbol: symbol.value }),
+  );
+};
 
 // ---------- 报价（4s 轮询；快照播种，与侧栏互通） ----------
 const quoteRef = ref<FullQuote | null>(
@@ -381,6 +396,15 @@ const pctClass = (value: number | null): string =>
               {{ quoteRef.changePercent >= 0 ? '+' : '' }}{{ quoteRef.changePercent.toFixed(2) }}%
             </span>
           </div>
+          <!-- AI 分析（交 Agent 做个股短期综合分析；与热点新闻页同款 BaseButton ghost） -->
+          <BaseButton
+            v-if="quoteRef && agentEntryVisible"
+            variant="ghost"
+            @click="onAiAnalysis"
+          >
+            <MenuIcon name="agent" :size="14" />
+            AI 分析
+          </BaseButton>
           <!-- 自选按钮（原右栏报价头移此） -->
           <button
             v-if="quoteRef"

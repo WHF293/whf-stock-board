@@ -804,6 +804,42 @@ export async function saveResourceGrantState(
 }
 
 /**
+ * 增量设置单个授权目标（**不动 resource_scope、不动其他目标行**）
+ *
+ * agent 编辑弹窗勾选资源用的写入入口：整份覆盖的 `saveResourceGrantState`
+ * 要求先读后写，在「弹窗保存」场景有并发覆盖风险，这里只做单目标增删。
+ *
+ * 授予用 INSERT OR IGNORE（幂等）：scope='all' 期间该行闲置但无害，
+ * 用户日后切回 'custom' 时勾选仍在（与 `saveResourceGrantState` 的「保留勾选」语义一致）。
+ *
+ * @param resourceKind 资源类型（'mcp' | 'skill'）
+ * @param resourceId 资源 id（内置资源为负数常量 id）
+ * @param agentKind 授权对象类型
+ * @param agentId 授权对象 id
+ * @param granted true = 授予（插入，幂等）；false = 撤销（删除）
+ */
+export async function setResourceGrantTarget(
+  resourceKind: GrantResourceKind,
+  resourceId: number,
+  agentKind: GrantAgentKind,
+  agentId: number,
+  granted: boolean,
+): Promise<void> {
+  const db = await getAgentDb();
+  if (!granted) {
+    await db.execute(
+      'DELETE FROM resource_grant WHERE resource_kind = $1 AND resource_id = $2 AND agent_kind = $3 AND agent_id = $4',
+      [resourceKind, resourceId, agentKind, agentId],
+    );
+    return;
+  }
+  await db.execute(
+    'INSERT OR IGNORE INTO resource_grant (resource_kind, resource_id, agent_kind, agent_id, created_at) VALUES ($1,$2,$3,$4,$5)',
+    [resourceKind, resourceId, agentKind, agentId, Date.now()],
+  );
+}
+
+/**
  * 只改资源的启用状态（**不动 scope、不动 grant 行**）
  *
  * 内置资源（mcp / skill / subagent，库里的负数 id）没有自己的表，

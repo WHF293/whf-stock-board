@@ -503,13 +503,15 @@ export const useAgentStore = defineStore('agent', () => {
   /**
    * 新增 / 更新 subagent 定义
    * @param input 定义字段（id 缺省 = 新建）
+   * @returns 生效的 subagent id（新建场景写授权行需要）
    */
-  async function upsertSubagent(input: db.SaveSubagentInput): Promise<void> {
-    await db.saveSubagent(input);
+  async function upsertSubagent(input: db.SaveSubagentInput): Promise<number> {
+    const id = await db.saveSubagent(input);
     // ⚠️ 必须带上内置项的启用状态查询，否则刷新列表会把内置 subagent 的启停重置为「启用」
-    subagents.value = withBuiltinSubagents(await db.listSubagents(), (id) =>
-      isBuiltinEnabled('subagent', id),
+    subagents.value = withBuiltinSubagents(await db.listSubagents(), (bid) =>
+      isBuiltinEnabled('subagent', bid),
     );
+    return id;
   }
 
   /**

@@ -3,6 +3,13 @@ import { onMounted, ref } from 'vue';
 import { isTauri } from '@tauri-apps/api/core';
 import { useAgentStore } from '@/stores/agent';
 import { useScheduleStore } from '@/stores/schedule';
+import { useNotificationsStore } from '@/stores/notifications';
+import { NOTIFY_TONE } from '@/constants/notify.constants';
+import {
+  consumePendingAgentAsk,
+  listenAgentAsk,
+  notifyAgentReady,
+} from '@/agent/agent-bridge';
 import type { AgentManagerKey } from '@/types/agent.types';
 import AgentSidebar from '@/components/agent/AgentSidebar.vue';
 import ChatPanel from '@/components/agent/ChatPanel.vue';
@@ -36,6 +43,7 @@ defineProps<{
 
 const store = useAgentStore();
 const scheduleStore = useScheduleStore();
+const notifications = useNotificationsStore();
 
 /** 当前 Tauri 环境（模块级判定即可，运行中不会切换） */
 const tauriAvailable = isTauri();
@@ -68,12 +76,39 @@ const onOpenSession = (sessionId: number): void => {
   void chatPanelRef.value?.reloadSession(sessionId);
 };
 
+/**
+ * 消费一条外部「AI 分析」请求（跨窗口事件 / 浏览器回退暂存）：
+ * 切回对话视图；未配置模型 → 浮窗提示 + 自动打开 Model 管理；
+ * 已配置 → 经 ChatPanel.askAgent 直发（运行中自动退化为预填草稿）
+ * @param prompt 完整提示词
+ */
+const handleAgentAsk = (prompt: string): void => {
+  viewMode.value = 'chat';
+  if (store.models.length === 0) {
+    openManager.value = 'model';
+    notifications.push({
+      title: '当前没有配置过模型',
+      body: '请在 Model 管理中添加模型并设为默认后，回到原页面重新发起 AI 分析',
+      tone: NOTIFY_TONE.FLAT,
+    });
+    return;
+  }
+  chatPanelRef.value?.askAgent(prompt);
+};
+
 onMounted(() => {
   if (tauriAvailable) {
-    void store.init();
+    // 先 init 再广播就绪：主窗口握手方收到回执才投递请求，保证 models 已加载
+    void store.init().then(async () => {
+      await listenAgentAsk(handleAgentAsk);
+      await notifyAgentReady();
+    });
     // 定时任务：恢复列表 + 启动心跳（幂等；随应用生命周期常驻）
     void scheduleStore.init().then(() => scheduleStore.startTicker());
   }
+  // 浏览器回退路径：同窗路由跳转后取走暂存请求（init 幂等，就绪后再消费）
+  const pending = consumePendingAgentAsk();
+  if (pending !== null) void store.init().then(() => handleAgentAsk(pending));
 });
 </script>
 

@@ -87,8 +87,6 @@ const reloadSession = async (sessionId: number): Promise<void> => {
   await loadMessages(sessionId);
 };
 
-defineExpose({ reloadSession });
-
 watch(
   () => store.currentSessionId,
   (id) => {
@@ -618,6 +616,13 @@ const send = async (): Promise<void> => {
     .map((id) => store.subagents.find((s) => s.id === id))
     .filter((s): s is SubagentDef => s !== undefined);
 
+  // 子 agent 独立模型：id 命中才进映射；未配置 / 模型已删的子 agent 由 create-agent 回落主模型
+  const subagentModels = new Map(
+    subagents
+      .map((s) => [s.id, store.models.find((m) => m.id === s.modelId)] as const)
+      .filter((pair): pair is [number, ModelConfig] => pair[1] !== undefined),
+  );
+
   // 资源装配：授权（resource_scope × resource_grant）× MCP 工具分组 × skill 虚拟文件
   // 装配失败不阻断对话：退化为「无工具、无 skill」比整个会话报错更有用
   let runContext: RunContext = {
@@ -667,6 +672,7 @@ const send = async (): Promise<void> => {
         skills: runContext.skills,
         skillPathByName: runContext.skillPathByName,
         skillFiles: runContext.skillFiles,
+        subagentModels,
       },
       {
         onDelta: (delta) => streamer.push(delta),
@@ -740,6 +746,9 @@ const askAgent = (text: string): void => {
   }
   void send();
 };
+
+// 供宿主（AgentAnalysisView）消费外部「AI 分析」请求：跨页调用直发入口
+defineExpose({ reloadSession, askAgent });
 
 /**
  * MCP App 的 `ui/message`：把 App 里点出来的追问交给 Agent（见 askAgent）

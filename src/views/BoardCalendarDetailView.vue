@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import BoardDetailMatrix from '../components/business/BoardDetailMatrix.vue';
+import BaseButton from '../components/ui/BaseButton.vue';
 import BaseCard from '../components/ui/BaseCard.vue';
 import BaseEmpty from '../components/ui/BaseEmpty.vue';
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue';
@@ -312,15 +313,10 @@ const NOTICE_TEXT =
     <!-- 控制条：返回 / 板块标识 / 排序基准 / 范围 -->
     <div class="flex shrink-0 flex-wrap items-center justify-between gap-2">
       <div class="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          class="pressable flex items-center gap-1 rounded-lg border border-flat-weak px-2.5 py-1 text-xs text-text-secondary hover:bg-flat-weak hover:text-text active:scale-95"
-          title="返回板块日历"
-          @click="goBack"
-        >
-          <MenuIcon name="arrowLeft" :size="12" />
+        <BaseButton variant="ghost" title="返回板块日历" @click="goBack">
+          <MenuIcon name="arrowLeft" :size="14" />
           板块日历
-        </button>
+        </BaseButton>
         <span class="text-sm font-semibold text-text">{{ boardName }}</span>
         <span class="text-xs text-text-tertiary">{{ boardCode }}</span>
         <BaseTabs
@@ -349,15 +345,10 @@ const NOTICE_TEXT =
           <template v-else-if="lastUpdatedAt">更新于 {{ formatRelativeTime(lastUpdatedAt) }} · </template>
           按 {{ effectiveSortDate || '区间累计' }} 排序
         </span>
-        <button
-          type="button"
-          class="pressable flex items-center gap-1 rounded-lg border border-flat-weak px-2.5 py-1 text-xs text-text-secondary hover:bg-flat-weak hover:text-text active:scale-95 disabled:opacity-50"
-          :disabled="isLoading"
-          @click="load()"
-        >
-          <MenuIcon name="refresh" :size="12" />
+        <BaseButton variant="ghost" :disabled="isLoading" @click="load()">
+          <MenuIcon name="refresh" :size="14" />
           {{ isLoading ? '取数中…' : '刷新' }}
-        </button>
+        </BaseButton>
       </div>
     </div>
 

@@ -23,6 +23,7 @@ import {
   USAGE_HEATMAP_LEVELS,
   USAGE_HEATMAP_ALPHAS,
   USAGE_HEATMAP_FALLBACK_COLOR,
+  USAGE_HEATMAP_WEEKDAY_LABELS,
   USAGE_TREND_DAYS,
   USAGE_TREND_DAYS_DEFAULT,
   USAGE_TREND_MAX_SERIES,
@@ -179,13 +180,37 @@ const heatColumns = computed<HeatColumn[]>(() => {
 /** 热力格图例（少 → 多） */
 const heatLegend = computed(() => [0, 1, 2, 3, 4].map((level) => ({ level, color: heatColors.value[level - 1] ?? '' })));
 
+/** 格子悬浮提示（Teleport 到 body 的 fixed 浮层；x/y 为视口坐标，锚在格子上方居中） */
+const hoverTip = ref<{ cell: HeatCell; x: number; y: number } | null>(null);
+
 /**
- * 热力格悬停提示
+ * 悬浮提示文案（日期 + token 用量；无活动日只出日期）
  * @param cell 格子
- * @returns title 文案（无活动日只出日期）
+ * @returns 文案
  */
-const cellTitle = (cell: HeatCell): string =>
-  cell.tokens > 0 ? `${cell.key} · ${formatCompactNumber(cell.tokens)} tokens` : cell.key;
+const hoverTipText = (cell: HeatCell): string => {
+  const day = dayjs(cell.key);
+  const date = `${day.month() + 1}月${day.date()}日 ${USAGE_HEATMAP_WEEKDAY_LABELS[day.day()] ?? ''}`.trimEnd();
+  return cell.tokens > 0 ? `${formatCompactNumber(cell.tokens)} tokens · ${date}` : date;
+};
+
+/**
+ * 格子悬停进入：记录提示状态（future 占位格不提示）
+ * @param cell 格子
+ * @param event 鼠标事件（取当前格子的视口位置）
+ */
+const onCellEnter = (cell: HeatCell, event: MouseEvent): void => {
+  if (cell.future) return;
+  const target = event.currentTarget;
+  if (!(target instanceof HTMLElement)) return;
+  const rect = target.getBoundingClientRect();
+  hoverTip.value = { cell, x: rect.left + rect.width / 2, y: rect.top - 6 };
+};
+
+/** 格子悬停离开：关闭提示 */
+const onCellLeave = (): void => {
+  hoverTip.value = null;
+};
 
 /* --------------------------------- 趋势图 --------------------------------- */
 
@@ -348,20 +373,23 @@ const trendOption = computed<EChartsCoreOption>(() => {
           <h3 class="text-sm font-medium text-text">Token 活动</h3>
           <p class="text-xs text-text-tertiary">近 {{ USAGE_HEATMAP_WEEKS }} 周</p>
         </div>
-        <div class="mt-3 flex gap-1.5 overflow-x-auto pb-1">
-          <div class="flex shrink-0 gap-1">
-            <!-- 每列顶部留 h-3 标注槽（隔列给月份文字），格子行对齐天然成立 -->
-            <div v-for="column in heatColumns" :key="column.cells[0]?.key" class="flex flex-col gap-1">
-              <span class="h-3 text-[10px] leading-3 text-text-tertiary">{{ column.label ?? '' }}</span>
-              <div
-                v-for="cell in column.cells"
-                :key="cell.key"
-                class="h-3 w-3 rounded-[3px]"
-                :class="[cell.future ? 'opacity-0' : cell.level === 0 ? 'bg-flat-weak' : '']"
-                :style="cell.level > 0 ? { backgroundColor: heatColors[cell.level - 1] } : undefined"
-                :title="cellTitle(cell)"
-              />
-            </div>
+        <!-- 列宽 1fr 平分容器：格子高度固定、宽度随卡片拉伸（宽容器铺满不挤左侧） -->
+        <div
+          class="mt-3 grid gap-1"
+          :style="{ gridTemplateColumns: `repeat(${USAGE_HEATMAP_WEEKS}, minmax(0, 1fr))` }"
+        >
+          <!-- 每列顶部留 h-3 标注槽（隔列给月份文字），格子行对齐天然成立 -->
+          <div v-for="column in heatColumns" :key="column.cells[0]?.key" class="flex flex-col gap-1">
+            <span class="h-3 text-[10px] leading-3 text-text-tertiary">{{ column.label ?? '' }}</span>
+            <div
+              v-for="cell in column.cells"
+              :key="cell.key"
+              class="h-3 rounded-[3px]"
+              :class="[cell.future ? 'opacity-0' : cell.level === 0 ? 'bg-flat-weak' : '']"
+              :style="cell.level > 0 ? { backgroundColor: heatColors[cell.level - 1] } : undefined"
+              @mouseenter="onCellEnter(cell, $event)"
+              @mouseleave="onCellLeave"
+            />
           </div>
         </div>
         <div class="mt-3 flex items-center justify-end gap-1.5 text-[10px] text-text-tertiary">
@@ -376,6 +404,17 @@ const trendOption = computed<EChartsCoreOption>(() => {
           <span>多</span>
         </div>
       </section>
+
+      <!-- 格子悬浮提示：Teleport 到 body 防 overflow 裁剪；pointer-events-none 防闪烁 -->
+      <Teleport to="body">
+        <div
+          v-if="hoverTip"
+          class="pointer-events-none fixed z-50 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-lg border border-flat-weak bg-surface px-2.5 py-1.5 text-xs text-text shadow-lg"
+          :style="{ left: `${hoverTip.x}px`, top: `${hoverTip.y}px` }"
+        >
+          {{ hoverTipText(hoverTip.cell) }}
+        </div>
+      </Teleport>
 
       <!-- 每日 Token 趋势（按模型分线） -->
       <section class="rounded-xl border border-flat-weak p-4">

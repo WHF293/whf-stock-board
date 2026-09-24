@@ -7,6 +7,7 @@ import BaseModal from '../components/ui/BaseModal.vue';
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue';
 import BaseTable from '../components/ui/BaseTable.vue';
 import BaseTabs from '../components/ui/BaseTabs.vue';
+import MenuIcon from '../components/ui/MenuIcon.vue';
 import TabConfigButton from '../components/ui/TabConfigButton.vue';
 import SectorFlowCurveChart from '../components/charts/SectorFlowCurveChart.vue';
 import MarketEventView from './MarketEventView.vue';
@@ -18,11 +19,19 @@ import { sdk } from '../api/sdk';
 import { usePolling } from '../composables/use-polling';
 import { useDataCacheStore } from '../stores/data-cache';
 import { useMarketStatusStore } from '../stores/market-status';
+import { useSettingsStore } from '../stores/settings';
+import { useNotificationsStore } from '../stores/notifications';
 import { useTabConfigStore } from '../stores/tab-config';
 import { useStockOpen } from '../composables/use-stock-open';
+import { requestAgentAnalysis } from '../agent/agent-bridge';
+import { buildRankAnalysisPrompt } from '../utils/build-rank-analysis-prompt';
+import { exportSheetsToExcel } from '../utils/export-excel';
 import { DATA_CACHE_KEY } from '../constants/data-cache.constants';
+import { HOST_HEADER_ITEM } from '../constants/header.constants';
+import { NOTIFY_TONE } from '../constants/notify.constants';
 import { POLLING_INTERVAL } from '../constants/polling.constants';
 import { ROUTE_PATH } from '../constants/router-meta.constants';
+import type { RankDataset } from '../types/rank-dataset.types';
 import {
   SECTOR_CURVE_MAX_COUNT,
 } from '../constants/sector-flow-curve.constants';
@@ -721,6 +730,156 @@ const openDetail = (code: string): void => {
   openSidebar(code);
 };
 
+// ---------- 榜单工具条：AI 分析 + 导出 Excel（所有页签共用，数据取当前页签榜单） ----------
+const settingsStore = useSettingsStore();
+const notifications = useNotificationsStore();
+
+/** 涨停 / 异动子视图（数据在其组件内，按钮点击时经 expose 方法获取） */
+const eventViewRef = ref<InstanceType<typeof MarketEventView> | null>(null);
+/** 龙虎榜 / 大宗子视图（同上） */
+const dragonViewRef = ref<InstanceType<typeof DragonTigerView> | null>(null);
+
+/** 「AI 分析」入口跟随顶栏「Agent 分析」条目的显隐开关（设置 → 布局编排 → 右上角工具编排） */
+const agentEntryVisible = computed(
+  () => !settingsStore.hiddenHeaderItems.includes(HOST_HEADER_ITEM.AGENT),
+);
+
+/** 当前页签的榜单类型名（AI 分析提示词与导出文件名共用） */
+const currentRankLabel = computed(
+  () => SORT_TAB_OPTIONS.find((option) => option.value === sortKey.value)?.label ?? '市场榜单',
+);
+
+/** 报价排序榜导出列（表格列 + 代码；成交额单位万 / 成交量单位手，导出与 AI 分析共用） */
+const quoteExportColumns: { label: string; key: string }[] = [
+  { key: 'name', label: '个股' },
+  { key: 'code', label: '代码' },
+  { key: 'price', label: '最新价' },
+  { key: 'changePercent', label: '涨跌幅(%)' },
+  { key: 'change', label: '涨跌额' },
+  { key: 'volume', label: '成交量(手)' },
+  { key: 'amount', label: '成交额(万)' },
+  { key: 'turnoverRate', label: '换手率(%)' },
+  { key: 'volumeRatio', label: '量比' },
+  { key: 'pe', label: '市盈率' },
+];
+
+/** 板块净流入榜导出列（表格列 + 代码 / 领涨股） */
+const sectorExportColumns: { label: string; key: string }[] = [
+  { key: 'name', label: '板块' },
+  { key: 'code', label: '代码' },
+  { key: 'changePercent', label: '涨跌幅(%)' },
+  { key: 'mainNetInflow', label: '主力净流入(元)' },
+  { key: 'topStockName', label: '领涨股' },
+];
+
+/** 个股主力榜导出列（表格列 + 代码 / 涨跌幅 / 净占比） */
+const stockExportColumns: { label: string; key: string }[] = [
+  { key: 'name', label: '个股' },
+  { key: 'code', label: '代码' },
+  { key: 'price', label: '现价' },
+  { key: 'changePercent', label: '涨跌幅(%)' },
+  { key: 'mainNetInflow', label: '主力净流入(元)' },
+  { key: 'mainNetInflowPercent', label: '主力净占比(%)' },
+];
+
+/**
+ * 汇总当前页签的榜单数据段（AI 分析与导出 Excel 共用的数据出口）。
+ * 板块净流入页签在曲线视图下也取榜单列表（榜单本体即板块排名，曲线只是另一种展示）；
+ * 涨停 / 异动 / 龙虎榜 / 大宗四页签的数据在子视图组件内，经 expose 方法获取
+ * @returns 数据段列表；子视图未挂载 / 尚无数据时为空数组
+ */
+const collectRankDatasets = (): RankDataset[] => {
+  switch (sortKey.value) {
+    case 'sector':
+      return [
+        {
+          title: currentRankLabel.value,
+          columns: sectorExportColumns,
+          rows: sectorRank.value as unknown as Record<string, unknown>[],
+        },
+      ];
+    case 'stock':
+      return [
+        {
+          title: currentRankLabel.value,
+          columns: stockExportColumns,
+          rows: stockRank.value as unknown as Record<string, unknown>[],
+        },
+      ];
+    case 'event':
+    case 'events':
+      return eventViewRef.value?.getRankDatasets() ?? [];
+    case 'dragon-tiger':
+    case 'block-trade':
+      return dragonViewRef.value?.getRankDatasets() ?? [];
+    default:
+      return [
+        {
+          title: currentRankLabel.value,
+          columns: quoteExportColumns,
+          rows: displayedRows.value as unknown as Record<string, unknown>[],
+        },
+      ];
+  }
+};
+
+/**
+ * 导出文件名时间戳
+ * @returns YYYYMMDD-HHmm 格式时间戳
+ */
+const exportStamp = (): string => {
+  const now = new Date();
+  const pad = (value: number): string => String(value).padStart(2, '0');
+  return (
+    `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}` +
+    `-${pad(now.getHours())}${pad(now.getMinutes())}`
+  );
+};
+
+/** 「AI 分析」：把当前页签榜单数据 + 榜单类型交给 Agent 分析 */
+const onRankAiAnalysis = (): void => {
+  const prompt = buildRankAnalysisPrompt(currentRankLabel.value, collectRankDatasets());
+  if (prompt === '') {
+    notifications.push({
+      title: '暂无可分析的榜单数据',
+      body: '请等待当前榜单数据加载完成后再发起 AI 分析',
+      tone: NOTIFY_TONE.FLAT,
+    });
+    return;
+  }
+  void requestAgentAnalysis(prompt);
+};
+
+/** 「导出 Excel」：把当前页签榜单数据导出为 .xlsx（多数据段 = 多工作表） */
+const onRankExport = async (): Promise<void> => {
+  const datasets = collectRankDatasets();
+  if (datasets.every((dataset) => dataset.rows.length === 0)) {
+    notifications.push({
+      title: '暂无可导出的榜单数据',
+      body: '请等待当前榜单数据加载完成后再导出',
+      tone: NOTIFY_TONE.FLAT,
+    });
+    return;
+  }
+  try {
+    await exportSheetsToExcel(
+      datasets.map((dataset) => ({
+        name: dataset.title,
+        rows: dataset.rows,
+        columns: dataset.columns,
+      })),
+      `市场榜单-${currentRankLabel.value}-${exportStamp()}`,
+    );
+  } catch (error) {
+    console.error('[market-rank] export', error);
+    notifications.push({
+      title: '导出失败',
+      body: '榜单数据导出 Excel 失败，请稍后重试',
+      tone: NOTIFY_TONE.FLAT,
+    });
+  }
+};
+
 </script>
 
 <template>
@@ -731,10 +890,22 @@ const openDetail = (code: string): void => {
       <TabConfigButton page-id="market-rank" :options="SORT_TAB_OPTIONS" />
     </div>
 
+    <!-- 榜单工具条：AI 分析 + 导出 Excel（板块净流入页签并入其模块工具条，不重复展示） -->
+    <div v-if="sortKey !== 'sector'" class="flex shrink-0 items-center justify-end gap-2">
+      <BaseButton v-if="agentEntryVisible" variant="ghost" @click="onRankAiAnalysis">
+        <MenuIcon name="agent" :size="14" />
+        AI 分析
+      </BaseButton>
+      <BaseButton variant="ghost" @click="onRankExport">
+        <MenuIcon name="export" :size="14" />
+        导出 Excel
+      </BaseButton>
+    </div>
+
     <!-- 原市场异动页签：涨停 / 异动 / 龙虎榜 / 大宗交易（自管数据，重接口不轮询） -->
-    <MarketEventView v-if="sortKey === 'event'" mode="zt" class="min-h-0 flex-1" />
-    <MarketEventView v-else-if="sortKey === 'events'" mode="events" class="min-h-0 flex-1" />
-    <DragonTigerView v-else-if="isMoodTab" v-model="dragonTab" class="min-h-0 flex-1" />
+    <MarketEventView v-if="sortKey === 'event'" ref="eventViewRef" mode="zt" class="min-h-0 flex-1" />
+    <MarketEventView v-else-if="sortKey === 'events'" ref="eventViewRef" mode="events" class="min-h-0 flex-1" />
+    <DragonTigerView v-else-if="isMoodTab" ref="dragonViewRef" v-model="dragonTab" class="min-h-0 flex-1" />
 
     <!-- 资金流榜单（板块净流入页签内可切换 曲线 / 列表 视图） -->
     <BaseCard v-else-if="isFlowTab" fill class="min-h-0 flex-1">
@@ -759,6 +930,14 @@ const openDetail = (code: string): void => {
               刷新
             </BaseButton>
           </template>
+          <BaseButton v-if="agentEntryVisible" variant="ghost" @click="onRankAiAnalysis">
+            <MenuIcon name="agent" :size="14" />
+            AI 分析
+          </BaseButton>
+          <BaseButton variant="ghost" @click="onRankExport">
+            <MenuIcon name="export" :size="14" />
+            导出 Excel
+          </BaseButton>
         </div>
       </div>
 

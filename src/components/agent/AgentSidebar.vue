@@ -61,7 +61,7 @@ const onNewChat = (): void => {
     >
       <button
         type="button"
-        class="pressable rounded-lg border border-dashed border-primary p-2 text-text-tertiary hover:text-primary"
+        class="pressable rounded-lg border border-dashed border-flat-weak p-2 text-text-tertiary transition-colors hover:border-primary hover:text-primary"
         aria-label="新建会话"
         @click="onNewChat"
       >
@@ -131,11 +131,11 @@ const onNewChat = (): void => {
       :class="store.sidebarCollapsed ? 'pointer-events-none opacity-0' : 'opacity-100'"
       :inert="store.sidebarCollapsed"
     >
-      <!-- 新建对话（样式对齐「新建分组」：虚线描边按钮） -->
+      <!-- 新建对话（样式对齐收起态新建会话：虚线描边按钮，默认灰边框、hover 提亮主题色） -->
       <div class="shrink-0 px-3 pt-3">
         <button
           type="button"
-          class="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-primary py-2 text-xs text-text-tertiary transition-colors hover:text-primary"
+          class="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-flat-weak py-2 text-xs text-text-tertiary transition-colors hover:border-primary hover:text-primary"
           @click="onNewChat"
         >
           <MenuIcon name="plus" :size="12" />

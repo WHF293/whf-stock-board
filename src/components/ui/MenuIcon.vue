@@ -68,6 +68,9 @@ const ICON_PATHS: Record<string, string> = {
   // 交割单导入：单据 + 向上导入箭头
   tradeImport:
     '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M12 18v-6"/><path d="M9.5 14.5 12 12l2.5 2.5"/>',
+  // 数据导出：单据 + 向下导出箭头（与 tradeImport 导入方向相反）
+  export:
+    '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M12 11v6"/><path d="M9.5 14.5 12 17l2.5-2.5"/>',
   // Skills：手册（打开的书）
   book: '<path d="M12 6c-1.8-1.6-4.2-2-8-2v14c3.8 0 6.2.4 8 2 1.8-1.6 4.2-2 8-2V4c-3.8 0-6.2.4-8 2z"/><path d="M12 6v14"/>',
   // MCP：插头/插座

@@ -16,6 +16,7 @@ import type {
   BlockTradeDetailItem,
   DragonTigerDetailItem,
 } from "../types/dragon-tiger.types";
+import type { RankDataset } from "../types/rank-dataset.types";
 import { formatPercent } from "../utils/format-percent";
 import { formatPrice } from "../utils/format-price";
 import { formatYuanWithSign } from "../utils/format-yuan";
@@ -256,6 +257,59 @@ const blockColumns: TableColumn<BlockTradeDetailItem>[] = [
   { key: "buyBranch", label: "买方营业部" },
   { key: "sellBranch", label: "卖方营业部" },
 ];
+
+// ---------- 榜单数据出口（父级市场榜单页 AI 分析 / 导出 Excel 消费） ----------
+
+/** 龙虎榜导出列（表格列 + 代码 / 日期；金额为原始元值，导出与 AI 分析共用） */
+const dragonExportColumns: { label: string; key: string }[] = [
+  { key: "name", label: "个股" },
+  { key: "code", label: "代码" },
+  { key: "date", label: "日期" },
+  { key: "close", label: "收盘" },
+  { key: "changePercent", label: "涨跌幅(%)" },
+  { key: "netBuyAmount", label: "龙虎榜净买额(元)" },
+  { key: "netBuyRatio", label: "净买占比(%)" },
+  { key: "reason", label: "上榜原因" },
+  { key: "afterChange5d", label: "上榜后5日(%)" },
+];
+
+/** 大宗交易导出列（表格列 + 代码 / 日期；成交量为原始股值） */
+const blockExportColumns: { label: string; key: string }[] = [
+  { key: "name", label: "个股" },
+  { key: "code", label: "代码" },
+  { key: "date", label: "交易日期" },
+  { key: "dealPrice", label: "成交价" },
+  { key: "dealVolume", label: "成交量(股)" },
+  { key: "dealAmount", label: "成交额(元)" },
+  { key: "premiumRate", label: "溢价率(%)" },
+  { key: "buyBranch", label: "买方营业部" },
+  { key: "sellBranch", label: "卖方营业部" },
+];
+
+/**
+ * 汇总当前视图的榜单数据段（已按当前选中日期与涨 / 跌方向过滤）
+ * @returns 数据段列表：龙虎榜 / 大宗交易各一段
+ */
+const getRankDatasets = (): RankDataset[] => {
+  if (activeTab.value === "block-trade") {
+    return [
+      {
+        title: `大宗交易 ${blockDate.value}`,
+        columns: blockExportColumns,
+        rows: blockRowsFull.value as unknown as Record<string, unknown>[],
+      },
+    ];
+  }
+  return [
+    {
+      title: `龙虎榜 ${dragonDate.value}·${activeDirection.value === "up" ? "涨" : "跌"}`,
+      columns: dragonExportColumns,
+      rows: dragonRowsFull.value as unknown as Record<string, unknown>[],
+    },
+  ];
+};
+
+defineExpose({ getRankDatasets });
 
 /**
  * 个股跳详情（6 位纯代码 -> 完整符号）
