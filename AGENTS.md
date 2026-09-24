@@ -10,6 +10,19 @@ A 股看板应用（个人学习用）：浏览器 SPA + Tauri 2 PC 客户端共
 - 数据源：[stock-sdk](https://stock-sdk.linkdiary.cn/)（腾讯 + 东方财富）
 - 详情交互：全站「跳个股详情」一律打开右侧停靠面板（`stores/dock-panel.ts` 的 `openStock()`），不走路由
 
+## AI 记忆统一存放（硬性，对所有 AI 工具生效）
+
+无论使用哪个 AI 编码工具（ZCode / Claude Code / WorkBuddy / 其他），关于本项目的会话记忆、
+长期结论、踩坑沉淀**一律写入 `.ai/memory/`**，禁止各自另立记忆目录（本项目已删除 `CLAUDE.md`，
+各工具以本文件为唯一规范源）：
+
+- **主题层**（跨会话有效结论，按 `.ai/memory/README.md` 的更新约定上提到对应文件）：
+  `项目概览.md` / `发布流程.md` / `版本历史.md` / `技术要点.md` / `环境与踩坑备忘.md`
+- **日志层**：`YYYY-MM-DD.md` 按日归档，一天一文件、平铺；只追加新文件，不回写历史日志
+- 冲突时以日期新的结论为准；`.ai/` 整体 gitignore，仅本地保存，不要往远程推
+- 各工具私有记忆目录（如 `.workbuddy/memory/`）**只允许放指回 `.ai/memory/` 的指针文件**，
+  不放真实记忆
+
 ## 常用命令
 
 ```bash
