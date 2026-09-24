@@ -26,7 +26,7 @@ import {
 } from "../constants/polling.constants";
 import type { TableColumn } from "../types/table.types";
 import { WEBLOG_RETENTION_DAYS } from "../constants/weblog.constants";
-import { APP_VERSION, REPO_URL } from "../constants/app-info.constants";
+import { APP_VERSION, PLUGIN_REPO_URL, REPO_URL } from "../constants/app-info.constants";
 import { getCurrentAppVersion } from "../api/app-update.api";
 import { useAppUpdate } from "../composables/use-app-update";
 import type { AppUpdateStatus } from "../types/app-update.types";
@@ -512,9 +512,17 @@ onMounted(() => {
 /** 仓库地址展示文案（去掉协议头，短一些不挤行） */
 const repoDisplayUrl = computed(() => REPO_URL.replace(/^https?:\/\//, ""));
 
+/** 插件仓库地址展示文案（同上去协议头） */
+const pluginRepoDisplayUrl = computed(() => PLUGIN_REPO_URL.replace(/^https?:\/\//, ""));
+
 /** 「打开」仓库：与「前往下载」同口径开新窗口（不再用裸 <a>，按钮风格与同卡片其他按钮统一） */
 const onOpenRepo = (): void => {
   window.open(REPO_URL, "_blank", "noopener");
+};
+
+/** 「打开」插件仓库（同 onOpenRepo 口径） */
+const onOpenPluginRepo = (): void => {
+  window.open(PLUGIN_REPO_URL, "_blank", "noopener");
 };
 
 /** 自检探测地址：腾讯指数轻量行情（与真实数据链路一致，走同源代理） */
@@ -789,8 +797,9 @@ const onProbeProxy = async (): Promise<void> => {
       </div>
     </BaseCard>
 
-    <BaseCard title="侧栏导航">
-      <div class="flex items-center justify-between gap-4">
+    <!-- 布局编排：侧栏导航 + 顶栏工具合并一卡（均为拖拽顺序 + 显隐控制） -->
+    <BaseCard title="布局编排">
+      <div class="mb-4 flex items-center justify-between gap-4">
         <div>
           <p class="text-sm text-text">路由顺序编排</p>
           <p class="mt-0.5 text-xs text-text-tertiary">
@@ -799,14 +808,12 @@ const onProbeProxy = async (): Promise<void> => {
         </div>
         <BaseButton variant="ghost" data-track="MENU_ORDER_EDIT" @click="openMenuOrderModal">编排</BaseButton>
       </div>
-    </BaseCard>
-
-    <BaseCard title="顶栏工具">
       <div class="flex items-center justify-between gap-4">
         <div>
           <p class="text-sm text-text">右上角工具编排</p>
           <p class="mt-0.5 text-xs text-text-tertiary">
-            拖拽调整顶栏条目顺序（含插件条目），并可控制各条目是否显示；弹窗内可一键恢复默认
+            拖拽调整顶栏条目顺序（含插件条目），并可控制各条目是否显示；弹窗内可一键恢复默认。
+            「Agent 分析」开关同时控制各页面的 AI 分析按钮（热点新闻 / 个股详情）
           </p>
         </div>
         <BaseButton variant="ghost" data-track="HEADER_ORDER_EDIT" @click="openHeaderOrderModal">
@@ -893,6 +900,20 @@ const onProbeProxy = async (): Promise<void> => {
           variant="ghost"
           data-track="REPO_OPEN"
           @click="onOpenRepo"
+        >
+          打开
+        </BaseButton>
+      </div>
+      <div class="mb-4 flex items-center justify-between gap-4">
+        <div class="min-w-0">
+          <p class="text-sm text-text">插件仓库</p>
+          <p class="mt-0.5 truncate text-xs text-text-tertiary">
+            {{ pluginRepoDisplayUrl }}
+          </p>
+        </div>
+        <BaseButton
+          variant="ghost"
+          @click="onOpenPluginRepo"
         >
           打开
         </BaseButton>

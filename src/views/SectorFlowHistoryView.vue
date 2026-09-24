@@ -170,15 +170,10 @@ const goBack = (): void => {
     <!-- 控制条：返回 / 标题与图例 / 统计 / 刷新 -->
     <div class="flex shrink-0 flex-wrap items-center justify-between gap-2">
       <div class="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          class="pressable flex items-center gap-1 rounded-lg border border-flat-weak px-2.5 py-1 text-xs text-text-secondary hover:bg-flat-weak hover:text-text active:scale-95"
-          title="返回市场榜单"
-          @click="goBack"
-        >
-          <MenuIcon name="arrowLeft" :size="12" />
+        <BaseButton variant="ghost" title="返回市场榜单" @click="goBack">
+          <MenuIcon name="arrowLeft" :size="14" />
           市场榜单
-        </button>
+        </BaseButton>
         <span class="text-sm font-semibold text-text">板块历史净流入</span>
         <span class="flex items-center gap-3 text-xs text-text-tertiary">
           <span class="flex items-center gap-1">

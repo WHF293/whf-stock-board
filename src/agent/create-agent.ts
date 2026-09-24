@@ -99,12 +99,14 @@ export function buildChatModel(model: ModelConfig): ChatOpenAI {
  * - `skills`：⚠️ deepagents 语义下 custom subagent **不继承**主 agent 的 skills，
  *   必须由 `def.skillNames` 经 `skillPathByName` 显式映射为路径才会装配。
  *
- * model 一律不传：由 deepagents 回落到主 agent 模型（子 agent 独立模型待 ModelRegistry 接入）。
+ * model：`def.modelId` 命中 `subagentModels` 时按实例传入（该子 agent 用独立模型）；
+ * 未配置 / 模型已删除（映射未命中）时不传，由 deepagents 回落到主 agent 模型。
  *
  * @param defs 编排的 subagent 列表（有序）
  * @param fallbackTools 主 agent 全量工具（子 agent 未指定子集时继承）
  * @param subagentTools subagent id → 该子 agent 可用工具子集
  * @param skillPathByName skill 名 → 虚拟目录路径（如 `/skills/technical-analysis/`）
+ * @param subagentModels 子 agent id → 独立模型配置（调用方解析；缺省 = 全部继承主模型）
  * @returns deepagents subagent 数组
  */
 function toSubAgents(
@@ -112,18 +114,21 @@ function toSubAgents(
   fallbackTools: StructuredToolInterface[],
   subagentTools: Map<number, StructuredToolInterface[]> | undefined,
   skillPathByName: Map<string, string>,
+  subagentModels?: ReadonlyMap<number, ModelConfig>,
 ): SubAgent[] {
   return defs.map((def) => {
     const scopedTools = subagentTools?.get(def.id) ?? fallbackTools;
     const skillPaths = def.skillNames
       .map((name) => skillPathByName.get(name))
       .filter((path): path is string => typeof path === 'string');
+    const ownModel = def.modelId != null ? subagentModels?.get(def.modelId) : undefined;
     return {
       name: def.name,
       description: def.description,
       systemPrompt: def.prompt || undefined,
       tools: scopedTools as SubAgent['tools'],
       ...(skillPaths.length > 0 ? { skills: skillPaths } : {}),
+      ...(ownModel ? { model: buildChatModel(ownModel) } : {}),
     };
   });
 }
@@ -166,6 +171,11 @@ export interface StartAgentRunParams {
   skillFiles?: Record<string, VirtualFileData>;
   /** 子 agent 级工具子集（key = subagent id；缺省的子 agent 继承全量 tools） */
   subagentTools?: Map<number, StructuredToolInterface[]>;
+  /**
+   * 子 agent id → 独立模型配置（调用方从模型列表解析；缺项 / modelId 未配置 /
+   * 模型已删除的子 agent 继承主 agent 模型）
+   */
+  subagentModels?: ReadonlyMap<number, ModelConfig>;
 }
 
 /**
@@ -223,6 +233,7 @@ export function startAgentRun(params: StartAgentRunParams, handlers: AgentRunHan
       allTools,
       params.subagentTools,
       params.skillPathByName ?? new Map<string, string>(),
+      params.subagentModels,
     ),
     tools: allTools,
     // 空数组不传：SkillsMiddleware 只在 skills 非空时装配，传空数组没有意义

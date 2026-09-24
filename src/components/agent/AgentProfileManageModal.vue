@@ -360,52 +360,11 @@ watch(open, (isOpen) => {
           编排顺序：{{ orderedSubagents.map((s) => s.name).join(' → ') }}
         </p>
       </div>
-      <div class="grid grid-cols-2 gap-4">
-        <div>
-          <p class="mb-1.5 text-sm text-text-secondary">启用 Skills</p>
-          <div class="flex flex-wrap gap-1.5">
-            <button
-              v-for="skill in store.skills.filter((s) => s.enabled)"
-              :key="skill.id"
-              type="button"
-              class="rounded-full border px-3 py-1 text-xs transition-colors"
-              :class="
-                form.skillIds.includes(skill.id)
-                  ? 'border-primary bg-primary-weak text-primary'
-                  : 'border-flat-weak text-text-secondary hover:border-primary'
-              "
-              @click="form.skillIds = toggleId(form.skillIds, skill.id)"
-            >
-              {{ skill.name }}
-            </button>
-            <span v-if="store.skills.filter((s) => s.enabled).length === 0" class="text-xs text-text-tertiary">
-              暂无启用的 Skill
-            </span>
-          </div>
-        </div>
-        <div>
-          <p class="mb-1.5 text-sm text-text-secondary">启用 MCP</p>
-          <div class="flex flex-wrap gap-1.5">
-            <button
-              v-for="mcp in store.mcps.filter((m) => m.enabled)"
-              :key="mcp.id"
-              type="button"
-              class="rounded-full border px-3 py-1 text-xs transition-colors"
-              :class="
-                form.mcpIds.includes(mcp.id)
-                  ? 'border-primary bg-primary-weak text-primary'
-                  : 'border-flat-weak text-text-secondary hover:border-primary'
-              "
-              @click="form.mcpIds = toggleId(form.mcpIds, mcp.id)"
-            >
-              {{ mcp.name }}
-            </button>
-            <span v-if="store.mcps.filter((m) => m.enabled).length === 0" class="text-xs text-text-tertiary">
-              暂无启用的 MCP
-            </span>
-          </div>
-        </div>
-      </div>
+      <!-- 技能 / MCP 的授权统一在资源侧「访问设置」配置（resource_grant 唯一事实源）；
+           profile 上的 skillIds/mcpIds 是历史字段，运行时不参与装配（见 agent/run-context.ts） -->
+      <p class="rounded-lg border border-flat-weak bg-surface px-3 py-2 text-xs text-text-tertiary">
+        技能与数据源（MCP）的启用范围在左侧列表各资源的「访问设置」中配置：可设为全部 Agent 可用，或精确指定到主 Agent 与各子 Agent。
+      </p>
       <label class="flex items-center justify-between text-sm text-text-secondary">
         设为默认配置
         <BaseSwitch v-model="form.isDefault" />

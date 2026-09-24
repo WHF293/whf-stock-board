@@ -1,6 +1,7 @@
 import type {
   BOARD_CALENDAR_HEAT_BASIS,
   BOARD_CALENDAR_RANGE,
+  BOARD_CALENDAR_VIEW,
   BOARD_PROFIT_METRIC,
   BOARD_SCORE_BUCKET,
   BOARD_SYNC_STATE_KEY,
@@ -17,6 +18,13 @@ export type BoardCalendarHeatBasis =
  */
 export type BoardProfitMetric =
   (typeof BOARD_PROFIT_METRIC)[keyof typeof BOARD_PROFIT_METRIC];
+
+/**
+ * 板块日历主区视图（由 BOARD_CALENDAR_VIEW const 对象派生）：
+ * list = 涨跌停矩阵列表（默认），bubble = 赚钱效应气泡图
+ */
+export type BoardCalendarViewMode =
+  (typeof BOARD_CALENDAR_VIEW)[keyof typeof BOARD_CALENDAR_VIEW];
 
 /**
  * 展示范围（由 BOARD_CALENDAR_RANGE const 对象派生）

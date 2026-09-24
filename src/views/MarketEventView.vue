@@ -20,6 +20,7 @@ import type {
   ZTPoolItem,
   ZTPoolType,
 } from '../types/event.types';
+import type { RankDataset } from '../types/rank-dataset.types';
 import { delay } from '../utils/delay';
 import { formatAmount } from '../utils/format-amount';
 import { formatBoardTime } from '../utils/format-board-time';
@@ -37,7 +38,7 @@ const POOL_CHUNK_SIZE = 50;
 
 const dataCache = useDataCacheStore();
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     /**
      * 展示模式（供父级页面按 tab 拆分复用）：
@@ -153,6 +154,66 @@ const boardChangeColumns: TableColumn<BoardChangeItem>[] = [
   { key: 'totalChangeCount', label: '异动次数', align: 'right' },
   { key: 'topStockName', label: '最频繁个股' },
 ];
+
+// ---------- 榜单数据出口（父级市场榜单页 AI 分析 / 导出 Excel 消费） ----------
+
+/** 股池导出列（表格列 + 代码；封单为原始元值，导出与 AI 分析共用） */
+const poolExportColumns: { label: string; key: string }[] = [
+  { key: 'name', label: '名称' },
+  { key: 'code', label: '代码' },
+  { key: 'price', label: '现价' },
+  { key: 'changePercent', label: '涨跌幅(%)' },
+  { key: 'continuousBoardCount', label: '连板数' },
+  { key: 'firstBoardTime', label: '首次封板' },
+  { key: 'boardAmount', label: '封单(元)' },
+  { key: 'turnoverRate', label: '换手率(%)' },
+  { key: 'industry', label: '行业' },
+];
+
+/** 盘口异动导出列（本视图以时间轴列表渲染，导出 / AI 分析用列定义） */
+const stockChangeExportColumns: { label: string; key: string }[] = [
+  { key: 'time', label: '时间' },
+  { key: 'name', label: '名称' },
+  { key: 'code', label: '代码' },
+  { key: 'changeTypeLabel', label: '类型' },
+  { key: 'info', label: '说明' },
+];
+
+/**
+ * 汇总当前模式的榜单数据段
+ * @returns 数据段列表：zt = 当前选中股池；events = 盘口异动 + 板块异动
+ */
+const getRankDatasets = (): RankDataset[] => {
+  if (props.mode === 'zt') {
+    const poolLabel =
+      ZT_POOL_OPTIONS.find((option) => option.value === activePool.value)?.label ?? '股池';
+    return [
+      {
+        title: poolLabel,
+        columns: poolExportColumns,
+        rows: poolItems.value as unknown as Record<string, unknown>[],
+      },
+    ];
+  }
+  return [
+    {
+      title: '盘口异动',
+      columns: stockChangeExportColumns,
+      // 展示层类型文案缺省时回退类型键（与时间轴列表的渲染回退一致）
+      rows: stockChanges.value.slice(0, STOCK_CHANGE_MAX_ITEMS).map((row) => ({
+        ...row,
+        changeTypeLabel: row.changeTypeLabel || row.changeType,
+      })) as unknown as Record<string, unknown>[],
+    },
+    {
+      title: '板块异动',
+      columns: boardChangeColumns,
+      rows: boardChanges.value as unknown as Record<string, unknown>[],
+    },
+  ];
+};
+
+defineExpose({ getRankDatasets });
 
 // ---------- 盘口 / 板块异动（状态已在股池段快照播种） ----------
 

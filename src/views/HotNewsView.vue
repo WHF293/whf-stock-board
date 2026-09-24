@@ -33,7 +33,9 @@ import {
   type ThsHotTheme,
 } from "../api/news.api";
 import { useDataCacheStore } from "../stores/data-cache";
+import { useSettingsStore } from "../stores/settings";
 import { DATA_CACHE_KEY } from "../constants/data-cache.constants";
+import { HOST_HEADER_ITEM } from "../constants/header.constants";
 import {
   CLS_SUB_VIEW_LABELS,
   CLS_SUB_VIEW_OPTIONS,
@@ -50,6 +52,10 @@ import {
 } from "../constants/hot-news.constants";
 import { STORAGE_NS_HOT_NEWS_FILTER } from "../constants/storage-key.constants";
 import { appStorage } from "../utils/app-local-storage";
+import { buildNewsAnalysisPrompt } from "../utils/build-news-analysis-prompt";
+import { requestAgentAnalysis } from "../agent/agent-bridge";
+import { useNotificationsStore } from "../stores/notifications";
+import { NOTIFY_TONE } from "../constants/notify.constants";
 
 /**
  * 热点新闻：横向卡片流（每源一张卡片，固定 375px 宽，超出页面横向滚动）
@@ -239,6 +245,36 @@ watch(
 
 /** 「新闻源设置」弹窗开关（默认收起） */
 const sourceModalOpen = ref(false);
+
+const notifications = useNotificationsStore();
+
+/** 「AI 分析」入口跟随顶栏「Agent 分析」条目的显隐开关（设置 → 布局编排 → 右上角工具编排） */
+const settingsStore = useSettingsStore();
+const agentEntryVisible = computed(() =>
+  !settingsStore.hiddenHeaderItems.includes(HOST_HEADER_ITEM.AGENT),
+);
+
+/**
+ * 收集当前已加载展示的新闻条目：各通道状态里的条目拍平
+ * （含同花顺 / 东财各子视图通道；无标题的占位条目剔除）
+ * @returns 新闻条目列表
+ */
+const collectDisplayedNews = (): HotNewsItem[] =>
+  Object.values(states.value).flatMap((state) => state.items).filter((item) => item.title !== '');
+
+/** 「AI 总结」：把当前展示的全部新闻交给 Agent 分析利好 / 利空板块与个股 */
+const onAiSummary = (): void => {
+  const prompt = buildNewsAnalysisPrompt(collectDisplayedNews());
+  if (prompt === '') {
+    notifications.push({
+      title: '暂无可总结的新闻',
+      body: '请等待新闻列表加载完成后再发起 AI 总结',
+      tone: NOTIFY_TONE.FLAT,
+    });
+    return;
+  }
+  void requestAgentAnalysis(prompt);
+};
 
 /** 弹窗用的源选项（含展示名；顺序 = 卡片顺序） */
 const sourceOptions = computed(() =>
@@ -1181,10 +1217,16 @@ const loadMoreLabel = (state: SourceState): string => {
       <span class="text-xs text-text-tertiary">
         已启用 {{ visibleCards.length }} / {{ sourceItems.length }} 个新闻源
       </span>
-      <BaseButton variant="ghost" @click="sourceModalOpen = true">
-        <MenuIcon name="settings" :size="14" />
-        新闻源设置
-      </BaseButton>
+      <div class="flex items-center gap-2">
+        <BaseButton v-if="agentEntryVisible" variant="ghost" @click="onAiSummary">
+          <MenuIcon name="agent" :size="14" />
+          AI 分析
+        </BaseButton>
+        <BaseButton variant="ghost" @click="sourceModalOpen = true">
+          <MenuIcon name="settings" :size="14" />
+          新闻源设置
+        </BaseButton>
+      </div>
     </div>
 
     <!-- 新闻源设置弹窗（草稿模式：确认才生效） -->

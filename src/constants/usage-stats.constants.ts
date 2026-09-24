@@ -14,6 +14,17 @@ export const USAGE_HEATMAP_ALPHAS: readonly string[] = ['26', '59', '99', 'd9'];
 /** 主题色 CSS 变量非 hex 值时热力格的兜底色（避免拼接出非法 color） */
 export const USAGE_HEATMAP_FALLBACK_COLOR = '#4f83cc';
 
+/** 热力格悬浮提示的星期文案（按 dayjs weekday() 0..6 索引；dayjs 未配 locale 故手动映射） */
+export const USAGE_HEATMAP_WEEKDAY_LABELS: readonly string[] = [
+  '周日',
+  '周一',
+  '周二',
+  '周三',
+  '周四',
+  '周五',
+  '周六',
+];
+
 /** 每日 Token 趋势图可选窗口（天） */
 export const USAGE_TREND_DAYS = [7, 30] as const;
 

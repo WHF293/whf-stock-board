@@ -7,8 +7,6 @@
 export const THEME_COLOR = {
   GREEN: 'green',
   BLUE: 'blue',
-  PINK: 'pink',
-  PURPLE: 'purple',
   ORANGE: 'orange',
   GOLD: 'gold',
 } as const;
@@ -25,11 +23,18 @@ export type ThemeColor = (typeof THEME_COLOR)[keyof typeof THEME_COLOR];
 export const THEME_COLOR_OPTIONS: readonly { label: string; value: ThemeColor; swatch: string }[] = [
   { label: '清新绿', value: THEME_COLOR.GREEN, swatch: '#0e9488' },
   { label: '淡雅蓝', value: THEME_COLOR.BLUE, swatch: '#4f83cc' },
-  { label: '淡雅粉', value: THEME_COLOR.PINK, swatch: '#e886a8' },
-  { label: '极光紫', value: THEME_COLOR.PURPLE, swatch: '#9061f9' },
   { label: '活力橙', value: THEME_COLOR.ORANGE, swatch: '#f97316' },
   { label: '黑金', value: THEME_COLOR.GOLD, swatch: '#c8920b' },
 ];
+
+/**
+ * 判定一个未知值是否为有效主题色（持久化水合校验用：旧版存过的
+ * 已删除主题值要拦下来，避免 <html data-theme> 落在无 CSS 规则的值上）
+ * @param value 任意值
+ * @returns 是否为当前仍支持的主题色
+ */
+export const isThemeColor = (value: unknown): value is ThemeColor =>
+  typeof value === 'string' && (Object.values(THEME_COLOR) as readonly string[]).includes(value);
 
 /** 默认主题色 */
 export const THEME_COLOR_DEFAULT: ThemeColor = THEME_COLOR.GREEN;

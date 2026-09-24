@@ -195,6 +195,7 @@ export const useScheduleStore = defineStore('schedule', () => {
         model,
         profile,
         subagents,
+        models: agentStore.models,
         userSkills: agentStore.skills,
       });
       task.lastRunStatus = result;

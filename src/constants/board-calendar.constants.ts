@@ -367,6 +367,21 @@ export const BOARD_CALENDAR_RANGE_OPTIONS = [
   { label: '全部', value: BOARD_CALENDAR_RANGE.ALL },
 ] as const;
 
+/** 主区视图：list = 涨跌停矩阵列表（默认）/ bubble = 赚钱效应气泡图 */
+export const BOARD_CALENDAR_VIEW = {
+  LIST: 'list',
+  BUBBLE: 'bubble',
+} as const;
+
+/** 主区视图默认值 */
+export const BOARD_CALENDAR_VIEW_DEFAULT = BOARD_CALENDAR_VIEW.LIST;
+
+/** 主区视图选项（BaseTabs，样式与展示范围切换同款） */
+export const BOARD_CALENDAR_VIEW_OPTIONS = [
+  { label: '列表', value: BOARD_CALENDAR_VIEW.LIST },
+  { label: '气泡图', value: BOARD_CALENDAR_VIEW.BUBBLE },
+] as const;
+
 /** 热门口径「近 N 个交易日累计涨停」的 N */
 export const HEAT_STREAK_WINDOW = 5;
 

@@ -1,8 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
-import BaseButton from '../ui/BaseButton.vue';
+import { computed, ref } from 'vue';
 import BaseEmpty from '../ui/BaseEmpty.vue';
-import BaseModal from '../ui/BaseModal.vue';
 import BaseTabs from '../ui/BaseTabs.vue';
 import {
   BOARD_PROFIT_BUBBLE,
@@ -27,7 +25,7 @@ import type { BubbleLayoutOptions, BubbleLayoutNode } from '../../utils/bubble-l
 import { formatYuan } from '../../utils/format-yuan';
 
 /**
- * 赚钱效应气泡图（最新一个交易日的板块得分）
+ * 赚钱效应气泡图（最新一个交易日的板块得分，内嵌于板块日历页主区）
  *
  * 编码口径（三条通道各司其职）：
  * - **横向位置 + 面积**：|口径值| 越大越靠「值域边缘」、气泡越大 →
@@ -48,8 +46,6 @@ const props = defineProps<{
   /** 该日是否为完整快照（false = 仅回补到涨跌停，无涨跌家数 → 不参与色阶） */
   isFullSnapshot: boolean;
 }>();
-
-const open = defineModel<boolean>('open', { required: true });
 
 /** 面积 / 横向位置口径（默认得分率：跨板块可比） */
 const metric = ref<BoardProfitMetric>(BOARD_PROFIT_METRIC_DEFAULT);
@@ -162,7 +158,7 @@ const itemsOf = (target: BoardProfitMetric) =>
 
 /**
  * 两口径的公共画布高度：各自按 MAX_HEIGHT 收缩适配后取最大值。
- * 切换口径时画布高度恒等于它（弹窗内容不跳变）；病态数据收缩到下限
+ * 切换口径时画布高度恒等于它（切换视图不跳变）；病态数据收缩到下限
  * 仍超高时取实际最大值，两口径仍一致（图内滚动兜底）
  */
 const commonHeight = computed(() => {
@@ -281,222 +277,207 @@ const onLeave = (): void => {
   hoveredKey.value = null;
   pointer.value = null;
 };
-
-// 关闭时清掉悬停态，避免下次打开残留上一次的卡片
-watch(open, (isOpen) => {
-  if (!isOpen) onLeave();
-});
 </script>
 
 <template>
-  <BaseModal
-    v-model:open="open"
-    :title="`赚钱效应气泡图 · ${tradeDate || '暂无数据'}`"
-    max-width-class="max-w-6xl"
-  >
-    <div class="space-y-3">
-      <!-- 口径切换 + 概要 -->
-      <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-        <BaseTabs
-          :model-value="metric"
-          :options="BOARD_PROFIT_METRIC_OPTIONS"
-          @update:model-value="metric = $event as BoardProfitMetric"
-        />
-        <p class="text-xs text-text-tertiary">
-          共 {{ rows.length }} 个板块（不受「板块过滤器」影响）
-          <template v-if="extremes">
-            · 最高 <span class="text-text-secondary">{{ extremes.top.boardName }}</span>
-            <span class="tabular-nums">{{ formatMetricValue(valueOf(extremes.top)) }}</span>
-            · 最低 <span class="text-text-secondary">{{ extremes.bottom.boardName }}</span>
-            <span class="tabular-nums">{{ formatMetricValue(valueOf(extremes.bottom)) }}</span>
-          </template>
-        </p>
-      </div>
-
-      <!-- 回补日提示：只有涨跌停数据，颜色语义不可用 -->
-      <p v-if="!isFullSnapshot && rows.length > 0" class="text-xs text-down" role="alert">
-        该日仅有回补数据（板块级涨跌家数无历史接口），得分只由涨跌停推导，
-        颜色统一按中性展示，仅面积可用于横向比较。
+  <div class="flex h-full min-h-0 flex-col gap-3">
+    <!-- 口径切换 + 概要 -->
+    <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+      <BaseTabs
+        :model-value="metric"
+        :options="BOARD_PROFIT_METRIC_OPTIONS"
+        @update:model-value="metric = $event as BoardProfitMetric"
+      />
+      <p class="text-xs text-text-tertiary">
+        {{ tradeDate || '暂无数据' }} · 共 {{ rows.length }} 个板块（不受「板块过滤器」影响）
+        <template v-if="extremes">
+          · 最高 <span class="text-text-secondary">{{ extremes.top.boardName }}</span>
+          <span class="tabular-nums">{{ formatMetricValue(valueOf(extremes.top)) }}</span>
+          · 最低 <span class="text-text-secondary">{{ extremes.bottom.boardName }}</span>
+          <span class="tabular-nums">{{ formatMetricValue(valueOf(extremes.bottom)) }}</span>
+        </template>
       </p>
+    </div>
 
-      <BaseEmpty v-if="rows.length === 0" text="暂无板块得分数据，请先采集" />
+    <!-- 回补日提示：只有涨跌停数据，颜色语义不可用 -->
+    <p v-if="!isFullSnapshot && rows.length > 0" class="text-xs text-down" role="alert">
+      该日仅有回补数据（板块级涨跌家数无历史接口），得分只由涨跌停推导，
+      颜色统一按中性展示，仅面积可用于横向比较。
+    </p>
 
-      <!-- 气泡画布：高度随宽度等比缩放；svg 以 calc 高度上限兜底，
-           保证「图 + 图例」整体塞进弹窗正文（85dvh 内），任何数据下都不出现滚动条 -->
-      <div v-else class="relative">
-        <svg
-          :viewBox="`0 0 ${layout.width} ${layout.height}`"
-          class="block h-auto max-h-[calc(85dvh-18rem)] w-full select-none"
-          preserveAspectRatio="xMidYMid meet"
-          role="img"
-          :aria-label="ariaLabel"
-          @mouseleave="onLeave"
-        >
-          <!-- 0 值分界线：左侧跌色区、右侧涨色区 -->
+    <BaseEmpty v-if="rows.length === 0" text="暂无板块得分数据，请先采集" />
+
+    <!-- 气泡画布：吃掉面板剩余高度，svg preserveAspectRatio 等比缩放适配容器
+         （宽屏横向撑满、矮屏整图等比缩小），任何数据下都不出现滚动条 -->
+    <div v-else class="relative min-h-0 flex-1">
+      <svg
+        :viewBox="`0 0 ${layout.width} ${layout.height}`"
+        class="block h-full w-full select-none"
+        preserveAspectRatio="xMidYMid meet"
+        role="img"
+        :aria-label="ariaLabel"
+        @mouseleave="onLeave"
+      >
+        <!-- 0 值分界线：左侧跌色区、右侧涨色区 -->
+        <line
+          v-if="layout.zeroX !== null"
+          :x1="layout.zeroX"
+          :y1="0"
+          :x2="layout.zeroX"
+          :y2="layout.baselineY"
+          :style="{ stroke: 'var(--color-flat-weak)' }"
+          stroke-width="1"
+          stroke-dasharray="5 5"
+        />
+        <!-- 基线 -->
+        <line
+          :x1="layout.axisStartX"
+          :y1="layout.baselineY"
+          :x2="layout.axisEndX"
+          :y2="layout.baselineY"
+          :style="{ stroke: 'var(--color-flat)' }"
+          stroke-width="1"
+        />
+        <!-- 刻度 -->
+        <g v-for="tick in layout.ticks" :key="tick.value">
           <line
-            v-if="layout.zeroX !== null"
-            :x1="layout.zeroX"
-            :y1="0"
-            :x2="layout.zeroX"
-            :y2="layout.baselineY"
-            :style="{ stroke: 'var(--color-flat-weak)' }"
-            stroke-width="1"
-            stroke-dasharray="5 5"
-          />
-          <!-- 基线 -->
-          <line
-            :x1="layout.axisStartX"
+            :x1="tick.x"
             :y1="layout.baselineY"
-            :x2="layout.axisEndX"
-            :y2="layout.baselineY"
+            :x2="tick.x"
+            :y2="layout.baselineY + 5"
             :style="{ stroke: 'var(--color-flat)' }"
             stroke-width="1"
           />
-          <!-- 刻度 -->
-          <g v-for="tick in layout.ticks" :key="tick.value">
-            <line
-              :x1="tick.x"
-              :y1="layout.baselineY"
-              :x2="tick.x"
-              :y2="layout.baselineY + 5"
-              :style="{ stroke: 'var(--color-flat)' }"
-              stroke-width="1"
-            />
-            <text
-              :x="tick.x"
-              :y="layout.baselineY + 21"
-              text-anchor="middle"
-              :font-size="11"
-              :style="{ fill: 'var(--color-text-tertiary)' }"
-            >
-              {{ tick.label }}
-            </text>
-          </g>
-
-          <!-- 气泡 -->
-          <g
-            v-for="bubble in bubbles"
-            :key="bubble.key"
-            :opacity="hoveredKey === null || hoveredKey === bubble.key ? 1 : 0.45"
-            :class="hoveredKey === bubble.key ? 'cursor-default' : 'cursor-pointer'"
-            @mouseenter="onEnter(bubble.key, $event)"
-            @mousemove="onMove"
-            @mouseleave="onLeave"
+          <text
+            :x="tick.x"
+            :y="layout.baselineY + 21"
+            text-anchor="middle"
+            :font-size="11"
+            :style="{ fill: 'var(--color-text-tertiary)' }"
           >
-            <circle
-              :cx="bubble.cx"
-              :cy="bubble.cy"
-              :r="bubble.r"
-              :style="{
-                fill: fillOf(bubble.bucket),
-                stroke: hoveredKey === bubble.key ? 'var(--color-text)' : 'var(--color-surface)',
-              }"
-              :stroke-width="hoveredKey === bubble.key ? 2.5 : 1.5"
-            />
-            <text
-              v-for="line in bubble.labels"
-              :key="line.text"
-              :x="bubble.cx"
-              :y="bubble.cy + line.dy"
-              text-anchor="middle"
-              dominant-baseline="central"
-              pointer-events="none"
-              :font-size="line.fontSize"
-              :font-weight="line.fontSize === BOARD_PROFIT_BUBBLE.NAME_FONT_SIZE ? 600 : 400"
-              :style="{ fill: textOf(bubble.bucket) }"
-            >
-              {{ line.text }}
-            </text>
-          </g>
-        </svg>
+            {{ tick.label }}
+          </text>
+        </g>
 
-        <!-- 悬停明细卡片（fixed 定位，避免被弹窗滚动区裁切） -->
-        <Teleport to="body">
-          <div
-            v-if="hoveredRow && hoveredBubble && pointer"
-            class="pointer-events-none fixed z-[60] rounded-xl border border-flat-weak bg-surface p-3 shadow-xl"
-            :style="tooltipStyle"
+        <!-- 气泡 -->
+        <g
+          v-for="bubble in bubbles"
+          :key="bubble.key"
+          :opacity="hoveredKey === null || hoveredKey === bubble.key ? 1 : 0.45"
+          :class="hoveredKey === bubble.key ? 'cursor-default' : 'cursor-pointer'"
+          @mouseenter="onEnter(bubble.key, $event)"
+          @mousemove="onMove"
+          @mouseleave="onLeave"
+        >
+          <circle
+            :cx="bubble.cx"
+            :cy="bubble.cy"
+            :r="bubble.r"
+            :style="{
+              fill: fillOf(bubble.bucket),
+              stroke: hoveredKey === bubble.key ? 'var(--color-text)' : 'var(--color-surface)',
+            }"
+            :stroke-width="hoveredKey === bubble.key ? 2.5 : 1.5"
+          />
+          <text
+            v-for="line in bubble.labels"
+            :key="line.text"
+            :x="bubble.cx"
+            :y="bubble.cy + line.dy"
+            text-anchor="middle"
+            dominant-baseline="central"
+            pointer-events="none"
+            :font-size="line.fontSize"
+            :font-weight="line.fontSize === BOARD_PROFIT_BUBBLE.NAME_FONT_SIZE ? 600 : 400"
+            :style="{ fill: textOf(bubble.bucket) }"
           >
-            <div class="flex items-baseline justify-between gap-2">
-              <span class="truncate text-sm font-semibold text-text">
-                {{ hoveredRow.boardName }}
-              </span>
-              <span class="shrink-0 text-[10px] text-text-tertiary">
-                {{ hoveredRow.boardCode }}
-              </span>
-            </div>
-            <div class="mt-1.5 flex items-center gap-2">
-              <span class="text-base font-semibold tabular-nums text-text">
-                {{ formatSigned(hoveredRow.score, 0) }}
-              </span>
-              <span
-                class="rounded px-1.5 py-0.5 text-[10px] font-medium"
-                :style="{
-                  background: fillOf(hoveredBubble.bucket),
-                  color: textOf(hoveredBubble.bucket),
-                }"
-              >
-                {{ hoveredBucketLabel }}
-              </span>
-            </div>
-            <p class="mt-0.5 text-[11px] text-text-secondary">
-              得分率 <span class="tabular-nums">{{ formatSigned(hoveredRow.scoreRate, 2) }}</span>
-            </p>
-            <div class="mt-2 grid grid-cols-3 gap-x-2 gap-y-1 text-[11px]">
-              <span class="text-text-tertiary">
-                涨停 <b class="tabular-nums text-text">{{ hoveredRow.limitUp }}</b>
-              </span>
-              <span class="text-text-tertiary">
-                跌停 <b class="tabular-nums text-text">{{ hoveredRow.limitDown }}</b>
-              </span>
-              <span class="text-text-tertiary">
-                成分 <b class="tabular-nums text-text">{{ hoveredRow.consCount }}</b>
-              </span>
-              <span class="text-text-tertiary">
-                上涨 <b class="tabular-nums text-text">{{ hoveredRow.upCount }}</b>
-              </span>
-              <span class="text-text-tertiary">
-                下跌 <b class="tabular-nums text-text">{{ hoveredRow.downCount }}</b>
-              </span>
-              <span class="text-text-tertiary">
-                平盘 <b class="tabular-nums text-text">{{ hoveredRow.flatCount }}</b>
-              </span>
-            </div>
-            <p class="mt-1.5 text-[11px] text-text-tertiary">
-              成交额 {{ formatYuan(hoveredRow.amount) }}
-            </p>
+            {{ line.text }}
+          </text>
+        </g>
+      </svg>
+
+      <!-- 悬停明细卡片（Teleport 到 body 的 fixed 定位，不被页面滚动区裁切） -->
+      <Teleport to="body">
+        <div
+          v-if="hoveredRow && hoveredBubble && pointer"
+          class="pointer-events-none fixed z-[60] rounded-xl border border-flat-weak bg-surface p-3 shadow-xl"
+          :style="tooltipStyle"
+        >
+          <div class="flex items-baseline justify-between gap-2">
+            <span class="truncate text-sm font-semibold text-text">
+              {{ hoveredRow.boardName }}
+            </span>
+            <span class="shrink-0 text-[10px] text-text-tertiary">
+              {{ hoveredRow.boardCode }}
+            </span>
           </div>
-        </Teleport>
-      </div>
-
-      <!-- 图例 -->
-      <div v-if="rows.length > 0" class="space-y-1.5 text-[10px] text-text-tertiary">
-        <p>
-          面积 ∝ |{{ metricLabel }}|：泡越大赚钱 / 亏钱效应越强；横轴为{{ metricLabel }}，
-          左半区（跌色）= 亏钱效应，右半区（涨色）= 赚钱效应。
-          <span v-if="metric === BOARD_PROFIT_METRIC.SCORE_RATE">
-            得分率 = 得分 ÷ 成分股数，避免板块体量差异（银行 42 只 vs 医药生物 511 只）
-            让大板块永远最大。
-          </span>
-          <span v-else>原始得分 = 涨停×10 + 跌停×-10 + 净上涨×5 + 净下跌×-5，绝对值受板块体量影响。</span>
-        </p>
-        <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <span>颜色恒按得分率取 7 档涨跌语义色（与表格色阶同口径）：</span>
-          <span
-            v-for="item in BOARD_SCORE_LEGEND"
-            :key="item.bucket"
-            class="flex items-center gap-1"
-          >
-            <i class="inline-block h-3 w-3 rounded-sm" :style="{ background: fillOf(item.bucket) }" />
-            {{ item.label }} {{ item.hint }}
-          </span>
+          <div class="mt-1.5 flex items-center gap-2">
+            <span class="text-base font-semibold tabular-nums text-text">
+              {{ formatSigned(hoveredRow.score, 0) }}
+            </span>
+            <span
+              class="rounded px-1.5 py-0.5 text-[10px] font-medium"
+              :style="{
+                background: fillOf(hoveredBubble.bucket),
+                color: textOf(hoveredBubble.bucket),
+              }"
+            >
+              {{ hoveredBucketLabel }}
+            </span>
+          </div>
+          <p class="mt-0.5 text-[11px] text-text-secondary">
+            得分率 <span class="tabular-nums">{{ formatSigned(hoveredRow.scoreRate, 2) }}</span>
+          </p>
+          <div class="mt-2 grid grid-cols-3 gap-x-2 gap-y-1 text-[11px]">
+            <span class="text-text-tertiary">
+              涨停 <b class="tabular-nums text-text">{{ hoveredRow.limitUp }}</b>
+            </span>
+            <span class="text-text-tertiary">
+              跌停 <b class="tabular-nums text-text">{{ hoveredRow.limitDown }}</b>
+            </span>
+            <span class="text-text-tertiary">
+              成分 <b class="tabular-nums text-text">{{ hoveredRow.consCount }}</b>
+            </span>
+            <span class="text-text-tertiary">
+              上涨 <b class="tabular-nums text-text">{{ hoveredRow.upCount }}</b>
+            </span>
+            <span class="text-text-tertiary">
+              下跌 <b class="tabular-nums text-text">{{ hoveredRow.downCount }}</b>
+            </span>
+            <span class="text-text-tertiary">
+              平盘 <b class="tabular-nums text-text">{{ hoveredRow.flatCount }}</b>
+            </span>
+          </div>
+          <p class="mt-1.5 text-[11px] text-text-tertiary">
+            成交额 {{ formatYuan(hoveredRow.amount) }}
+          </p>
         </div>
-        <p>泡内放不下文字的板块（得分趋 0）请悬停查看明细。</p>
-      </div>
+      </Teleport>
     </div>
 
-    <template #footer>
-      <BaseButton variant="ghost" @click="open = false">关闭</BaseButton>
-    </template>
-  </BaseModal>
+    <!-- 图例 -->
+    <div v-if="rows.length > 0" class="space-y-1.5 text-[10px] text-text-tertiary">
+      <p>
+        面积 ∝ |{{ metricLabel }}|：泡越大赚钱 / 亏钱效应越强；横轴为{{ metricLabel }}，
+        左半区（跌色）= 亏钱效应，右半区（涨色）= 赚钱效应。
+        <span v-if="metric === BOARD_PROFIT_METRIC.SCORE_RATE">
+          得分率 = 得分 ÷ 成分股数，避免板块体量差异（银行 42 只 vs 医药生物 511 只）
+          让大板块永远最大。
+        </span>
+        <span v-else>原始得分 = 涨停×10 + 跌停×-10 + 净上涨×5 + 净下跌×-5，绝对值受板块体量影响。</span>
+      </p>
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span>颜色恒按得分率取 7 档涨跌语义色（与表格色阶同口径）：</span>
+        <span
+          v-for="item in BOARD_SCORE_LEGEND"
+          :key="item.bucket"
+          class="flex items-center gap-1"
+        >
+          <i class="inline-block h-3 w-3 rounded-sm" :style="{ background: fillOf(item.bucket) }" />
+          {{ item.label }} {{ item.hint }}
+        </span>
+      </div>
+      <p>泡内放不下文字的板块（得分趋 0）请悬停查看明细。</p>
+    </div>
+  </div>
 </template>

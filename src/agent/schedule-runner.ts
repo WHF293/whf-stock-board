@@ -53,6 +53,8 @@ export interface RunScheduleTaskParams {
   profile: AgentProfile | null;
   /** 本次参与编排的子 agent（已按 profile.subagentIds 解析，可空） */
   subagents: readonly SubagentDef[];
+  /** DB 里的模型列表（解析子 agent 独立模型用） */
+  models: readonly ModelConfig[];
   /** DB 里的用户 skill 列表（读盘装载用） */
   userSkills: readonly Skill[];
 }
@@ -67,7 +69,14 @@ export interface RunScheduleTaskParams {
  * @returns 本次执行结果（'ok' = 正常完成或中断；'error' = 运行报错）
  */
 export async function runScheduleTask(params: RunScheduleTaskParams): Promise<'ok' | 'error'> {
-  const { sessionId, prompt, model, profile, subagents, userSkills } = params;
+  const { sessionId, prompt, model, profile, subagents, models, userSkills } = params;
+
+  // 子 agent 独立模型：id 命中才进映射；未配置 / 模型已删的子 agent 回落主模型（与 ChatPanel 同口径）
+  const subagentModels = new Map(
+    [...subagents]
+      .map((s) => [s.id, models.find((m) => m.id === s.modelId)] as const)
+      .filter((pair): pair is [number, ModelConfig] => pair[1] !== undefined),
+  );
 
   // --- 历史窗口：先于本次消息插入读取，天然不含本次问句 ---
   const prior = await listMessages(sessionId);
@@ -199,6 +208,7 @@ export async function runScheduleTask(params: RunScheduleTaskParams): Promise<'o
         skills: runContext.skills,
         skillPathByName: runContext.skillPathByName,
         skillFiles: runContext.skillFiles,
+        subagentModels,
       },
       {
         onDelta: (delta) => streamer.push(delta),
