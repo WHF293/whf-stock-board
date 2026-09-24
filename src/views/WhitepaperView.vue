@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import BaseCard from '../components/ui/BaseCard.vue';
+import BaseTabs from '../components/ui/BaseTabs.vue';
 import BaseTag from '../components/ui/BaseTag.vue';
 import MenuIcon from '../components/ui/MenuIcon.vue';
 import NoticeBar from '../components/ui/NoticeBar.vue';
@@ -17,6 +18,7 @@ import {
  *
  * 内容用统一数据结构描述（章节 -> 内容块），模板按块类型渲染，
  * 避免整页手写标签：改文案只动数据，不动模板。
+ * 章节按文档 tab 分栏（使用说明 / 开发者指南，tab 形态同行情全景页），
  * 章节 id 同时作为目录锚点；目录高亮由 IntersectionObserver 驱动。
  */
 
@@ -86,7 +88,7 @@ const USER_PLUGIN_TEMPLATE = `export default {
   },
 };`;
 
-/** 白皮书章节内容（顺序即阅读顺序） */
+/** 白皮书章节内容（顺序即所属文档 tab 内的阅读顺序） */
 const GUIDE_CHAPTERS: GuideChapter[] = [
   {
     id: 'quick-start',
@@ -804,6 +806,10 @@ const GUIDE_CHAPTERS: GuideChapter[] = [
             '顶栏「自选盯盘」条目：收起态轮播盯盘标的的最新价与涨跌幅，展开下拉看候选池明细；支持到价 / 涨跌幅阈值提醒（触发后右下角浮窗提醒）。候选与阈值在自选股表格「操作」列的「盯盘」按钮设置，盯盘引擎不依赖下拉是否展开，收起后照常工作。',
           ],
           [
+            '任务栏盯盘小组件',
+            '设置三选一（默认关：关闭 / 常驻 / 智能开启），选择常驻或智能开启后，Windows 任务栏上方常驻一个置顶盯盘迷你条（可拖动，位置会记住）：轮播自选盯盘标的的名称 / 现价 / 涨跌幅，阈值触发带提示点。单击迷你条展开气泡看全部候选；点气泡头部的火焰图标可切换「板块热力」视图——市场总览同口径的行业板块 Top 10 迷你热力图（面积 = 总市值，颜色 = 涨跌），仅展示无交互，再点一次切回候选列表；点气泡里的标的（或双击迷你条当前标的）会自动唤起主窗口并打开该股详情页，左侧列表就是盯盘候选。智能开启仅在交易日盘中（9:30-15:00，含午休）显示，盘前、盘后与节假日自动隐藏。仅桌面端；迷你条不产生任何额外行情请求（复用盯盘引擎数据，热力数据仅在气泡热力视图激活期间低频拉取），主窗口隐藏到托盘后照常刷新。',
+          ],
+          [
             '速记',
             '侧栏底部「速记」入口（抽屉形态）：随手记一条，随写随存，可关联一只股票（弹出全站统一的标的搜索挑一只），关联后的速记展示在该股的个股详情里；快捷键 Ctrl + Alt + N 打开。',
           ],
@@ -1020,6 +1026,10 @@ const GUIDE_CHAPTERS: GuideChapter[] = [
             desc: '「关闭按钮最小化到托盘」开关（默认开启）：点击标题栏 × 或 Alt+F4 时仅隐藏到系统托盘，托盘图标左键单击唤起主窗口、右键菜单提供「显示主窗口 / 退出」——托盘菜单「退出」才是真正关闭；关闭开关后恢复传统行为，点击关闭直接退出应用。浏览器开发模式无窗口概念，该配置不生效。',
           },
           {
+            term: '任务栏盯盘小组件（桌面端）',
+            desc: '三态选择（默认关闭）：关闭 / 常驻 / 智能开启（仅交易日盘中 9:30-15:00 显示，盘前、盘后与节假日自动隐藏）。选择常驻或智能开启后，Windows 任务栏上方常驻盯盘迷你条，轮播自选盯盘标的；单击展开气泡看全部候选，点头部火焰图标可切换行业板块 Top 10 迷你热力图（仅展示无交互），点标的（或双击迷你条当前标的）自动唤起主窗口并打开详情页。显示模式二选一：常驻显示 / 鼠标离开 3 秒自动隐藏（移到屏幕右下角即可唤回）。浏览器开发模式不生效。',
+          },
+          {
             term: '全局水印（开关）',
             desc: '斜向平铺「数据仅供个人学习参考」字样，覆盖全部页面，默认开启。',
           },
@@ -1096,6 +1106,7 @@ const GUIDE_CHAPTERS: GuideChapter[] = [
         rows: [
           ['Ctrl + Shift + B', '收起 / 展开左侧导航栏'],
           ['Shift + Tab', '按侧栏顺序切换到下一个页面（到尾回到第一个）'],
+          ['Ctrl + ↑ / ↓', '股票详情页在左侧来源列表内切换上一只 / 下一只（循环；列表只有一只时不动作）'],
           ['Esc', '关闭个股详情面板、搜索弹窗或对话框'],
           ['↑ / ↓', '搜索弹窗内切换候选标的'],
           ['Enter', '搜索弹窗内确认选中；Agent 输入框内发送消息'],
@@ -1164,6 +1175,32 @@ const GUIDE_CHAPTERS: GuideChapter[] = [
     ],
   },
 ];
+
+/* ------------------------------ 文档 tab：使用说明 / 开发者指南 ------------------------------ */
+
+/** 文档 tab 选项（形态参考行情全景页的模块页签） */
+const DOC_TABS = [
+  { label: '使用说明', value: 'user' },
+  { label: '开发者指南', value: 'dev' },
+] as const;
+
+/** 文档 tab 值 */
+type DocTabValue = (typeof DOC_TABS)[number]['value'];
+
+/** 当前激活的文档 tab */
+const activeDocTab = ref<DocTabValue>('user');
+
+/** 归入「开发者指南」tab 的章节 id（其余章节全部归「使用说明」） */
+const DEV_CHAPTER_IDS: ReadonlySet<string> = new Set<string>(['dev']);
+
+/** 按文档 tab 归组后的章节（构建一次；Record 保证两个 tab 都有定义） */
+const GUIDE_TAB_CHAPTERS: Record<DocTabValue, GuideChapter[]> = {
+  user: GUIDE_CHAPTERS.filter((chapter) => !DEV_CHAPTER_IDS.has(chapter.id)),
+  dev: GUIDE_CHAPTERS.filter((chapter) => DEV_CHAPTER_IDS.has(chapter.id)),
+};
+
+/** 当前文档 tab 下的章节（目录与正文共用） */
+const activeChapters = computed<GuideChapter[]>(() => GUIDE_TAB_CHAPTERS[activeDocTab.value]);
 
 /* -------------------------------- 关键字搜索 -------------------------------- */
 
@@ -1358,22 +1395,39 @@ const clearSearch = (): void => {
 
 /**
  * 跳到某条命中结果：滚到对应内容块（章节级则滚到卡片）并短暂高亮章节
+ *
+ * 命中章节不在当前文档 tab 时先切 tab（搜索索引覆盖全部章节），等新章节
+ * 渲染完成后再定位 —— nextTick 前 getElementById 拿不到另一个 tab 的锚点。
  * @param hit 命中条目
  */
 const jumpToHit = (hit: GuideSearchHit): void => {
-  activeChapterId.value = hit.chapterId;
-  const target =
-    hit.blockIndex >= 0
-      ? (document.getElementById(blockAnchorId(hit.chapterId, hit.blockIndex)) ??
-        document.getElementById(hit.chapterId))
-      : document.getElementById(hit.chapterId);
-  target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  // 命中章节不在当前文档 tab 时先切 tab（搜索索引覆盖全部章节）；
+  // 跨 tab 的锚点要等正文 v-for 重新渲染才存在，定位统一走「DOM 就位则同步，否则 nextTick」
+  activeDocTab.value = DEV_CHAPTER_IDS.has(hit.chapterId) ? 'dev' : 'user';
 
-  flashChapterId.value = hit.chapterId;
-  if (flashTimer) clearTimeout(flashTimer);
-  flashTimer = setTimeout(() => {
-    flashChapterId.value = '';
-  }, 1400);
+  /** 定位与闪烁（tab 就位后执行） */
+  const locate = (): void => {
+    activeChapterId.value = hit.chapterId;
+    const target =
+      hit.blockIndex >= 0
+        ? (document.getElementById(blockAnchorId(hit.chapterId, hit.blockIndex)) ??
+          document.getElementById(hit.chapterId))
+        : document.getElementById(hit.chapterId);
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    flashChapterId.value = hit.chapterId;
+    if (flashTimer) clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => {
+      flashChapterId.value = '';
+    }, 1400);
+  };
+
+  // 目标章节已在当前 tab 的 DOM 里（同 tab，或恰好已处于目标 tab）→ 同步定位
+  if (document.getElementById(hit.chapterId)) {
+    locate();
+  } else {
+    void nextTick(locate);
+  }
 
   // 选中后清空并失焦：面板与目录一起收起，视线直接落到定位处；再点输入框可重新搜索
   clearSearch();
@@ -1448,6 +1502,32 @@ const scrollToChapter = (id: string): void => {
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
 
+/**
+ * 把章节观察器对准当前文档 tab 的章节
+ *
+ * tab 切换时正文 v-for 全量替换 DOM，旧元素引用失效，必须重新 observe。
+ */
+const observeActiveTabChapters = (): void => {
+  if (!chapterObserver) return;
+  chapterObserver.disconnect();
+  for (const chapter of activeChapters.value) {
+    const element = document.getElementById(chapter.id);
+    if (element) chapterObserver.observe(element);
+  }
+};
+
+// 切换文档 tab：目录高亮回到该 tab 第一章，等新章节渲染完成后重新对准观察器，
+// 并重置滚动位置 —— 正文容器是复用的，v-for 换内容后 scrollTop 会残留；
+// 窄屏没有内部滚动容器（整页滚动），用 window.scrollTo 兜底
+watch(activeDocTab, () => {
+  activeChapterId.value = activeChapters.value[0]?.id ?? '';
+  void nextTick(() => {
+    observeActiveTabChapters();
+    if (contentRef.value) contentRef.value.scrollTop = 0;
+    window.scrollTo(0, 0);
+  });
+});
+
 onMounted(() => {
   window.addEventListener('resize', syncPanelMaxHeight);
   if (typeof IntersectionObserver === 'undefined') return;
@@ -1462,10 +1542,7 @@ onMounted(() => {
     // 上边距内缩、下边距大幅内缩：以「章节标题刚进入上部可视区」为判定点
     { root: contentRef.value, rootMargin: '-72px 0px -70% 0px', threshold: 0 },
   );
-  for (const chapter of GUIDE_CHAPTERS) {
-    const element = document.getElementById(chapter.id);
-    if (element) chapterObserver.observe(element);
-  }
+  observeActiveTabChapters();
 });
 
 onBeforeUnmount(() => {
@@ -1493,7 +1570,8 @@ onBeforeUnmount(() => {
           <h2 class="text-base font-semibold text-text">软件白皮书</h2>
           <p class="mt-1 max-w-3xl text-sm leading-6 text-text-secondary">
             全站功能说明与看盘口径：每个页面能做什么、每个按钮和开关管什么、数据怎么读、限制在哪里。
-            新用户建议按左侧目录顺序读一遍；老用户可直接按目录跳到需要的章节。
+            新用户建议按目录顺序读一遍；老用户可直接按目录跳到需要的章节。
+            开发者接入（远端 MCP 与插件开发）请切到「开发者指南」。
           </p>
         </div>
         <BaseTag tone="primary">v{{ APP_VERSION }}</BaseTag>
@@ -1504,6 +1582,11 @@ onBeforeUnmount(() => {
       class="shrink-0"
       text="本文档描述的是当前版本的实际行为。行情数据来自公开接口，可能存在延迟或缺失；软件只提供数据与统计口径，不构成投资建议。"
     />
+
+    <!-- 文档分栏：使用说明 / 开发者指南（tab 形态同行情全景页的模块页签） -->
+    <div class="shrink-0">
+      <BaseTabs v-model="activeDocTab" :options="DOC_TABS" variant="underline" />
+    </div>
 
     <div class="grid gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-[220px_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)]">
       <!-- 目录：宽屏固定左侧，窄屏隐藏（正文按顺序阅读即可） -->
@@ -1593,16 +1676,17 @@ onBeforeUnmount(() => {
           </div>
 
           <!--
-            目录列表在搜索态下**不卸载**：这 19 个按钮 v-if 增删会让列表高度突变，
+            目录列表在搜索态下**不卸载**：v-if 增删会让列表高度突变，
             实测会打断跳转时的平滑滚动（滚到半路停住）。故只切换下面这行文案。
             列表自身内部滚动（flex-1 + overflow）：章节数增长不再撑破一屏约束。
+            目录只列当前文档 tab 的章节（activeChapters）。
           -->
           <p class="shrink-0 px-2 pb-1 pt-1 text-xs font-medium text-text-tertiary">
             {{ isSearching ? `${searchHitCount} 条结果 · Esc 退出搜索` : '目录' }}
           </p>
           <div class="min-h-0 flex-1 space-y-1 overflow-y-auto">
             <button
-              v-for="chapter in GUIDE_CHAPTERS"
+              v-for="chapter in activeChapters"
               :key="chapter.id"
               type="button"
               class="pressable flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs active:scale-[0.98]"
@@ -1623,7 +1707,7 @@ onBeforeUnmount(() => {
       <!-- 正文：章节卡片（宽屏在此列内部滚动，是目录高亮 IntersectionObserver 的 root） -->
       <div ref="contentRef" class="min-h-0 space-y-4 pb-1 lg:overflow-y-auto">
         <BaseCard
-          v-for="chapter in GUIDE_CHAPTERS"
+          v-for="chapter in activeChapters"
           :id="chapter.id"
           :key="chapter.id"
           :title="chapter.title"

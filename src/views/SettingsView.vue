@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { VueDraggable } from "vue-draggable-plus";
 import BaseButton from "../components/ui/BaseButton.vue";
@@ -13,6 +13,10 @@ import BaseTag from "../components/ui/BaseTag.vue";
 import PluginManageModal from "../components/plugin/PluginManageModal.vue";
 import PluginInstallModal from "../components/plugin/PluginInstallModal.vue";
 import FirstRunSetupModal from "../components/business/FirstRunSetupModal.vue";
+import DataExportModal from "../components/business/DataExportModal.vue";
+import DataImportModal from "../components/business/DataImportModal.vue";
+import { isDataPortAvailable } from "../api/data-port.api";
+import { isAutoStartEnabled } from "../api/autostart.api";
 import { pluginKernel } from "../plugin";
 import { usePlugins } from "../composables/use-plugins";
 import { sdk } from "../api/sdk";
@@ -20,20 +24,27 @@ import { MENU_DEFAULT_ORDER, MENU_ITEMS, ROUTE_PATH } from "../constants/router-
 import { HEADER_DEFAULT_ORDER, HOST_HEADER_ITEMS } from "../constants/header.constants";
 import { STOCK_PROXY_PATH } from "../constants/proxy.constants";
 import {
+  PLUGIN_STATUS,
+  PLUGIN_STATUS_LABEL,
+  PLUGIN_STATUS_TONE,
+} from "../constants/plugin.constants";
+import {
+  WATCH_WIDGET_MODE,
+  WATCH_WIDGET_PLUGIN_ID,
+  WATCH_WIDGET_POWER,
+} from "../constants/watch-widget.constants";
+import {
   POLLING_INTERVAL,
   REFRESH_INTERVAL_OPTIONS,
 } from "../constants/polling.constants";
 import type { TableColumn } from "../types/table.types";
 import { WEBLOG_RETENTION_DAYS } from "../constants/weblog.constants";
-import {
-  APP_VERSION,
-  CHECK_UPDATE_TIMEOUT_MS,
-  RELEASES_LATEST_API,
-  RELEASES_URL,
-  REPO_URL,
-} from "../constants/app-info.constants";
+import { APP_VERSION, REPO_URL } from "../constants/app-info.constants";
+import { getCurrentAppVersion } from "../api/app-update.api";
+import { useAppUpdate } from "../composables/use-app-update";
+import type { AppUpdateStatus } from "../types/app-update.types";
+import type { WeblogActionKey } from "../weblog/weblogActions.enum";
 import { useSettingsStore } from "../stores/settings";
-import { compareVersion } from "../utils/plugin-version";
 import { setWeblogEnabled, trackAction } from "../weblog";
 import {
   DATA_SOURCE_LABEL,
@@ -96,6 +107,43 @@ const pluginInstallModalOpen = ref(false);
 
 /** 插件清单与已挂载数量（内核状态变化后自动刷新） */
 const { plugins: pluginList, mountedCount } = usePlugins();
+
+// ---------- 任务栏盯盘小组件（设置项随插件运行时状态联动） ----------
+
+/** 小组件插件的内核运行时快照（status / error，随内核版本号自动刷新） */
+const watchWidgetRuntime = computed(
+  () => pluginList.value.find((plugin) => plugin.id === WATCH_WIDGET_PLUGIN_ID) ?? null,
+);
+
+/** 小组件插件是否已挂载（挂载后设置项才会真正生效） */
+const watchWidgetReady = computed(
+  () => watchWidgetRuntime.value?.status === PLUGIN_STATUS.MOUNTED,
+);
+
+/**
+ * 小组件插件未就绪时设置卡片顶部的原因提示
+ * @returns 提示文案；插件已挂载时为空串（不渲染提示行）
+ */
+const watchWidgetUnavailableHint = computed(() => {
+  const runtime = watchWidgetRuntime.value;
+  if (!runtime) return "插件未注册（异常状态），请重启应用；若仍不出现请检查插件清单";
+  if (runtime.status === PLUGIN_STATUS.PENDING) {
+    return "功能未生效：依赖「自选盯盘」插件提供盯盘引擎。请先在插件工坊安装并启用「自选盯盘」，再回到这里配置。";
+  }
+  if (runtime.status === PLUGIN_STATUS.DISABLED) {
+    return "功能未生效：插件已被停用，可在插件工坊重新启用后再配置。";
+  }
+  if (runtime.status === PLUGIN_STATUS.FAILED) {
+    return `插件加载失败：${runtime.error ?? "未知原因"}，可在插件工坊重试。`;
+  }
+  return "";
+});
+
+/** 跳转插件工坊（先收起设置抽屉，避免抽屉盖住目标页） */
+const gotoPluginLab = (): void => {
+  emit("close");
+  void router.push(ROUTE_PATH.PLUGIN_LAB);
+};
 
 /** 编排弹窗里单条菜单的草稿形态（插件来源的项带标记，显隐开关跟着走） */
 interface MenuOrderDraftItem {
@@ -339,18 +387,43 @@ const resetHeaderOrderDraft = (): void => {
   headerOrderDraft.value = defaultHeaderDraft.value.map((item) => ({ ...item }));
 };
 
-// ---------- 检查更新 ----------
-/** 检查状态：idle 未检查 / checking 检查中 / latest 已是最新 / newer 发现新版 / fail 失败 */
-type UpdateStatus = "idle" | "checking" | "latest" | "newer" | "fail";
+// ---------- 检查更新（与 TitleBar 更新徽标共享同一状态机，见 composables/use-app-update） ----------
+const {
+  status: updateStatus,
+  latestVersion,
+  progressPercent,
+  lastMessage: updateMessage,
+  check: checkUpdate,
+  startDownload: startUpdateDownload,
+  cancelDownload: cancelUpdateDownload,
+  installNow: installUpdateNow,
+} = useAppUpdate();
 
-/** 检查更新状态 */
-const updateStatus = ref<UpdateStatus>("idle");
+/** 当前运行版本（Tauri 下读 tauri.conf.json 的 version，浏览器端回退 APP_VERSION 常量） */
+const currentVersion = ref(APP_VERSION);
 
-/** 最新版本号（去掉 tag 前缀 v） */
-const latestVersion = ref<string>("");
+/** 检查更新按钮的埋点键（随状态分流：检查 / 下载 / 取消下载 / 安装） */
+const UPDATE_TRACK_BY_STATUS: Record<AppUpdateStatus, WeblogActionKey> = {
+  idle: "CHECK_UPDATE",
+  checking: "CHECK_UPDATE",
+  "up-to-date": "CHECK_UPDATE",
+  available: "UPDATE_DOWNLOAD",
+  downloading: "UPDATE_CANCEL_DOWNLOAD",
+  ready: "UPDATE_INSTALL",
+  installing: "UPDATE_INSTALL",
+};
 
 /** 快捷键说明弹窗 */
 const shortcutsModalOpen = ref(false);
+
+/** 数据迁移功能是否可用（SQLite 是 Tauri 专属，浏览器端禁用） */
+const dataPortAvailable = isDataPortAvailable();
+
+/** 数据导出弹窗 */
+const dataExportOpen = ref(false);
+
+/** 数据导入弹窗 */
+const dataImportOpen = ref(false);
 
 /**
  * 快捷键清单（供「快捷键说明」弹窗展示）
@@ -364,6 +437,7 @@ const SHORTCUTS = [
     action: '收起 / 展开左侧导航栏（仅桌面端生效）',
   },
   { key: 'Shift + Tab', action: '切换页面（按侧栏顺序循环，不含设置页）' },
+  { key: 'Ctrl + ↑ / ↓', action: '股票详情页：左侧来源列表内切换上一只 / 下一只（列表仅一只时不动作）' },
   { key: 'Esc', action: '关闭股票详情面板 / 搜索弹窗 / 对话框' },
   { key: '↑ ↓', action: '搜索弹窗内切换标的' },
   { key: 'Enter', action: '搜索弹窗内确认选中标的' },
@@ -437,56 +511,59 @@ const pollingDetailColumns: TableColumn<PollingDetailRow>[] = [
  */
 const pollingDetailRowKey = (row: PollingDetailRow): string => `${row.page}|${row.target}`;
 
-/** 新版弹窗显隐 */
-const updateModalOpen = ref(false);
+/**
+ * 更新按钮文案（随共享状态机变化；idle 也提示可再次检查）
+ */
+const updateButtonText = computed(() => {
+  switch (updateStatus.value) {
+    case "checking":
+      return "检查中...";
+    case "up-to-date":
+      return "已是最新，再查一次";
+    case "available":
+      return `发现新版 v${latestVersion.value}，点击下载`;
+    case "downloading":
+      return `取消下载（${progressPercent.value}%）`;
+    case "ready":
+      return "立即更新";
+    case "installing":
+      return "更新中...";
+    default:
+      return "检查更新";
+  }
+});
 
 /**
- * 检查更新：请求 GitHub Releases 最新版，与当前版本比较
- * （api.github.com 免鉴权且 CORS 允许任意来源，浏览器 / Tauri 均可直连）
+ * 更新按钮点击（按状态机状态分流）
  */
-const onCheckUpdate = async (): Promise<void> => {
-  updateStatus.value = "checking";
-  try {
-    const controller = new AbortController();
-    const timer = window.setTimeout(
-      () => controller.abort(),
-      CHECK_UPDATE_TIMEOUT_MS,
-    );
-    const response = await fetch(RELEASES_LATEST_API, {
-      signal: controller.signal,
-      headers: { Accept: "application/vnd.github+json" },
-    });
-    window.clearTimeout(timer);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const release = (await response.json()) as { tag_name?: string };
-    const tag = release.tag_name ?? "";
-    if (!tag) throw new Error("响应缺少 tag_name");
-
-    latestVersion.value = tag.replace(/^v/i, "");
-    // 严格比较：本地更高（装了未发布的版本）不算「有新版本」，不该提示降级
-    const hasNewer = compareVersion(tag, APP_VERSION) > 0;
-    updateStatus.value = hasNewer ? "newer" : "latest";
-    if (hasNewer) {
-      updateModalOpen.value = true;
-    }
-  } catch (error) {
-    updateStatus.value = "fail";
-    console.error("[settings] check-update", error);
+const onUpdateAction = (): void => {
+  if (updateStatus.value === "downloading") {
+    cancelUpdateDownload();
+    return;
+  }
+  if (updateStatus.value === "available") {
+    void startUpdateDownload();
+    return;
+  }
+  if (updateStatus.value === "ready") {
+    void installUpdateNow();
+    return;
+  }
+  if (updateStatus.value !== "checking" && updateStatus.value !== "installing") {
+    void checkUpdate(false);
   }
 };
 
-/** 检查按钮文案（随状态变化） */
-const updateButtonText = computed(() => {
-  if (updateStatus.value === "checking") return "检查中...";
-  if (updateStatus.value === "latest") return "已是最新";
-  if (updateStatus.value === "fail") return "检查失败，点击重试";
-  return "检查更新";
+onMounted(() => {
+  void getCurrentAppVersion().then((version) => {
+    currentVersion.value = version;
+  });
+  // 校准「开机自动启动」开关显示：注册表是事实源，用户可能在任务管理器里手动改过；
+  // 直接写 store 字段（不经 action），避免校准触发 enable / disable 回写
+  void isAutoStartEnabled().then((enabled) => {
+    settingsStore.launchAtStartup = enabled;
+  });
 });
-
-/** 弹窗「前往下载」：打开 Releases 页 */
-const onGoDownload = (): void => {
-  window.open(RELEASES_URL, "_blank", "noopener");
-};
 
 /** 仓库地址展示文案（去掉协议头，短一些不挤行） */
 const repoDisplayUrl = computed(() => REPO_URL.replace(/^https?:\/\//, ""));
@@ -712,7 +789,7 @@ const onProbeProxy = async (): Promise<void> => {
 
     <!-- 窗口 & 托盘开关（仅桌面端生效） -->
     <BaseCard title="窗口 & 托盘">
-      <div class="flex items-center justify-between">
+      <div class="flex items-center justify-between gap-4 border-b border-flat-weak pb-4">
         <div>
           <p class="text-sm text-text">关闭按钮最小化到托盘</p>
           <p class="mt-0.5 text-xs text-text-tertiary">
@@ -724,6 +801,115 @@ const onProbeProxy = async (): Promise<void> => {
           data-track="CLOSE_TO_TRAY_TOGGLE"
           @update:model-value="settingsStore.setCloseToTray"
         />
+      </div>
+      <div class="flex items-center justify-between gap-4 pt-4">
+        <div>
+          <p class="text-sm text-text">开机自动启动</p>
+          <p class="mt-0.5 text-xs text-text-tertiary">
+            开启后随当前用户登录自动启动应用（写入系统启动项，可在任务管理器「启动应用」里查看或关闭）；默认关闭
+          </p>
+        </div>
+        <BaseSwitch
+          :model-value="settingsStore.launchAtStartup"
+          data-track="LAUNCH_AT_STARTUP_TOGGLE"
+          @update:model-value="settingsStore.setLaunchAtStartup"
+        />
+      </div>
+    </BaseCard>
+
+    <!-- 任务栏盯盘小组件（仅桌面端生效；设置项随插件运行时状态联动，未挂载时不显示配置） -->
+    <BaseCard title="任务栏盯盘小组件">
+      <div
+        v-if="!watchWidgetReady"
+        class="flex items-center justify-between gap-4"
+      >
+        <div>
+          <p class="text-sm text-text">
+            常驻盯盘迷你条
+            <BaseTag
+              v-if="watchWidgetRuntime"
+              :tone="PLUGIN_STATUS_TONE[watchWidgetRuntime.status]"
+              class="ml-1"
+            >
+              {{ PLUGIN_STATUS_LABEL[watchWidgetRuntime.status] }}
+            </BaseTag>
+          </p>
+          <p class="mt-0.5 text-xs text-text-tertiary">{{ watchWidgetUnavailableHint }}</p>
+        </div>
+        <BaseButton data-track="WATCH_WIDGET_GOTO_PLUGIN_LAB" @click="gotoPluginLab">
+          去插件工坊
+        </BaseButton>
+      </div>
+      <div v-else class="space-y-4">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-sm text-text">常驻盯盘迷你条</p>
+            <p class="mt-0.5 text-xs text-text-tertiary">
+              在 Windows 任务栏上方常驻一个置顶迷你条（可拖动，位置会记住）：轮播盯盘标的，单击展开气泡看全部，点标的自动唤起主窗口并打开详情页；仅桌面端生效
+            </p>
+          </div>
+          <div class="flex items-center gap-2">
+            <BaseButton
+              :variant="settingsStore.watchWidget.power === WATCH_WIDGET_POWER.OFF ? 'primary' : 'ghost'"
+              data-track="WATCH_WIDGET_POWER_OFF"
+              @click="settingsStore.setWatchWidget({ power: WATCH_WIDGET_POWER.OFF })"
+            >
+              关闭
+            </BaseButton>
+            <BaseButton
+              :variant="settingsStore.watchWidget.power === WATCH_WIDGET_POWER.ALWAYS ? 'primary' : 'ghost'"
+              data-track="WATCH_WIDGET_POWER_ALWAYS"
+              @click="settingsStore.setWatchWidget({ power: WATCH_WIDGET_POWER.ALWAYS })"
+            >
+              常驻
+            </BaseButton>
+            <BaseButton
+              :variant="settingsStore.watchWidget.power === WATCH_WIDGET_POWER.SMART ? 'primary' : 'ghost'"
+              data-track="WATCH_WIDGET_POWER_SMART"
+              @click="settingsStore.setWatchWidget({ power: WATCH_WIDGET_POWER.SMART })"
+            >
+              智能开启
+            </BaseButton>
+          </div>
+        </div>
+        <div
+          v-if="settingsStore.watchWidget.power !== WATCH_WIDGET_POWER.OFF"
+          class="flex items-center justify-between border-t border-flat-weak pt-4"
+        >
+          <div>
+            <p class="text-sm text-text">显示模式</p>
+            <p class="mt-0.5 text-xs text-text-tertiary">
+              摸鱼模式：鼠标离开 3 秒自动隐藏，移到屏幕右下角唤回
+            </p>
+          </div>
+          <div class="flex items-center gap-2">
+            <BaseButton
+              :variant="settingsStore.watchWidget.mode === WATCH_WIDGET_MODE.ALWAYS ? 'primary' : 'ghost'"
+              data-track="WATCH_WIDGET_MODE_ALWAYS"
+              @click="settingsStore.setWatchWidget({ mode: WATCH_WIDGET_MODE.ALWAYS })"
+            >
+              常驻显示
+            </BaseButton>
+            <BaseButton
+              :variant="settingsStore.watchWidget.mode === WATCH_WIDGET_MODE.HOVER ? 'primary' : 'ghost'"
+              data-track="WATCH_WIDGET_MODE_HOVER"
+              @click="settingsStore.setWatchWidget({ mode: WATCH_WIDGET_MODE.HOVER })"
+            >
+              离开隐藏
+            </BaseButton>
+          </div>
+        </div>
+        <div
+          v-if="settingsStore.watchWidget.power === WATCH_WIDGET_POWER.SMART"
+          class="flex items-center justify-between border-t border-flat-weak pt-4"
+        >
+          <div>
+            <p class="text-sm text-text">智能开启说明</p>
+            <p class="mt-0.5 text-xs text-text-tertiary">
+              仅交易日盘中（9:30-15:00，含午休）显示迷你条；盘前、盘后与节假日自动隐藏
+            </p>
+          </div>
+        </div>
       </div>
     </BaseCard>
 
@@ -838,6 +1024,41 @@ const onProbeProxy = async (): Promise<void> => {
       </div>
     </BaseCard>
 
+    <!-- 数据迁移：导出 / 导入本地数据（换机迁移，仅桌面端） -->
+    <BaseCard title="数据迁移">
+      <div class="flex items-center justify-between gap-4 border-b border-flat-weak pb-4">
+        <div>
+          <p class="text-sm text-text">导出数据</p>
+          <p class="mt-0.5 text-xs text-text-tertiary">
+            按类别勾选自选股 / 账户 / 设置等本地数据，导出为单个 JSON 文件备份或换机
+          </p>
+        </div>
+        <BaseButton
+          variant="ghost"
+          data-track="DATA_EXPORT_OPEN"
+          :disabled="!dataPortAvailable"
+          @click="dataExportOpen = true"
+        >
+          导出
+        </BaseButton>
+      </div>
+      <div class="flex items-center justify-between gap-4 pt-4">
+        <div>
+          <p class="text-sm text-text">导入数据</p>
+          <p class="mt-0.5 text-xs text-text-tertiary">
+            {{ dataPortAvailable ? "从导出文件恢复，覆盖前自动备份并需二次确认" : "仅桌面端可用（浏览器端无本地数据库）" }}
+          </p>
+        </div>
+        <BaseButton
+          variant="ghost"
+          :disabled="!dataPortAvailable"
+          @click="dataImportOpen = true"
+        >
+          导入
+        </BaseButton>
+      </div>
+    </BaseCard>
+
     <BaseCard title="系统">
       <div class="mb-4 flex items-center justify-between gap-4">
         <div class="min-w-0">
@@ -857,9 +1078,9 @@ const onProbeProxy = async (): Promise<void> => {
       <div class="flex items-center justify-between gap-4">
         <div class="min-w-0">
           <p class="text-sm text-text">
-            当前版本 v{{ APP_VERSION }}
+            当前版本 v{{ currentVersion }}
             <BaseTag
-              v-if="updateStatus === 'latest'"
+              v-if="updateStatus === 'up-to-date'"
               tone="primary"
               class="ml-1"
             >
@@ -867,14 +1088,17 @@ const onProbeProxy = async (): Promise<void> => {
             </BaseTag>
           </p>
           <p class="mt-0.5 text-xs text-text-tertiary">
-            对比 GitHub Releases 最新版本
+            启动时自动检查更新；发现新版可在标题栏徽标或此处直接下载安装
+          </p>
+          <p v-if="updateMessage" class="mt-0.5 text-xs text-text-tertiary">
+            {{ updateMessage }}
           </p>
         </div>
         <BaseButton
           variant="ghost"
-          :disabled="updateStatus === 'checking'"
-          data-track="CHECK_UPDATE"
-          @click="onCheckUpdate"
+          :disabled="updateStatus === 'checking' || updateStatus === 'installing'"
+          :data-track="UPDATE_TRACK_BY_STATUS[updateStatus]"
+          @click="onUpdateAction"
         >
           {{ updateButtonText }}
         </BaseButton>
@@ -882,6 +1106,9 @@ const onProbeProxy = async (): Promise<void> => {
     </BaseCard>
 
     <!-- 快捷键说明弹窗 -->
+    <DataExportModal v-model:open="dataExportOpen" />
+    <DataImportModal v-model:open="dataImportOpen" />
+
     <BaseConfirmModal
       v-model:open="shortcutsModalOpen"
       title="快捷键说明"
@@ -936,31 +1163,6 @@ const onProbeProxy = async (): Promise<void> => {
       <p class="mt-3 text-xs leading-5 text-text-tertiary">
         实际刷新间隔 = max（上方设置的刷新间隔，各任务的间隔下限）。页面隐藏或切走时暂停，恢复可见立即补刷；请求失败按指数退避（2s 起、封顶 60s），成功后恢复。系统日志页的 10 秒自动刷新为独立定时器，不受「行情自动刷新」总开关管理。
       </p>
-    </BaseConfirmModal>
-
-    <!-- 发现新版本弹窗：展示版本号与下载地址 -->
-    <BaseConfirmModal
-      v-model:open="updateModalOpen"
-      title="发现新版本"
-      :ok-text="'前往下载'"
-      cancel-text="关闭"
-      @ok="onGoDownload"
-    >
-      <p class="text-sm text-text">
-        最新版本
-        <span class="font-semibold text-primary">v{{ latestVersion }}</span>
-        <span class="text-text-tertiary">（当前 v{{ APP_VERSION }}）</span>
-      </p>
-      <p class="mt-2 text-xs text-text-tertiary">下载地址：</p>
-      <a
-        :href="RELEASES_URL"
-        target="_blank"
-        rel="noopener"
-        class="mt-1 block break-all text-xs text-primary underline underline-offset-2"
-        @click="updateModalOpen = false"
-      >
-        {{ RELEASES_URL }}
-      </a>
     </BaseConfirmModal>
 
     <!-- 插件管理弹窗：列表 + 启停 + 重试 + 用户插件卸载 -->

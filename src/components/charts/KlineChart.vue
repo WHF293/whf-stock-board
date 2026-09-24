@@ -571,42 +571,16 @@ const snapBarIndex = (bars: KLineData[], timestamp: number): number => {
 };
 
 /**
- * 当日开盘价（原始价格，用于「成交价 vs 开盘价」判定标注延伸方向）
- *
- * 蜡烛模式直接取 bar.open；timeline 模式的 open/high/low 仍是原始价格
- * （仅 close/avgPrice 已转涨跌幅），取同一交易日内首根 bar 的 open
- * （缺失时回退其原始收盘 price 字段）
- * @param bars 展示 bar 序列（时间升序）
- * @param index 标注吸附的 bar 下标
- * @param isTimeline 是否分时 / 五日模式
- * @returns 当日开盘价（取不到返回 0）
- */
-const dayOpenPrice = (bars: KLineData[], index: number, isTimeline: boolean): number => {
-  const bar = bars[index];
-  if (!bar) return 0;
-  if (!isTimeline) return bar.open ?? 0;
-  const day = new Date(bar.timestamp ?? 0).toDateString();
-  let first = index;
-  while (
-    first > 0 &&
-    new Date(bars[first - 1]?.timestamp ?? 0).toDateString() === day
-  ) {
-    first -= 1;
-  }
-  const firstBar = bars[first] as (KLineData & { price?: number }) | undefined;
-  return firstBar?.open || firstBar?.price || 0;
-};
-
-/**
- * 解析标注徽标延伸方向：成交价高于开盘价画在下面、低于画在上面
- * （开盘价或成交价缺失 / 恰好相等时按类型兜底：B 向下、S/T 向上）
+ * 解析标注徽标延伸方向：成交价高于基准价画在下面、低于画在上面
+ * （分钟级基准 = 昨收，蜡烛基准 = 当日开盘价，由调用方给定；
+ * 基准或成交价缺失 / 恰好相等时按类型兜底：B 向下、S/T 向上）
  * @param mark 标注点
- * @param open 当日开盘价
+ * @param refPrice 方向判定基准价（分钟级昨收 / 蜡烛当日开盘价）
  * @returns 延伸方向
  */
-const resolveMarkSide = (mark: TradeMark, open: number): TradePointExtend['side'] => {
-  if (open > 0 && mark.price > 0 && mark.price !== open) {
-    return mark.price > open ? 'below' : 'above';
+const resolveMarkSide = (mark: TradeMark, refPrice: number): TradePointExtend['side'] => {
+  if (refPrice > 0 && mark.price > 0 && mark.price !== refPrice) {
+    return mark.price > refPrice ? 'below' : 'above';
   }
   return mark.type === 'B' ? 'below' : 'above';
 };
@@ -615,7 +589,8 @@ const resolveMarkSide = (mark: TradeMark, open: number): TradePointExtend['side'
  * 重建成交 BS/T 标注覆盖物
  *
  * 每个标注吸附到最近 bar（超出容差视为不在可视范围，如五日图外的历史成交）；
- * 延伸方向按「成交价 vs 当日开盘价」判定（高于开盘 → 徽标画在下方、低于 → 上方）；
+ * 延伸方向按「成交价 vs 基准价」判定——分钟级（分时/五日）基准昨收、蜡烛基准当日
+ * 开盘价，高于基准 → 徽标画在下方、低于 → 上方；
  * 锚点 value：分时/五日用当分钟涨跌幅（displayBars 已换算的 close），
  * 蜡烛模式向下锚 bar.low / 向上锚 bar.high；
  * 圆点 + 连接线 + 圆角徽标的绘制在覆盖物 createPointFigures 里做（像素级）。
@@ -641,7 +616,12 @@ const rebuildTradeOverlays = (): void => {
     const index = snapBarIndex(bars, mark.timestamp);
     const bar = bars[index];
     if (!bar || Math.abs((bar.timestamp ?? 0) - mark.timestamp) > tolerance) continue;
-    const side = resolveMarkSide(mark, dayOpenPrice(bars, index, isTimeline));
+    // 方向基准：分钟级取 bar 自带的昨收（displayBars 派生字段 pre，与涨跌幅轴同口径，
+    // preClose 快照未就绪时它已回退首根真实收盘）；蜡烛取当日开盘价
+    const refPrice = isTimeline
+      ? ((bar as KLineData & { pre?: number }).pre ?? 0)
+      : (bar.open ?? 0);
+    const side = resolveMarkSide(mark, refPrice);
     const value = isTimeline ? bar.close : side === 'below' ? bar.low : bar.high;
     creates.push({
       name: TRADE_POINT_OVERLAY,

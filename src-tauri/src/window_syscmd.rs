@@ -128,3 +128,39 @@ pub fn enable(window: &tauri::WebviewWindow) {
   #[cfg(not(windows))]
   let _ = window;
 }
+
+/// 读取主屏工作区（剔除任务栏后的可用区域，物理像素）
+///
+/// `SPI_GETWORKAREA` 只描述主显示器；多屏 / 左右停靠任务栏场景由前端按需扩展，
+/// 查询失败返回 None（前端回退「屏幕高度 - 48px 任务栏」启发式）。
+#[cfg(windows)]
+pub fn primary_work_area() -> Option<(i32, i32, i32, i32)> {
+  use windows_sys::Win32::Foundation::RECT;
+  use windows_sys::Win32::UI::WindowsAndMessaging::{SystemParametersInfoW, SPI_GETWORKAREA};
+
+  let mut rect = RECT {
+    left: 0,
+    top: 0,
+    right: 0,
+    bottom: 0,
+  };
+  let ok = unsafe {
+    SystemParametersInfoW(
+      SPI_GETWORKAREA,
+      0,
+      &mut rect as *mut RECT as *mut core::ffi::c_void,
+      0,
+    )
+  };
+  if ok != 0 {
+    Some((rect.left, rect.top, rect.right, rect.bottom))
+  } else {
+    None
+  }
+}
+
+/// 非 Windows 平台无工作区查询：恒返回 None（前端走启发式回退）
+#[cfg(not(windows))]
+pub fn primary_work_area() -> Option<(i32, i32, i32, i32)> {
+  None
+}

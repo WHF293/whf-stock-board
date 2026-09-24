@@ -22,6 +22,7 @@ import { PluginServiceContainer } from './services';
 import { PluginContributions } from './contributions';
 import { PluginContextImpl } from './context';
 import type {
+  AppServiceMap,
   PluginConfig,
   PluginDefinition,
   PluginOrigin,
@@ -296,9 +297,17 @@ export class PluginKernel {
       return true;
     }
 
+    /**
+     * 依赖就绪判定（双语义兼容，任一命中即可）：
+     * - 字符串是**插件 id** → 等该插件挂载（其 apply 内的 provide 也已就绪）；
+     * - 字符串是**服务名**（AGENTS 约定的 `note:repo` 形态）→ 等任一插件 provide 该服务。
+     * 服务随提供方卸载 / 停用自动撤销，依赖方在本函数收敛回「等待依赖」。
+     */
     const deps = entry.definition.inject ?? [];
     const ready = deps.every(
-      (depId) => this.entries.get(depId)?.status === PLUGIN_STATUS.MOUNTED,
+      (dep) =>
+        this.entries.get(dep)?.status === PLUGIN_STATUS.MOUNTED ||
+        this.services.has(dep as keyof AppServiceMap),
     );
     if (!ready) {
       if (entry.status === PLUGIN_STATUS.PENDING) return false;

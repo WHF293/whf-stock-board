@@ -9,7 +9,9 @@ permissions:
   contents: write
 
 jobs:
+  # 手动触发仅限仓库所有者（tag 路径已由仓库规则集限制 v* tag 只有管理员能创建）
   build:
+    if: github.event_name != 'workflow_dispatch' || github.actor == 'WHF293'
     strategy:
       fail-fast: false
       matrix:
@@ -19,6 +21,22 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # 拉全量历史，供「tag 是否在 main / dev 上」的祖先校验使用
+          fetch-depth: 0
+
+      # 发布守卫：tag 指向的提交必须可从 main 或 dev 到达，
+      # 否则视为绕过受保护分支的发布，直接失败
+      - name: Verify tag is on main or dev
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          if git merge-base --is-ancestor "${GITHUB_SHA}" origin/main || git merge-base --is-ancestor "${GITHUB_SHA}" origin/dev; then
+            echo "tag ${GITHUB_REF_NAME} 位于 main 或 dev 分支历史上，允许发布"
+          else
+            echo "::error::tag ${GITHUB_REF_NAME} 的提交不在 main 或 dev 分支上，拒绝发布"
+            exit 1
+          fi
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4

@@ -363,7 +363,7 @@ ctx.settings.reset();                 // 回到声明默认值
 | `app:ui` | `UiKitService` | **UI Kit**：宿主的 Button / Input / Switch / Tag / Card / Empty / Tabs / Table / Modal / Drawer / Skeleton / Icon 十二个组件句柄 + `confirm()` 确认弹窗（§5.4） |
 | `app:http` | `HttpService` | **受控网络请求**：走宿主上游通道，仅允许白名单域名（§5.5） |
 | `app:quotes` | `QuotesService` | **行情报价**：按代码批量取实时快照（§5.6） |
-| `app:market` | `MarketService` | **市场剖面**：沪深逐日成交额 / 指定交易日涨停池（重接口，只能点击触发，§5.10） |
+| `app:market` | `MarketService` | **市场剖面**：沪深逐日成交额 / 指定交易日涨停池（重接口，只能点击触发）+ 行业板块列表（轻接口，可低频轮询，§5.10） |
 | `app:format` | `FormatService` | **格式化与涨跌语义**：红涨绿跌、百分比 / 价格 / 相对时间、符号三形态互转、`delay` / `debounce`、按符号查报价（§5.11） |
 
 ### 5.1 `app:notify`
@@ -590,7 +590,7 @@ scheduler.isEligible();      // 当前是否允许轮询（总开关打开且处
 （`BACKOFF_BASE * 2^n` 封顶）/ 页面可见性感知 / 轮询总开关**。自己写一份迟早岔开，
 而岔一次的代价是顶到上游频率红线（东财会封 IP）。
 
-### 5.10 `app:market` — 市场剖面（重接口，别轮询）
+### 5.10 `app:market` — 市场剖面（重接口，别轮询；板块列表例外）
 
 ```ts
 const market = ctx.consume('app:market');
@@ -602,10 +602,18 @@ const series = await market.fetchMarketTurnover();
 // 指定交易日涨停池（缺省当日）
 const pool = await market.fetchLimitUpPool('2026-09-18');
 // → [{ code, name, price, changePercent, continuousBoardCount, boardAmount, industry }]
+
+// 全部行业板块（东财源，与市场总览「板块热力」同源同口径）
+const boards = await market.fetchIndustryBoards();
+// → [{ code, name, changePercent, totalMarketCap }]
 ```
 
-两个取数口径都固定在宿主一侧，且都是重量级网络请求 —— **只能由用户点击触发**。
+成交额与涨停池两个取数口径都固定在宿主一侧，且都是重量级网络请求 —— **只能由用户点击触发**。
 涨停池成员是从上游约 18 个字段里**挑出来映射**的，插件拿到的结构因此长期稳定。
+
+`fetchIndustryBoards` 是单页 clist 轻接口，**允许短窗口低频轮询**——现存唯一用例是
+任务栏小组件气泡的「板块热力」视图：仅在气泡展开且热力视图激活期间以 30s 拉取，
+气泡收起即停。不要把它做成常驻轮询。
 
 ### 5.11 `app:format` — 格式化与涨跌语义
 

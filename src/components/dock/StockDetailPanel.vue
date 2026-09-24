@@ -12,6 +12,13 @@ import StockOrderBook from '../business/StockOrderBook.vue';
 import DockResizer from '../business/DockResizer.vue';
 import { fetchFullQuotes } from '../../api/quotes.api';
 import { fetchKlineCached } from '../../api/kline-cache.api';
+import { listTradeRecordsBySymbol } from '../../api/account-records-db.api';
+import type { AccountTradeRecord } from '../../types/account.types';
+import {
+  buildDailyTradeMarks,
+  buildIntradayTradeMarks,
+  type TradeMark,
+} from '../../utils/trade-marks';
 import { CHART_PERIOD_OPTIONS } from '../../constants/stock-detail.constants';
 import { usePolling } from '../../composables/use-polling';
 import { useChartPeriod } from '../../composables/use-chart-period';
@@ -31,7 +38,9 @@ import { pluginKernel } from '../../plugin';
  * 报价头 + 分时/五日/5分/日K/周K/月K 按钮组切换 + 侧栏（分时/五日 -> 五档盘口）
  *
  * K 线走新浪源（不复权），为重接口，仅在打开面板或切换周期时拉取一次，不参与轮询；
- * 全部数据有内存快照：同标的重复打开先展示快照，接口返回后刷新
+ * 全部数据有内存快照：同标的重复打开先展示快照，接口返回后刷新；
+ * 成交 BS/T 标注与详情整页同口径（分钟级吸附分时/五日、按日聚合到蜡烛），
+ * 分时/五日的延伸方向按「成交价 vs 昨收」判定
  */
 const props = defineProps<{
   /** 个股符号（sh600519 / 600519 等形态均可，内部归一化） */
@@ -225,12 +234,34 @@ const loadKline = async (): Promise<void> => {
   }
 };
 
+// ---------- 交易记录 BS/T 标注（本地交割单库，按股票；与详情整页同口径） ----------
+/** 该股成交记录（跨账户；浏览器 dev 无本地库，恒为空列表） */
+const tradeRecords = ref<AccountTradeRecord[]>([]);
+
+/** 拉取该股全部成交记录（本地 SQLite 直读，非网络请求，失败即空列表） */
+const loadTradeRecords = async (): Promise<void> => {
+  try {
+    tradeRecords.value = await listTradeRecordsBySymbol(symbol.value);
+  } catch (error) {
+    console.error('[stock-detail-panel] trade-records', error);
+    tradeRecords.value = [];
+  }
+};
+
+/** 当前图表模式对应的标注集（分时/五日 = 分钟点；蜡烛 = 按成交日聚合的 B/S/T） */
+const chartTradeMarks = computed<TradeMark[]>(() =>
+  chartMode.value === 'timeline'
+    ? buildIntradayTradeMarks(tradeRecords.value)
+    : buildDailyTradeMarks(tradeRecords.value),
+);
+
 // 符号变化全量重拉；周期变化只刷 K 线（组件内状态切换，面板不重载）
 watch(
   symbol,
   () => {
     void loadKline();
     void fetchQuote();
+    void loadTradeRecords();
   },
   { immediate: true },
 );
@@ -299,6 +330,7 @@ const detailSections = computed(() => pluginKernel.contributions.stockDetail.sec
           :pre-close="quoteRef?.prevClose ?? null"
           :symbol="symbol"
           :intraday-axis="chartPeriod === 'minute'"
+          :trade-marks="chartTradeMarks"
           sub-volume-only
           :resize-tick="chartResizeTick"
           @crosshair-bar="onCrosshairBar"

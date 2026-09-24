@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { useEventListener } from '@vueuse/core';
 import type { KLineData } from 'klinecharts';
 import { toFullSymbol } from '../utils/to-full-symbol';
 import type { FullQuote } from '../types/stock-quote.types';
@@ -30,6 +31,7 @@ import {
 } from '../utils/trade-marks';
 import { usePolling } from '../composables/use-polling';
 import { useChartPeriod } from '../composables/use-chart-period';
+import { useDetailPanelCollapse } from '../composables/use-detail-panel-collapse';
 import { POLLING_INTERVAL } from '../constants/polling.constants';
 import { CHART_PERIOD_OPTIONS } from '../constants/stock-detail.constants';
 import { useDataCacheStore } from '../stores/data-cache';
@@ -236,12 +238,37 @@ const switchStock = (next: string): void => {
   void router.replace(`${ROUTE_PATH.STOCK_DETAIL}/${next}`);
 };
 
-/** 左侧股票列表是否收起（收起时仅显示名称窄条；会话级） */
-const isListCollapsed = ref(false);
+/**
+ * 快捷键切换：Ctrl + ↓ / Ctrl + ↑ 在左侧来源列表内切到下一只 / 上一只（循环）
+ *
+ * - 来源列表为空或只有一只时不产生任何行为（没有可切换的目标）；
+ * - 当前股不在列表里时不产生任何行为（无从推断方向）；
+ * - 输入框聚焦 / 弹窗打开时不接管：Ctrl + ↑↓ 在输入框里是按词移动光标的编辑键。
+ * @param event 键盘事件
+ */
+const onStockSwitchKeydown = (event: KeyboardEvent): void => {
+  if (!event.ctrlKey || event.altKey || event.metaKey) return;
+  if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+  const target = event.target;
+  if (target instanceof HTMLElement && target.closest('input, textarea, select, [contenteditable]')) {
+    return;
+  }
+  if (document.querySelector('[role="dialog"]')) return;
+  const stocks = stockContext.stocks;
+  if (stocks.length <= 1) return;
+  const index = stocks.findIndex((stock) => stock.symbol === symbol.value);
+  if (index < 0) return;
+  const step = event.key === 'ArrowDown' ? 1 : -1;
+  const next = stocks[(index + step + stocks.length) % stocks.length];
+  if (!next || next.symbol === symbol.value) return;
+  event.preventDefault();
+  switchStock(next.symbol);
+};
+useEventListener(window, 'keydown', onStockSwitchKeydown);
 
-/** 右侧信息栏是否收起（会话级）：收起时窄条 —— 报价头只留高/低/开/收两列、
- * 五档盘口买盘/卖盘改上下堆叠，给 K 线主图让出宽度 */
-const isInfoCollapsed = ref(false);
+// 收起态由 useDetailPanelCollapse 模块级共享：KeepAlive 按 path（含 symbol）缓存页面实例，
+// 组件内 ref 会按股票各存一份（股票 A 收起、切 B 变展开），故提升到组件实例之外
+const { isListCollapsed, isInfoCollapsed } = useDetailPanelCollapse();
 
 // ---------- 加自选 / 删自选弹窗（顶栏按钮触发） ----------
 /** 弹窗类型：null 关闭 / add 加自选 / remove 删自选 */

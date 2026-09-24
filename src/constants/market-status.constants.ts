@@ -28,3 +28,12 @@ export const MARKET_STATUS_LABEL: Record<MarketStatus, string> = {
   [MARKET_STATUS.AFTER_HOURS]: '已收盘',
   [MARKET_STATUS.CLOSED]: '休市',
 };
+
+/** A 股盘中显示窗口 · 开始（本地时间分钟数）：09:30（集合竞价 09:15-09:30 按「盘前」处理，不在此窗口） */
+export const A_SHARE_SESSION_START = 9 * 60 + 30;
+
+/**
+ * A 股盘中显示窗口 · 结束（本地时间分钟数，不含）：15:00
+ * 单段连续窗口、含午休（11:30-13:00 保持显示），避免午休消失 / 复现造成迷你条跳动
+ */
+export const A_SHARE_SESSION_END = 15 * 60;

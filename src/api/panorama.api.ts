@@ -1,5 +1,7 @@
 import { proxyFetch } from './proxy-fetch';
 import { sdk } from './sdk';
+import { fetchFullQuotes } from './quotes.api';
+import { INDEX_SYMBOLS } from '../constants/index-symbols.constants';
 import {
   PANORAMA_CLIST_PAGE_SIZE,
   PANORAMA_GLOBAL_INDEX_FS,
@@ -7,6 +9,7 @@ import {
   PANORAMA_US_SECIDS,
 } from '../constants/panorama.constants';
 import type { GlobalIndexQuote, PanoramaItem } from '../types/panorama.types';
+import type { FullQuote } from '../types/stock-quote.types';
 
 /**
  * 行情全景 api：东财 clist / ulist 直连（走同源代理）+ SDK 全球期货
@@ -124,17 +127,15 @@ export const fetchGlobalIndexPanorama = async (): Promise<PanoramaItem[]> =>
   fetchClist(PANORAMA_GLOBAL_INDEX_FS);
 
 /**
- * 拉取全球指数轻量报价（东财 push2delay ulist 精确 secid 查询，带最新价）
- *
- * 市场总览「全球指数」展开区数据源；腾讯行情源不覆盖日经 225 / KOSPI，
- * 故统一走东财（⚠️ 上游 200 ≠ 有数据，diff 缺失按空处理由上层展示空态）
- * @returns 全球指数报价列表（顺序与 secids 配置一致）
+ * 按传入 secids 精确查询 ulist 带最新价的轻量报价（全球指数 / 小组件大盘共用）
+ * @param secids 东财 secid 序列（`1.000001` / `100.HSI` 形态）
+ * @returns 报价列表（顺序与 secids 一致；上游 200 ≠ 有数据，diff 缺失返回空数组）
  */
-export const fetchGlobalIndexQuotes = async (): Promise<GlobalIndexQuote[]> => {
+const fetchUlistQuotes = async (secids: readonly string[]): Promise<GlobalIndexQuote[]> => {
   const query = [
     'fltt=2',
     `fields=${GLOBAL_INDEX_FIELDS}`,
-    `secids=${PANORAMA_GLOBAL_INDEX_SECIDS.join(',')}`,
+    `secids=${secids.join(',')}`,
   ].join('&');
   const response = await proxyFetch(`${ULIST_URL_BASE}?${query}`);
   if (!response.ok) {
@@ -148,6 +149,48 @@ export const fetchGlobalIndexQuotes = async (): Promise<GlobalIndexQuote[]> => {
     price: typeof raw.f2 === 'number' ? raw.f2 : null,
     changePercent: typeof raw.f3 === 'number' ? raw.f3 : null,
   }));
+};
+
+/**
+ * 拉取全球指数轻量报价（东财 push2delay ulist 精确 secid 查询，带最新价）
+ *
+ * 市场总览「全球指数」展开区数据源；腾讯行情源不覆盖日经 225 / KOSPI，
+ * 故统一走东财（⚠️ 上游 200 ≠ 有数据，diff 缺失按空处理由上层展示空态）
+ * @returns 全球指数报价列表（顺序与 secids 配置一致）
+ */
+export const fetchGlobalIndexQuotes = async (): Promise<GlobalIndexQuote[]> =>
+  fetchUlistQuotes(PANORAMA_GLOBAL_INDEX_SECIDS);
+
+/**
+ * 拉取任务栏小组件「大盘走势」的指数轻量报价（与市场总览指数卡同源双通道）
+ *
+ * 10 个指数按市场总览展示顺序分两路拿取，`allSettled` 互不拖累（谁成功给谁）：
+ * - A 股 4 个（上证 / 深证成指 / 创业板指 / 科创 50）：`fetchFullQuotes`（腾讯源，
+ *   与指数卡片同一份数据口径；2026-09-23 实测本机应用内东财 ulist 通道持续失败，
+ *   A 股跟着页面走腾讯源才能保证大盘视图有基础数据）
+ * - 海外 6 个（恒生 / 道琼斯 / 纳斯达克 / 标普500 / 日经225 / KOSPI）：东财 ulist
+ *   （腾讯源不覆盖，仅此一处可取；通道恢复前缺失即缺行，由渲染端按行渲染自适应）
+ *
+ * 仅小组件「大盘视图激活 && 气泡展开」期间以 30s 低频轮询（插件侧门控），
+ * 不触犯「报价类请求别轮询」红线
+ * @returns 指数报价列表（A 股在前、海外在后，各自保持配置顺序；失败一路自动缺省）
+ */
+export const fetchWidgetIndexQuotes = async (): Promise<GlobalIndexQuote[]> => {
+  const [aShare, global] = await Promise.allSettled([
+    fetchFullQuotes(INDEX_SYMBOLS),
+    fetchUlistQuotes(PANORAMA_GLOBAL_INDEX_SECIDS),
+  ]);
+  const toLightweight = (quotes: FullQuote[]): GlobalIndexQuote[] =>
+    quotes.map((quote) => ({
+      name: quote.name,
+      code: quote.code,
+      price: quote.price,
+      changePercent: quote.changePercent,
+    }));
+  return [
+    ...(aShare.status === 'fulfilled' ? toLightweight(aShare.value) : []),
+    ...(global.status === 'fulfilled' ? global.value : []),
+  ];
 };
 
 /**
