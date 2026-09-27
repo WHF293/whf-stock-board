@@ -144,9 +144,11 @@ export const useScheduleStore = defineStore('schedule', () => {
         ? (agentStore.profiles.find((p) => p.id === session.agentProfileId) ?? null)
         : null;
     const modelId = session?.modelId ?? profile?.modelId ?? null;
+    // 绑定的模型若已停用视同未绑定（与删除同路径），回落默认模型
     const model =
-      (modelId !== null ? agentStore.models.find((m) => m.id === modelId) : undefined) ??
-      agentStore.defaultModel;
+      (modelId !== null
+        ? agentStore.models.find((m) => m.id === modelId && m.enabled)
+        : undefined) ?? agentStore.defaultModel;
     const subagents = (profile?.subagentIds ?? [])
       .map((id) => agentStore.subagents.find((s) => s.id === id))
       .filter((s): s is SubagentDef => s !== undefined);

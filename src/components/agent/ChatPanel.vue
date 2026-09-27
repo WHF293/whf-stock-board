@@ -23,6 +23,7 @@ import { getMcpRuntime, listBuiltinMcpServers } from '@/agent/mcp/registry';
 import { BUILTIN_SKILLS } from '@/constants/builtin-skills';
 import { resolveInputHeight } from '@/utils/chat-input-height';
 import { compressImageToDataUrl } from '@/utils/compress-image-to-data-url';
+import { formatDurationMs } from '@/utils/format-duration-ms';
 import { upsertToolPart } from '@/utils/upsert-tool-part';
 import { guardUiPayload } from '@/utils/guard-ui-payload';
 import type { ChatMessage, MessageStatus, SubagentDef, ToolCallPart } from '@/types/agent.types';
@@ -35,6 +36,7 @@ import type {
 } from '@/types/agent.types';
 import MenuIcon from '@/components/ui/MenuIcon.vue';
 import ToolCallCard from './ToolCallCard.vue';
+import MarkdownContent from './MarkdownContent.vue';
 import ComposerModelMenu from './ComposerModelMenu.vue';
 import ComposerResourceMenu from './ComposerResourceMenu.vue';
 
@@ -71,7 +73,10 @@ const messages = computed<ChatMessage[]>(
  */
 const loadMessages = async (sessionId: number): Promise<void> => {
   if (messagesBySession[sessionId]) return;
-  messagesBySession[sessionId] = await listMessages(sessionId);
+  const loaded = await listMessages(sessionId);
+  // await 期间同一会话的缓存可能已被 send() 初始化（外部 askAgent「新建会话即直发」
+  // 恰好落在本次读取的 IPC 窗口里）：先到的引用才是运行中往里 push 的消息数组，不能覆盖
+  messagesBySession[sessionId] ??= loaded;
 };
 
 /**
@@ -417,15 +422,15 @@ const activeRuns = ref<ActiveRun[]>([]);
 const isRunning = computed(() =>
   activeRuns.value.some((r) => r.sessionId === store.currentSessionId),
 );
-/** 思考耗时秒（ticker 每帧刷新驱动模板更新） */
-const elapsedSeconds = ref(0);
+/** 计时 tick（ticker 自增驱动「思考中」耗时文案刷新） */
+const elapsedTick = ref(0);
 
 /** 统一消费循环：所有活跃 run 的平滑缓冲共用一个 tick */
 let ticker: ReturnType<typeof setInterval> | null = null;
 
 onMounted(() => {
   ticker = setInterval(() => {
-    elapsedSeconds.value = Math.floor(Date.now() / 1000);
+    elapsedTick.value += 1;
     for (const run of [...activeRuns.value]) {
       const alive = run.streamer.tick();
       autoscroll();
@@ -479,7 +484,10 @@ const send = async (): Promise<void> => {
   if ((!text && images.length === 0) || isRunning.value) return;
 
   if (!currentModel.value) {
-    sendHint.value = '尚未配置模型：请先在 Model 管理中添加并设为默认';
+    sendHint.value =
+      store.models.length === 0
+        ? '尚未配置模型：请先在 Model 管理中添加并设为默认'
+        : '没有启用中的模型：请在 Model 管理中启用至少一个';
     emit('open-manager', 'model');
     return;
   }
@@ -498,9 +506,11 @@ const send = async (): Promise<void> => {
   let sessionId = store.currentSessionId;
   if (sessionId === null) {
     sessionId = await store.newSession(null);
-    messagesBySession[sessionId] = [];
   }
-  const list = messagesBySession[sessionId] ?? [];
+  // 兜底数组必须经 reactive() 包一层再 push：缓存缺位时（外部「AI 分析」新会话
+  // 直发，watch 的加载可能仍在途）直接 push 普通数组不经过 Proxy、不触发响应式，
+  // 消息永远不会上屏 —— push 的引用必须是后续渲染读取的同一个代理
+  const list = messagesBySession[sessionId] ?? reactive<ChatMessage[]>([]);
   messagesBySession[sessionId] = list;
 
   // 用户消息落库 + 上屏（附图在 parts 里，content 只存文本；纯图消息 content 为空串）
@@ -807,7 +817,19 @@ watch(
   },
 );
 
-watch(elapsedSeconds, () => autoscroll());
+watch(elapsedTick, () => autoscroll());
+
+/**
+ * 「思考中」耗时文案：按消息所属 run 的起始时刻计算差值
+ * （run 已结束 / 尚未注册返回空串，行内不显示耗时）
+ * @param messageId 消息 id
+ * @returns 形如 `45秒` / `3分20秒` 的文案；无对应 run 返回空串
+ */
+const thinkingElapsed = (messageId: number): string => {
+  void elapsedTick.value;
+  const run = activeRuns.value.find((r) => r.messageId === messageId);
+  return run ? formatDurationMs(Date.now() - run.startedAt) : '';
+};
 
 /** 欢迎态：无会话或会话尚无消息 */
 const showWelcome = computed(() => messages.value.length === 0);
@@ -905,14 +927,17 @@ const showWelcome = computed(() => messages.value.length === 0);
                 <span class="thinking-dot [animation-delay:0.2s]" />
                 <span class="thinking-dot [animation-delay:0.4s]" />
               </span>
-              思考中 {{ elapsedSeconds }}s
+              思考中 {{ thinkingElapsed(msg.id) }}
             </div>
-            <p
+            <div
               v-else
-              class="whitespace-pre-wrap break-words text-sm leading-6 text-text"
+              class="text-sm text-text"
             >
-              {{ msg.content }}<span v-if="msg.status === 'running'" class="cursor-blink" />
-            </p>
+              <MarkdownContent :content="msg.content" /><span
+                v-if="msg.status === 'running'"
+                class="cursor-blink"
+              />
+            </div>
             <!-- 错误卡 -->
             <div
               v-if="msg.status === 'error'"
@@ -956,8 +981,9 @@ const showWelcome = computed(() => messages.value.length === 0);
       </span>
     </div>
 
-    <!-- 快捷分析按钮：一键发送（agent 运行中点击则填入输入框，不打断当前回答） -->
-    <div v-if="!showWelcome" class="mx-auto w-full max-w-3xl shrink-0 px-6 pt-1">
+    <!-- 快捷分析按钮：一键发送（常显——新建会话的第一条消息也要能直接点）；
+         agent 运行中点击则填入输入框，不打断当前回答 -->
+    <div class="mx-auto w-full max-w-3xl shrink-0 px-6 pt-1">
       <div class="flex flex-wrap gap-1.5">
         <button
           v-for="quick in QUICK_PROMPTS"
@@ -1053,7 +1079,7 @@ const showWelcome = computed(() => messages.value.length === 0);
             <MenuIcon name="image" :size="15" />
           </button>
           <div class="min-w-0 flex-1" />
-          <ComposerModelMenu :models="store.models" :current="currentModel" @select="onModelSelect" />
+          <ComposerModelMenu :models="store.enabledModels" :current="currentModel" @select="onModelSelect" />
           <!-- 运行中 → 停止按钮；否则发送 -->
           <button
             v-if="isRunning"

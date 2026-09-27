@@ -426,7 +426,7 @@ const trendOption = computed<EChartsCoreOption>(() => {
               :key="days"
               type="button"
               class="rounded-md px-2.5 py-0.5 text-xs transition-colors"
-              :class="trendDays === days ? 'bg-surface text-text shadow-sm' : 'text-text-tertiary hover:text-text'"
+              :class="trendDays === days ? 'bg-primary-weak font-medium text-primary' : 'text-text-tertiary hover:text-text'"
               @click="trendDays = days"
             >
               {{ days }}日

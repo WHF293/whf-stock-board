@@ -45,6 +45,8 @@ export interface ModelConfig {
   maxOutputTokens: number | null;
   temperature: number | null;
   isDefault: boolean;
+  /** 启用开关：停用后退出可选池（模型菜单 / 配置下拉），回落链视同不存在 */
+  enabled: boolean;
   createdAt: number;
   updatedAt: number;
 }

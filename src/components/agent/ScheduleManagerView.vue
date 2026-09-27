@@ -20,6 +20,7 @@ import BaseConfirmModal from '@/components/ui/BaseConfirmModal.vue';
 import BaseEmpty from '@/components/ui/BaseEmpty.vue';
 import BaseInput from '@/components/ui/BaseInput.vue';
 import BaseSwitch from '@/components/ui/BaseSwitch.vue';
+import BaseTabs from '@/components/ui/BaseTabs.vue';
 import MenuIcon from '@/components/ui/MenuIcon.vue';
 
 /**
@@ -61,6 +62,18 @@ const SCHEDULE_TYPE_OPTIONS: ReadonlyArray<{ value: ScheduleType; label: string 
   { value: 'weekly', label: '每周' },
 ];
 
+/** 每周执行日分段选项（BaseTabs 的 value 为 string，由 weekday 下标转出） */
+const SCHEDULE_WEEKDAY_TAB_OPTIONS = SCHEDULE_WEEKDAY_LABELS.map((label, day) => ({
+  label,
+  value: String(day),
+}));
+
+/** 有效期分段选项（value 即档位键，直连 draft.durationKey） */
+const SCHEDULE_DURATION_TAB_OPTIONS = SCHEDULE_DURATION_KEYS.map((key) => ({
+  label: SCHEDULE_DURATIONS[key].label,
+  value: key,
+}));
+
 /** 表单草稿（hour / minute 由 draftTime 承载；weekday 仅 weekly 时提交） */
 const draft = reactive<{
   name: string;
@@ -74,6 +87,30 @@ const draft = reactive<{
   scheduleType: 'daily',
   weekday: 1,
   durationKey: SCHEDULE_DEFAULT_DURATION,
+});
+
+/** BaseTabs 桥接：执行周期（字符串 value 收敛回 ScheduleType） */
+const scheduleTypeModel = computed<string>({
+  get: () => draft.scheduleType,
+  set: (value) => {
+    draft.scheduleType = value as ScheduleType;
+  },
+});
+
+/** BaseTabs 桥接：每周执行日（weekday 数字下标 ↔ 字符串 value） */
+const weekdayModel = computed<string>({
+  get: () => String(draft.weekday),
+  set: (value) => {
+    draft.weekday = Number(value);
+  },
+});
+
+/** BaseTabs 桥接：有效期档位（字符串 value 收敛回 ScheduleDurationKey） */
+const durationKeyModel = computed<string>({
+  get: () => draft.durationKey,
+  set: (value) => {
+    draft.durationKey = value as ScheduleDurationKey;
+  },
 });
 
 /** 重置草稿为默认值 */
@@ -374,22 +411,7 @@ const deleteConfirmText = computed(() =>
         <div class="flex gap-4">
           <div>
             <span class="mb-1 block text-xs text-text-tertiary">执行周期</span>
-            <div class="flex gap-1.5">
-              <button
-                v-for="option in SCHEDULE_TYPE_OPTIONS"
-                :key="option.value"
-                type="button"
-                class="rounded-lg px-3 py-1.5 text-sm transition-colors"
-                :class="
-                  draft.scheduleType === option.value
-                    ? 'bg-primary text-on-primary'
-                    : 'bg-flat-weak text-text-secondary hover:text-text'
-                "
-                @click="draft.scheduleType = option.value"
-              >
-                {{ option.label }}
-              </button>
-            </div>
+            <BaseTabs v-model="scheduleTypeModel" :options="SCHEDULE_TYPE_OPTIONS" />
           </div>
           <div>
             <span class="mb-1 block text-xs text-text-tertiary">执行时间</span>
@@ -402,41 +424,11 @@ const deleteConfirmText = computed(() =>
         </div>
         <div v-if="draft.scheduleType === 'weekly'">
           <span class="mb-1 block text-xs text-text-tertiary">每周执行日</span>
-          <div class="flex gap-1.5">
-            <button
-              v-for="(label, day) in SCHEDULE_WEEKDAY_LABELS"
-              :key="day"
-              type="button"
-              class="rounded-lg px-2.5 py-1.5 text-sm transition-colors"
-              :class="
-                draft.weekday === day
-                  ? 'bg-primary text-on-primary'
-                  : 'bg-flat-weak text-text-secondary hover:text-text'
-              "
-              @click="draft.weekday = day"
-            >
-              {{ label }}
-            </button>
-          </div>
+          <BaseTabs v-model="weekdayModel" :options="SCHEDULE_WEEKDAY_TAB_OPTIONS" />
         </div>
         <div>
           <span class="mb-1 block text-xs text-text-tertiary">有效期</span>
-          <div class="flex gap-1.5">
-            <button
-              v-for="key in SCHEDULE_DURATION_KEYS"
-              :key="key"
-              type="button"
-              class="rounded-lg px-3 py-1.5 text-sm transition-colors"
-              :class="
-                draft.durationKey === key
-                  ? 'bg-primary text-on-primary'
-                  : 'bg-flat-weak text-text-secondary hover:text-text'
-              "
-              @click="draft.durationKey = key"
-            >
-              {{ SCHEDULE_DURATIONS[key].label }}
-            </button>
-          </div>
+          <BaseTabs v-model="durationKeyModel" :options="SCHEDULE_DURATION_TAB_OPTIONS" />
         </div>
         <p v-if="formError" class="text-sm text-up">{{ formError }}</p>
         <div class="flex justify-end gap-2 pt-1">

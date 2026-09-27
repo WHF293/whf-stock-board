@@ -12,6 +12,7 @@ import { isTauri } from '@tauri-apps/api/core';
 import Database from '@tauri-apps/plugin-sql';
 import { z } from 'zod';
 import { deleteSavedNews, listSavedNews, saveNews } from '../../api/news-db.api';
+import { fetchNewsContent } from '../../api/news.api';
 import { BUILTIN_MCP_IDS } from './constants';
 import type { BuiltinMcpServer, McpCallToolResult, McpToolEntry } from './types';
 
@@ -93,8 +94,20 @@ export const APP_MCP_SERVER: BuiltinMcpServer = {
   key: 'app-api',
   name: '应用接口（内置）',
   description:
-    '保存新闻、已保存新闻读写与本地数据库（agent.db / stock-board.db / weblog.db）访问',
+    '保存新闻、已保存新闻读写、新闻原文正文抓取与本地数据库（agent.db / stock-board.db / weblog.db）访问',
   tools: [
+    entry(
+      'fetch_news_content',
+      '抓取新闻原文页的正文纯文本（热点新闻页各条目的 url 即原文链接；自动剥离站点导航噪声，最多返回 1200 字符）。标题常与正文不符甚至观点相反，判断新闻利好利空前应先用本工具读正文核实；empty=true 表示抓取失败（仅凭标题 + 摘要判断并注明依据不足）',
+      z.object({
+        url: z.string().url().describe('新闻原文链接（热点新闻条目的 url 字段）'),
+      }),
+      async (input) => {
+        const { url } = input as { url: string };
+        const body = await fetchNewsContent(url);
+        return JSON.stringify({ url, empty: body === '', body });
+      },
+    ),
     entry(
       'save_news',
       '保存一条新闻到本地新闻库（按 url 幂等，重复保存返回 saved=false）。source 用新闻源名（如 新浪/东财/澎湃），publishedAt 为毫秒时间戳可省略',

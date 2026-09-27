@@ -343,6 +343,15 @@ CREATE TABLE agent_usage (
 CREATE INDEX idx_usage_created ON agent_usage(created_at);
 ";
 
+/// agent.db v6：模型启停开关（model_config.enabled）
+///
+/// 停用的模型退出「可选池」：composer 模型菜单 / Agent 配置 / 子 agent 独立模型
+/// 下拉不再出现，三级回落把它视同不存在（与删除模型同路径，但保留配置行，
+/// 重新启用即恢复）。存量行默认 1（启用），行为不变。
+const AGENT_DB_V6: &str = "
+ALTER TABLE model_config ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1;
+";
+
 /// agent.db 全部迁移（后续版本往后追加，勿改动已有版本）
 fn agent_db_migrations() -> Vec<Migration> {
   vec![
@@ -374,6 +383,12 @@ fn agent_db_migrations() -> Vec<Migration> {
       version: 5,
       description: "create_agent_usage",
       sql: AGENT_DB_V5,
+      kind: MigrationKind::Up,
+    },
+    Migration {
+      version: 6,
+      description: "add_model_enabled",
+      sql: AGENT_DB_V6,
       kind: MigrationKind::Up,
     },
   ]

@@ -51,7 +51,7 @@ const emit = defineEmits<{
 
 <template>
   <div class="flex flex-col gap-2">
-    <!-- 子视图切换：分段控件（等宽段，选中段用 primary） -->
+    <!-- 子视图切换：分段控件（等宽段，选中段用淡主色） -->
     <div class="flex gap-1 rounded-lg bg-flat-weak/50 p-0.5">
       <button
         v-for="view in views"
@@ -60,7 +60,7 @@ const emit = defineEmits<{
         class="pressable flex-1 rounded-md px-2 py-1 text-xs"
         :class="
           active === view.value
-            ? 'bg-primary font-medium text-on-primary'
+            ? 'bg-primary-weak font-medium text-primary'
             : 'text-text-secondary hover:text-text'
         "
         @click="emit('selectView', view.value)"
@@ -83,7 +83,7 @@ const emit = defineEmits<{
           class="pressable shrink-0 rounded-full px-2.5 py-1 text-xs"
           :class="
             selectedThemeId === theme.themeId
-              ? 'bg-primary text-on-primary'
+              ? 'bg-primary-weak font-medium text-primary'
               : 'bg-flat-weak text-text-secondary hover:text-text'
           "
           @click="emit('selectTheme', theme.themeId)"

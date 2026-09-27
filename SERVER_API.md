@@ -38,6 +38,7 @@
 | `fetchEastmoneyHotNews` | `api/news.api.ts` | `np-listapi.eastmoney.com/comm/web/getFastNewsList?client=web&biz=web_724&fastColumn=102` | GET | 东财 7×24 快讯，游标翻页（`sortEnd`）。无原文链接，点击跳 `so.eastmoney.com/news/s?keyword=` |
 | `fetchThsHotNews` | `api/news.api.ts` | `news.10jqka.com.cn/tapp/news/push/stock/?page=&limit=` | GET | 同花顺股市快讯。带 `Referer: 10jqka.com.cn` |
 | `fetchThepaperHotNews` | `api/news.api.ts` | `api.thepaper.cn/contentapi/nodeCont/getByChannelId` | **POST**(JSON) | 澎湃财经频道（`channel_25951`）。⚠️ 只认 POST（GET 返回 `code 99998`）；`pageNum` 被忽略，翻页游标是 **`startTime`**（上一页末条毫秒时间戳，`hasNext` 决定终止）；`pageSize` 上限 20；列表**无摘要字段**（`summary` 恒空）；时间取 `pubTimeLong`（毫秒→秒） |
+| `fetchNewsContent` / `fetchNewsBodies` | `api/news.api.ts` | 新闻条目 `url` 指向的原文详情页（host 随源：`finance.sina.com.cn` / `news.10jqka.com.cn` / `www.cls.cn/detail` / `www.thepaper.cn` / 东财各文章域等） | GET(HTML) | **新闻正文抓取**（AI 分析带正文 + Agent MCP `fetch_news_content`）。DOM 容器级抽取正文纯文本（`utils/extract-news-body.ts`），按 url 会话内缓存（含空串失败结果）；批量并发 3 + 相邻请求间隔 300ms；单条 8s 超时。失败 / 抽出文本 <40 字 / U+FFFD 乱码占比过高 → 返回空串，调用方回退「标题 + 摘要」分析（`NEWS_CONTENT_*` / `NEWS_BODY_*` 常量见 `constants/news-content.constants.ts`）。Tauri 直连（scope `https://*` 全放行）；浏览器走 /stock-proxy（白名单含五大新闻站主域，**转载到第三方域的链接浏览器态抓不到**）。⚠️ 东财快讯条目的 url 是站内搜索页（`so.eastmoney.com/news/s?keyword=`，上游无原文链接），在 `NEWS_BODY_UNFETCHABLE_URL_PREFIXES` 中跳过不抓 |
 | `fetchMarketTurnover` | `api/turnover.api.ts` | `web.ifzq.gtimg.cn/appstock/app/newfqkline/get` | GET | **沪深两市成交额**。`param=<sh000001\|sz399001>,day,,,400,qfq`（日 K 前复权，最多 400 条），取每行**下标 8「成交额(万元)」×1e4 → 元**，两指数按交易日相加。带 `Referer: gu.qq.com`。⚠️ 行结构：`[日期,开,收,高,低,成交量(手),{},?,成交额(万元),…]`；`fqkline`/`kline` 两个老接口**没有**这一段，别混用 |
 | `fetchClist` / `fetchGlobalIndexPanorama` | `api/panorama.api.ts` | `push2delay.eastmoney.com/api/qt/clist/get` | GET | 行情全景：全球指数（`fs=m:100`）、A股板块等快照列表 |
 | `fetchUsSectorPanorama` | `api/panorama.api.ts` | `push2delay.eastmoney.com/api/qt/ulist.np/get` | GET | 美股行业 ETF（按 `secids` 精确查询） |
@@ -105,7 +106,7 @@
 - **涨停与异动 `MarketMoodView`**：`fetchZtPool` · `fetchStockChanges` · `fetchBoardChanges`
 - **龙虎榜·大宗 `DragonTigerView`**：`fetchDragonTigerDetail` · `fetchBlockTradeDetail`
 - **选股器 `ScreenerView`**：`runScreener` · `runMaCrossBacktest` · 信号扫描 / 尾盘选股（`analysis.api`）
-- **热点新闻 `HotNewsView`**：`fetchSinaHotNews` · `fetchEastmoneyHotNews` · `fetchThsHotNews` · `fetchThepaperHotNews`
+- **热点新闻 `HotNewsView`**：`fetchSinaHotNews` · `fetchEastmoneyHotNews` · `fetchThsHotNews` · `fetchThepaperHotNews`；「AI 分析」另经 `fetchNewsBodies` 批量抓新闻正文（并发 3 + 300ms 间隔，详见 §1），失败回退标题 + 摘要
 - **个股详情（停靠面板）`StockDetailPanel`**：`fetchSinaKline`(K线) · `fetchTodayTimeline`(分时) · `fetchIndividualFundFlow` · `fetchKlineWithIndicators` · `fetchKlineSignals`
 - **股票主线（侧栏插件 `dsh-mainline`）**：`fetchThsBoardPage`(清单+结构快照，含 1 次分页) · `fetchThsBoardKline`(×90) · `fetchMarketTurnover`(复用宿主，算成交占比分母) · `fetchZtPool('zt', 基准日)`(涨停结构)；**跨源兜底专用** `fetchEmBoardUniverse`(东财板块清单) · `fetchEmBoardKline`(东财板块日 K)
   ⚠️ 只由用户点击「扫描主线」触发、**不轮询**；同上游并发 3 + 连续间隔 500ms（`MAINLINE_SCAN_CONCURRENCY` / `MAINLINE_SCAN_DELAY_MS`）；东财侧**串行 1 + 间隔 1200ms**（`EM_SCAN_CONCURRENCY` / `EM_SCAN_DELAY_MS`，实测 `push2his` 突发限流，连接会被切断）。

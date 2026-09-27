@@ -26,6 +26,18 @@ export const ROUTE_PATH = {
 } as const;
 
 /**
+ * 白皮书页文档 tab 的路由查询参数（如插件工坊「开发者文档」入口带 `?tab=dev` 直达「开发者指南」）
+ *
+ * 值与 WhitepaperView 的 DOC_TABS 对应；不带该参数时白皮书维持默认「使用说明」tab。
+ */
+export const WHITEPAPER_TAB_QUERY = {
+  /** query 键名 */
+  KEY: "tab",
+  /** 「开发者指南」tab 值 */
+  DEV: "dev",
+} as const;
+
+/**
  * 左侧导航图标 key（MenuIcon 组件按此渲染内联 SVG）
  */
 export const MENU_ICON = {

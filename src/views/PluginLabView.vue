@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useIntervalFn } from '@vueuse/core';
+import { useRouter } from 'vue-router';
 import BaseButton from '../components/ui/BaseButton.vue';
 import BaseCard from '../components/ui/BaseCard.vue';
 import BaseEmpty from '../components/ui/BaseEmpty.vue';
@@ -19,6 +20,7 @@ import {
   PLUGIN_STATUS_TONE,
   USER_PLUGIN_SOURCE,
 } from '../constants/plugin.constants';
+import { ROUTE_PATH, WHITEPAPER_TAB_QUERY } from '../constants/router-meta.constants';
 import { formatTime } from '../utils/format-time';
 import type { PluginRuntimeInfo } from '../types/plugin.types';
 
@@ -47,8 +49,20 @@ interface NoteRepoLike {
 const { setEnabled, retry } = usePlugins();
 const { records, isUserPlugin, uninstall, pendingDbCleanup, resolveDbCleanup } = useUserPlugins();
 
+const router = useRouter();
+
 /** 插件安装弹窗显隐 */
 const installModalOpen = ref(false);
+
+/**
+ * 跳转软件白皮书并定位「开发者指南」tab（插件开发 / 插件包格式的完整约定在那边）
+ */
+const openDevDocs = (): void => {
+  void router.push({
+    path: ROUTE_PATH.WHITEPAPER,
+    query: { [WHITEPAPER_TAB_QUERY.KEY]: WHITEPAPER_TAB_QUERY.DEV },
+  });
+};
 
 /** 当前处于「待确认卸载」状态的插件 id（再次点击才真正卸载） */
 const confirmingUninstallId = ref('');
@@ -199,9 +213,14 @@ const contributionSummary = (info: PluginRuntimeInfo): string => {
           <p class="mt-1 text-xl font-semibold tabular-nums text-text">{{ panels.length }}</p>
         </div>
       </div>
-      <p class="mt-3 text-xs text-text-tertiary">
-        开关即时生效：卸载一个插件等于撤销它的全部贡献，无需重启应用。
-      </p>
+      <div class="mt-3 flex items-center justify-between gap-4">
+        <p class="text-xs text-text-tertiary">
+          开关即时生效：卸载一个插件等于撤销它的全部贡献，无需重启应用。
+        </p>
+        <BaseButton variant="ghost" data-track="PLUGIN_LAB_DEV_DOCS" @click="openDevDocs">
+          开发者文档
+        </BaseButton>
+      </div>
     </BaseCard>
 
     <BaseCard title="插件清单">

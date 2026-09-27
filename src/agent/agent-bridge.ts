@@ -31,7 +31,7 @@ let pendingAsk: string | null = null;
  * 发起一次 AI 分析请求（主窗口页面入口）
  *
  * 送达后 Agent 侧行为：切回对话视图；未配置模型 → 提示 + 自动打开 Model 管理；
- * 已配置 → 直接作为用户消息发送。
+ * 已配置 → **新开一个会话**直接发送（分析请求自包含，不复用当前选中会话的上下文）。
  * @param prompt 完整提示词（调用方用 utils/build-*-analysis-prompt 组装）
  */
 export const requestAgentAnalysis = async (prompt: string): Promise<void> => {

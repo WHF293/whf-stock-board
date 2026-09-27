@@ -437,7 +437,7 @@ const pctClass = (value: number | null): string =>
               class="rounded-lg px-3 py-1 text-xs transition-colors"
               :class="
                 chartPeriod === option.value
-                  ? 'bg-primary font-semibold text-on-primary'
+                  ? 'bg-primary-weak font-semibold text-primary'
                   : 'text-text-secondary hover:text-text'
               "
               :aria-pressed="chartPeriod === option.value"

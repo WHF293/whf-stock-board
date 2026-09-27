@@ -301,8 +301,13 @@ const save = async (): Promise<void> => {
           class="w-full rounded-lg border border-flat-weak bg-surface px-3 py-2 text-sm text-text outline-none focus:border-primary"
         >
           <option :value="null">继承主 agent 模型</option>
-          <option v-for="model in store.models" :key="model.id" :value="model.id">
-            {{ model.name }}{{ model.supportsTools ? '' : '（不支持工具）' }}
+          <option
+            v-for="model in store.models"
+            :key="model.id"
+            :value="model.id"
+            :disabled="!model.enabled"
+          >
+            {{ model.name }}{{ model.supportsTools ? '' : '（不支持工具）' }}{{ model.enabled ? '' : '（已停用）' }}
           </option>
         </select>
       </div>
