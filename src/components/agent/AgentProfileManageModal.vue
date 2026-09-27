@@ -330,8 +330,13 @@ watch(open, (isOpen) => {
           class="w-full rounded-lg border border-flat-weak bg-surface px-3 py-2 text-sm text-text outline-none focus:border-primary"
         >
           <option :value="null">跟随会话 / 默认模型</option>
-          <option v-for="model in store.models" :key="model.id" :value="model.id">
-            {{ model.name }}
+          <option
+            v-for="model in store.models"
+            :key="model.id"
+            :value="model.id"
+            :disabled="!model.enabled"
+          >
+            {{ model.name }}{{ model.enabled ? '' : '（已停用）' }}
           </option>
         </select>
       </div>

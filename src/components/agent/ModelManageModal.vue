@@ -46,6 +46,7 @@ const form = reactive({
   maxOutputTokens: null as number | null,
   temperature: null as number | null,
   isDefault: false,
+  enabled: true,
 });
 
 /** API Key 明文切换 */
@@ -105,6 +106,7 @@ const openCreate = (): void => {
     maxOutputTokens: null,
     temperature: null,
     isDefault: store.models.length === 0,
+    enabled: true,
   });
   resetTransient();
   view.value = 'form';
@@ -129,6 +131,7 @@ const openEdit = (model: ModelConfig): void => {
     maxOutputTokens: model.maxOutputTokens,
     temperature: model.temperature,
     isDefault: model.isDefault,
+    enabled: model.enabled,
   });
   resetTransient();
   view.value = 'form';
@@ -212,6 +215,7 @@ const saveModel = async (): Promise<void> => {
       maxOutputTokens: form.maxOutputTokens,
       temperature: form.temperature,
       isDefault: form.isDefault,
+      enabled: form.enabled,
     });
     listError.value = '';
     view.value = 'list';
@@ -242,6 +246,7 @@ const setDefault = async (model: ModelConfig): Promise<void> => {
       maxOutputTokens: model.maxOutputTokens,
       temperature: model.temperature,
       isDefault: true,
+      enabled: model.enabled,
     });
     listError.value = '';
   } catch (error) {
@@ -250,6 +255,20 @@ const setDefault = async (model: ModelConfig): Promise<void> => {
 };
 
 /* --------------------------------- 删除确认 -------------------------------- */
+
+/**
+ * 启用 / 停用模型（行内开关）
+ * @param model 模型配置
+ * @param enabled 是否启用
+ */
+const toggleEnabled = async (model: ModelConfig, enabled: boolean): Promise<void> => {
+  try {
+    await store.toggleModel(model.id, enabled);
+    listError.value = '';
+  } catch (error) {
+    listError.value = `${enabled ? '启用' : '停用'}失败：${error instanceof Error ? error.message : String(error)}`;
+  }
+};
 
 const deleteTarget = ref<ModelConfig | null>(null);
 const deleteModalOpen = ref(false);
@@ -302,7 +321,7 @@ const modalTitle = computed(() => (view.value === 'list' ? '模型管理' : edit
         :key="model.id"
         class="flex items-center gap-3 rounded-xl border border-flat-weak px-4 py-3"
       >
-        <div class="min-w-0 flex-1">
+        <div :class="model.enabled ? '' : 'opacity-45'" class="min-w-0 flex-1">
           <div class="flex items-center gap-2">
             <span class="truncate text-sm font-medium text-text">{{ model.name }}</span>
             <span
@@ -323,6 +342,12 @@ const modalTitle = computed(() => (view.value === 'list' ? '模型管理' : edit
             {{ PRESET_LABEL[model.presetKey ?? 'custom'] }} · {{ model.modelId }}
           </p>
         </div>
+        <BaseSwitch
+          :model-value="model.enabled"
+          :title="model.enabled ? '已启用：出现在模型选择列表' : '已停用：不出现在模型选择列表，相关绑定回落默认模型'"
+          aria-label="启用模型"
+          @update:model-value="(value) => void toggleEnabled(model, value)"
+        />
         <BaseButton v-if="!model.isDefault" variant="ghost" size="sm" @click="void setDefault(model)">
           设为默认
         </BaseButton>
@@ -351,6 +376,7 @@ const modalTitle = computed(() => (view.value === 'list' ? '模型管理' : edit
       <p v-else class="px-1 text-xs leading-relaxed text-text-tertiary">
         对话实际使用的模型按「会话绑定 → Agent 配置 → 默认模型」逐级回落，
         标「使用中」的那条才是当前发给接口的模型。
+        停用的模型不出现在模型选择列表，绑定它的会话与 Agent 会回落到默认模型，重新启用即恢复。
       </p>
 
       <p

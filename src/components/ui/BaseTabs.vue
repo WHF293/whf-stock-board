@@ -4,7 +4,7 @@ import { computed } from "vue";
 /**
  * 标签页组件：v-model 选中值，选项驱动渲染
  *
- * - segmented（默认）：胶囊式分段控件（bg-flat-weak 容器 + 白色选中态）
+ * - segmented（默认）：胶囊式分段控件（bg-flat-weak 容器 + 淡主色选中态）
  * - underline：antd Tabs 风格（透明容器 + 底部下划线指示器 + 主色文字）
  */
 const props = withDefaults(
@@ -48,7 +48,7 @@ const tabClass = (active: boolean): string[] => {
   return [
     "pressable shrink-0 whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-medium active:scale-95",
     active
-      ? "bg-surface text-text shadow-sm"
+      ? "bg-primary-weak text-primary"
       : "text-text-secondary hover:text-text",
   ];
 };

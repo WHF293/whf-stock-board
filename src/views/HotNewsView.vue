@@ -18,6 +18,7 @@ import {
   fetchEmHotKeywords,
   fetchEmLeadingConcepts,
   fetchEmRecommendNews,
+  fetchNewsBodies,
   fetchSinaHotNews,
   fetchThepaperHotList,
   fetchThepaperHotNews,
@@ -53,6 +54,7 @@ import {
 import { STORAGE_NS_HOT_NEWS_FILTER } from "../constants/storage-key.constants";
 import { appStorage } from "../utils/app-local-storage";
 import { buildNewsAnalysisPrompt } from "../utils/build-news-analysis-prompt";
+import { dedupeHotNews } from "../utils/dedupe-hot-news";
 import { requestAgentAnalysis } from "../agent/agent-bridge";
 import { useNotificationsStore } from "../stores/notifications";
 import { NOTIFY_TONE } from "../constants/notify.constants";
@@ -255,25 +257,68 @@ const agentEntryVisible = computed(() =>
 );
 
 /**
- * 收集当前已加载展示的新闻条目：各通道状态里的条目拍平
- * （含同花顺 / 东财各子视图通道；无标题的占位条目剔除）
- * @returns 新闻条目列表
+ * 收集当前已加载展示的新闻条目（「AI 分析」全量口径）：六个通用通道 +
+ * 东财推荐 / 财联社深度两个快照通道的条目拍平，去重限量后返回
+ * （热搜 / 热榜 / 领涨概念是榜单数据而非新闻条目，不参与分析）
+ * @returns 去重限量后的新闻条目列表
  */
 const collectDisplayedNews = (): HotNewsItem[] =>
-  Object.values(states.value).flatMap((state) => state.items).filter((item) => item.title !== '');
+  dedupeHotNews([
+    ...Object.values(states.value).flatMap((state) => state.items),
+    ...emRecState.value.items,
+    ...clsDepthState.value.items,
+  ]);
 
-/** 「AI 总结」：把当前展示的全部新闻交给 Agent 分析利好 / 利空板块与个股 */
-const onAiSummary = (): void => {
-  const prompt = buildNewsAnalysisPrompt(collectDisplayedNews());
-  if (prompt === '') {
+/** 「AI 分析」运行态：抓正文进度展示 + 防重入（scope 区分全部 / 单卡片源） */
+const aiAnalysis = ref<{ running: boolean; done: number; total: number; scope: "all" | NewsSource }>({
+  running: false,
+  done: 0,
+  total: 0,
+  scope: "all",
+});
+
+/**
+ * 「AI 分析」共通骨架：抓新闻正文（带进度）→ 组装提示词（正文优先，
+ * 抓取失败回退标题 + 摘要）→ 投递 Agent 窗口分析
+ * @param scope "all" = 全部新闻源；否则为单个新闻源卡片
+ */
+const runNewsAnalysis = async (scope: "all" | NewsSource): Promise<void> => {
+  if (aiAnalysis.value.running) return;
+  const items =
+    scope === "all" ? collectDisplayedNews() : collectCardNews(scope);
+  if (items.length === 0) {
     notifications.push({
-      title: '暂无可总结的新闻',
-      body: '请等待新闻列表加载完成后再发起 AI 总结',
+      title: "暂无可总结的新闻",
+      body: "请等待新闻列表加载完成后再发起 AI 分析",
       tone: NOTIFY_TONE.FLAT,
     });
     return;
   }
-  void requestAgentAnalysis(prompt);
+  aiAnalysis.value = { running: true, done: 0, total: items.length, scope };
+  try {
+    const bodies = await fetchNewsBodies(items, (done) => {
+      aiAnalysis.value.done = done;
+    });
+    await requestAgentAnalysis(buildNewsAnalysisPrompt(items, bodies));
+  } finally {
+    aiAnalysis.value.running = false;
+  }
+};
+
+/** 「AI 分析」：把当前展示的全部新闻交给 Agent 分析利好 / 利空板块与个股 */
+const onAiSummary = (): void => {
+  void runNewsAnalysis("all");
+};
+
+/**
+ * 「AI 分析」按钮文案（进行中且是本按钮发起的批次时展示抓取进度）
+ * @param scope 目标范围（与运行态的 scope 比对）
+ * @returns 按钮文字
+ */
+const aiAnalysisLabel = (scope: "all" | NewsSource): string => {
+  const { running, done, total, scope: active } = aiAnalysis.value;
+  if (!running || active !== scope) return "AI 分析";
+  return `抓正文 ${done}/${total}`;
 };
 
 /** 弹窗用的源选项（含展示名；顺序 = 卡片顺序） */
@@ -759,7 +804,22 @@ const clsCardState = computed<SourceState>(() => {
 });
 
 /**
- * 渲染用卡片视图（同花顺 / 东财 / 澎湃 / 财联社卡片按当前子视图解析出实际状态，其余卡片通道即自身）
+ * 解析单张卡片当前子视图对应的通用状态
+ * （同花顺 / 东财 / 澎湃 / 财联社按当前子视图取各自通道或快照，其余卡片通道即自身）
+ * @param card 卡片源
+ * @returns 通用通道状态
+ */
+const cardChannelState = (card: NewsSource): SourceState => {
+  if (card === "cls") return clsCardState.value;
+  if (card === "eastmoney") return emCardState.value;
+  if (card === "thepaper") return tpCardState.value;
+  const channel: NewsChannel =
+    card === "ths" ? THS_SUB_VIEW_CHANNEL[thsSubView.value] : card;
+  return states.value[channel];
+};
+
+/**
+ * 渲染用卡片视图（解析实际状态供卡片渲染，其余卡片通道即自身）
  *
  * 财联社两个子视图均为站点快照、不走通用通道游标体系，故 channel 为 null
  * （与 expandedChannel 同一约定），仅卡片自身的 state 参与渲染。
@@ -774,15 +834,38 @@ const cardViews = computed(() =>
       card.value === "ths"
         ? THS_SUB_VIEW_CHANNEL[thsSubView.value]
         : card.value;
-    const state: SourceState =
-      card.value === "eastmoney"
-        ? emCardState.value
-        : card.value === "thepaper"
-          ? tpCardState.value
-          : states.value[channel];
-    return { ...card, channel, state, body };
+    return { ...card, channel, state: cardChannelState(card.value), body };
   }),
 );
+
+/**
+ * 收集单张卡片当前子视图的新闻条目（「AI 分析」单源口径）：
+ * 热搜 / 热榜 / 领涨概念子视图下 state 是占位条目（无标题），
+ * 经去重限量后自然为空列表，由 runNewsAnalysis 统一提示不可分析
+ * @param card 卡片源
+ * @returns 去重限量后的新闻条目列表
+ */
+const collectCardNews = (card: NewsSource): HotNewsItem[] =>
+  dedupeHotNews(cardChannelState(card).items);
+
+/**
+ * 「AI 分析」单张卡片：只分析该新闻源当前子视图的新闻
+ * @param card 卡片源
+ */
+const onCardAiSummary = (card: NewsSource): void => {
+  void runNewsAnalysis(card);
+};
+
+/**
+ * 卡片标题栏「AI 分析」icon 的悬浮提示（进行中展示抓取进度）
+ * @param card 卡片源
+ * @returns 提示文案
+ */
+const cardAiTitle = (card: NewsSource): string => {
+  const { running, done, total, scope } = aiAnalysis.value;
+  if (running && scope === card) return `正在抓取正文 ${done}/${total}...`;
+  return `AI 分析${SOURCE_LABELS[card]}`;
+};
 
 /**
  * 拉取并追加指定通道下一页（oid 去重）
@@ -1218,9 +1301,14 @@ const loadMoreLabel = (state: SourceState): string => {
         已启用 {{ visibleCards.length }} / {{ sourceItems.length }} 个新闻源
       </span>
       <div class="flex items-center gap-2">
-        <BaseButton v-if="agentEntryVisible" variant="ghost" @click="onAiSummary">
+        <BaseButton
+          v-if="agentEntryVisible"
+          variant="ghost"
+          :disabled="aiAnalysis.running"
+          @click="onAiSummary"
+        >
           <MenuIcon name="agent" :size="14" />
-          AI 分析
+          {{ aiAnalysisLabel("all") }}
         </BaseButton>
         <BaseButton variant="ghost" @click="sourceModalOpen = true">
           <MenuIcon name="settings" :size="14" />
@@ -1473,19 +1561,33 @@ const loadMoreLabel = (state: SourceState): string => {
         :key="card.value"
         class="!flex !h-full !w-[375px] !shrink-0 !flex-col !overflow-hidden !p-0"
       >
-        <!-- 卡片 header：源名称 + 当前条数 + 放大按钮 -->
+        <!-- 卡片 header：源名称 + 单源 AI 分析 + 当前条数 + 放大按钮 -->
         <header
           class="flex shrink-0 items-center justify-between gap-2 border-b border-flat-weak px-4 py-3"
         >
-          <h2 class="flex items-center gap-2 text-sm font-semibold text-text">
-            <img
-              :src="SOURCE_LOGOS[card.value]"
-              alt=""
-              class="h-5 w-5 rounded"
-              loading="lazy"
-            />
-            {{ card.label }}
-          </h2>
+          <div class="flex min-w-0 items-center gap-1.5">
+            <h2 class="flex items-center gap-2 text-sm font-semibold text-text">
+              <img
+                :src="SOURCE_LOGOS[card.value]"
+                alt=""
+                class="h-5 w-5 rounded"
+                loading="lazy"
+              />
+              {{ card.label }}
+            </h2>
+            <!-- 单源 AI 分析：只分析本卡片当前子视图的新闻（与顶部全量入口同骨架） -->
+            <button
+              v-if="agentEntryVisible"
+              type="button"
+              class="pressable shrink-0 rounded p-1 text-text-tertiary hover:bg-flat-weak hover:text-text active:scale-90 disabled:cursor-not-allowed disabled:opacity-50"
+              :disabled="aiAnalysis.running"
+              :aria-label="cardAiTitle(card.value)"
+              :title="cardAiTitle(card.value)"
+              @click="onCardAiSummary(card.value)"
+            >
+              <MenuIcon name="agent" :size="14" />
+            </button>
+          </div>
           <div class="flex shrink-0 items-center gap-1">
             <span class="text-xs text-text-tertiary">
               {{ card.state.items.length }} 条

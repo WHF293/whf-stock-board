@@ -4,6 +4,7 @@ import BaseEmpty from '../ui/BaseEmpty.vue';
 import BaseInput from '../ui/BaseInput.vue';
 import BaseModal from '../ui/BaseModal.vue';
 import BaseSwitch from '../ui/BaseSwitch.vue';
+import BaseTabs from '../ui/BaseTabs.vue';
 import MenuIcon from '../ui/MenuIcon.vue';
 import { pluginKernel } from '../../plugin';
 import type { PluginSettingsEntry } from '../../plugin/kernel';
@@ -30,6 +31,11 @@ const activeId = ref('');
 
 const activeEntry = computed(
   () => settingsEntries.value.find((entry) => entry.id === activeId.value),
+);
+
+/** 插件切换分段选项（BaseTabs 要求 string value，由设置条目转出） */
+const pluginTabOptions = computed(() =>
+  settingsEntries.value.map((entry) => ({ label: entry.name, value: entry.id })),
 );
 
 // 每次打开都把选中项收敛到列表里（插件被禁用后原选中项可能已消失）
@@ -163,23 +169,12 @@ const onReset = (): void => {
     />
 
     <template v-else>
-      <!-- 插件切换（声明了设置的插件通常只有一两个，用胶囊行不用侧栏） -->
-      <div class="mb-4 flex flex-wrap gap-1.5">
-        <button
-          v-for="entry in settingsEntries"
-          :key="entry.id"
-          type="button"
-          class="rounded-full px-3 py-1 text-xs transition-colors"
-          :class="
-            entry.id === activeId
-              ? 'bg-primary text-on-primary'
-              : 'bg-flat-weak text-text-secondary hover:text-text'
-          "
-          @click="activeId = entry.id"
-        >
-          {{ entry.name }}
-        </button>
-      </div>
+      <!-- 插件切换（声明了设置的插件通常只有一两个，用分段控件不用侧栏） -->
+      <BaseTabs
+        v-model="activeId"
+        :options="pluginTabOptions"
+        class="mb-4"
+      />
 
       <template v-if="activeEntry">
         <h4 class="mb-1 text-sm font-semibold text-text">{{ sectionTitle(activeEntry) }}</h4>

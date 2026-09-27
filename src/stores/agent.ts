@@ -61,10 +61,18 @@ export const useAgentStore = defineStore('agent', () => {
 
   /* --------------------------------- 计算属性 -------------------------------- */
 
-  /** 默认模型（无默认取首个；都没有 = null） */
+  /**
+   * 默认模型（优先取启用的：默认档被停用时回落第一个启用的；都没有 = null）
+   */
   const defaultModel = computed<ModelConfig | null>(
-    () => models.value.find((m) => m.isDefault) ?? models.value[0] ?? null,
+    () =>
+      models.value.find((m) => m.isDefault && m.enabled) ??
+      models.value.find((m) => m.enabled) ??
+      null,
   );
+
+  /** 启用中的模型（可选池：模型菜单 / 配置下拉只列这些） */
+  const enabledModels = computed<ModelConfig[]>(() => models.value.filter((m) => m.enabled));
 
   /** 当前激活会话 */
   const activeSession = computed<ChatSession | null>(
@@ -83,10 +91,14 @@ export const useAgentStore = defineStore('agent', () => {
    * ⚠️ 这是「请求真正发出去的模型」的唯一事实源。`defaultModel` 只是三级回落的
    * 兜底，会话 / 配置里绑了别的模型时就轮不到它——UI 必须据此标注「使用中」，
    * 否则用户改了默认模型却发现请求用的还是另一个会无从判断。
+   *
+   * 绑定的模型若已被停用，视同未绑定（与已删除同路径）回落下一级；
+   * 会话 / 配置里的绑定 id 保留，重新启用即恢复。
    */
   const effectiveModel = computed<ModelConfig | null>(() => {
     const modelId = activeSession.value?.modelId ?? activeProfile.value?.modelId ?? null;
-    return models.value.find((m) => m.id === modelId) ?? defaultModel.value;
+    const bound = modelId === null ? undefined : models.value.find((m) => m.id === modelId);
+    return (bound !== undefined && bound.enabled ? bound : undefined) ?? defaultModel.value;
   });
 
   /**
@@ -327,6 +339,20 @@ export const useAgentStore = defineStore('agent', () => {
   }
 
   /**
+   * 启用 / 停用模型（模型管理行内开关）
+   *
+   * 停用 = 退出可选池且回落链视同不存在；配置行保留，重新启用即恢复。
+   *
+   * @param id 模型 id
+   * @param enabled 是否启用
+   */
+  async function toggleModel(id: number, enabled: boolean): Promise<void> {
+    await db.setModelEnabled(id, enabled);
+    const target = models.value.find((m) => m.id === id);
+    if (target) target.enabled = enabled;
+  }
+
+  /**
    * 新增 Skill
    * @param name 展示名
    * @param dirName 唯一目录名
@@ -537,6 +563,7 @@ export const useAgentStore = defineStore('agent', () => {
     subagents,
     builtinEnabled,
     defaultModel,
+    enabledModels,
     activeSession,
     activeProfile,
     effectiveModel,
@@ -557,6 +584,7 @@ export const useAgentStore = defineStore('agent', () => {
     applyGroupOrders,
     upsertModel,
     removeModel,
+    toggleModel,
     addSkill,
     toggleSkill,
     removeSkill,

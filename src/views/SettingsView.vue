@@ -7,6 +7,7 @@ import BaseCard from "../components/ui/BaseCard.vue";
 import BaseConfirmModal from "../components/ui/BaseConfirmModal.vue";
 import BaseSwitch from "../components/ui/BaseSwitch.vue";
 import BaseTable from "../components/ui/BaseTable.vue";
+import BaseTabs from "../components/ui/BaseTabs.vue";
 import MenuIcon from "../components/ui/MenuIcon.vue";
 import NoticeBar from "../components/ui/NoticeBar.vue";
 import BaseTag from "../components/ui/BaseTag.vue";
@@ -67,6 +68,18 @@ const activeIntervalLabel = computed(
       (option) => option.value === settingsStore.refreshIntervalMs,
     )?.label ?? String(settingsStore.refreshIntervalMs),
 );
+
+/** 刷新间隔分段选项（BaseTabs 的 value 为 string，由毫秒值选项转出） */
+const REFRESH_INTERVAL_TAB_OPTIONS = REFRESH_INTERVAL_OPTIONS.map((option) => ({
+  label: option.label,
+  value: String(option.value),
+}));
+
+/** BaseTabs 桥接：间隔毫秒值 ↔ 字符串 value */
+const refreshIntervalModel = computed<string>({
+  get: () => String(settingsStore.refreshIntervalMs),
+  set: (value) => settingsStore.setRefreshIntervalMs(Number(value)),
+});
 
 /** 清空 stock-sdk 实例级缓存（代码表 / 交易日历 / 板块映射） */
 const onClearCaches = (): void => {
@@ -679,30 +692,13 @@ const onProbeProxy = async (): Promise<void> => {
           </div>
           <BaseTag tone="primary">{{ activeIntervalLabel }}</BaseTag>
         </div>
-        <div
-          class="mt-3 flex flex-wrap gap-1.5"
-          role="radiogroup"
+        <BaseTabs
+          v-model="refreshIntervalModel"
+          :options="REFRESH_INTERVAL_TAB_OPTIONS"
+          class="mt-3"
           aria-label="刷新间隔"
-        >
-          <button
-            v-for="option in REFRESH_INTERVAL_OPTIONS"
-            :key="option.value"
-            type="button"
-            role="radio"
-            :aria-checked="settingsStore.refreshIntervalMs === option.value"
-            data-track="REFRESH_INTERVAL_CHANGE"
-            :data-track-detail="option.label"
-            class="pressable rounded-lg px-2.5 py-1 text-xs font-medium active:scale-90"
-            :class="
-              settingsStore.refreshIntervalMs === option.value
-                ? 'bg-primary text-on-primary'
-                : 'bg-flat-weak text-text-secondary hover:text-text'
-            "
-            @click="settingsStore.setRefreshIntervalMs(option.value)"
-          >
-            {{ option.label }}
-          </button>
-        </div>
+          data-track="REFRESH_INTERVAL_CHANGE"
+        />
       </div>
 
       <div class="mt-3 flex items-center justify-between">

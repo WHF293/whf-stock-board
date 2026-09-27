@@ -201,6 +201,7 @@ export function toModel(r: Row): ModelConfig {
     maxOutputTokens: numOrNull(r.max_output_tokens),
     temperature: numOrNull(r.temperature),
     isDefault: bool(r.is_default),
+    enabled: bool(r.enabled),
     createdAt: num(r.created_at),
     updatedAt: num(r.updated_at),
   };
@@ -627,8 +628,8 @@ export async function saveModel(input: SaveModelInput): Promise<number> {
       `INSERT INTO model_config
          (name, preset_key, base_url, api_key, model_id, supports_tools, supports_image,
           supports_thinking, max_input_tokens, max_output_tokens, temperature, is_default,
-          created_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+          enabled, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
       [
         input.name,
         input.presetKey,
@@ -642,6 +643,7 @@ export async function saveModel(input: SaveModelInput): Promise<number> {
         input.maxOutputTokens,
         input.temperature,
         input.isDefault ? 1 : 0,
+        input.enabled ? 1 : 0,
         now,
         now,
       ],
@@ -652,8 +654,8 @@ export async function saveModel(input: SaveModelInput): Promise<number> {
     await db.execute(
       `UPDATE model_config SET name=$1, preset_key=$2, base_url=$3, api_key=$4, model_id=$5,
          supports_tools=$6, supports_image=$7, supports_thinking=$8, max_input_tokens=$9,
-         max_output_tokens=$10, temperature=$11, is_default=$12, updated_at=$13
-       WHERE id=$14`,
+         max_output_tokens=$10, temperature=$11, is_default=$12, enabled=$13, updated_at=$14
+       WHERE id=$15`,
       [
         input.name,
         input.presetKey,
@@ -667,6 +669,7 @@ export async function saveModel(input: SaveModelInput): Promise<number> {
         input.maxOutputTokens,
         input.temperature,
         input.isDefault ? 1 : 0,
+        input.enabled ? 1 : 0,
         now,
         id,
       ],
@@ -685,6 +688,20 @@ export async function saveModel(input: SaveModelInput): Promise<number> {
 export async function deleteModel(id: number): Promise<void> {
   const db = await getAgentDb();
   await db.execute('DELETE FROM model_config WHERE id = $1', [id]);
+}
+
+/**
+ * 模型启停（模型管理行内开关）
+ * @param id 模型 id
+ * @param enabled 是否启用
+ */
+export async function setModelEnabled(id: number, enabled: boolean): Promise<void> {
+  const db = await getAgentDb();
+  await db.execute('UPDATE model_config SET enabled = $1, updated_at = $2 WHERE id = $3', [
+    enabled ? 1 : 0,
+    Date.now(),
+    id,
+  ]);
 }
 
 /* ------------------------------- 资源授权 (grant) ------------------------------ */

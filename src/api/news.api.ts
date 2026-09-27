@@ -1,4 +1,17 @@
 import { proxyFetch } from './proxy-fetch';
+import {
+  NEWS_BODY_FETCH_CONCURRENCY,
+  NEWS_BODY_FETCH_INTERVAL_MS,
+  NEWS_BODY_UNFETCHABLE_URL_PREFIXES,
+  NEWS_CONTENT_CACHE_MAX_ENTRIES,
+  NEWS_CONTENT_FETCH_TIMEOUT_MS,
+  NEWS_CONTENT_MAX_CHARS,
+  NEWS_CONTENT_MIN_CHARS,
+  NEWS_CONTENT_REPLACEMENT_MAX_RATIO,
+} from '../constants/news-content.constants';
+import { extractNewsBody } from '../utils/extract-news-body';
+import { delay } from '../utils/delay';
+import { mapWithConcurrency } from '../utils/map-with-concurrency';
 
 /**
  * 新浪财经滚动热点新闻（feed.mix.sina.com.cn，非官方接口；文档见 .ai/项目资源/新浪新闻接口文档.md）
@@ -1018,4 +1031,104 @@ export const fetchThsThemeFeed = async (
       img: item.picUrl?.[0] ?? '',
     }));
   return { items, hasMore: items.length >= num };
+};
+
+// ---------- 新闻正文抓取（AI 分析带正文 / Agent fetch_news_content 工具共用） ----------
+// 按原文 url 抓详情页 HTML → 容器级抽取正文纯文本；正文发布后不变，会话内按 url 缓存。
+// 域名覆盖：Tauri 走 Rust 直连（http scope 为 https://*）；浏览器走 /stock-proxy
+// （白名单覆盖五大新闻站主域，转载到第三方域的链接在浏览器态抓取失败 → 回退标题 + 摘要）。
+
+/** 正文抓取缓存（url → 正文文本；'' = 已判定无有效正文，避免重复试错） */
+const newsContentCache = new Map<string, string>();
+
+/**
+ * 写入正文缓存（超上限按写入顺序淘汰最旧条目）
+ * @param url 原文链接
+ * @param content 正文文本（空串 = 无有效正文）
+ */
+const putNewsContentCache = (url: string, content: string): void => {
+  if (newsContentCache.size >= NEWS_CONTENT_CACHE_MAX_ENTRIES) {
+    const oldest = newsContentCache.keys().next().value;
+    if (oldest !== undefined) newsContentCache.delete(oldest);
+  }
+  newsContentCache.set(url, content);
+};
+
+/**
+ * 判定链接是否不值得抓正文（站内搜索页等合成链接，非原文页）
+ * @param url 原文链接
+ * @returns 是否跳过抓取
+ */
+const isUnfetchableNewsUrl = (url: string): boolean =>
+  NEWS_BODY_UNFETCHABLE_URL_PREFIXES.some((prefix) => url.startsWith(prefix));
+
+/**
+ * 抓取单条新闻正文
+ *
+ * 流程：缓存命中直接返回 → GET 原文页 HTML → 容器级抽取正文 →
+ * 校验（长度下限 + 乱码占比）→ 截断缓存。任何失败都返回空串（不抛错），
+ * 由调用方回退到标题 + 摘要分析。
+ * @param url 新闻原文链接
+ * @returns 正文文本；无有效正文返回空串
+ */
+export const fetchNewsContent = async (url: string): Promise<string> => {
+  const cached = newsContentCache.get(url);
+  if (cached !== undefined) return cached;
+  try {
+    const response = await proxyFetch(url, {
+      signal: AbortSignal.timeout(NEWS_CONTENT_FETCH_TIMEOUT_MS),
+    });
+    if (!response.ok) {
+      throw new Error(`新闻正文请求失败：${response.status}`);
+    }
+    const text = extractNewsBody(await response.text());
+    const replacementCount = (text.match(/\uFFFD/g) ?? []).length;
+    const valid =
+      text.length >= NEWS_CONTENT_MIN_CHARS &&
+      replacementCount / text.length <= NEWS_CONTENT_REPLACEMENT_MAX_RATIO;
+    const body = valid ? text.slice(0, NEWS_CONTENT_MAX_CHARS) : '';
+    putNewsContentCache(url, body);
+    return body;
+  } catch {
+    // 抓取失败也缓存空串：同一批分析内不重复试错（正文页不可得是稳定事实）
+    putNewsContentCache(url, '');
+    return '';
+  }
+};
+
+/**
+ * 批量抓取新闻正文（AI 分析前置步骤）
+ *
+ * 按 url 去重后走并发上限 + 请求间隔的 worker 池（新闻站红线口径），
+ * 未命中的 url 先错峰再发请求；缓存命中零延迟。逐条失败返回空串，
+ * 不中断整批。返回结果以 url 为键，正文为值（无正文的条目不在结果里或为空串）。
+ * @param items 新闻条目（内部按 url 去重、剔除无链接 / 不可抓链接）
+ * @param onProgress 每完成一条回调（completed / total，total 为实际待抓条数）
+ * @returns url → 正文文本的映射（含空串结果）
+ */
+export const fetchNewsBodies = async (
+  items: readonly HotNewsItem[],
+  onProgress?: (completed: number, total: number) => void,
+): Promise<Map<string, string>> => {
+  const urls = [
+    ...new Set(
+      items
+        .map((item) => item.url)
+        .filter((url) => url !== '' && !isUnfetchableNewsUrl(url)),
+    ),
+  ];
+  const results = new Map<string, string>();
+  if (urls.length === 0) return results;
+  await mapWithConcurrency(
+    urls,
+    async (url) => {
+      if (!newsContentCache.has(url)) {
+        await delay(NEWS_BODY_FETCH_INTERVAL_MS);
+      }
+      results.set(url, await fetchNewsContent(url));
+      return url;
+    },
+    { concurrency: NEWS_BODY_FETCH_CONCURRENCY, onProgress },
+  );
+  return results;
 };

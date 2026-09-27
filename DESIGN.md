@@ -233,7 +233,8 @@ class 策略（`<html class="dark">`），`@custom-variant dark`。覆盖 canvas
 - **BaseInput**：flat-weak 底无边框，focus 时 1px 主色 ring
 - **BaseTag**：胶囊形，语义 weak 底 + 语义文字色
 - **BaseTable / table-scroll**：数据表单源，吸顶吸左见 Layout 节
-- **BaseTabs / BaseSwitch / BaseSkeleton / BaseEmpty / BaseConfirmModal / BaseTooltip**：同风格基础件，新增组件前先复用
+- **BaseTabs**：segmented 胶囊分段 / underline 下划线两变体；按钮组选中态统一为淡主色底（`bg-primary-weak` + `text-primary`）
+- **BaseSwitch / BaseSkeleton / BaseEmpty / BaseConfirmModal / BaseTooltip**：同风格基础件，新增组件前先复用
 
 ## Do's and Don'ts
 

@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import BaseCard from '../components/ui/BaseCard.vue';
 import BaseTabs from '../components/ui/BaseTabs.vue';
 import BaseTag from '../components/ui/BaseTag.vue';
 import MenuIcon from '../components/ui/MenuIcon.vue';
 import NoticeBar from '../components/ui/NoticeBar.vue';
 import { APP_VERSION } from '../constants/app-info.constants';
+import { WHITEPAPER_TAB_QUERY } from '../constants/router-meta.constants';
 import {
   buildSnippet,
   matchAll,
@@ -275,7 +277,7 @@ const GUIDE_CHAPTERS: GuideChapter[] = [
           },
           {
             term: 'AI 分析 / 导出 Excel',
-            desc: '榜单表格上方的两个通用按钮（板块净流入页签位于其模块工具条内）。「AI 分析」把当前页签榜单的完整数据连同榜单类型一并交给 Agent：先核验最新行情，再输出榜单整体反映的资金面与情绪特征、值得关注的板块 / 个股（附驱动逻辑与风险提示）和 3-5 只重点关注标的；未配置模型时会先提示配置，入口跟随顶栏「Agent 分析」条目的显隐设置。「导出 Excel」把当前榜单数据另存为 .xlsx 文件（文件名含榜单名与导出时间；异动页签导出「盘口异动」「板块异动」两张工作表，龙虎榜 / 大宗交易只含当前选中日期与涨跌方向的数据；涨幅 / 跌幅 / 成交额 / 换手率榜为前 100 名，资金两榜为其已有数据）。',
+            desc: '榜单表格上方的两个通用按钮（板块净流入页签位于其模块工具条内）。「AI 分析」把当前页签榜单的完整数据连同榜单类型一并交给 Agent：先核验最新行情，再输出榜单整体反映的资金面与情绪特征、值得关注的板块 / 个股（附驱动逻辑与风险提示）和 3-5 只重点关注标的；每次点击都会**新开一个会话**进行分析，不与之前选中的会话共享上下文；未配置模型时会先提示配置，入口跟随顶栏「Agent 分析」条目的显隐设置。「导出 Excel」把当前榜单数据另存为 .xlsx 文件（文件名含榜单名与导出时间；异动页签导出「盘口异动」「板块异动」两张工作表，龙虎榜 / 大宗交易只含当前选中日期与涨跌方向的数据；涨幅 / 跌幅 / 成交额 / 换手率榜为前 100 名，资金两榜为其已有数据）。',
           },
           {
             term: '页签配置',
@@ -578,7 +580,7 @@ const GUIDE_CHAPTERS: GuideChapter[] = [
           },
           {
             term: 'AI 总结',
-            desc: '顶部「AI 分析」图标按钮（与「新闻源设置」同款）：把当前已加载展示的全部新闻交给 Agent 分析，总结利好 / 利空哪些板块或个股（每条结论附新闻依据）。显隐跟随顶栏「Agent 分析」条目开关（设置 → 布局编排）。未配置过模型时会打开 Agent 分析并弹出 Model 管理引导配置；已配置则直接在其会话中发送分析请求，Agent 可调用行情与市场数据工具交叉验证。',
+            desc: '顶部「AI 分析」图标按钮（与「新闻源设置」同款）：把当前已加载展示的全部新闻交给 Agent 分析，总结利好 / 利空哪些板块或个股（每条结论附新闻依据）。发起分析会**先逐条抓取新闻原文页的正文**（按钮上显示抓取进度），让 Agent 以正文为准判断——标题常与正文不符甚至观点相反；抓不到正文的条目（转载到第三方站点、页面为纯前端渲染等）自动回退按标题 + 摘要分析。单张卡片标题旁还有一个同款小图标，点击只分析该新闻源当前栏目的新闻，用于聚焦某个源。显隐跟随顶栏「Agent 分析」条目开关（设置 → 布局编排）。未配置过模型时会打开 Agent 分析并弹出 Model 管理引导配置；已配置则**新开一个会话**发送分析请求（每次独立开会话，不与之前选中的会话共享上下文），Agent 可调用行情与市场数据工具交叉验证，也可用「应用接口」里的 fetch_news_content 工具自行补读某条新闻的正文。',
           },
           {
             term: '卡片内子视图',
@@ -700,7 +702,7 @@ const GUIDE_CHAPTERS: GuideChapter[] = [
           },
           {
             term: 'AI 分析',
-            desc: '顶栏「加自选」旁的「AI 分析」按钮（与热点新闻页同款）：让 Agent 对当前个股做短期综合分析——消息面、资金面、情绪面、外围市场影响、短期政策影响五个维度（Agent 会先调用行情与市场数据工具查证），最后给出短期看多 / 看空 / 震荡的明确结论。显隐跟随顶栏「Agent 分析」条目开关（设置 → 布局编排）。未配置过模型时会打开 Agent 分析并弹出 Model 管理引导配置。',
+            desc: '顶栏「加自选」旁的「AI 分析」按钮（与热点新闻页同款）：让 Agent 对当前个股做短期综合分析——消息面、资金面、情绪面、外围市场影响、短期政策影响五个维度（Agent 会先调用行情与市场数据工具查证），最后给出短期看多 / 看空 / 震荡的明确结论。每次点击都会**新开一个会话**进行分析，不与之前选中的会话共享上下文。显隐跟随顶栏「Agent 分析」条目开关（设置 → 布局编排）。未配置过模型时会打开 Agent 分析并弹出 Model 管理引导配置。',
           },
           {
             term: '整页额外内容',
@@ -746,7 +748,7 @@ const GUIDE_CHAPTERS: GuideChapter[] = [
         items: [
           {
             term: '模型配置项',
-            desc: '除接口地址与密钥外，还有工具调用、图片输入、思考模式开关，以及输入上下文与输出上限档位。若未配置默认模型就发送消息，会出现提示并自动弹出 Model 管理。',
+            desc: '除接口地址与密钥外，还有工具调用、图片输入、思考模式开关，以及输入上下文与输出上限档位。每条模型右侧有启用开关：停用后不出现在模型选择列表，绑定它的会话与 Agent 配置自动回落默认模型，重新启用即恢复。若未配置默认模型就发送消息，会出现提示并自动弹出 Model 管理。',
           },
           {
             term: 'MCP 管理',
@@ -849,7 +851,7 @@ const GUIDE_CHAPTERS: GuideChapter[] = [
         items: [
           {
             term: '插件工坊（应用自带）',
-            desc: '「插件工坊」不是一个插件，而是应用自带的正式页面（左侧导航最后一个入口）：查看已挂载插件、各自贡献了什么入口、生效中的服务与最近的内核事件，并可在这里启停 / 安装 / 卸载插件。因为它是应用自带页面而不受插件启停影响，所以停用某个插件导致你正停留的页面消失时，会优先退回这里。',
+            desc: '「插件工坊」不是一个插件，而是应用自带的正式页面（左侧导航最后一个入口）：查看已挂载插件、各自贡献了什么入口、生效中的服务与最近的内核事件，并可在这里启停 / 安装 / 卸载插件；「内核概览」卡片右侧的「开发者文档」按钮直达白皮书的「开发者指南」tab。因为它是应用自带页面而不受插件启停影响，所以停用某个插件导致你正停留的页面消失时，会优先退回这里。',
           },
         ],
       },
@@ -940,8 +942,8 @@ const GUIDE_CHAPTERS: GuideChapter[] = [
         items: [
           '准备插件产物：源码用 esbuild 打成**单文件 ESM**（npx esbuild src/main.js --bundle --format=esm --outfile=main.js），连同 manifest.json（id / name / version / description / entry）与 README.md 压成 .zip 包；直接给一份 .js 也行。⚠️ 第三方插件是运行时动态加载的，**不能写 import**（拿不到 vue 等依赖），可用能力以宿主 ctx 为准，完整清单见仓库根目录的 PLUGIN_WIKI.md。',
           '打开 设置 →「插件」卡片（或插件工坊页）→「安装插件」。',
-          '选 .zip 插件包，或粘贴代码 / 选本地 .js 文件 → 点「解析预览」做结构校验（id / 命名 / 必填字段 / 无 import；zip 包还会校验 manifest 与产物是否一致）。id 撞车**不报错**：与已装过的插件同 id 是「升级 / 覆盖重装」（数据保留），与内置插件同 id 是「接管内置版」（卸载后内置实现立刻恢复 —— 所以拿它给应用自带能力做替换是允许的）。',
-          '点「确认安装」：代码持久化到本机，面板 / 菜单 / 路由即时生效，下次启动自动挂载。',
+          '选 .zip 插件包（文件框**可多选**，一次批量装多个），或粘贴代码 / 选本地 .js 文件。弹窗底部主按钮按流程分步出现：未选文件时是「选择 .zip 文件」，选好后变为「解析预览」，解析通过后才变为「确认安装」。解析预览做结构校验（id / 命名 / 必填字段 / 无 import；zip 包还会校验 manifest 与产物是否一致），批量时逐包给出通过 / 失败与原因，同批重复 id 的包会被拦下。id 撞车**不报错**：与已装过的插件同 id 是「升级 / 覆盖重装」（数据保留），与内置插件同 id 是「接管内置版」（卸载后内置实现立刻恢复 —— 所以拿它给应用自带能力做替换是允许的）。',
+          '点「确认安装」（批量时显示「确认安装（N 个）」，逐个安装并在列表里标出每条的成功 / 失败）：代码持久化到本机，面板 / 菜单 / 路由即时生效，下次启动自动挂载；批量安装全部成功会自动收起弹窗，有失败则留下弹窗展示原因。',
           '到「插件工坊」页面核对贡献点与生效服务；设置 →「插件」里可随时停用 / 启用，失败可重试。',
         ],
       },
@@ -1213,6 +1215,22 @@ type DocTabValue = (typeof DOC_TABS)[number]['value'];
 
 /** 当前激活的文档 tab */
 const activeDocTab = ref<DocTabValue>('user');
+
+const route = useRoute();
+
+/**
+ * 按路由 query 定位文档 tab（`?tab=dev`：插件工坊「开发者文档」等入口直达「开发者指南」）
+ *
+ * 不带参数或参数不认识时维持当前 tab，不打扰默认的「使用说明」落点。
+ */
+const applyQueryTab = (): void => {
+  if (route.query[WHITEPAPER_TAB_QUERY.KEY] === WHITEPAPER_TAB_QUERY.DEV) {
+    activeDocTab.value = 'dev';
+  }
+};
+
+watch(() => route.query[WHITEPAPER_TAB_QUERY.KEY], applyQueryTab);
+applyQueryTab();
 
 /** 归入「开发者指南」tab 的章节 id（其余章节全部归「使用说明」） */
 const DEV_CHAPTER_IDS: ReadonlySet<string> = new Set<string>(['dev']);

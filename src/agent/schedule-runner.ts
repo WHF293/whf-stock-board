@@ -71,10 +71,10 @@ export interface RunScheduleTaskParams {
 export async function runScheduleTask(params: RunScheduleTaskParams): Promise<'ok' | 'error'> {
   const { sessionId, prompt, model, profile, subagents, models, userSkills } = params;
 
-  // 子 agent 独立模型：id 命中才进映射；未配置 / 模型已删的子 agent 回落主模型（与 ChatPanel 同口径）
+  // 子 agent 独立模型：id 命中且未停用才进映射；未配置 / 模型已删或停用的子 agent 回落主模型（与 ChatPanel 同口径）
   const subagentModels = new Map(
     [...subagents]
-      .map((s) => [s.id, models.find((m) => m.id === s.modelId)] as const)
+      .map((s) => [s.id, models.find((m) => m.id === s.modelId && m.enabled)] as const)
       .filter((pair): pair is [number, ModelConfig] => pair[1] !== undefined),
   );
 

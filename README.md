@@ -19,6 +19,10 @@ A 股看板 SPA（个人学习用）：行情总览 / 自选股 / 行情全景 /
 
 ![热点新闻](./docs/screenshots/hot-news.png)
 
+**Agent 分析**：内置 AI 分析 Agent，多轮对话解读盘面与个股
+
+![Agent 分析](./docs/screenshots/agent-analysis.png)
+
 **插件工坊**：自定义插件实现
 
 ![插件工坊](./docs/screenshots/plugin-workshop.png)

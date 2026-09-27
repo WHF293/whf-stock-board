@@ -79,21 +79,27 @@ const onOpenSession = (sessionId: number): void => {
 /**
  * 消费一条外部「AI 分析」请求（跨窗口事件 / 浏览器回退暂存）：
  * 切回对话视图；未配置模型 → 浮窗提示 + 自动打开 Model 管理；
- * 已配置 → 经 ChatPanel.askAgent 直发（运行中自动退化为预填草稿）
+ * 已配置 → **新开一个会话**再经 ChatPanel.askAgent 直发 —— 分析请求是自包含的，
+ * 每次独立开会话，不与之前选中的会话共享上下文（避免历史对话污染本次分析）
  * @param prompt 完整提示词
  */
 const handleAgentAsk = (prompt: string): void => {
   viewMode.value = 'chat';
-  if (store.models.length === 0) {
+  if (store.enabledModels.length === 0) {
     openManager.value = 'model';
     notifications.push({
-      title: '当前没有配置过模型',
-      body: '请在 Model 管理中添加模型并设为默认后，回到原页面重新发起 AI 分析',
+      title: store.models.length === 0 ? '当前没有配置过模型' : '模型全部处于停用状态',
+      body:
+        store.models.length === 0
+          ? '请在 Model 管理中添加模型并设为默认后，回到原页面重新发起 AI 分析'
+          : '请在 Model 管理中启用至少一个模型后，回到原页面重新发起 AI 分析',
       tone: NOTIFY_TONE.FLAT,
     });
     return;
   }
-  chatPanelRef.value?.askAgent(prompt);
+  void store.newSession(null).then(() => {
+    chatPanelRef.value?.askAgent(prompt);
+  });
 };
 
 onMounted(() => {
