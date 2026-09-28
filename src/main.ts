@@ -31,6 +31,7 @@ initWeblog({
   app,
   router,
   enabled: useSettingsStore(pinia).weblogEnabled,
+  developerMode: useSettingsStore(pinia).weblogDeveloperMode,
 });
 
 // 插件体系：必须在 app.use(router) 之前装配 —— 插件贡献的路由要在首个导航就绪，

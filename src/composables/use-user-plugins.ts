@@ -44,6 +44,13 @@ export interface UserPluginInstallOptions {
   manifest?: PluginPackageManifest;
   /** 安装来源（默认按粘贴代码计） */
   source?: string;
+  /**
+   * 本次安装所用的远程包直链（在线更新时传入）
+   *
+   * 写进 `UserPluginRecord.updateUrl`，只用于展示「来自官方插件仓库」与将来多源扩展；
+   * **更新匹配靠 id，不靠它**。
+   */
+  updateUrl?: string;
 }
 
 /** 卸载后的数据表处置待办（界面据此展示「保留 / 删表」询问） */
@@ -161,6 +168,8 @@ export const useUserPlugins = (): UseUserPluginsReturn => {
       installedAt: new Date().toISOString(),
       source: options?.source ?? USER_PLUGIN_SOURCE.CODE,
     };
+    // 只有在线更新才带直链：本地导入的插件记它没意义，也不该让老记录凭空多一个字段
+    if (options?.updateUrl) record.updateUrl = options.updateUrl;
     if (!userPluginsStore.upsert(record)) {
       return { ok: false, error: '已安装插件数量超出上限，请先卸载不再使用的插件' };
     }
