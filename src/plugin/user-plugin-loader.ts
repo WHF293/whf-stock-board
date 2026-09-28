@@ -92,15 +92,61 @@ export const validateUserPluginDefinition = (
   return { ok: true, definition: value as PluginDefinition };
 };
 
+/** 模块求值成功结果 */
+export interface EvaluateSuccess {
+  ok: true;
+  /** 模块导出的插件定义候选（尚未做结构校验） */
+  exported: unknown;
+}
+
+/** 模块求值失败结果 */
+export interface EvaluateFailure {
+  ok: false;
+  /** 面向用户的失败原因 */
+  error: string;
+}
+
+/** 模块求值结果 */
+export type EvaluateResult = EvaluateSuccess | EvaluateFailure;
+
 /**
- * 从代码字符串加载插件定义（动态 import，不落内核）
+ * 把一段插件代码当作 ESM 模块求值，取回它的导出（**只求值，不做任何校验**）
  *
  * 用 Blob URL 绕开「应用打包时不知道用户插件存在」的问题：运行时把代码
  * 包装成 ESM 模块再 import，拿到导出后立即 revoke URL（模块已求值完毕）。
  *
- * **执行前先做静态预检**（`lintUserPluginCode`）：第三方插件处在「没有打包器」的
- * 运行环境里，写 import / template 必然失败，且失败信息是浏览器的底层报错。
- * 预检把它换成「第几行 + 为什么 + 该怎么改」，作者不必再去猜。
+ * 刻意**不做静态预检、不做结构校验**：这两步被拆到编排层（见 `use-plugin-package-intake`），
+ * 这样 UI 才能把「预检 / 加载 / 校验」显示成流水线上独立的三步 —— 用户一眼看出
+ * 是产物写错了（预检拦下）还是产物没导出合法定义（校验拦下）。
+ * @param code 插件代码原文（预构建 ESM JS）
+ * @returns 求值结果（成功带导出引用，失败带原因文案；import 抛错也归一为失败）
+ */
+export const evaluateUserPluginModule = async (code: string): Promise<EvaluateResult> => {
+  const url = URL.createObjectURL(new Blob([code], { type: USER_PLUGIN_BLOB_MIME }));
+  try {
+    const mod = (await import(/* @vite-ignore */ url)) as UserPluginModule;
+    const exported = mod.default ?? mod.plugin;
+    if (exported === undefined) {
+      return {
+        ok: false,
+        error: '模块没有默认导出（需要 export default { … } 或 export const plugin = { … }）',
+      };
+    }
+    return { ok: true, exported };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { ok: false, error: `插件代码执行失败：${message}` };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+};
+
+/**
+ * 从代码字符串加载插件定义（预检 → 求值 → 结构校验，不落内核）
+ *
+ * 一次性跑完的便捷入口（单包 / 粘贴代码场景仍用它）：静态预检拦下致命写法，
+ * 再走 `evaluateUserPluginModule` 求值，最后做结构校验。需要把各步分开显示的场景
+ * 请直接编排这三个函数，别在这里加开关。
  * @param code 插件代码原文（预构建 ESM JS）
  * @param occupiedIds 调用方判定「绝对不可撞」的插件 id（安装流程传空数组，见上方口径）
  * @returns 校验结果（成功带定义，失败带原因文案；import 本身抛错也归一为失败）
@@ -115,27 +161,17 @@ export const importUserPluginCode = async (
     return { ok: false, error: formatLintBlockers(lint.blockers), warnings: lint.warnings };
   }
 
-  const url = URL.createObjectURL(new Blob([code], { type: USER_PLUGIN_BLOB_MIME }));
-  try {
-    const mod = (await import(/* @vite-ignore */ url)) as UserPluginModule;
-    const exported = mod.default ?? mod.plugin;
-    if (exported === undefined) {
-      return {
-        ok: false,
-        error: '模块没有默认导出（需要 export default { … } 或 export const plugin = { … }）',
-        warnings: lint.warnings,
-      };
-    }
-    const validated = validateUserPluginDefinition(exported, occupiedIds);
-    return validated.ok
-      ? { ok: true, definition: validated.definition, warnings: lint.warnings }
-      : { ok: false, error: validated.error, warnings: lint.warnings };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return { ok: false, error: `插件代码执行失败：${message}`, warnings: lint.warnings };
-  } finally {
-    URL.revokeObjectURL(url);
+  // 2. 求值：拿到模块导出（这一步才是真正执行插件顶层代码）
+  const evaluated = await evaluateUserPluginModule(code);
+  if (!evaluated.ok) {
+    return { ok: false, error: evaluated.error, warnings: lint.warnings };
   }
+
+  // 3. 结构校验：形态 / 必填元信息 / id 合法性 / 占用政策
+  const validated = validateUserPluginDefinition(evaluated.exported, occupiedIds);
+  return validated.ok
+    ? { ok: true, definition: validated.definition, warnings: lint.warnings }
+    : { ok: false, error: validated.error, warnings: lint.warnings };
 };
 
 /**

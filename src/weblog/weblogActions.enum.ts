@@ -101,6 +101,8 @@ export const WEBLOG_ACTIONS = {
   PLUGIN_UNINSTALL: { category: 'business', label: '卸载插件' },
   PLUGIN_TAKEOVER: { category: 'business', label: '接管内置插件版本' },
   PLUGIN_DB_DROP: { category: 'business', label: '删除插件数据表' },
+  PLUGIN_UPDATE_CHECK: { category: 'business', label: '检查插件更新' },
+  PLUGIN_UPDATE_INSTALL: { category: 'business', label: '安装插件更新' },
   PLUGIN_COMMAND_RUN: { category: 'business', label: '执行插件命令' },
   PLUGIN_PANEL_OPEN: { category: 'business', label: '打开插件面板' },
   SDK_CACHE_CLEAR: { category: 'business', label: '清空 SDK 缓存' },
@@ -120,6 +122,7 @@ export const WEBLOG_ACTIONS = {
   // ---------- 系统事件 ----------
   APP_START: { category: 'system', label: '应用启动' },
   LOG_ENABLED_TOGGLE: { category: 'system', label: '日志采集开关' },
+  LOG_DEVELOPER_MODE_TOGGLE: { category: 'system', label: '日志开发者模式开关' },
   LOG_TAB_SWITCH: { category: 'system', label: '切换日志页签' },
   LOG_FILTER: { category: 'system', label: '日志筛选条件变更' },
   LOG_REFRESH: { category: 'system', label: '刷新日志' },
