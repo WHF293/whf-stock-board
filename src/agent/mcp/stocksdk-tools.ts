@@ -2,7 +2,8 @@
  * 内置 MCP：stock-sdk（行情算法工具集）
  *
  * 把 stock-sdk 的行情取数 + 纯函数算法封装成 MCP 工具供 Agent 调用：
- * 实时行情、K 线、技术指标（MA/MACD/RSI/BOLL）、MA 金叉回测、股票搜索、符号归一化。
+ * 实时行情、K 线、技术指标（MA/MACD/RSI/BOLL）、股票搜索、符号归一化。
+ * （MA 金叉回测 run_backtest 已随选股器插件化迁移到 dsh-stock-screener 插件的服务器。）
  * 取数走项目自研通道（新浪 K 线 / 腾讯行情 / 同源代理），算法复用 SDK 纯函数。
  *
  * 双通道结果（MCP Apps）：
@@ -18,7 +19,6 @@ import { fetchFullQuotes } from '../../api/quotes.api';
 import { searchStocks } from '../../api/search.api';
 import { fetchKlineCached } from '../../api/kline-cache.api';
 import { type SinaKlinePeriod } from '../../api/sina-kline.api';
-import { runMaCrossBacktest } from '../../api/screener.api';
 import { toFullSymbol } from '../../utils/to-full-symbol';
 import {
   buildIndicatorPayload,
@@ -271,18 +271,6 @@ export const STOCK_SDK_MCP_SERVER: BuiltinMcpServer = {
           text: zipped,
           payload: payload as unknown as Record<string, unknown>,
         };
-      },
-    }),
-    entry({
-      name: 'run_backtest',
-      description:
-        '对单只 A 股运行 MA5/MA20 金叉死叉策略回测（近一年日 K，含手续费），返回收益、最大回撤、交易明细与买入持有基准',
-      schema: z.object({
-        symbol: z.string().describe('股票代码（600519 / sh600519 等形态）'),
-      }),
-      run: async (input) => {
-        const { symbol } = input as { symbol: string };
-        return { text: await runMaCrossBacktest(symbol) };
       },
     }),
     entry({

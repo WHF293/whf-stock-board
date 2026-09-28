@@ -8,7 +8,6 @@ import WatchlistView from '../views/WatchlistView.vue';
 import PanoramaView from '../views/PanoramaView.vue';
 import BoardCalendarView from '../views/BoardCalendarView.vue';
 import BoardCalendarDetailView from '../views/BoardCalendarDetailView.vue';
-import ScreenerView from '../views/ScreenerView.vue';
 import HotNewsView from '../views/HotNewsView.vue';
 import HotBoardView from '../views/HotBoardView.vue';
 import StockAccountView from '../views/StockAccountView.vue';
@@ -79,11 +78,8 @@ const routes = [
         component: MarketRankView,
         meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.MARKET_RANK] },
       },
-      {
-        path: ROUTE_PATH.SCREENER,
-        component: ScreenerView,
-        meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.SCREENER] },
-      },
+      // 选股器已改为插件分发（dsh-stock-screener，路径 /screener 由插件注册）；
+      // 未安装插件时旧路径由 404 兜底页承接
       {
         path: ROUTE_PATH.HOT_NEWS,
         component: HotNewsView,
