@@ -20,6 +20,7 @@ import {
   fetchEmRecommendNews,
   fetchNewsBodies,
   fetchSinaHotNews,
+  fetchTdxHotNews,
   fetchThepaperHotList,
   fetchThepaperHotNews,
   fetchThsHeadlineHotNews,
@@ -44,10 +45,13 @@ import {
   EM_SUB_VIEW_OPTIONS,
   THS_SUB_VIEW_LABELS,
   THS_SUB_VIEW_OPTIONS,
+  TDX_SUB_VIEW_LABELS,
+  TDX_SUB_VIEW_OPTIONS,
   TP_SUB_VIEW_LABELS,
   TP_SUB_VIEW_OPTIONS,
   type ClsSubView,
   type EmSubView,
+  type TdxSubView,
   type ThsSubView,
   type TpSubView,
 } from "../constants/hot-news.constants";
@@ -75,6 +79,9 @@ import { NOTIFY_TONE } from "../constants/notify.constants";
  * 「财联社」卡片按子视图拆分（深度 / 热榜，见 ClsSubView）：
  * 深度 = 深度页 top_article + depth_list 快照（映射成通用条目复用列表渲染），
  * 热榜 = 热门文章排行榜快照（名次 + 阅读数，分支渲染）；接口需动态计算 sign（md5∘sha1）；
+ * 「通达信资讯」卡片按子视图拆分（要闻 / A股 / 产经，见 TdxSubView）：
+ * 三条通道都是通达信财富圈「资讯」栏对应栏目的单页快照（无翻页），
+ * 数据同为新闻条目（复用通用列表渲染）；取数走 TQLEX 网关（免会话，见 news.api.ts）；
  * 每源独立维护状态与快照（oid 去重），卡片内点击条目在新窗口打开原文页面
  * （避开 X-Frame-Options / CSP）
  * 卡片右上角「放大」按钮打开宽版弹窗（两列网格），数据与分页状态与卡片共享；
@@ -83,7 +90,7 @@ import { NOTIFY_TONE } from "../constants/notify.constants";
  */
 
 /** 卡片级新闻源（设置弹窗里可勾选 / 拖拽排序的粒度） */
-type NewsSource = "sina" | "eastmoney" | "ths" | "thepaper" | "cls";
+type NewsSource = "sina" | "eastmoney" | "ths" | "thepaper" | "cls" | "tdx";
 
 /**
  * 取数通道：有独立分页状态与缓存键的最小单位
@@ -106,6 +113,7 @@ const SOURCE_LABELS: Record<NewsSource, string> = {
   ths: "同花顺热点主题",
   thepaper: "澎湃新闻",
   cls: "财联社",
+  tdx: "通达信资讯",
 };
 
 /** 默认源顺序（首次进入 / 持久化数据缺源时按此补齐） */
@@ -115,6 +123,7 @@ const DEFAULT_SOURCE_ORDER: readonly NewsSource[] = [
   "ths",
   "thepaper",
   "cls",
+  "tdx",
 ];
 
 // 同花顺卡片的子视图（ThsSubView）与展示名定义在 constants/hot-news.constants.ts，
@@ -258,7 +267,7 @@ const agentEntryVisible = computed(() =>
 
 /**
  * 收集当前已加载展示的新闻条目（「AI 分析」全量口径）：六个通用通道 +
- * 东财推荐 / 财联社深度两个快照通道的条目拍平，去重限量后返回
+ * 东财推荐 / 财联社深度 / 通达信当前栏目三个快照通道的条目拍平，去重限量后返回
  * （热搜 / 热榜 / 领涨概念是榜单数据而非新闻条目，不参与分析）
  * @returns 去重限量后的新闻条目列表
  */
@@ -267,6 +276,7 @@ const collectDisplayedNews = (): HotNewsItem[] =>
     ...Object.values(states.value).flatMap((state) => state.items),
     ...emRecState.value.items,
     ...clsDepthState.value.items,
+    ...tdxStates.value[tdxSubView.value].items,
   ]);
 
 /** 「AI 分析」运行态：抓正文进度展示 + 防重入（scope 区分全部 / 单卡片源） */
@@ -562,6 +572,44 @@ const selectClsSubView = (view: string): void => {
   ensureClsCardLoaded();
 };
 
+/**
+ * 通达信卡片当前子视图（要闻 / A股 / 产经）
+ *
+ * 三条通道都是官网「资讯」栏对应栏目的单页快照（无翻页），
+ * 数据同为新闻条目，卡片内复用通用列表渲染
+ */
+const tdxSubView = ref<TdxSubView>("yw");
+
+/** 通达信三个子视图各自的快照状态（切换时按需补拉、切回复用） */
+const tdxStates = ref<Record<TdxSubView, SnapshotState<HotNewsItem>>>({
+  yw: createSnapshotState(),
+  ag: createSnapshotState(),
+  cj: createSnapshotState(),
+});
+
+/**
+ * 就绪通达信卡片当前子视图的快照
+ * @param force 强制刷新（无视 initialized 重拉）
+ * @returns 完成后 resolve
+ */
+const ensureTdxChannel = (force = false): Promise<void> =>
+  ensureSnapshot(
+    tdxStates.value[tdxSubView.value],
+    () => fetchTdxHotNews(tdxSubView.value, 20),
+    `tdx-${tdxSubView.value}`,
+    force,
+  );
+
+/**
+ * 切换通达信卡片的子视图（切过去时按需补拉该子视图数据）
+ * @param view 目标子视图值（来自切换控件）
+ */
+const selectTdxSubView = (view: string): void => {
+  if (tdxSubView.value === view) return;
+  tdxSubView.value = view as TdxSubView;
+  void ensureTdxChannel();
+};
+
 // ---------- 面板拖拽排序（vue-draggable-plus / SortableJS） ----------
 // 模板里用 <VueDraggable v-model="sourceItems"> 直接重排数组；
 // 顺序变更由上方 deep watch 落盘，无需手工维护拖拽态与插入下标。
@@ -803,14 +851,21 @@ const clsCardState = computed<SourceState>(() => {
   );
 });
 
+/** 通达信卡片当前子视图的通用状态（三条通道均为快照适配，带真实条目复用列表渲染） */
+const tdxCardState = computed<SourceState>(() => {
+  const snap = tdxStates.value[tdxSubView.value];
+  return asSourceState(snap, snap.items.length, snap.items);
+});
+
 /**
  * 解析单张卡片当前子视图对应的通用状态
- * （同花顺 / 东财 / 澎湃 / 财联社按当前子视图取各自通道或快照，其余卡片通道即自身）
+ * （同花顺 / 东财 / 澎湃 / 财联社 / 通达信按当前子视图取各自通道或快照，其余卡片通道即自身）
  * @param card 卡片源
  * @returns 通用通道状态
  */
 const cardChannelState = (card: NewsSource): SourceState => {
   if (card === "cls") return clsCardState.value;
+  if (card === "tdx") return tdxCardState.value;
   if (card === "eastmoney") return emCardState.value;
   if (card === "thepaper") return tpCardState.value;
   const channel: NewsChannel =
@@ -821,7 +876,7 @@ const cardChannelState = (card: NewsSource): SourceState => {
 /**
  * 渲染用卡片视图（解析实际状态供卡片渲染，其余卡片通道即自身）
  *
- * 财联社两个子视图均为站点快照、不走通用通道游标体系，故 channel 为 null
+ * 财联社与通达信的子视图均为站点快照、不走通用通道游标体系，故 channel 为 null
  * （与 expandedChannel 同一约定），仅卡片自身的 state 参与渲染。
  */
 const cardViews = computed(() =>
@@ -829,6 +884,9 @@ const cardViews = computed(() =>
     const body = cardBodyKind(card.value);
     if (card.value === "cls") {
       return { ...card, channel: null, state: clsCardState.value, body };
+    }
+    if (card.value === "tdx") {
+      return { ...card, channel: null, state: tdxCardState.value, body };
     }
     const channel: NewsChannel =
       card.value === "ths"
@@ -998,6 +1056,11 @@ const ensureCardLoaded = (source: NewsSource): void => {
     ensureClsCardLoaded();
     return;
   }
+  // 通达信卡片三个子视图均为快照模块
+  if (source === "tdx") {
+    void ensureTdxChannel();
+    return;
+  }
   if (!states.value[source].initialized) void loadMore(source);
 };
 
@@ -1033,20 +1096,21 @@ const expandedOpen = ref(false);
 /** 放大弹窗展示的卡片（关闭后保留旧值，避免淡出动画期间正文先消失） */
 const expandedCard = ref<NewsSource>("sina");
 
-/** 放大弹窗当前取数通道（同花顺卡片跟随卡片当前子视图；财联社两个子视图均为快照，无通道返 null） */
+/** 放大弹窗当前取数通道（同花顺卡片跟随卡片当前子视图；财联社 / 通达信子视图均为快照，无通道返 null） */
 const expandedChannel = computed<NewsChannel | null>(() => {
-  if (expandedCard.value === "cls") return null;
+  if (expandedCard.value === "cls" || expandedCard.value === "tdx") return null;
   if (expandedCard.value === "ths") {
     return THS_SUB_VIEW_CHANNEL[thsSubView.value];
   }
   return expandedCard.value;
 });
 
-/** 放大弹窗对应的通道状态（东财 / 澎湃 / 财联社卡片跟随其当前子视图的适配状态） */
+/** 放大弹窗对应的通道状态（东财 / 澎湃 / 财联社 / 通达信卡片跟随其当前子视图的适配状态） */
 const expandedState = computed<SourceState>(() => {
   if (expandedCard.value === "eastmoney") return emCardState.value;
   if (expandedCard.value === "thepaper") return tpCardState.value;
   if (expandedCard.value === "cls") return clsCardState.value;
+  if (expandedCard.value === "tdx") return tdxCardState.value;
   const channel = expandedChannel.value;
   return channel ? states.value[channel] : states.value.sina;
 });
@@ -1054,7 +1118,7 @@ const expandedState = computed<SourceState>(() => {
 /** 放大弹窗正文渲染类型（与卡片一致） */
 const expandedBody = computed<CardBodyKind>(() => cardBodyKind(expandedCard.value));
 
-/** 放大弹窗标题（同花顺 / 东财 / 澎湃 / 财联社卡片带上当前子视图名，便于分辨放大的是哪一路内容） */
+/** 放大弹窗标题（同花顺 / 东财 / 澎湃 / 财联社 / 通达信卡片带上当前子视图名，便于分辨放大的是哪一路内容） */
 const expandedTitle = computed(() => {
   const label = SOURCE_LABELS[expandedCard.value];
   if (expandedCard.value === "ths") {
@@ -1068,6 +1132,9 @@ const expandedTitle = computed(() => {
   }
   if (expandedCard.value === "cls") {
     return `${label} · ${CLS_SUB_VIEW_LABELS[clsSubView.value]}`;
+  }
+  if (expandedCard.value === "tdx") {
+    return `${label} · ${TDX_SUB_VIEW_LABELS[tdxSubView.value]}`;
   }
   return label;
 });
@@ -1088,7 +1155,7 @@ const loadMoreExpanded = (): void => {
   if (channel) void loadMore(channel);
 };
 
-/** 放大弹窗：强制刷新（东财 / 澎湃 / 财联社卡片按子视图重拉对应模块，其余按通道重拉） */
+/** 放大弹窗：强制刷新（东财 / 澎湃 / 财联社 / 通达信卡片按子视图重拉对应模块，其余按通道重拉） */
 const forceRefreshExpanded = (): void => {
   if (expandedCard.value === "eastmoney") {
     ensureEmCardLoaded(true);
@@ -1102,12 +1169,16 @@ const forceRefreshExpanded = (): void => {
     ensureClsCardLoaded(true);
     return;
   }
+  if (expandedCard.value === "tdx") {
+    void ensureTdxChannel(true);
+    return;
+  }
   const channel = expandedChannel.value;
   if (channel) void forceRefresh(channel);
 };
 
 /**
- * 卡片 footer 的强制刷新（东财 / 澎湃 / 财联社卡片按子视图重拉对应模块，其余按通道重拉）
+ * 卡片 footer 的强制刷新（东财 / 澎湃 / 财联社 / 通达信卡片按子视图重拉对应模块，其余按通道重拉）
  * @param card 卡片源
  */
 const refreshCard = (card: NewsSource): void => {
@@ -1121,6 +1192,10 @@ const refreshCard = (card: NewsSource): void => {
   }
   if (card === "cls") {
     ensureClsCardLoaded(true);
+    return;
+  }
+  if (card === "tdx") {
+    void ensureTdxChannel(true);
     return;
   }
   const channel: NewsChannel =
@@ -1191,6 +1266,7 @@ const SOURCE_LOGOS: Record<NewsSource, string> = {
   ths: "/news-logos/10jqka.ico",
   thepaper: "/news-logos/thepaper.ico",
   cls: "/news-logos/cls.ico",
+  tdx: "/news-logos/tdx.ico",
 };
 
 /** 新闻原文窗口尺寸（居中弹出） */
@@ -1331,14 +1407,15 @@ const loadMoreLabel = (state: SourceState): string => {
       max-width-class="max-w-5xl"
       height-class="h-[70dvh]"
     >
-      <!-- 同花顺 / 东财 / 澎湃 / 财联社卡片：放大后同样能切子视图（状态与卡片共享）；
+      <!-- 同花顺 / 东财 / 澎湃 / 财联社 / 通达信卡片：放大后同样能切子视图（状态与卡片共享）；
            放在固定筛选栏里（其余卡片不传该插槽，避免渲染空条），滚正文时保持可见 -->
       <template
         v-if="
           expandedCard === 'ths' ||
             expandedCard === 'eastmoney' ||
             expandedCard === 'thepaper' ||
-            expandedCard === 'cls'
+            expandedCard === 'cls' ||
+            expandedCard === 'tdx'
         "
         #filters
       >
@@ -1370,11 +1447,18 @@ const loadMoreLabel = (state: SourceState): string => {
           @select-view="selectTpSubView"
         />
         <HotNewsChannelBar
-          v-else
+          v-else-if="expandedCard === 'cls'"
           :views="CLS_SUB_VIEW_OPTIONS"
           :active="clsSubView"
           roomy
           @select-view="selectClsSubView"
+        />
+        <HotNewsChannelBar
+          v-else
+          :views="TDX_SUB_VIEW_OPTIONS"
+          :active="tdxSubView"
+          roomy
+          @select-view="selectTdxSubView"
         />
       </template>
 
@@ -1656,6 +1740,18 @@ const loadMoreLabel = (state: SourceState): string => {
             :views="CLS_SUB_VIEW_OPTIONS"
             :active="clsSubView"
             @select-view="selectClsSubView"
+          />
+        </div>
+
+        <!-- 通达信卡片：子视图切换控件（要闻/A股/产经） -->
+        <div
+          v-if="card.value === 'tdx'"
+          class="shrink-0 border-b border-flat-weak px-3 py-2"
+        >
+          <HotNewsChannelBar
+            :views="TDX_SUB_VIEW_OPTIONS"
+            :active="tdxSubView"
+            @select-view="selectTdxSubView"
           />
         </div>
 

@@ -26,8 +26,12 @@ export const STOCK_PROXY_ALLOWED_HOSTS = [
   '10jqka.com.cn',
   // 澎湃新闻（热点新闻：频道页 www.thepaper.cn + 列表接口 api.thepaper.cn，POST）
   'thepaper.cn',
-  // 财联社（电报快讯 www.cls.cn，需动态计算 sign；本期未接入，预留白名单）
+  // 财联社（电报快讯 www.cls.cn，需动态计算 sign；热股榜 api3.cls.cn）
   'cls.cn',
+  // 通达信（今天炒什么：热榜 TQLEX 网关 pul.tdx.com.cn，POST + 页面 Referer）
+  'tdx.com.cn',
+  // 雪球（今天炒什么：热股榜单 stock.xueqiu.com，需 guest cookie，中间件自动注入）
+  'xueqiu.com',
   // stock-sdk 静态资源（代码表等参考数据）
   'linkdiary.cn',
 ] as const;

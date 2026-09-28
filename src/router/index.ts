@@ -10,6 +10,7 @@ import BoardCalendarView from '../views/BoardCalendarView.vue';
 import BoardCalendarDetailView from '../views/BoardCalendarDetailView.vue';
 import ScreenerView from '../views/ScreenerView.vue';
 import HotNewsView from '../views/HotNewsView.vue';
+import HotBoardView from '../views/HotBoardView.vue';
 import StockAccountView from '../views/StockAccountView.vue';
 import AgentAnalysisView from '../views/AgentAnalysisView.vue';
 import MarketRankView from '../views/MarketRankView.vue';
@@ -89,6 +90,11 @@ const routes = [
         meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.HOT_NEWS] },
       },
       {
+        path: ROUTE_PATH.WHAT_TO_TRADE,
+        component: HotBoardView,
+        meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.WHAT_TO_TRADE] },
+      },
+      {
         path: ROUTE_PATH.STOCK_ACCOUNT,
         component: StockAccountView,
         meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.STOCK_ACCOUNT] },
@@ -100,7 +106,7 @@ const routes = [
         component: PluginLabView,
         meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.PLUGIN_LAB] },
       },
-      // 板块历史净流入：市场榜单-板块净流入「查看历史净流入」进入；不入左侧导航
+      // 板块历史净流入：行情全景-板块资金「查看历史净流入」进入；不入左侧导航
       {
         path: ROUTE_PATH.SECTOR_FLOW_HISTORY,
         component: SectorFlowHistoryView,
