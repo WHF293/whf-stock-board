@@ -12,7 +12,7 @@ export const ROUTE_PATH = {
 
   MARKET_EVENT: "/market-event", // 兼容旧路由跳转
   MARKET_MOOD: "/market-mood",
-  SCREENER: "/screener",
+  // SCREENER("/screener")已改为插件分发（dsh-stock-screener），路径由插件注册
   HOT_NEWS: "/hot-news",
   WHAT_TO_TRADE: "/what-to-trade", // 今天炒什么（五平台热股榜单聚合）
   MARKET_RANK: "/market-rank",
@@ -84,7 +84,7 @@ export const MENU_ITEMS: readonly SidebarMenuEntry[] = [
   // 板块日历紧跟行情全景：同为「板块维度的行情视角」
   { path: ROUTE_PATH.BOARD_CALENDAR, title: "板块日历", icon: MENU_ICON.CALENDAR },
   { path: ROUTE_PATH.WATCHLIST, title: "自选股", icon: MENU_ICON.STAR },
-  { path: ROUTE_PATH.SCREENER, title: "选股器", icon: MENU_ICON.FILTER },
+  // 选股器已改为插件分发（dsh-stock-screener），由插件注册菜单与 /screener 路由
   { path: ROUTE_PATH.HOT_NEWS, title: "热点新闻", icon: MENU_ICON.NEWS },
   // 今天炒什么紧跟热点新闻：同为「盘前 / 盘中扫一眼市场在炒什么」的日常视角
   { path: ROUTE_PATH.WHAT_TO_TRADE, title: "今天炒什么", icon: MENU_ICON.FLAME },

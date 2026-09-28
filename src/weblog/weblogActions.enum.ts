@@ -42,6 +42,8 @@ export const WEBLOG_ACTIONS = {
   PAGE_BOARD_CALENDAR: { category: 'page', label: '进入板块日历' },
   PAGE_MARKET_MOOD: { category: 'page', label: '进入市场异动' },
   PAGE_WATCHLIST: { category: 'page', label: '进入自选股' },
+  // 选股器已改为插件分发（dsh-stock-screener）：path 沿用 /screener，
+  // 保留映射让装了插件的用户进入埋点不断档（插件缺席时该 path 不可达，条目空挂无害）
   PAGE_SCREENER: { category: 'page', label: '进入选股器' },
   PAGE_HOT_NEWS: { category: 'page', label: '进入热点新闻' },
   PAGE_STOCK_ACCOUNT: { category: 'page', label: '进入账户管理' },
@@ -76,9 +78,8 @@ export const WEBLOG_ACTIONS = {
   ACCOUNT_IMPORT: { category: 'business', label: '导入对账单/交割单' },
   ACCOUNT_EXPORT: { category: 'business', label: '导出表格' },
   BOARD_CALENDAR_SYNC: { category: 'business', label: '板块日历采集' },
-  SCREENER_RUN: { category: 'business', label: '执行选股筛选' },
-  SCREENER_SIGNAL_SCAN: { category: 'business', label: '信号扫描' },
-  SCREENER_TAIL_PICK: { category: 'business', label: '尾盘选股' },
+  // 选股器已改为插件分发（dsh-stock-screener），其页面与业务埋点键随插件迁移；
+  // 历史日志中的 SCREENER_* 键不再有标签映射，查询时按原始键展示
   AGENT_SEND: { category: 'business', label: '发送 Agent 对话' },
   CHART_INDICATOR_CONFIG: { category: 'business', label: '图表指标配置' },
   POLLING_TOGGLE: { category: 'business', label: '轮询总开关' },
@@ -148,7 +149,8 @@ export const WEBLOG_PAGE_ACTION_BY_PATH: Record<string, WeblogActionKey> = {
   [ROUTE_PATH.BOARD_CALENDAR]: 'PAGE_BOARD_CALENDAR',
   [ROUTE_PATH.MARKET_MOOD]: 'PAGE_MARKET_MOOD',
   [ROUTE_PATH.WATCHLIST]: 'PAGE_WATCHLIST',
-  [ROUTE_PATH.SCREENER]: 'PAGE_SCREENER',
+  // 选股器为插件页（dsh-stock-screener 注册 /screener）：path 字面量登记，装了插件埋点不断档
+  '/screener': 'PAGE_SCREENER',
   [ROUTE_PATH.HOT_NEWS]: 'PAGE_HOT_NEWS',
   [ROUTE_PATH.STOCK_ACCOUNT]: 'PAGE_STOCK_ACCOUNT',
   [ROUTE_PATH.SYSTEM_LOG]: 'PAGE_SYSTEM_LOG',

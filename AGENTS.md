@@ -6,7 +6,7 @@
 
 A 股看板应用（个人学习用）：浏览器 SPA + Tauri 2 PC 客户端共用同一套 Vue 3.5 + TypeScript 前端。
 
-- 页面：市场总览 / 自选股 / 行情全景（A股·美股·全球宏观）/ 资金动向 / 涨停与异动 / 龙虎榜·大宗 / 选股器（基础筛选·信号扫描·尾盘选股）/ 设置
+- 页面：市场总览 / 自选股 / 行情全景（A股·美股·全球宏观）/ 资金动向 / 涨停与异动 / 龙虎榜·大宗 / 选股器（v3.3.0 起为插件 `dsh-stock-screener`，路径 `/screener` 由插件注册）/ 设置
 - 数据源：[stock-sdk](https://stock-sdk.linkdiary.cn/)（腾讯 + 东方财富）
 - 详情交互：全站「跳个股详情」一律打开右侧停靠面板（`stores/dock-panel.ts` 的 `openStock()`），不走路由
 
@@ -297,10 +297,13 @@ zip 包模式支持**多选 / 拖拽批量上传**，选中即自动解析，无
 做法是把它**从源码里移出去**，重新以 zip 产物包的形式分发。
 反过来，也不要指望「应用内卸载」能删掉源码 —— 它对源文件一无所知。
 
-**本仓库当前状态**：四个官方插件（主线 / 股息筛选 / 速记 / 自选盯盘）已全部走「应用内安装」形态 ——
+**本仓库当前状态**：五个官方插件（主线 / 股息筛选 / 速记 / 自选盯盘 / 选股器）已全部走「应用内安装」形态 ——
 `src/plugins/` 下**没有任何插件源码**，`BUILTIN_PLUGINS` 是空数组。它们的源码、清单与产物包都在
 **独立仓库 `whf-stock-board-plugin`**：改插件 UI / 逻辑、升版本、出包都在那边做
 （`node scripts/build-plugins.mjs`），产物 `plugins-dist/<id>-<version>.zip` 也在那边入库。
+（选股器是 v3.3.0 从宿主内置页 `ScreenerView` + `components/screener/` + `api/screener.api.ts` /
+`api/analysis.api.ts` 迁出去的：Agent 的 `run_backtest` 工具随之移入插件贡献的 MCP 服务器，
+新浪日 K 缓存降级为插件会话内 Map，扫描结果「加自选」因 `app:watchlist` 只读而移除。）
 > ⚠️ **它的目录位置不由本仓库假定**（不保证与本仓库同级）：需要跨仓库联动时用参数显式指路 ——
 > 出包用 `--host <本仓库根>` 让它回写样式白名单，本仓库侧读产物用环境变量 `WHF_PLUGIN_DIST`。
 本仓库只保留**宿主能力**：插件内核（`src/plugin/`）、样式白名单（`src/assets/styles/plugin-classes.txt`）、
@@ -423,6 +426,12 @@ tauri fetch 绕 webview CORS）。
 - 导入 = 覆盖式写入 + 写前 `VACUUM INTO` 备份 + 完成后整页 reload（不做内存热同步）；未知类别跳过不报错
 
 ## 发布流程（PC 客户端）
+
+### 版本号规则（x.y.z，硬性）
+
+- **z**：bug 修复，或既有模块内部的功能迭代（不新增页面 / 模块）
+- **y**：新增模块或新增页面时递增
+- **x**：**必须由用户主动说明**才允许递增；AI 自动发版时只允许更新 y、z，x 保持不变
 
 1. 版本号三处同步改：`src-tauri/tauri.conf.json`、`package.json`、`src/constants/app-info.constants.ts`（APP_VERSION，供「检查更新」比较）
 2. 提交并推送代码（**先 push 代码，再处理 tag**）：

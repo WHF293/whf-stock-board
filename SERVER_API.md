@@ -75,7 +75,7 @@
 | `fetchIndustryBoards` | `api/board.api.ts` | `sdk.board.industry.list()` | 东财 | 行业板块列表 |
 | `fetchConceptBoards` | `api/board.api.ts` | `sdk.board.concept.list()` | 东财 | 概念板块列表 |
 | `fetchIndustryConstituents` | `api/board.api.ts` | `sdk.board.industry.constituents(symbol)` | 东财 | 行业板块成分股（点击触发，重接口） |
-| `fetchConceptConstituents` | `api/board.api.ts` | `sdk.board.concept.constituents(symbol)` | 东财 | 概念板块成分股（点击/选股器触发） |
+| `fetchConceptConstituents` | `api/board.api.ts` | `sdk.board.concept.constituents(symbol)` | 东财 | 概念板块成分股（点击触发） |
 | `fetchZtPool` | `api/event.api.ts` | `sdk.marketEvent.ztPool(type, date?)` | 东财 | 涨停/跌停等股池。**`date` 参数生效**（可取指定交易日，实测同一只票连板数逐日递进：9/15 = 1 板 → 9/16 = 2 板 → 9/17 = 3 板），但**只覆盖近端**（约一个月前的日期返回空池）；`qdate` 字段恒为当日，不代表实际请求日，不要用它判断日期。字段 `hybk`(行业，长名**被截断到 4 个汉字**)、`lbc`(连板数)、`fund`(封板资金)、`zttj`(N 天 M 板) |
 | `fetchStockChanges` | `api/event.api.ts` | `sdk.marketEvent.stockChanges('all')` | 东财 | 全市场盘口异动（滚动时间轴） |
 | `fetchBoardChanges` | `api/event.api.ts` | `sdk.marketEvent.boardChanges()` | 东财 | 板块异动汇总 |
@@ -93,10 +93,6 @@
 | `searchStocks` | `api/search.api.ts` | `sdk.search(keyword)` | 腾讯搜索 | 模糊搜索（代码/名称/拼音） |
 | `fetchDragonTigerDetail` | `api/dragon-tiger.api.ts` | `sdk.dragonTiger.detail({startDate,endDate})` | 东财 | 龙虎榜明细（近 N 日） |
 | `fetchBlockTradeDetail` | `api/dragon-tiger.api.ts` | `sdk.blockTrade.detail({startDate,endDate})` | 东财 | 大宗交易明细 |
-| `runScreener` | `api/screener.api.ts` | `screen(quotes)` + `fetchAllMarketQuotes` | 东财 | 基础条件筛选（全市场快照链式 `where`，按成交额降序取前 N） |
-| `runMaCrossBacktest` | `api/screener.api.ts` | `fetchSinaKline`(daily) + `calcMA[5,20]` + `backtest()` | 新浪 | MA 金叉死叉回测（近一年窗口本地截取）。⚠️ 新浪不复权，除权日附近为近似口径 |
-| 信号扫描 | `api/analysis.api.ts` | `fetchScanBars`（`fetchSinaKline` daily + `calcMA/calcMACD/calcRSI/calcBOLL` 纯函数，并发 3，单票失败跳过） | 新浪 | 对股票池逐票拉日 K 判定 MA/MACD/RSI/BOLL 信号。原 `sdk.kline.withIndicators`（东财）已弃用 |
-| 尾盘选股 | `api/analysis.api.ts` | `sdk.quotes.timeline`（并发 2，单票失败跳过） + `fetchAllMarketQuotes` | 腾讯+东财 | 全市场快照基础过滤 + 分时强度精筛 |
 | `fetchGlobalFuturesPanorama` | `api/panorama.api.ts` | `sdk.futures.globalSpot({pageSize})` | 东财 futsseapi | 外盘商品期货 |
 | — | `api/sdk.ts` | `sdk.clearCaches()` | — | 强刷实例缓存（设置页「清除缓存」调用） |
 
@@ -112,7 +108,7 @@
 - **资金动向 `FundFlowView`**：`fetchMarketFundFlow` · `fetchFundFlowRank` · `fetchSectorFundFlowRank` · `fetchNorthboundHoldingRank`
 - **涨停与异动 `MarketMoodView`**：`fetchZtPool` · `fetchStockChanges` · `fetchBoardChanges`
 - **龙虎榜·大宗 `DragonTigerView`**：`fetchDragonTigerDetail` · `fetchBlockTradeDetail`
-- **选股器 `ScreenerView`**：`runScreener` · `runMaCrossBacktest` · 信号扫描 / 尾盘选股（`analysis.api`）
+- **选股器（插件 `dsh-stock-screener`，v3.3.0 起自宿主迁出）**：基础筛选 / 信号扫描 / 尾盘选股与 MA 回测的取数逻辑随插件自带（东财快照 + 新浪日 K + 腾讯分时/JSONP，经 `app:http` 与 JSONP 直连），接口清单见插件仓库 `plugins/dsh-stock-screener/`；宿主 `api/screener.api.ts` 与 `api/analysis.api.ts` 已删除
 - **热点新闻 `HotNewsView`**：`fetchSinaHotNews` · `fetchEastmoneyHotNews` · `fetchThsHotNews` · `fetchThepaperHotNews` · `fetchTdxHotNews`（通达信资讯卡片，要闻/A股/产经三栏目均为单页快照，详见 §1）；「AI 分析」另经 `fetchNewsBodies` 批量抓新闻正文（并发 3 + 300ms 间隔，详见 §1），失败回退标题 + 摘要
 - **今天炒什么 `HotBoardView`**：`fetchHotBoard(source, group)`（五平台热股榜统一入口，分发细节见 §1 各分支行：同花顺 dq.10jqka / 东财 emappdata POST + 腾讯行情补齐 / 财联社 api3 sign / 通达信 TQLEX POST / 雪球 stock.xueqiu.com + guest cookie）；「AI 分析」经 `buildHotBoardPrompt` 拼五榜清单投递 Agent（无正文抓取，榜单数据自包含）。各分组均为单页快照，30 分钟 TTL 缓存（`hot-board.items.<source>#<group>`），不轮询
 - **个股详情（停靠面板）`StockDetailPanel`**：`fetchSinaKline`(K线) · `fetchTodayTimeline`(分时) · `fetchIndividualFundFlow` · `fetchKlineWithIndicators` · `fetchKlineSignals`
