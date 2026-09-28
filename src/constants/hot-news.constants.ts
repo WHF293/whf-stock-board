@@ -128,3 +128,27 @@ export const CLS_SUB_VIEW_OPTIONS: readonly HotNewsViewOption[] = toViewOptions(
   CLS_SUB_VIEWS,
   CLS_SUB_VIEW_LABELS,
 );
+
+/**
+ * 通达信资讯卡片的子视图
+ *
+ * 对应通达信财富圈首页（mbser.tdx.com.cn:7615 /site/tdx_sns）右侧「资讯」栏的三个栏目，
+ * 三条通道都是单页快照（无翻页），数据同为新闻条目（复用通用列表渲染）
+ */
+export type TdxSubView = 'yw' | 'ag' | 'cj';
+
+/** 通达信子视图渲染顺序（首个为默认选中项） */
+export const TDX_SUB_VIEWS: readonly TdxSubView[] = ['yw', 'ag', 'cj'];
+
+/** 通达信子视图展示名（与官网栏目名对应） */
+export const TDX_SUB_VIEW_LABELS: Record<TdxSubView, string> = {
+  yw: '要闻',
+  ag: 'A股',
+  cj: '产经',
+};
+
+/** 通达信卡片子视图选项（切换控件直接消费） */
+export const TDX_SUB_VIEW_OPTIONS: readonly HotNewsViewOption[] = toViewOptions(
+  TDX_SUB_VIEWS,
+  TDX_SUB_VIEW_LABELS,
+);

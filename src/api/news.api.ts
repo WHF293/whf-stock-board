@@ -1,4 +1,5 @@
 import { proxyFetch } from './proxy-fetch';
+import { TDX_TQLEX_URL } from '../constants/hot-board.constants';
 import {
   NEWS_BODY_FETCH_CONCURRENCY,
   NEWS_BODY_FETCH_INTERVAL_MS,
@@ -681,10 +682,14 @@ const CLS_COMMON_PARAMS: Record<string, string> = {
  *
  * 算法：参数按 key ASCII 排序 → `k=v&` 连接 → sha1（hex）→ md5（hex）= sign
  * @param extra 业务参数（不含 sign）
+ * @param common 公共参数（缺省为 web 端三项；App 端接口传 CLS_APP_COMMON_PARAMS）
  * @returns 已带 sign 的查询串（如 `app=...&os=...&sign=...`）
  */
-const buildClsQuery = async (extra: Record<string, string> = {}): Promise<string> => {
-  const params = { ...CLS_COMMON_PARAMS, ...extra };
+export const buildClsQuery = async (
+  extra: Record<string, string> = {},
+  common: Record<string, string> = CLS_COMMON_PARAMS,
+): Promise<string> => {
+  const params = { ...common, ...extra };
   const sorted = Object.keys(params)
     .sort()
     .map((k) => `${k}=${params[k]}`)
@@ -1031,6 +1036,139 @@ export const fetchThsThemeFeed = async (
       img: item.picUrl?.[0] ?? '',
     }));
   return { items, hasMore: items.length >= num };
+};
+
+// ---------- 通达信 财富圈资讯（要闻 / A股 / 产经） ----------
+// 页面 http://mbser.tdx.com.cn:7615/site/tdx_sns/page_index.html#/index 右侧「资讯」栏
+// （栏目 要闻 / A股 / 产经）。底层是 TDX 服务总线 TQL 协议：页面走的 /TQL 端点要求
+// ASPSessionID 会话（游客登录 ACL.checkuser 亦被 WAF 拦），**无法在应用侧复刻**；
+// 但同一网关的 **/TQLEX 端点免会话**（web 端 client 的默认通道，实测 2026-09-28），
+// 与「今天炒什么」热榜共用同一网关与 Referer 约定，故直接复用 TDX_TQLEX_URL。
+// 三条通道均为单页快照（无翻页；上游一次返回 20 行，页面只取前 10）。
+
+/** 通达信资讯子视图：yw 要闻 / ag A股 / cj 产经（与 constants/hot-news.constants.ts 的 TdxSubView 一致） */
+export type TdxNewsChannel = 'yw' | 'ag' | 'cj';
+
+/** 资讯详情页地址（SPA 路由，跳转目标 = 官网「事件详情」页；sns 主域为 https 正式域名） */
+const TDX_NEWS_DETAIL_BASE =
+  'https://sns.tdx.com.cn/site/tdx_sns/page_index.html#/detail?resId=';
+
+/** 资讯配图相对路径的补全前缀（photo 列存的是 zxfile 域下的相对路径） */
+const TDX_NEWS_IMAGE_BASE = 'https://zxfile.icfqs.com/';
+
+/** 财富圈页地址（作为 Referer 携带，与站点自身请求同源，防网关后续收紧校验） */
+const TDX_NEWS_REFERER = 'https://sns.tdx.com.cn/site/tdx_sns/page_index.html';
+
+/** TQLEX 表格结果集（列名两种形态：ColName 字符串数组 / ColDes 对象数组） */
+interface TdxTableResultSet {
+  ColName?: string[];
+  ColDes?: Array<{ Name?: string }>;
+  Content?: unknown[][];
+}
+
+/** TQLEX JSON 响应壳（tzx_rcache 无 ErrorCode，lmzx 带 ErrorCode） */
+interface TdxNewsResponse {
+  ErrorCode?: number;
+  ResultSets?: TdxTableResultSet[];
+}
+
+/**
+ * 把结果集的列定义归一成列名数组（兼容 ColName / ColDes 两种形态）
+ * @param resultSet 表格结果集
+ * @returns 列名数组（无列定义时为空数组）
+ */
+const resolveTdxColumns = (resultSet: TdxTableResultSet): string[] => {
+  if (resultSet.ColName) return resultSet.ColName;
+  return (resultSet.ColDes ?? []).map(
+    (column) => column.Name ?? '',
+  );
+};
+
+/**
+ * 把一行表格数据按列名拍成记录
+ * @param columns 列名数组
+ * @param row 行数据（与列名按位对齐）
+ * @returns 列名 → 单元格值的记录
+ */
+const toTdxRow = (
+  columns: readonly string[],
+  row: readonly unknown[],
+): Record<string, string> => {
+  const record: Record<string, string> = {};
+  columns.forEach((name, index) => {
+    if (name) record[name] = String(row[index] ?? '');
+  });
+  return record;
+};
+
+/**
+ * "YYYY-MM-DD HH:mm:SS" 发布时间文本转秒级时间戳字符串（与其余新闻源口径一致）
+ * @param text 发布时间文本
+ * @returns 秒级时间戳字符串（不可解析时返回空串）
+ */
+const tdxDateToCtime = (text: string): string => {
+  if (!text) return '';
+  const parsed = new Date(text.replace(/-/g, '/')).getTime();
+  return Number.isNaN(parsed) ? '' : String(Math.floor(parsed / 1000));
+};
+
+/**
+ * 补全资讯配图地址（相对路径补 zxfile 域，绝对地址原样返回）
+ * @param photo photo / img 列的原始值
+ * @returns 可直接加载的图片地址（空值返回空串）
+ */
+const toTdxImageUrl = (photo: string): string => {
+  if (!photo) return '';
+  return /^https?:\/\//.test(photo) ? photo : `${TDX_NEWS_IMAGE_BASE}${photo}`;
+};
+
+/**
+ * 拉取通达信财富圈资讯（单页快照，要闻 / A股 / 产经三通道）
+ * @param channel 资讯子通道
+ * @param num 条数（上游一次返回 20 行，默认全取）
+ * @returns 新闻条目（按上游顺序，即时间倒序）
+ */
+export const fetchTdxHotNews = async (
+  channel: TdxNewsChannel,
+  num = 20,
+): Promise<HotNewsItem[]> => {
+  // 要闻 / A股 是编辑缓存池（key 区分栏目）；产经走栏目资讯接口（105 = 产经栏目 id）
+  const request =
+    channel === 'cj'
+      ? { entry: 'CWServ.mzx_zxzx_lmzx', body: { Params: ['105', 1] } }
+      : {
+          entry: 'CWSearch.tzx_rcache',
+          body: { action: 'get', key: channel === 'yw' ? 'kz:10012:1' : 'kz:10013:1' },
+        };
+  const response = await proxyFetch(`${TDX_TQLEX_URL}?Entry=${request.entry}&RI=`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Referer: TDX_NEWS_REFERER },
+    body: JSON.stringify(request.body),
+  });
+  if (!response.ok) {
+    throw new Error(`通达信资讯请求失败：${response.status}`);
+  }
+  const payload = (await response.json()) as TdxNewsResponse;
+  if (payload.ErrorCode) {
+    throw new Error(`通达信资讯业务异常：${payload.ErrorCode}`);
+  }
+  const resultSet = payload.ResultSets?.[0];
+  const columns = resultSet ? resolveTdxColumns(resultSet) : [];
+  return (resultSet?.Content ?? [])
+    .map((row) => toTdxRow(columns, row))
+    .filter((row) => row.title && row.rec_id)
+    .map((row) => ({
+      oid: `tdx-${row.rec_id}`,
+      title: row.title,
+      summary: row.summary ?? '',
+      url:
+        `${TDX_NEWS_DETAIL_BASE}${row.rec_id}` +
+        `&tableid=${encodeURIComponent(row.tableid ?? '')}&resType=99`,
+      ctime: tdxDateToCtime(row.issue_date ?? ''),
+      media: row.source || row.info_src || '通达信',
+      img: toTdxImageUrl(row.photo || row.img || ''),
+    }))
+    .slice(0, num);
 };
 
 // ---------- 新闻正文抓取（AI 分析带正文 / Agent fetch_news_content 工具共用） ----------

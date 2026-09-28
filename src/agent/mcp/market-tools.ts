@@ -31,6 +31,7 @@ import {
   fetchEmHotKeywords,
   fetchEmLeadingConcepts,
   fetchSinaHotNews,
+  fetchTdxHotNews,
   fetchThepaperHotList,
   fetchThsHotNews,
   fetchThsHotThemes,
@@ -642,14 +643,16 @@ export const MARKET_DATA_MCP_SERVER: BuiltinMcpServer = {
     entry({
       name: 'get_hot_news',
       description:
-        '获取热点财经新闻。source: sina=新浪财经 / eastmoney=东方财富 / ths=同花顺 / thepaper=澎湃 / cls=财联社（深度页头条+资讯流）。返回标题、摘要、来源、时间与原文链接',
+        '获取热点财经新闻。source: sina=新浪财经 / eastmoney=东方财富 / ths=同花顺 / thepaper=澎湃 / cls=财联社（深度页头条+资讯流） / tdx=通达信财富圈资讯（要闻栏目）。返回标题、摘要、来源、时间与原文链接',
       schema: z.object({
-        source: z.enum(['sina', 'eastmoney', 'ths', 'thepaper', 'cls']).describe('新闻源'),
+        source: z
+          .enum(['sina', 'eastmoney', 'ths', 'thepaper', 'cls', 'tdx'])
+          .describe('新闻源'),
         limit: z.number().int().min(1).max(50).default(DEFAULT_ROWS).describe('返回条数（默认 20）'),
       }),
       run: async (input) => {
         const { source, limit } = input as {
-          source: 'sina' | 'eastmoney' | 'ths' | 'thepaper' | 'cls';
+          source: 'sina' | 'eastmoney' | 'ths' | 'thepaper' | 'cls' | 'tdx';
           limit: number;
         };
         const size = Math.max(1, Math.min(limit, MAX_ROWS));
@@ -687,6 +690,8 @@ export const MARKET_DATA_MCP_SERVER: BuiltinMcpServer = {
         } else if (source === 'thepaper') {
           const list = await fetchThepaperHotList(size);
           rows = list.map((row) => ({ title: row.title, url: row.url, time: row.timeText, media: '澎湃' }));
+        } else if (source === 'tdx') {
+          rows = shape(await fetchTdxHotNews('yw', size));
         } else {
           const snapshot = await fetchClsDepth();
           const top = (snapshot.topArticles ?? []).map((row) => ({ ...row, media: row.media || '财联社头条' }));

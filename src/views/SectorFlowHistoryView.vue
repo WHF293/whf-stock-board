@@ -159,9 +159,9 @@ watch(
   },
 );
 
-/** 返回市场榜单（用 push 而非 back：直接打开本页 / 刷新后 back 会退出应用） */
+/** 返回行情全景（用 push 而非 back：直接打开本页 / 刷新后 back 会退出应用） */
 const goBack = (): void => {
-  void router.push(ROUTE_PATH.MARKET_RANK);
+  void router.push(ROUTE_PATH.PANORAMA);
 };
 </script>
 
@@ -170,9 +170,9 @@ const goBack = (): void => {
     <!-- 控制条：返回 / 标题与图例 / 统计 / 刷新 -->
     <div class="flex shrink-0 flex-wrap items-center justify-between gap-2">
       <div class="flex flex-wrap items-center gap-2">
-        <BaseButton variant="ghost" title="返回市场榜单" @click="goBack">
+        <BaseButton variant="ghost" title="返回行情全景" @click="goBack">
           <MenuIcon name="arrowLeft" :size="14" />
-          市场榜单
+          行情全景
         </BaseButton>
         <span class="text-sm font-semibold text-text">板块历史净流入</span>
         <span class="flex items-center gap-3 text-xs text-text-tertiary">
@@ -221,7 +221,7 @@ const goBack = (): void => {
         />
       </div>
       <div v-else class="py-10">
-        <BaseEmpty text="暂无历史数据：在「市场榜单-板块净流入」的「选择行业」勾选行业后，这里展示它们的逐日净流入历史" />
+        <BaseEmpty text="暂无历史数据：在「行情全景-板块资金」的「选择行业」勾选行业后，这里展示它们的逐日净流入历史" />
       </div>
     </div>
   </div>

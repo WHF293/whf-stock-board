@@ -70,3 +70,30 @@ export const RANK_ANALYSIS_SECTION_TITLE_TEMPLATE = '【{title}】';
 
 /** 榜单数据单元格分隔符 */
 export const RANK_ANALYSIS_CELL_SEPARATOR = ' | ';
+
+// ---------- 今天炒什么 AI 分析（五平台热股榜 → Agent） ----------
+
+/** 热股榜分析每张榜单最多携带的行数（防 prompt 无界膨胀） */
+export const BOARD_ANALYSIS_MAX_ROWS_PER_BOARD = 30;
+
+/** 热股榜清单整体字符上限（超出从尾部丢行并注明，宁少勿爆上下文） */
+export const BOARD_ANALYSIS_MAX_CHARS = 12_000;
+
+/** 热股榜分析提示词模板（{boards} = 五榜清单占位） */
+export const BOARD_ANALYSIS_PROMPT_TEMPLATE =
+  '以下是「今天炒什么」页面当前展示的各平台热股榜单（A 股口径，热度代表平台用户的关注度，' +
+  '各平台样本人群不同，热度数值不可跨平台直接比较）。' +
+  '要求先调用可用的行情与市场数据工具核验关键标的的最新情况，不要凭记忆编造，再输出分析：\n' +
+  '① 跨平台共同高频出现的股票（市场关注度共识，最优先）；\n' +
+  '② 排名快速上升 / 热度异动的标的（结合涨跌幅判断是启动还是出货）；\n' +
+  '③ 热度高但涨跌幅与预期背离的标的（分歧点）；\n' +
+  '④ 最后给出今天值得关注的 3-5 个方向，每个方向附一句核心逻辑与主要风险。\n' +
+  '榜单清单如下：\n{boards}';
+
+/** 热股榜数据段标题行模板（{board} = 平台名 / {group} = 分组名） */
+export const BOARD_ANALYSIS_SECTION_TITLE_TEMPLATE = '【{board} · {group}】';
+
+/** 热股榜清单单行模板（{rank} 名次 / {name} 名称 / {code} 代码 / {price} 现价 /
+ *  {chg} 涨跌幅 / {heat} 热度 / {tags} 标签） */
+export const BOARD_ANALYSIS_ITEM_LINE_TEMPLATE =
+  '{rank}. {name}（{code}）现价 {price}，涨跌幅 {chg}，{heat}{tags}';

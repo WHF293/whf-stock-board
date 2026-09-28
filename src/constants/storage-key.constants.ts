@@ -27,16 +27,19 @@ export const STORAGE_NS_DOCK_PANEL = 'dockPanel';
 /** 热点新闻页 - 源勾选状态命名空间（用户启用哪些新闻源） */
 export const STORAGE_NS_HOT_NEWS_FILTER = 'hotNews.filter';
 
+/** 今天炒什么页 - 平台勾选状态命名空间（用户启用哪些热榜平台） */
+export const STORAGE_NS_HOT_BOARD_FILTER = 'hotBoard.filter';
+
 /** 标的搜索历史命名空间（用户确认过的标的，最新在前，最多 SEARCH_HISTORY_MAX 条） */
 export const STORAGE_NS_STOCK_SEARCH = 'stockSearch';
 
 /** 页面 tabs 配置命名空间（各页面 tab 显隐 + 顺序，按页面 key 分桶） */
 export const STORAGE_NS_TAB_CONFIG = 'tabConfig';
 
-/** 市场榜单页 - 行业资金曲线已选行业命名空间（BK 编号列表） */
+/** 板块资金模块（行情全景）- 行业资金曲线已选行业命名空间（BK 编号列表；键名沿用迁移前值） */
 export const STORAGE_NS_MARKET_RANK_CURVE = 'marketRank.curve';
 
-/** 市场榜单页 - 板块净流入视图模式命名空间（曲线 / 列表） */
+/** 板块资金模块（行情全景）- 视图模式命名空间（曲线 / 列表；键名沿用迁移前值） */
 export const STORAGE_NS_MARKET_RANK_SECTOR_VIEW = 'marketRank.sectorView';
 
 /** 插件系统命名空间（禁用黑名单 + 侧栏面板折叠态） */
