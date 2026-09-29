@@ -31,6 +31,8 @@ export const DATA_CACHE_KEY = {
   /** 行情全景：美股 / 全球宏观（A股板块排行复用 BOARDS_LIST 键） */
   PANORAMA_US_BOARDS: 'panorama.usBoards',
   PANORAMA_MACRO: 'panorama.macro',
+  /** 行情全景：新股次新股（同花顺清单快照，含 fetchedAt） */
+  PANORAMA_IPO_BOARD: 'panorama.ipoBoard',
   /** 个股详情（前缀 + 符号 / 口径） */
   DETAIL_QUOTE_PREFIX: 'detail.quote.',
   DETAIL_TIMELINE_PREFIX: 'detail.timeline.',
