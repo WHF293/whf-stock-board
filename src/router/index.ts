@@ -8,8 +8,8 @@ import WatchlistView from '../views/WatchlistView.vue';
 import PanoramaView from '../views/PanoramaView.vue';
 import BoardCalendarView from '../views/BoardCalendarView.vue';
 import BoardCalendarDetailView from '../views/BoardCalendarDetailView.vue';
-import ScreenerView from '../views/ScreenerView.vue';
 import HotNewsView from '../views/HotNewsView.vue';
+import HotBoardView from '../views/HotBoardView.vue';
 import StockAccountView from '../views/StockAccountView.vue';
 import AgentAnalysisView from '../views/AgentAnalysisView.vue';
 import MarketRankView from '../views/MarketRankView.vue';
@@ -78,15 +78,17 @@ const routes = [
         component: MarketRankView,
         meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.MARKET_RANK] },
       },
-      {
-        path: ROUTE_PATH.SCREENER,
-        component: ScreenerView,
-        meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.SCREENER] },
-      },
+      // 选股器已改为插件分发（dsh-stock-screener，路径 /screener 由插件注册）；
+      // 未安装插件时旧路径由 404 兜底页承接
       {
         path: ROUTE_PATH.HOT_NEWS,
         component: HotNewsView,
         meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.HOT_NEWS] },
+      },
+      {
+        path: ROUTE_PATH.WHAT_TO_TRADE,
+        component: HotBoardView,
+        meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.WHAT_TO_TRADE] },
       },
       {
         path: ROUTE_PATH.STOCK_ACCOUNT,
@@ -100,7 +102,7 @@ const routes = [
         component: PluginLabView,
         meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.PLUGIN_LAB] },
       },
-      // 板块历史净流入：市场榜单-板块净流入「查看历史净流入」进入；不入左侧导航
+      // 板块历史净流入：行情全景-板块资金「查看历史净流入」进入；不入左侧导航
       {
         path: ROUTE_PATH.SECTOR_FLOW_HISTORY,
         component: SectorFlowHistoryView,

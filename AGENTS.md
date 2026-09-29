@@ -6,9 +6,22 @@
 
 A 股看板应用（个人学习用）：浏览器 SPA + Tauri 2 PC 客户端共用同一套 Vue 3.5 + TypeScript 前端。
 
-- 页面：市场总览 / 自选股 / 行情全景（A股·美股·全球宏观）/ 资金动向 / 涨停与异动 / 龙虎榜·大宗 / 选股器（基础筛选·信号扫描·尾盘选股）/ 设置
+- 页面：市场总览 / 自选股 / 行情全景（A股·美股·全球宏观）/ 资金动向 / 涨停与异动 / 龙虎榜·大宗 / 选股器（v3.3.0 起为插件 `dsh-stock-screener`，路径 `/screener` 由插件注册）/ 设置
 - 数据源：[stock-sdk](https://stock-sdk.linkdiary.cn/)（腾讯 + 东方财富）
 - 详情交互：全站「跳个股详情」一律打开右侧停靠面板（`stores/dock-panel.ts` 的 `openStock()`），不走路由
+
+## AI 记忆统一存放（硬性，对所有 AI 工具生效）
+
+无论使用哪个 AI 编码工具（ZCode / Claude Code / WorkBuddy / 其他），关于本项目的会话记忆、
+长期结论、踩坑沉淀**一律写入 `.ai/memory/`**，禁止各自另立记忆目录（本项目已删除 `CLAUDE.md`，
+各工具以本文件为唯一规范源）：
+
+- **主题层**（跨会话有效结论，按 `.ai/memory/README.md` 的更新约定上提到对应文件）：
+  `项目概览.md` / `发布流程.md` / `版本历史.md` / `技术要点.md` / `环境与踩坑备忘.md`
+- **日志层**：`YYYY-MM-DD.md` 按日归档，一天一文件、平铺；只追加新文件，不回写历史日志
+- 冲突时以日期新的结论为准；`.ai/` 整体 gitignore，仅本地保存，不要往远程推
+- 各工具私有记忆目录（如 `.workbuddy/memory/`）**只允许放指回 `.ai/memory/` 的指针文件**，
+  不放真实记忆
 
 ## 常用命令
 
@@ -225,6 +238,7 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
 ### 应用内插件安装（用户插件，对标 dsh 的看板内安装）
 
 除源码级插件外，应用支持**运行时安装**：设置页「插件」→「安装插件」（`PluginInstallModal.vue`）。
+zip 包模式支持**多选 / 拖拽批量上传**，选中即自动解析，无需再点「解析预览」（只有粘贴代码模式保留手动预览按钮）。
 
 - **插件格式**：预构建 ESM JS，`export default { …PluginDefinition }`（或 `export const plugin`）。
   面板组件用渲染函数写——生产构建不含 Vue 运行时模板编译器，`<template>` 字符串不可用
@@ -239,7 +253,7 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
   让用户挑股票用 `app:stock-picker`、关自己面板用 `panel:close`。Tailwind 类仍然只有宿主源码里出现过的才有 CSS——
   所以**首选宿主组件，而不是自己堆类名**
 - 🛡️ **静态预检（`plugin/user-plugin-lint.ts`，纯函数）**：`import` / `export … from` / `import()` /
-  `template:'…'` 这四类在安装前的「解析预览」就被拦下并报**行号**；Tailwind 任意类只给提醒不拦。
+  `template:'…'` 这四类在 zip 包的「静态预检」步（粘贴代码为「解析预览」按钮）被拦下并报**行号**；Tailwind 任意类只给提醒不拦。
   改这套规则 = 改第三方作者的试错成本，务必同步 `PLUGIN_API.md` §0
 - 📦 **分发形态是构建产物（zip 包优先）**：`utils/plugin-package.ts`（纯函数）用 fflate 解包 →
   剥掉唯一顶层目录 → 读 `manifest.json`（`id` 必填；`entry` 默认 `main.js`；`readme` 默认 `README.md`）→
@@ -257,6 +271,16 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
 - **同 id 的三种命运**（1.0 口径，别再退回「报错了事」）：① 已装过 → **升级 / 覆盖重装**（数据表保留）；
   ② 与内置插件同 id → **接管内置版**（`setup.ts` 启动装配跳过被接管的内置项；卸载后立刻把内置实现挂回来）；
   ③ 首次安装 → 正常挂载。三者都在安装弹窗预览里写明，按钮文案随之变成「确认升级」/「确认接管安装」
+- 📥 **批量上传流水线（`composables/use-plugin-package-intake.ts`）**：zip 包支持多选 / 拖拽，**入队即自动解析**
+  （每个包一个任务，fire-and-forget 并行推进，先传了 A、B 再传 C，C 不必等前两个）。卡片按上传顺序铺开并
+  展示六步进度：解包 → 静态预检 → 加载产物 → 结构校验 → 清单一致性 → 包间冲突；任一步失败则该步变红、
+  后续步骤置 `–`、整张卡片包红框输出错误原文，作者一眼知道卡在哪一步。
+  **包间冲突**：同一批次两个包解析出相同 id 时**按上传顺序先到先得**（`utils/detect-package-conflicts.ts`，纯函数），
+  后者被判冲突并写明「与更早上传的谁、撞了哪个 id、该怎么办」；移除先到者后它自动回到待安装。
+  注意区分——与已装记录 / 内置插件同 id **不是冲突**（那是升级与接管，合法）。
+  安装**串行**执行（避免内核 `unuse` / `use` 与持久化写入互踩），且本轮只装「进入安装那一刻处于待安装」的包白名单：
+  前一个装完后被释放的同 id 包只转正不本轮装，要用户显式再点一次（顶着「升级」提示），绝不静默覆盖。
+  安装途中关窗 = 作废剩余安装（`cancelPendingInstalls()`），已经发出去的那次收不回来，跑完即止
 - **信任级别**：插件代码与应用同权限执行（无沙箱），安装弹窗有固定风险提示；写操作类插件需自行确认来源
 
 ### 「两种安装」的分工（先分清，再谈卸载）
@@ -273,10 +297,13 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
 做法是把它**从源码里移出去**，重新以 zip 产物包的形式分发。
 反过来，也不要指望「应用内卸载」能删掉源码 —— 它对源文件一无所知。
 
-**本仓库当前状态**：四个官方插件（主线 / 股息筛选 / 速记 / 自选盯盘）已全部走「应用内安装」形态 ——
+**本仓库当前状态**：五个官方插件（主线 / 股息筛选 / 速记 / 自选盯盘 / 选股器）已全部走「应用内安装」形态 ——
 `src/plugins/` 下**没有任何插件源码**，`BUILTIN_PLUGINS` 是空数组。它们的源码、清单与产物包都在
 **独立仓库 `whf-stock-board-plugin`**：改插件 UI / 逻辑、升版本、出包都在那边做
 （`node scripts/build-plugins.mjs`），产物 `plugins-dist/<id>-<version>.zip` 也在那边入库。
+（选股器是 v3.3.0 从宿主内置页 `ScreenerView` + `components/screener/` + `api/screener.api.ts` /
+`api/analysis.api.ts` 迁出去的：Agent 的 `run_backtest` 工具随之移入插件贡献的 MCP 服务器，
+新浪日 K 缓存降级为插件会话内 Map，扫描结果「加自选」因 `app:watchlist` 只读而移除。）
 > ⚠️ **它的目录位置不由本仓库假定**（不保证与本仓库同级）：需要跨仓库联动时用参数显式指路 ——
 > 出包用 `--host <本仓库根>` 让它回写样式白名单，本仓库侧读产物用环境变量 `WHF_PLUGIN_DIST`。
 本仓库只保留**宿主能力**：插件内核（`src/plugin/`）、样式白名单（`src/assets/styles/plugin-classes.txt`）、
@@ -380,7 +407,7 @@ tauri fetch 绕 webview CORS）。
 
 - 表格统一 `BaseTable` 列配置驱动（`TableColumn<T>`），滚动容器 `table-scroll` / `table-scroll-sm`（吸顶吸左），长列表配 `useLazyRows`
 - 主区容器已开 `@container`：页面栅格用容器断点（`@2xl/@3xl/@4xl`）而非视口断点，右侧面板打开时自动换行
-- 主题：`<html data-theme>`（4 套主题色）+ `<html data-trend>`（3 套涨跌配色）；图表不走 CSS 类，经 `utils/trend-colors.ts` / `read-css-var.ts` 运行时读变量
+- 主题：`<html data-theme>`（4 套内置主题色 + 自定义档 `custom`：无 CSS 规则，由 `use-document-theme.ts` 以内联 CSS 变量下发 `settings.customThemeColor`）+ `<html data-trend>`（3 套涨跌配色）；图表不走 CSS 类，经 `utils/trend-colors.ts` / `read-css-var.ts` 运行时读变量
 - 新增 ECharts 图表类型必须在 `charts/echarts-setup.ts` 注册，否则 setOption 静默失败（svg 容器空白）
 - 按钮等可交互元素带 `pressable` 按压动效
 
@@ -399,6 +426,12 @@ tauri fetch 绕 webview CORS）。
 - 导入 = 覆盖式写入 + 写前 `VACUUM INTO` 备份 + 完成后整页 reload（不做内存热同步）；未知类别跳过不报错
 
 ## 发布流程（PC 客户端）
+
+### 版本号规则（x.y.z，硬性）
+
+- **z**：bug 修复，或既有模块内部的功能迭代（不新增页面 / 模块）
+- **y**：新增模块或新增页面时递增
+- **x**：**必须由用户主动说明**才允许递增；AI 自动发版时只允许更新 y、z，x 保持不变
 
 1. 版本号三处同步改：`src-tauri/tauri.conf.json`、`package.json`、`src/constants/app-info.constants.ts`（APP_VERSION，供「检查更新」比较）
 2. 提交并推送代码（**先 push 代码，再处理 tag**）：

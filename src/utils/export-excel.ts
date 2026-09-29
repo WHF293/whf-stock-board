@@ -6,6 +6,33 @@ import type { AccountTradeRecord } from '../types/account.types';
  * 统一导出 .xlsx；列定义即导出列（跳过前端不展示的内部字段）
  */
 
+/** 单数据集工作表的兜底 sheet 名 */
+const DEFAULT_SHEET_NAME = '数据';
+
+/** Excel 工作表名长度上限（Excel 规范） */
+const SHEET_NAME_MAX_CHARS = 31;
+
+/** Excel 工作表名非法字符（Excel 规范禁止 : \ / ? * [ ]） */
+const SHEET_NAME_ILLEGAL_PATTERN = /[:\\/?*[\]]/g;
+
+/** 列定义（label 为表头文案，key 为行字段名） */
+interface ExportColumn {
+  /** 表头文案 */
+  label: string;
+  /** 行字段名 */
+  key: string;
+}
+
+/** 多 sheet 导出的单个工作表定义 */
+export interface ExcelSheet {
+  /** 工作表名（超长 / 非法字符自动清理，重名自动加序号） */
+  name: string;
+  /** 行数据 */
+  rows: Record<string, unknown>[];
+  /** 列定义 */
+  columns: ExportColumn[];
+}
+
 /** 明细表列（交割单 / 对账单通用，对齐同花顺字段命名） */
 export const TRADE_DETAIL_COLUMNS: { label: string; key: keyof AccountTradeRecord }[] = [
   { label: '日期', key: 'tradeDate' },
@@ -88,6 +115,53 @@ export const summarizeRecords = (
 };
 
 /**
+ * 行数据按列定义转为 sheet 行（label 为键，缺失字段补空串）
+ * @param rows 行对象数组
+ * @param columns 列定义
+ * @returns sheet 行数组
+ */
+const toSheetRows = (
+  rows: Record<string, unknown>[],
+  columns: ExportColumn[],
+): Record<string, unknown>[] =>
+  rows.map((row) =>
+    Object.fromEntries(columns.map((col) => [col.label, row[col.key] ?? ''])),
+  );
+
+/**
+ * 清理工作表名：非法字符替换为空格、截断到长度上限，清空后按序号兜底
+ * @param raw 原始名
+ * @param index 工作表序号（兜底名用）
+ * @returns 合法工作表名
+ */
+const buildSheetName = (raw: string, index: number): string => {
+  const cleaned = raw.replace(SHEET_NAME_ILLEGAL_PATTERN, ' ').trim();
+  return cleaned.length > 0
+    ? cleaned.slice(0, SHEET_NAME_MAX_CHARS)
+    : `${DEFAULT_SHEET_NAME}${index + 1}`;
+};
+
+/**
+ * 工作表名去重（重名追加 -2 / -3 序号，追加后再次截断防超长）
+ * @param base 候选名
+ * @param used 已用名集合
+ * @returns 未被占用的唯一名
+ */
+const uniqueSheetName = (base: string, used: Set<string>): string => {
+  if (!used.has(base)) {
+    return base;
+  }
+  let seq = 2;
+  let candidate: string;
+  do {
+    const suffix = `-${seq}`;
+    candidate = base.slice(0, SHEET_NAME_MAX_CHARS - suffix.length) + suffix;
+    seq += 1;
+  } while (used.has(candidate));
+  return candidate;
+};
+
+/**
  * 导出行为 Excel 文件（.xlsx）
  * @param rows 行对象数组（key 需与 columns 匹配）
  * @param columns 列定义
@@ -98,12 +172,25 @@ export const exportRowsToExcel = async (
   columns: { label: string; key: string }[],
   fileName: string,
 ): Promise<void> => {
+  await exportSheetsToExcel([{ name: DEFAULT_SHEET_NAME, rows, columns }], fileName);
+};
+
+/**
+ * 导出多个数据集为多工作表 Excel 文件（.xlsx）
+ * @param sheets 工作表定义列表（name 为工作表名，rows / columns 同单表导出）
+ * @param fileName 导出文件名（不含扩展名）
+ */
+export const exportSheetsToExcel = async (
+  sheets: ExcelSheet[],
+  fileName: string,
+): Promise<void> => {
   const XLSX = await import('xlsx');
-  const data = rows.map((row) =>
-    Object.fromEntries(columns.map((col) => [col.label, row[col.key] ?? ''])),
-  );
-  const sheet = XLSX.utils.json_to_sheet(data);
   const book = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(book, sheet, '数据');
+  const usedNames = new Set<string>();
+  for (const [index, sheet] of sheets.entries()) {
+    const name = uniqueSheetName(buildSheetName(sheet.name, index), usedNames);
+    usedNames.add(name);
+    XLSX.utils.book_append_sheet(book, XLSX.utils.json_to_sheet(toSheetRows(sheet.rows, sheet.columns)), name);
+  }
   XLSX.writeFile(book, `${fileName}.xlsx`);
 };

@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onActivated, ref } from 'vue';
 import BaseCard from '../components/ui/BaseCard.vue';
 import BaseEmpty from '../components/ui/BaseEmpty.vue';
 import BaseTabs from '../components/ui/BaseTabs.vue';
 import TabConfigButton from '../components/ui/TabConfigButton.vue';
 import { useTabConfig } from '../composables/use-tab-config';
 import PanoramaCnBoard from '../components/business/PanoramaCnBoard.vue';
+import PanoramaSectorFlowBoard from '../components/business/PanoramaSectorFlowBoard.vue';
+import PanoramaIpoBoard from '../components/business/PanoramaIpoBoard.vue';
 import PanoramaReviewBoard from '../components/business/panorama-review/PanoramaReviewBoard.vue';
 import {
   fetchGlobalFuturesPanorama,
@@ -24,20 +26,22 @@ import { usePolling } from '../composables/use-polling';
 import { POLLING_INTERVAL } from '../constants/polling.constants';
 
 /**
- * 行情全景：A股全景（板块排行，含行业/概念/筛选/成分股）/ 美股全景 / 全球宏观 /
- * 历史复盘（牛熊模式库）
+ * 行情全景：A股全景（板块排行，含行业/概念/筛选/成分股）/ 板块资金（原「市场榜单-
+ * 板块净流入」迁入，曲线 / 列表双视图）/ 美股全景 / 全球宏观 / 历史复盘（牛熊模式库）
  *
  * 美股与全球宏观只展示名称 + 涨跌幅（网格卡片）；进入页面串行错峰拉取一次
  * （不参与轮询）；数据先取内存快照秒出 UI，接口成功后写回快照并刷新；
- * A股全景与历史复盘由各自组件自管数据（历史复盘快照落 appStorage，重进零联网）
+ * A股全景 / 板块资金 / 历史复盘由各自组件自管数据（历史复盘快照落 appStorage，重进零联网）
  */
 
 /** 模块 tab 选项 */
 const MODULE_TABS = [
   { label: 'A股全景', value: 'cn' },
+  { label: '最新板块资金', value: 'sector-flow' },
+  { label: '新股次新股', value: 'ipo' },
   { label: '美股全景', value: 'us' },
   { label: '全球宏观', value: 'macro' },
-  { label: '历史复盘', value: 'review' },
+  { label: '历史牛熊复盘', value: 'review' },
 ] as const;
 
 /** 各接口请求间隔（毫秒）：对同一上游串行错峰 */
@@ -49,9 +53,13 @@ const { visibleOptions: moduleTabOptions, activeValue: activeModule } = useTabCo
   MODULE_TABS,
 );
 
-/** 是否处于组件自管数据的模块（A股 / 历史复盘：宿主不拉数据，无骨架 / 空态逻辑） */
+/** 是否处于组件自管数据的模块（A股 / 板块资金 / 历史复盘：宿主不拉数据，无骨架 / 空态逻辑） */
 const isSelfManagedModule = computed(
-  () => activeModule.value === 'cn' || activeModule.value === 'review',
+  () =>
+    activeModule.value === 'cn' ||
+    activeModule.value === 'sector-flow' ||
+    activeModule.value === 'ipo' ||
+    activeModule.value === 'review',
 );
 
 const dataCache = useDataCacheStore();
@@ -136,6 +144,19 @@ if (activeModule.value !== 'cn') {
   void loadActiveModule();
 }
 
+// KeepAlive 缓存页面：切走再切回不重新挂载，重拉当前非自管模块（快照秒出后静默覆盖；
+// 首次 onActivated 紧跟首屏触发，跳过避免重复请求；宏观无轮询兜底，这里是它唯一的自动刷新点）
+let panoramaActivatedOnce = false;
+onActivated(() => {
+  if (!panoramaActivatedOnce) {
+    panoramaActivatedOnce = true;
+    return;
+  }
+  if (!isSelfManagedModule.value && !isLoading.value) {
+    void loadActiveModule();
+  }
+});
+
 // 美股全景轮询：仅在美股轮询窗口（21:30-24:00 与 00:00-04:00）内按间隔刷新，
 // 窗口外与非 us tab 自动跳过
 usePolling({
@@ -202,6 +223,10 @@ const isEmpty = computed(
 
     <!-- A股全景：板块排行组件（数据自管；撑满剩余高度，表格尽量高） -->
     <PanoramaCnBoard v-else-if="activeModule === 'cn'" class="min-h-0 flex-1" />
+
+    <!-- 板块资金：板块净流入榜单 + 行业资金曲线（数据自管；撑满剩余高度） -->
+    <PanoramaSectorFlowBoard v-else-if="activeModule === 'sector-flow'" class="min-h-0 flex-1" />
+    <PanoramaIpoBoard v-else-if="activeModule === 'ipo'" class="min-h-0 flex-1" />
 
     <!-- 加载骨架（美股 / 宏观） -->
     <BaseCard v-else-if="isLoading">

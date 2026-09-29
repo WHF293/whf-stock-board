@@ -239,6 +239,13 @@ const selectSession = (id: number): void => {
               <button
                 type="button"
                 class="block w-full px-3 py-1.5 text-left text-xs text-text-secondary hover:bg-flat-weak hover:text-text"
+                @click="void store.newSession(group.id); closeMenu()"
+              >
+                新建会话
+              </button>
+              <button
+                type="button"
+                class="block w-full px-3 py-1.5 text-left text-xs text-text-secondary hover:bg-flat-weak hover:text-text"
                 @click="openRename('group', group.id, group.name)"
               >
                 重命名
@@ -468,7 +475,7 @@ const selectSession = (id: number): void => {
       </VueDraggable>
     </section>
 
-    <!-- 空态 / 新建分组入口 -->
+    <!-- 空态（新建分组入口在「会话」标题行；收起态窄条也有 folder 按钮） -->
     <div
       v-if="store.sessions.length === 0 && store.groups.length === 0"
       class="rounded-lg border border-dashed border-flat-weak px-3 py-4 text-center"
@@ -478,14 +485,6 @@ const selectSession = (id: number): void => {
         点击上方「新建对话」开始
       </p>
     </div>
-    <button
-      type="button"
-      class="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-primary py-2 text-xs text-text-tertiary transition-colors hover:text-primary"
-      @click="newGroupModalOpen = true"
-    >
-      <MenuIcon name="plus" :size="12" />
-      新建分组
-    </button>
 
     <!-- ⋯ 菜单遮罩（点击空白处关闭） -->
     <div v-if="openMenu" class="fixed inset-0 z-40" @click="closeMenu" />

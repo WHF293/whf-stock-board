@@ -367,6 +367,35 @@ export const BOARD_CALENDAR_RANGE_OPTIONS = [
   { label: '全部', value: BOARD_CALENDAR_RANGE.ALL },
 ] as const;
 
+/** 主区视图：list = 涨跌停矩阵列表（默认）/ bubble = 赚钱效应气泡图 / mainline = 板块主线分析 */
+export const BOARD_CALENDAR_VIEW = {
+  LIST: 'list',
+  BUBBLE: 'bubble',
+  MAINLINE: 'mainline',
+} as const;
+
+/** 主区视图默认值 */
+export const BOARD_CALENDAR_VIEW_DEFAULT = BOARD_CALENDAR_VIEW.LIST;
+
+/** 主区视图选项（BaseTabs，样式与展示范围切换同款） */
+export const BOARD_CALENDAR_VIEW_OPTIONS = [
+  { label: '列表', value: BOARD_CALENDAR_VIEW.LIST },
+  { label: '气泡图', value: BOARD_CALENDAR_VIEW.BUBBLE },
+  { label: '板块分析', value: BOARD_CALENDAR_VIEW.MAINLINE },
+] as const;
+
+/** 板块分析：每日按得分绝对值取前 N 名（横看同一板块是否连续在榜 = 资金集中，跳来跳去 = 快速轮动；多空由色阶区分） */
+export const BOARD_MAINLINE_TOP_N = 10;
+
+/** 板块分析表日期列宽度（像素） */
+export const BOARD_MAINLINE_COL_WIDTH = 108;
+
+/** 板块分析表名次列宽度（像素） */
+export const BOARD_MAINLINE_RANK_COL_WIDTH = 56;
+
+/** 板块分析表数据行高度（像素，与日历矩阵同款平铺行） */
+export const BOARD_MAINLINE_ROW_HEIGHT = 44;
+
 /** 热门口径「近 N 个交易日累计涨停」的 N */
 export const HEAT_STREAK_WINDOW = 5;
 

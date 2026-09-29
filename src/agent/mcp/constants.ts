@@ -39,4 +39,6 @@ export const BUILTIN_MCP_IDS = {
   stockSdk: -2,
   /** 市场数据（market-data）：资金流/板块/龙虎榜/涨停池/新闻 */
   marketData: -3,
+  /** 财务数据（financial-data）：财务摘要/资产负债表/现金流/业绩预告 */
+  financialData: -4,
 } as const;

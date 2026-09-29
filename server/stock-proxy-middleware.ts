@@ -27,6 +27,125 @@ const BROWSER_USER_AGENT =
 const cache = new Map<string, StockProxyCacheEntry>();
 
 /**
+ * 雪球 guest cookie 缓存（stock.xueqiu.com 的榜单接口需要 xq_a_token）
+ *
+ * xq_a_token 为游客 token（无需登录），先 GET 主站拿 set-cookie 再随转发附加；
+ * 缓存 24 小时，上游 400/401 时由调用方刷新重试一次
+ */
+let xqCookieEntry: { value: string; expiresAt: number } | null = null;
+
+/** 雪球 guest cookie 缓存时长（毫秒） */
+const XQ_COOKIE_TTL_MS = 24 * 60 * 60 * 1000;
+
+/** 雪球会话 cookie 名（xq_a_token / xq_r_token 会话对 + u 设备标识 + acw_tc 盾 cookie） */
+const XQ_COOKIE_NAME_PATTERN = /^(xq_[a-z_]+|u|acw_tc)=/;
+
+/** 雪球热股页地址（guest cookie 的下发页；302 落点为 www 完整地址） */
+const XQ_HOT_PAGE_URL = 'https://www.xueqiu.com/hot/stock';
+
+/**
+ * 获取（带缓存的）雪球 guest cookie（两步过阿里云盾）
+ *
+ * ① GET 主站拿盾 cookie（acw_tc）；② 带 acw_tc GET 热股页（www 完整地址，
+ * 手动走完 302 落点）拿全套业务 cookie（xq_a_token 等游客 token）
+ * @returns `acw_tc=...; xq_a_token=...` 形态的 Cookie 头值
+ */
+const ensureXqCookie = async (): Promise<string> => {
+  if (xqCookieEntry && xqCookieEntry.expiresAt > Date.now()) {
+    return xqCookieEntry.value;
+  }
+  const jar = new Map<string, string>();
+  const collect = (res: Response): void => {
+    for (const cookie of res.headers.getSetCookie?.() ?? []) {
+      const pair = cookie.split(';')[0];
+      const eq = pair.indexOf('=');
+      if (eq > 0 && XQ_COOKIE_NAME_PATTERN.test(pair)) {
+        jar.set(pair.slice(0, eq), pair.slice(eq + 1));
+      }
+    }
+  };
+  const get = async (url: string): Promise<Response> => {
+    const cookie = [...jar.entries()].map(([k, v]) => `${k}=${v}`).join('; ');
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': BROWSER_USER_AGENT,
+        ...(cookie ? { Cookie: cookie } : {}),
+      },
+      signal: AbortSignal.timeout(PROXY_TIMEOUT_MS),
+    });
+    collect(res);
+    return res;
+  };
+  // ① 主站：拿 acw_tc（阿里云盾会话）
+  await get('https://xueqiu.com/');
+  // ② 热股页（跟随后的最终地址）：下发 xq_a_token 等业务 cookie
+  await get(XQ_HOT_PAGE_URL);
+  if (jar.size === 0) {
+    throw new Error('xueqiu set-cookie missing');
+  }
+  const value = [...jar.entries()].map(([k, v]) => `${k}=${v}`).join('; ');
+  xqCookieEntry = { value, expiresAt: Date.now() + XQ_COOKIE_TTL_MS };
+  return value;
+};
+
+/** 清除雪球 cookie 缓存（上游判定 cookie 失效时调用，触发下次重新获取） */
+const invalidateXqCookie = (): void => {
+  xqCookieEntry = null;
+};
+
+/**
+ * 同花顺大宗交易会话 cookie 缓存（data.10jqka.com.cn）
+ *
+ * 「/market/dzjy」的 ajax 翻页接口无会话 cookie 时返回 chameleon 反爬挑战页
+ * （HTTP 200 但无数据），须先 GET 大宗交易主页拿 set-cookie 再随转发附加
+ */
+let thsDzjyCookieEntry: { value: string; expiresAt: number } | null = null;
+
+/** 同花顺会话 cookie 缓存时长（毫秒） */
+const THS_DZJY_COOKIE_TTL_MS = 60 * 60 * 1000;
+
+/** 同花顺大宗交易主机与主页地址 */
+const THS_DZJY_HOST = 'data.10jqka.com.cn';
+const THS_DZJY_PAGE_PATH = '/market/dzjy';
+
+/**
+ * 获取（带缓存的）同花顺大宗交易会话 cookie
+ * @returns Cookie 头值（主页下发的全部 set-cookie 对）
+ */
+const ensureThsDzjyCookie = async (): Promise<string> => {
+  if (thsDzjyCookieEntry && thsDzjyCookieEntry.expiresAt > Date.now()) {
+    return thsDzjyCookieEntry.value;
+  }
+  const res = await fetch(`https://${THS_DZJY_HOST}${THS_DZJY_PAGE_PATH}/`, {
+    headers: { 'User-Agent': BROWSER_USER_AGENT },
+    signal: AbortSignal.timeout(PROXY_TIMEOUT_MS),
+  });
+  const pairs = (res.headers.getSetCookie?.() ?? [])
+    .map((cookie) => cookie.split(';')[0])
+    .filter((pair) => pair.includes('='));
+  if (pairs.length === 0) {
+    throw new Error('ths dzjy set-cookie missing');
+  }
+  const value = pairs.join('; ');
+  thsDzjyCookieEntry = { value, expiresAt: Date.now() + THS_DZJY_COOKIE_TTL_MS };
+  return value;
+};
+
+/** 清除同花顺 cookie 缓存（命中反爬挑战页时调用） */
+const invalidateThsDzjyCookie = (): void => {
+  thsDzjyCookieEntry = null;
+};
+
+/**
+ * 响应体是否为同花顺反爬挑战页（HTTP 200 但内容是 chameleon 脚本引导页，无表格数据）
+ * @param body 响应体字节
+ * @returns 是否挑战页
+ */
+const isThsChallengeBody = (body: Uint8Array): boolean =>
+  body.length < 4096 &&
+  new TextDecoder('latin1').decode(body.subarray(0, 2048)).includes('chameleon');
+
+/**
  * 写入缓存；达到容量上限时按写入顺序淘汰最旧条目（Map 保持插入序）
  * @param url 缓存键（上游完整 URL）
  * @param entry 缓存条目
@@ -113,17 +232,47 @@ export const createStockProxyMiddleware = (): Connect.NextHandleFunction => {
       // 调用方显式指定（?r=）时优先使用（如新浪新闻要求 finance.sina.com.cn）；带通用 UA
       const referer = customReferer ?? new URL(target).origin;
       const contentType = req.headers['content-type'];
-      const upstream = await fetch(target, {
-        method,
-        headers: {
-          Referer: referer,
-          'User-Agent': BROWSER_USER_AGENT,
-          ...(contentType ? { 'Content-Type': contentType } : {}),
-        },
-        body: isReadOnly ? undefined : await readRequestBody(req),
-        signal: AbortSignal.timeout(PROXY_TIMEOUT_MS),
-      });
-      const body = new Uint8Array(await upstream.arrayBuffer());
+      const headers: Record<string, string> = {
+        Referer: referer,
+        'User-Agent': BROWSER_USER_AGENT,
+        ...(contentType ? { 'Content-Type': contentType } : {}),
+      };
+      // 雪球榜单接口需 guest cookie：服务端注入缓存的游客 token（浏览器 forbidden header 无法经头透传）
+      const targetHost = new URL(target).host;
+      const needsXqCookie = targetHost === 'stock.xueqiu.com';
+      // 同花顺大宗交易 ajax 翻页同理：需主页下发的会话 cookie，否则返回反爬挑战页
+      const needsThsDzjyCookie =
+        targetHost === THS_DZJY_HOST && new URL(target).pathname.startsWith(THS_DZJY_PAGE_PATH);
+      if (needsXqCookie) {
+        headers.Cookie = await ensureXqCookie();
+      }
+      if (needsThsDzjyCookie) {
+        headers.Cookie = await ensureThsDzjyCookie();
+      }
+      // 请求体只读一次（重试复用同一 buffer；流式二次读取会挂起）
+      const requestBody = isReadOnly ? undefined : await readRequestBody(req);
+      const doFetch = () =>
+        fetch(target, {
+          method,
+          headers,
+          body: requestBody,
+          signal: AbortSignal.timeout(PROXY_TIMEOUT_MS),
+        });
+      let upstream = await doFetch();
+      // 雪球 cookie 失效：刷新缓存后重试一次
+      if (needsXqCookie && (upstream.status === 400 || upstream.status === 401)) {
+        invalidateXqCookie();
+        headers.Cookie = await ensureXqCookie();
+        upstream = await doFetch();
+      }
+      let body = new Uint8Array(await upstream.arrayBuffer());
+      // 同花顺 ajax 命中反爬挑战页（200 但无数据）：刷新会话 cookie 后重试一次
+      if (needsThsDzjyCookie && upstream.ok && isThsChallengeBody(body)) {
+        invalidateThsDzjyCookie();
+        headers.Cookie = await ensureThsDzjyCookie();
+        upstream = await doFetch();
+        body = new Uint8Array(await upstream.arrayBuffer());
+      }
       const responseType = upstream.headers.get('content-type') ?? 'text/plain; charset=utf-8';
       // 仅缓存成功响应，失败不缓存以便快速恢复
       if (upstream.ok && isReadOnly) {

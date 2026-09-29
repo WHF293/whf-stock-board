@@ -45,6 +45,8 @@ export interface ModelConfig {
   maxOutputTokens: number | null;
   temperature: number | null;
   isDefault: boolean;
+  /** 启用开关：停用后退出可选池（模型菜单 / 配置下拉），回落链视同不存在 */
+  enabled: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -256,8 +258,21 @@ export interface TodoPart {
   items: Array<{ content: string; status: string }>;
 }
 
+/**
+ * 消息里的结构化块：用户消息附图（多模态输入）
+ *
+ * 存 base64 dataURL（入参前经 canvas 重采样压缩到上限边长 + JPEG），
+ * 跟随 parts 落库——会话删除级联删消息，图片生命周期与消息完全一致，
+ * 不引入独立的文件落盘与清理逻辑。
+ */
+export interface ImagePart {
+  type: 'image';
+  /** base64 dataURL（data:image/jpeg;base64,...） */
+  dataUrl: string;
+}
+
 /** 消息里的结构化块（parts JSON 数组元素） */
-export type MessagePart = ToolCallPart | TodoPart;
+export type MessagePart = ToolCallPart | TodoPart | ImagePart;
 
 /** 消息（chat_message 表） */
 export interface ChatMessage {
@@ -283,3 +298,35 @@ export interface CreateSessionInput {
 
 /** 左栏管理入口 key */
 export type AgentManagerKey = 'skills' | 'mcp' | 'model' | 'agents';
+
+/** 输入框 + 菜单的资源类别（对应三类对话级强制包含资源） */
+export type ComposerResourceKind = 'skill' | 'mcp' | 'subagent';
+
+/** 输入框 + 菜单里的可选资源项（内置 / 用户来源统一视图） */
+export interface ComposerResourceOption {
+  /**
+   * 资源 id：skill / mcp 为授权用资源 id（内置为负数常量 id），
+   * subagent 为定义 id（内置亦为负数）
+   */
+  id: number;
+  /** 展示名 */
+  name: string;
+  /** 次要说明（菜单第二行，可为空串） */
+  description: string;
+}
+
+/** agent_usage 表行（agent.db V5，使用统计看板数据源；每次 agent 运行终态一行） */
+export interface AgentUsageRow {
+  id: number;
+  sessionId: number;
+  /** 模型展示名（ModelConfig.name，看板趋势线按它分线） */
+  modelName: string;
+  /** 请求模型 id（ModelConfig.modelId） */
+  modelId: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  /** 运行时长（startedAt → 终态回调，含工具等待） */
+  durationMs: number;
+  createdAt: number;
+}

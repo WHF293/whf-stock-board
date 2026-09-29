@@ -1,25 +1,30 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onActivated, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useEventListener } from '@vueuse/core';
 import type { KLineData } from 'klinecharts';
 import { toFullSymbol } from '../utils/to-full-symbol';
+import { buildStockAnalysisPrompt } from '../utils/build-stock-analysis-prompt';
+import { requestAgentAnalysis } from '../agent/agent-bridge';
 import type { FullQuote } from '../types/stock-quote.types';
 import BaseButton from '../components/ui/BaseButton.vue';
 import BaseCard from '../components/ui/BaseCard.vue';
 import BaseConfirmModal from '../components/ui/BaseConfirmModal.vue';
 import BaseEmpty from '../components/ui/BaseEmpty.vue';
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue';
+import BaseTabs from '../components/ui/BaseTabs.vue';
 import MenuIcon from '../components/ui/MenuIcon.vue';
 import ChartIndicatorConfigButton from '../components/ui/ChartIndicatorConfigButton.vue';
 import { useSettingsStore } from '../stores/settings';
 import { useStockContextStore } from '../stores/stock-context';
 import { ROUTE_PATH } from '../constants/router-meta.constants';
+import { HOST_HEADER_ITEM } from '../constants/header.constants';
 import { formatPercent } from '../utils/format-percent';
 import { formatPrice } from '../utils/format-price';
 import KlineChart from '../components/charts/KlineChart.vue';
 import StockQuoteHeader from '../components/business/StockQuoteHeader.vue';
 import StockOrderBook from '../components/business/StockOrderBook.vue';
+import EtfHoldingsCard from '../components/business/EtfHoldingsCard.vue';
 import { fetchFullQuotes } from '../api/quotes.api';
 import { fetchKlineCached } from '../api/kline-cache.api';
 import { listTradeRecordsBySymbol } from '../api/account-records-db.api';
@@ -34,6 +39,11 @@ import { useChartPeriod } from '../composables/use-chart-period';
 import { useDetailPanelCollapse } from '../composables/use-detail-panel-collapse';
 import { POLLING_INTERVAL } from '../constants/polling.constants';
 import { CHART_PERIOD_OPTIONS } from '../constants/stock-detail.constants';
+import {
+  DETAIL_BOTTOM_TAB_DEFAULT,
+  DETAIL_BOTTOM_TAB_OPTIONS,
+} from '../constants/stock-detail.constants';
+import type { DetailBottomTab } from '../constants/stock-detail.constants';
 import { useDataCacheStore } from '../stores/data-cache';
 import { useWatchlistStore } from '../stores/watchlist';
 import { useStockAccountStore } from '../stores/stock-account';
@@ -41,6 +51,7 @@ import { DATA_CACHE_KEY } from '../constants/data-cache.constants';
 import { DEFAULT_GROUP_ID } from '../constants/watchlist.constants';
 import { getTrendByChangePercent } from '../constants/trend.constants';
 import { TREND_TEXT_CLASS } from '../constants/stock-colors.constants';
+import { isEtfSymbol } from '../utils/is-etf-symbol';
 
 /**
  * 股票详情整页（/stock-detail/:symbol，全站双击个股进入）：
@@ -66,6 +77,18 @@ const symbol = computed<string>(() => toFullSymbol(String(route.params.symbol ??
 
 /** 当前股票是否已加入自选（任一分组） */
 const isInWatchlist = computed(() => watchlistStore.allSymbols.includes(symbol.value));
+
+/** 「AI 分析」入口跟随顶栏「Agent 分析」条目的显隐开关（设置 → 布局编排 → 右上角工具编排） */
+const agentEntryVisible = computed(() =>
+  !settingsStore.hiddenHeaderItems.includes(HOST_HEADER_ITEM.AGENT),
+);
+
+/** 「AI 分析」：把当前个股交给 Agent 做短期综合分析（消息 / 资金 / 情绪 / 外围 / 政策 + 多空震荡结论） */
+const onAiAnalysis = (): void => {
+  void requestAgentAnalysis(
+    buildStockAnalysisPrompt({ name: quoteRef.value?.name ?? '', symbol: symbol.value }),
+  );
+};
 
 // ---------- 报价（4s 轮询；快照播种，与侧栏互通） ----------
 const quoteRef = ref<FullQuote | null>(
@@ -197,6 +220,29 @@ watch(tradeAccountOptions, (options) => {
 const tradeActionLabel = (record: AccountTradeRecord): string =>
   record.quantity >= 0 ? '买入' : '卖出';
 
+// ---------- 底部 Tab：交易记录 / ETF 持仓股（场内基金才有第二个页签） ----------
+/** 当前标的是否为场内基金（ETF / LOF，按代码段判定） */
+const isEtf = computed(() => isEtfSymbol(symbol.value));
+
+/** 当前选中的底部页签（切换股票时重置回交易记录） */
+const bottomTab = ref<DetailBottomTab>(DETAIL_BOTTOM_TAB_DEFAULT);
+
+/** 场内基金的页签顺序：持仓股在前、交易记录在后（参考同花顺移动端） */
+const ETF_TAB_ORDER: readonly DetailBottomTab[] = ['etf', 'trade'];
+
+/** 底部页签选项（场内基金两个页签按上述顺序；普通股票只有交易记录） */
+const bottomTabOptions = computed(() => {
+  const optionByValue = new Map(
+    DETAIL_BOTTOM_TAB_OPTIONS.map((option) => [option.value, option]),
+  );
+  const order = isEtf.value ? ETF_TAB_ORDER : ['trade' as DetailBottomTab];
+  return order.map((value) => optionByValue.get(value)).filter((option) => option != null);
+});
+
+watch(symbol, () => {
+  bottomTab.value = DETAIL_BOTTOM_TAB_DEFAULT;
+});
+
 // ---------- K 线图 BS/T 标注（交易记录映射为覆盖物） ----------
 /** 分时 / 五日：每笔成交一个点（同分钟买卖合并 T） */
 const intradayTradeMarks = computed<TradeMark[]>(() =>
@@ -222,6 +268,18 @@ watch(
 );
 watch(chartPeriod, () => {
   void loadKline();
+});
+
+// KeepAlive 缓存页面：同符号切走再切回时 symbol watch 不触发，重拉 K 线与成交记录
+// （报价由 usePolling 恢复时补刷，无需处理；首次 onActivated 紧跟首屏 watch 触发，跳过）
+let detailActivatedOnce = false;
+onActivated(() => {
+  if (!detailActivatedOnce) {
+    detailActivatedOnce = true;
+    return;
+  }
+  void loadKline();
+  void loadTradeRecords();
 });
 
 /** 返回上一页（进入来源页；无历史时回退首页由 router 兜底） */
@@ -381,6 +439,15 @@ const pctClass = (value: number | null): string =>
               {{ quoteRef.changePercent >= 0 ? '+' : '' }}{{ quoteRef.changePercent.toFixed(2) }}%
             </span>
           </div>
+          <!-- AI 分析（交 Agent 做个股短期综合分析；与热点新闻页同款 BaseButton ghost） -->
+          <BaseButton
+            v-if="quoteRef && agentEntryVisible"
+            variant="ghost"
+            @click="onAiAnalysis"
+          >
+            <MenuIcon name="agent" :size="14" />
+            AI 分析
+          </BaseButton>
           <!-- 自选按钮（原右栏报价头移此） -->
           <button
             v-if="quoteRef"
@@ -413,7 +480,7 @@ const pctClass = (value: number | null): string =>
               class="rounded-lg px-3 py-1 text-xs transition-colors"
               :class="
                 chartPeriod === option.value
-                  ? 'bg-primary font-semibold text-on-primary'
+                  ? 'bg-primary-weak font-semibold text-primary'
                   : 'text-text-secondary hover:text-text'
               "
               :aria-pressed="chartPeriod === option.value"
@@ -550,21 +617,16 @@ const pctClass = (value: number | null): string =>
       </div>
     </div>
 
-    <!-- 交易记录：本地交割单 / 对账单库中该股的全部成交（时间 / 操作 / 数量 / 价格），
-         与上方 K 线卡片等高，行数超出时列表内部滚动；多账户买入同股时按账户筛选 -->
-    <BaseCard
-      class="flex h-[calc(100dvh-11rem)] min-h-0 shrink-0 flex-col"
-      :title="
-        visibleTradeRecords.length > 0
-          ? `交易记录（${visibleTradeRecords.length} 笔）`
-          : '交易记录'
-      "
-    >
-      <template #extra>
+    <!-- 底部：交易记录 / ETF 持仓股 页签（行情全景同款下划线页签；场内基金追加持仓页签），
+         与上方 K 线卡片等高，行数超出时列表内部滚动 -->
+    <BaseCard class="flex h-[calc(100dvh-11rem)] min-h-0 shrink-0 flex-col">
+      <!-- 页签行：左页签 + 右侧上下文控件（随页签切换） -->
+      <div class="flex shrink-0 items-center justify-between gap-2 border-b border-flat-weak px-2">
+        <BaseTabs v-model="bottomTab" :options="bottomTabOptions" variant="underline" aria-label="详情底部页签" />
         <div class="flex items-center gap-2">
-          <!-- 账户切换：仅该股成交记录涉及 ≥2 个账户时显示 -->
+          <!-- 账户切换：仅交易记录页签且该股成交记录涉及 ≥2 个账户时显示 -->
           <select
-            v-if="tradeAccountOptions.length > 1"
+            v-if="bottomTab === 'trade' && tradeAccountOptions.length > 1"
             v-model="tradeAccountFilter"
             class="rounded-lg border border-flat-weak bg-surface px-2 py-1 text-xs text-text"
             aria-label="按账户筛选交易记录"
@@ -574,46 +636,55 @@ const pctClass = (value: number | null): string =>
               {{ option.name }}
             </option>
           </select>
-          <span class="text-xs text-text-tertiary">来源：账户管理导入的同花顺交割单 / 对账单</span>
-        </div>
-      </template>
-      <BaseSkeleton v-if="isTradeRecordsLoading" />
-      <BaseEmpty
-        v-else-if="visibleTradeRecords.length === 0"
-        text="暂无该股成交记录：在「账户管理」导入同花顺交割单后即可在此查看"
-      />
-      <div v-else class="min-h-0 flex-1 overflow-y-auto">
-        <div
-          class="sticky top-0 z-[1] flex items-center gap-3 border-b border-flat-weak bg-surface px-2 pb-1.5 text-xs text-text-tertiary"
-        >
-          <span class="flex-1">时间</span>
-          <span class="w-10 text-right">操作</span>
-          <span class="w-20 text-right">数量</span>
-          <span class="w-20 text-right">价格</span>
-        </div>
-        <div
-          v-for="record in visibleTradeRecords"
-          :key="record.id"
-          class="flex items-center gap-3 border-b border-flat-weak/50 px-2 py-1.5 text-sm tabular-nums last:border-0 hover:bg-flat-weak/40"
-        >
-          <span class="flex-1 whitespace-nowrap text-text-secondary">
-            {{ record.tradeDate }} {{ record.tradeTime }}
+          <span v-if="bottomTab === 'trade'" class="text-xs text-text-tertiary">
+            来源：账户管理导入的同花顺交割单 / 对账单
           </span>
-          <span
-            class="w-10 text-right"
-            :class="record.quantity >= 0 ? 'text-up' : 'text-down'"
-          >
-            {{ tradeActionLabel(record) }}
-          </span>
-          <span
-            class="w-20 text-right font-medium"
-            :class="record.quantity >= 0 ? 'text-up' : 'text-down'"
-          >
-            {{ formatTradeQuantity(record.quantity) }}
-          </span>
-          <span class="w-20 text-right text-text">{{ formatPrice(record.price) }}</span>
         </div>
       </div>
+
+      <!-- 交易记录页签 -->
+      <div v-if="bottomTab === 'trade'" class="flex min-h-0 flex-1 flex-col px-2">
+        <BaseSkeleton v-if="isTradeRecordsLoading" />
+        <BaseEmpty
+          v-else-if="visibleTradeRecords.length === 0"
+          text="暂无该股成交记录：在「账户管理」导入同花顺交割单后即可在此查看"
+        />
+        <div v-else class="min-h-0 flex-1 overflow-y-auto">
+          <div
+            class="sticky top-0 z-[1] flex items-center gap-3 border-b border-flat-weak bg-surface px-2 pb-1.5 text-xs text-text-tertiary"
+          >
+            <span class="flex-1">时间</span>
+            <span class="w-10 text-right">操作</span>
+            <span class="w-20 text-right">数量</span>
+            <span class="w-20 text-right">价格</span>
+          </div>
+          <div
+            v-for="record in visibleTradeRecords"
+            :key="record.id"
+            class="flex items-center gap-3 border-b border-flat-weak/50 px-2 py-1.5 text-sm tabular-nums last:border-0 hover:bg-flat-weak/40"
+          >
+            <span class="flex-1 whitespace-nowrap text-text-secondary">
+              {{ record.tradeDate }} {{ record.tradeTime }}
+            </span>
+            <span
+              class="w-10 text-right"
+              :class="record.quantity >= 0 ? 'text-up' : 'text-down'"
+            >
+              {{ tradeActionLabel(record) }}
+            </span>
+            <span
+              class="w-20 text-right font-medium"
+              :class="record.quantity >= 0 ? 'text-up' : 'text-down'"
+            >
+              {{ formatTradeQuantity(record.quantity) }}
+            </span>
+            <span class="w-20 text-right text-text">{{ formatPrice(record.price) }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ETF 持仓股页签：季度披露的重仓明细，单击行切换详情到该成分股 -->
+      <EtfHoldingsCard v-else :symbol="symbol" @open="switchStock" />
     </BaseCard>
 
     <!-- 加自选弹窗：分组多选 + 新建分组 -->

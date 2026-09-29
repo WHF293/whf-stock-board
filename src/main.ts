@@ -9,6 +9,7 @@ import { router } from './router';
 import { disableDevtools } from './utils/disable-devtools';
 import { initWeblog } from './weblog';
 import { installPlugins } from './plugin/setup';
+import { startWatchlistDbSync } from './composables/use-watchlist-db-sync';
 import { useSettingsStore } from './stores/settings';
 import './assets/styles/main.css';
 
@@ -25,12 +26,17 @@ pinia.use(piniaPluginPersistedstate);
 
 app.use(pinia);
 
+// 自选股 SQLite 镜像：启动对齐（库覆盖 store / 首次播种）+ 运行期整包重写，
+// 是「数据导入后自选股生效」与「导出文件含完整自选股」的前提（见模块注释）
+startWatchlistDbSync();
+
 // 系统日志：必须在 app.use(router) 之前挂载 —— 页面显示埋点靠 router.afterEach，
 // 首个导航在 router 安装时就会触发，晚一步会漏掉首屏那一条
 initWeblog({
   app,
   router,
   enabled: useSettingsStore(pinia).weblogEnabled,
+  developerMode: useSettingsStore(pinia).weblogDeveloperMode,
 });
 
 // 插件体系：必须在 app.use(router) 之前装配 —— 插件贡献的路由要在首个导航就绪，

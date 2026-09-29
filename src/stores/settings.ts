@@ -9,7 +9,12 @@ import { BOARD_DETAIL_RANGE_DEFAULT } from '../constants/board-detail.constants'
 import { STORAGE_NS_SETTINGS } from '../constants/storage-key.constants';
 import { appStorage } from '../utils/app-local-storage';
 import { REFRESH_INTERVAL_DEFAULT } from '../constants/polling.constants';
-import { THEME_COLOR_DEFAULT } from '../constants/theme-color.constants';
+import {
+  CUSTOM_THEME_COLOR_DEFAULT,
+  CUSTOM_THEME_COLOR_PATTERN,
+  THEME_COLOR_DEFAULT,
+  isThemeColor,
+} from '../constants/theme-color.constants';
 import type { ThemeColor } from '../constants/theme-color.constants';
 import { TREND_THEME_DEFAULT } from '../constants/trend-theme.constants';
 import type { TrendTheme } from '../constants/trend-theme.constants';
@@ -71,8 +76,10 @@ interface SettingsState {
   headerOrder: string[];
   /** 顶栏中被隐藏的条目键（编排弹窗里关掉开关的项；不渲染） */
   hiddenHeaderItems: string[];
-  /** 主题色（清新绿 / 淡雅蓝 / 淡雅粉 / 极光紫） */
+  /** 主题色（清新绿 / 淡雅蓝 / 活力橙 / 黑金 / 自定义） */
   themeColor: ThemeColor;
+  /** 自定义主题色值（#rrggbb；themeColor = 'custom' 时经内联 CSS 变量生效） */
+  customThemeColor: string;
   /** 涨跌配色主题（红涨绿跌 / 红跌绿涨 / 红涨蓝跌） */
   trendTheme: TrendTheme;
   /** 全局水印开关（默认开启） */
@@ -95,8 +102,8 @@ interface SettingsState {
   detailChartPeriod: ChartPeriod;
   /** 系统日志 · 采集开关（关闭后不再记录报错与行为，仅保留系统类事件） */
   weblogEnabled: boolean;
-  /** Agent 分析 · 仅股票问答开关（开启时使用仅股票系统提示词；关闭后移除话题限制） */
-  agentStockOnly: boolean;
+  /** 系统日志 · 开发者模式（开启后 console.warn 也采集：插件 [info] / [warn] 日志由此可见，排查插件静默降级用） */
+  weblogDeveloperMode: boolean;
   /** 初始设置引导是否已完成（首次打开软件时弹出引导弹窗，完成 / 关闭后不再出现） */
   setupCompleted: boolean;
   /** 桌面端 · 点击关闭按钮最小化到托盘（false = 直接关闭应用；浏览器模式无此行为） */
@@ -123,6 +130,7 @@ export const useSettingsStore = defineStore('settings', {
     headerOrder: [...HEADER_DEFAULT_ORDER],
     hiddenHeaderItems: [],
     themeColor: THEME_COLOR_DEFAULT,
+    customThemeColor: CUSTOM_THEME_COLOR_DEFAULT,
     trendTheme: TREND_THEME_DEFAULT,
     watermarkEnabled: WATERMARK_ENABLED_DEFAULT,
     boardCalendarHeatBasis: BOARD_CALENDAR_HEAT_BASIS_DEFAULT,
@@ -134,7 +142,7 @@ export const useSettingsStore = defineStore('settings', {
     chartSubIndicators: [...CHART_SUB_INDICATORS_DEFAULT],
     detailChartPeriod: CHART_PERIOD_DEFAULT,
     weblogEnabled: WEBLOG_ENABLED_DEFAULT,
-    agentStockOnly: true,
+    weblogDeveloperMode: false,
     setupCompleted: resolveSetupCompletedDefault(),
     closeToTray: CLOSE_TO_TRAY_DEFAULT,
     launchAtStartup: LAUNCH_AT_STARTUP_DEFAULT,
@@ -188,6 +196,15 @@ export const useSettingsStore = defineStore('settings', {
      */
     setThemeColor(color: ThemeColor): void {
       this.themeColor = color;
+    },
+
+    /**
+     * 设置自定义主题色值（themeColor = 'custom' 时经内联 CSS 变量生效）
+     * @param hex 色值（#rrggbb；非法格式忽略，保持原值）
+     */
+    setCustomThemeColor(hex: string): void {
+      if (!CUSTOM_THEME_COLOR_PATTERN.test(hex)) return;
+      this.customThemeColor = hex;
     },
 
     /**
@@ -369,13 +386,16 @@ export const useSettingsStore = defineStore('settings', {
       this.weblogEnabled = enabled;
     },
 
-  /**
-   * 设置 Agent 分析仅股票问答开关
-   * @param enabled true 仅股票问答（默认），false 移除话题限制
-   */
-  setAgentStockOnly(enabled: boolean): void {
-    this.agentStockOnly = enabled;
-  },
+    /**
+     * 设置系统日志开发者模式开关
+     *
+     * 只改持久化状态；运行期的 warn 采集开关由 weblog 模块持有，
+     * 设置页在切换时同步调用 `setWeblogWarnCapture`（避免 store 反向依赖采集模块）。
+     * @param enabled true 开启开发者模式
+     */
+    setWeblogDeveloperMode(enabled: boolean): void {
+      this.weblogDeveloperMode = enabled;
+    },
 
   /** 标记初始设置引导已完成（无论用户点了「开始使用」还是直接关闭，都不再弹出） */
   completeSetup(): void {
@@ -392,6 +412,15 @@ export const useSettingsStore = defineStore('settings', {
       migrateWatchWidgetSettings(
         context.store.watchWidget as Partial<WatchWidgetSettings> & { enabled?: boolean },
       );
+      // 旧版存过、现已删除的主题色（淡雅粉 / 极光紫）回落默认，避免 data-theme 落在无 CSS 规则的值上
+      if (!isThemeColor(context.store.themeColor)) {
+        context.store.themeColor = THEME_COLOR_DEFAULT;
+      }
+      // 自定义色值坏数据回落：内联 CSS 变量拿到非法值会让主色整体失色
+      if (typeof context.store.customThemeColor !== 'string' ||
+        !CUSTOM_THEME_COLOR_PATTERN.test(context.store.customThemeColor)) {
+        context.store.customThemeColor = CUSTOM_THEME_COLOR_DEFAULT;
+      }
     },
   },
 });

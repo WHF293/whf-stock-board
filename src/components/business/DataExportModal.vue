@@ -8,7 +8,9 @@ import {
   isDataPortAvailable,
   pickExportPath,
 } from '../../api/data-port.api';
+import { NOTIFY_TONE } from '../../constants/notify.constants';
 import { DATA_PORT_MANIFEST } from '../../constants/data-port.constants';
+import { useNotificationsStore } from '../../stores/notifications';
 import { formatBytes } from '../../utils/format-bytes';
 
 /**
@@ -39,8 +41,8 @@ const exporting = ref(false);
 /** 失败提示 */
 const errorText = ref('');
 
-/** 成功提示（含路径与体积） */
-const successText = ref('');
+/** 应用级浮窗（导出成功提醒，弹窗随即自动关闭） */
+const notifications = useNotificationsStore();
 
 /** 有可导出数据（至少勾一项且对应类别计数非全 0） */
 const canExport = computed(() => checkedIds.value.length > 0 && !loading.value);
@@ -57,11 +59,9 @@ const rows = computed(() =>
 // 打开时播种默认勾选并拉计数；关闭时清状态，避免下次打开闪旧数据
 watch(open, async (isOpen) => {
   if (!isOpen) {
-    successText.value = '';
     errorText.value = '';
     return;
   }
-  successText.value = '';
   errorText.value = '';
   checkedIds.value = DATA_PORT_MANIFEST.filter((c) => c.defaultEnabled).map((c) => c.id);
   loading.value = true;
@@ -91,16 +91,20 @@ const onSelectNone = (): void => {
 const toErrorText = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
-/** 执行导出：选路径 → 序列化写文件 */
+/** 执行导出：选路径 → 序列化写文件；成功后浮窗提醒并自动关闭弹窗 */
 const onExport = async (): Promise<void> => {
   errorText.value = '';
-  successText.value = '';
   const path = await pickExportPath();
   if (path === null) return;
   exporting.value = true;
   try {
     const size = await exportDataPort(path, checkedIds.value);
-    successText.value = `已导出到 ${path}（${formatBytes(size)}）`;
+    notifications.push({
+      title: '数据导出成功',
+      body: `已导出到 ${path}（${formatBytes(size)}）`,
+      tone: NOTIFY_TONE.PRIMARY,
+    });
+    open.value = false;
   } catch (error) {
     errorText.value = `导出失败：${toErrorText(error)}`;
   } finally {
@@ -154,12 +158,6 @@ const onExport = async (): Promise<void> => {
       class="mt-3 text-xs text-up"
     >
       {{ errorText }}
-    </p>
-    <p
-      v-if="successText"
-      class="mt-3 break-all text-xs text-primary"
-    >
-      {{ successText }}
     </p>
     <template #footer>
       <div class="flex flex-1 items-center gap-2">

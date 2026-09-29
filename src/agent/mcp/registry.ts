@@ -21,6 +21,7 @@ import { type z } from 'zod';
 import { listMcps } from '../../composables/use-agent-db';
 import { pluginKernel } from '../../plugin';
 import { APP_MCP_SERVER } from './app-tools';
+import { FINANCIAL_DATA_MCP_SERVER } from './financial-tools';
 import { MARKET_DATA_MCP_SERVER } from './market-tools';
 import { STOCK_SDK_MCP_SERVER } from './stocksdk-tools';
 import { connectRemoteMcp } from './remote';
@@ -42,6 +43,7 @@ export const BUILTIN_MCP_SERVERS: readonly BuiltinMcpServer[] = [
   APP_MCP_SERVER,
   STOCK_SDK_MCP_SERVER,
   MARKET_DATA_MCP_SERVER,
+  FINANCIAL_DATA_MCP_SERVER,
 ];
 
 /**

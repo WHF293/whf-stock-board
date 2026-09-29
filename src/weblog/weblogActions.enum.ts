@@ -42,6 +42,8 @@ export const WEBLOG_ACTIONS = {
   PAGE_BOARD_CALENDAR: { category: 'page', label: '进入板块日历' },
   PAGE_MARKET_MOOD: { category: 'page', label: '进入市场异动' },
   PAGE_WATCHLIST: { category: 'page', label: '进入自选股' },
+  // 选股器已改为插件分发（dsh-stock-screener）：path 沿用 /screener，
+  // 保留映射让装了插件的用户进入埋点不断档（插件缺席时该 path 不可达，条目空挂无害）
   PAGE_SCREENER: { category: 'page', label: '进入选股器' },
   PAGE_HOT_NEWS: { category: 'page', label: '进入热点新闻' },
   PAGE_STOCK_ACCOUNT: { category: 'page', label: '进入账户管理' },
@@ -76,9 +78,8 @@ export const WEBLOG_ACTIONS = {
   ACCOUNT_IMPORT: { category: 'business', label: '导入对账单/交割单' },
   ACCOUNT_EXPORT: { category: 'business', label: '导出表格' },
   BOARD_CALENDAR_SYNC: { category: 'business', label: '板块日历采集' },
-  SCREENER_RUN: { category: 'business', label: '执行选股筛选' },
-  SCREENER_SIGNAL_SCAN: { category: 'business', label: '信号扫描' },
-  SCREENER_TAIL_PICK: { category: 'business', label: '尾盘选股' },
+  // 选股器已改为插件分发（dsh-stock-screener），其页面与业务埋点键随插件迁移；
+  // 历史日志中的 SCREENER_* 键不再有标签映射，查询时按原始键展示
   AGENT_SEND: { category: 'business', label: '发送 Agent 对话' },
   CHART_INDICATOR_CONFIG: { category: 'business', label: '图表指标配置' },
   POLLING_TOGGLE: { category: 'business', label: '轮询总开关' },
@@ -95,13 +96,14 @@ export const WEBLOG_ACTIONS = {
   HEADER_ORDER_RESET: { category: 'business', label: '顶栏顺序重置' },
   HEADER_VISIBILITY_TOGGLE: { category: 'business', label: '顶栏条目显隐' },
   HEADER_ITEM_OPEN: { category: 'business', label: '打开顶栏工具' },
-  PLUGIN_MANAGE_OPEN: { category: 'business', label: '打开插件管理' },
   PLUGIN_TOGGLE: { category: 'business', label: '插件启停' },
   PLUGIN_INSTALL: { category: 'business', label: '安装插件' },
   PLUGIN_INSTALL_OPEN: { category: 'business', label: '打开插件安装' },
   PLUGIN_UNINSTALL: { category: 'business', label: '卸载插件' },
   PLUGIN_TAKEOVER: { category: 'business', label: '接管内置插件版本' },
   PLUGIN_DB_DROP: { category: 'business', label: '删除插件数据表' },
+  PLUGIN_UPDATE_CHECK: { category: 'business', label: '检查插件更新' },
+  PLUGIN_UPDATE_INSTALL: { category: 'business', label: '安装插件更新' },
   PLUGIN_COMMAND_RUN: { category: 'business', label: '执行插件命令' },
   PLUGIN_PANEL_OPEN: { category: 'business', label: '打开插件面板' },
   SDK_CACHE_CLEAR: { category: 'business', label: '清空 SDK 缓存' },
@@ -116,15 +118,12 @@ export const WEBLOG_ACTIONS = {
   DATA_EXPORT_CONFIRM: { category: 'business', label: '执行数据导出' },
   DATA_IMPORT_OPEN: { category: 'business', label: '选择导入文件' },
   DATA_IMPORT_CONFIRM: { category: 'business', label: '执行数据导入' },
-  WATCH_WIDGET_POWER_OFF: { category: 'business', label: '任务栏小组件：关闭' },
-  WATCH_WIDGET_POWER_ALWAYS: { category: 'business', label: '任务栏小组件：常驻' },
-  WATCH_WIDGET_POWER_SMART: { category: 'business', label: '任务栏小组件：智能开启' },
-  WATCH_WIDGET_GOTO_PLUGIN_LAB: { category: 'business', label: '任务栏小组件：去插件工坊' },
   LAUNCH_AT_STARTUP_TOGGLE: { category: 'business', label: '开机自动启动开关' },
 
   // ---------- 系统事件 ----------
   APP_START: { category: 'system', label: '应用启动' },
   LOG_ENABLED_TOGGLE: { category: 'system', label: '日志采集开关' },
+  LOG_DEVELOPER_MODE_TOGGLE: { category: 'system', label: '日志开发者模式开关' },
   LOG_TAB_SWITCH: { category: 'system', label: '切换日志页签' },
   LOG_FILTER: { category: 'system', label: '日志筛选条件变更' },
   LOG_REFRESH: { category: 'system', label: '刷新日志' },
@@ -150,7 +149,8 @@ export const WEBLOG_PAGE_ACTION_BY_PATH: Record<string, WeblogActionKey> = {
   [ROUTE_PATH.BOARD_CALENDAR]: 'PAGE_BOARD_CALENDAR',
   [ROUTE_PATH.MARKET_MOOD]: 'PAGE_MARKET_MOOD',
   [ROUTE_PATH.WATCHLIST]: 'PAGE_WATCHLIST',
-  [ROUTE_PATH.SCREENER]: 'PAGE_SCREENER',
+  // 选股器为插件页（dsh-stock-screener 注册 /screener）：path 字面量登记，装了插件埋点不断档
+  '/screener': 'PAGE_SCREENER',
   [ROUTE_PATH.HOT_NEWS]: 'PAGE_HOT_NEWS',
   [ROUTE_PATH.STOCK_ACCOUNT]: 'PAGE_STOCK_ACCOUNT',
   [ROUTE_PATH.SYSTEM_LOG]: 'PAGE_SYSTEM_LOG',

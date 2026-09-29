@@ -4,7 +4,9 @@ import { useRouter } from 'vue-router';
 import BoardCalendarGrid from '../components/business/BoardCalendarGrid.vue';
 import BoardCellDetailModal from '../components/business/BoardCellDetailModal.vue';
 import BoardFilterModal from '../components/business/BoardFilterModal.vue';
-import BoardProfitBubbleModal from '../components/business/BoardProfitBubbleModal.vue';
+import BoardMainlinePanel from '../components/business/BoardMainlinePanel.vue';
+import BoardProfitBubblePanel from '../components/business/BoardProfitBubblePanel.vue';
+import BaseButton from '../components/ui/BaseButton.vue';
 import BaseCard from '../components/ui/BaseCard.vue';
 import BaseEmpty from '../components/ui/BaseEmpty.vue';
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue';
@@ -23,7 +25,11 @@ import {
   BOARD_CALENDAR_HEAT_OPTIONS,
   BOARD_CALENDAR_RANGE,
   BOARD_CALENDAR_RANGE_OPTIONS,
+  BOARD_CALENDAR_VIEW,
+  BOARD_CALENDAR_VIEW_DEFAULT,
+  BOARD_CALENDAR_VIEW_OPTIONS,
   BOARD_DATA_LEVEL,
+  BOARD_MAINLINE_TOP_N,
   BOARD_SCORE_BUCKET,
   BOARD_SCORE_LEGEND,
   CALENDAR_BOARDS,
@@ -39,8 +45,10 @@ import type {
   BoardCalendarCell,
   BoardCalendarMatrix,
   BoardCalendarRow,
+  BoardCalendarViewMode,
   BoardColumnSelection,
   BoardDailyRow,
+  BoardMainlineCell,
   BoardProfile,
   BoardScoreBucket,
 } from '../types/board-calendar.types';
@@ -49,6 +57,7 @@ import {
   normalizeBoardHidden,
   normalizeBoardOrder,
 } from '../utils/board-order';
+import { buildBoardMainlineMatrix } from '../utils/build-board-mainline-matrix';
 import {
   getBoardBucketBackground,
   resolveBoardScoreBucket,
@@ -93,8 +102,8 @@ const lastUpdatedAt = ref<number | null>(null);
 
 /** 板块过滤器弹窗开关 */
 const filterOpen = ref(false);
-/** 赚钱效应气泡图弹窗开关 */
-const profitOpen = ref(false);
+/** 主区视图：列表（涨跌停矩阵）/ 气泡图（赚钱效应） */
+const calendarView = ref<BoardCalendarViewMode>(BOARD_CALENDAR_VIEW_DEFAULT);
 /** 弹窗状态 */
 const modalOpen = ref(false);
 const activeRow = ref<BoardCalendarRow | null>(null);
@@ -321,6 +330,16 @@ const profitSnapshot = computed<{
 });
 
 /**
+ * 板块分析矩阵：每个交易日按得分绝对值取前 N 名转置成「行 = 名次、列 = 日期」
+ *
+ * 与日历矩阵共用同一份 dailyRows 与展示范围（板块过滤器不影响——
+ * 分析看的是全市场在做什么，隐藏个别板块不改变市场结构）。
+ */
+const mainlineMatrix = computed(() =>
+  buildBoardMainlineMatrix(dailyRows.value, selectedDates.value, BOARD_MAINLINE_TOP_N),
+);
+
+/**
  * 从本地库读取矩阵数据（交易日轴 + 板块日聚合 + 板块档案）
  *
  * 两步分别归因：交易日轴失败是上游问题，读库失败是本地库问题，
@@ -442,6 +461,14 @@ const onBoardClick = (row: BoardCalendarRow): void => {
 };
 
 /**
+ * 点击主线分析单元格：进入板块详情页（与板块名点击同一路由）
+ * @param cell 被点击的单元格（携带板块代码）
+ */
+const onMainlineCellClick = (cell: BoardMainlineCell): void => {
+  void router.push(`${ROUTE_PATH.BOARD_DETAIL}/${cell.boardCode}`);
+};
+
+/**
  * 确认板块过滤器：持久化勾选与行序（立即生效，下次进入自动恢复）
  * @param selection 勾选与顺序（已在弹窗内归一化）
  */
@@ -482,27 +509,18 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
           :options="BOARD_CALENDAR_RANGE_OPTIONS"
           @update:model-value="settingsStore.setBoardCalendarRange($event as never)"
         />
-        <button
-          type="button"
-          class="pressable flex items-center gap-1 rounded-lg border border-flat-weak px-2.5 py-1 text-xs text-text-secondary hover:bg-flat-weak hover:text-text active:scale-95"
-          @click="filterOpen = true"
-        >
-          <MenuIcon name="filter" :size="12" />
+        <BaseButton variant="ghost" @click="filterOpen = true">
+          <MenuIcon name="filter" :size="14" />
           板块过滤器
           <span class="tabular-nums text-text-tertiary">
             {{ matrix.rows.length }}/{{ CALENDAR_BOARDS.length }}
           </span>
-        </button>
-        <button
-          type="button"
-          class="pressable flex items-center gap-1 rounded-lg border border-flat-weak px-2.5 py-1 text-xs text-text-secondary hover:bg-flat-weak hover:text-text active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
-          :disabled="profitSnapshot.rows.length === 0"
-          title="把最新一个交易日的板块得分做成气泡图：面积 = |得分|，颜色 = 涨跌语义色"
-          @click="profitOpen = true"
-        >
-          <MenuIcon name="flame" :size="12" />
-          查看赚钱效应
-        </button>
+        </BaseButton>
+        <BaseTabs
+          :model-value="calendarView"
+          :options="BOARD_CALENDAR_VIEW_OPTIONS"
+          @update:model-value="calendarView = $event as BoardCalendarViewMode"
+        />
         <button
           v-if="hasCustomOrder"
           type="button"
@@ -518,15 +536,10 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
           <template v-if="lastUpdatedAt">更新于 {{ formatRelativeTime(lastUpdatedAt) }} · </template>
           {{ tradingDayLabel }} · {{ rangeLabel }}
         </span>
-        <button
-          type="button"
-          class="pressable flex items-center gap-1 rounded-lg border border-flat-weak px-2.5 py-1 text-xs text-text-secondary hover:bg-flat-weak hover:text-text active:scale-95 disabled:opacity-50"
-          :disabled="isForcing || !isDbAvailable"
-          @click="onForceRefresh"
-        >
-          <MenuIcon name="refresh" :size="12" />
+        <BaseButton variant="ghost" :disabled="isForcing || !isDbAvailable" @click="onForceRefresh">
+          <MenuIcon name="refresh" :size="14" />
           {{ isForcing ? '采集中…' : '刷新' }}
-        </button>
+        </BaseButton>
       </div>
     </div>
 
@@ -541,6 +554,7 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
 
     <!-- 矩阵卡片：矩阵本身是卡片的直接 flex 子项，用 board-calendar-fill 吃满剩余高度 -->
     <BaseCard
+      v-if="calendarView === BOARD_CALENDAR_VIEW.LIST"
       fill
       class="min-h-0 flex-1"
       :title="`板块日历 · 板块 ${matrix.rows.length}/${CALENDAR_BOARDS.length} 个 · 覆盖 ${coveredDateCount} 个交易日`"
@@ -580,6 +594,39 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
       />
     </BaseCard>
 
+    <!-- 板块分析卡片：每日得分绝对值 Top10 的「名次 × 日期」转置表 -->
+    <BaseCard
+      v-else-if="calendarView === BOARD_CALENDAR_VIEW.MAINLINE"
+      fill
+      class="min-h-0 flex-1"
+      title="板块分析"
+    >
+      <BaseSkeleton v-if="isLoading && dailyRows.length === 0" />
+      <BaseEmpty
+        v-else-if="dailyRows.length === 0"
+        text="暂无板块日历数据，请点击右上角「刷新」采集"
+      />
+      <div v-else class="min-h-0 flex-1">
+        <BoardMainlinePanel :matrix="mainlineMatrix" @cell-click="onMainlineCellClick" />
+      </div>
+    </BaseCard>
+
+    <!-- 赚钱效应气泡图卡片（原「查看赚钱效应」弹窗内容内嵌为主区视图） -->
+    <BaseCard
+      v-else
+      fill
+      class="min-h-0 flex-1"
+      title="赚钱效应气泡图"
+    >
+      <div class="min-h-0 flex-1">
+        <BoardProfitBubblePanel
+          :rows="profitSnapshot.rows"
+          :trade-date="profitSnapshot.tradeDate"
+          :is-full-snapshot="profitSnapshot.isFullSnapshot"
+        />
+      </div>
+    </BaseCard>
+
     <BoardFilterModal
       v-model:open="filterOpen"
       :order="settingsStore.boardCalendarOrder"
@@ -595,13 +642,6 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
       :cell="activeCell"
       :trade-date="activeDate"
       :profile-cons-count="activeProfileConsCount"
-    />
-
-    <BoardProfitBubbleModal
-      v-model:open="profitOpen"
-      :rows="profitSnapshot.rows"
-      :trade-date="profitSnapshot.tradeDate"
-      :is-full-snapshot="profitSnapshot.isFullSnapshot"
     />
   </div>
 </template>

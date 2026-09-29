@@ -16,6 +16,7 @@ export const DATA_CACHE_KEY = {
   BOARDS_CONSTITUENTS_PREFIX: 'boards.constituents.',
   /** 资金动向四象限 */
   FUNDS_MARKET_FLOW: 'funds.marketFlow',
+  /** 板块资金（行情全景）：板块净流入排名 */
   FUNDS_SECTOR_RANK: 'funds.sectorRank',
   FUNDS_STOCK_RANK: 'funds.stockRank',
   /** 行业资金曲线（含归属交易日，会话内复用） */
@@ -30,11 +31,15 @@ export const DATA_CACHE_KEY = {
   /** 行情全景：美股 / 全球宏观（A股板块排行复用 BOARDS_LIST 键） */
   PANORAMA_US_BOARDS: 'panorama.usBoards',
   PANORAMA_MACRO: 'panorama.macro',
+  /** 行情全景：新股次新股（同花顺清单快照，含 fetchedAt） */
+  PANORAMA_IPO_BOARD: 'panorama.ipoBoard',
   /** 个股详情（前缀 + 符号 / 口径） */
   DETAIL_QUOTE_PREFIX: 'detail.quote.',
   DETAIL_TIMELINE_PREFIX: 'detail.timeline.',
   DETAIL_KLINE_PREFIX: 'detail.kline.',
   HOT_NEWS_ITEMS: 'hot-news.items.',
+  /** 今天炒什么（前缀 + `平台#分组` 通道键） */
+  HOT_BOARD_ITEMS: 'hot-board.items.',
   /** 市场榜单：全 A 股报价快照（按 sortKey 客户端排序） */
   MARKET_RANK_QUOTES: 'marketRank.quotes',
   /** 板块日历：交易日轴（会话内复用，避免每次挂载都请求腾讯） */

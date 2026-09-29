@@ -1,4 +1,18 @@
 import { proxyFetch } from './proxy-fetch';
+import { TDX_TQLEX_URL } from '../constants/hot-board.constants';
+import {
+  NEWS_BODY_FETCH_CONCURRENCY,
+  NEWS_BODY_FETCH_INTERVAL_MS,
+  NEWS_BODY_UNFETCHABLE_URL_PREFIXES,
+  NEWS_CONTENT_CACHE_MAX_ENTRIES,
+  NEWS_CONTENT_FETCH_TIMEOUT_MS,
+  NEWS_CONTENT_MAX_CHARS,
+  NEWS_CONTENT_MIN_CHARS,
+  NEWS_CONTENT_REPLACEMENT_MAX_RATIO,
+} from '../constants/news-content.constants';
+import { extractNewsBody } from '../utils/extract-news-body';
+import { delay } from '../utils/delay';
+import { mapWithConcurrency } from '../utils/map-with-concurrency';
 
 /**
  * 新浪财经滚动热点新闻（feed.mix.sina.com.cn，非官方接口；文档见 .ai/项目资源/新浪新闻接口文档.md）
@@ -668,10 +682,14 @@ const CLS_COMMON_PARAMS: Record<string, string> = {
  *
  * 算法：参数按 key ASCII 排序 → `k=v&` 连接 → sha1（hex）→ md5（hex）= sign
  * @param extra 业务参数（不含 sign）
+ * @param common 公共参数（缺省为 web 端三项；App 端接口传 CLS_APP_COMMON_PARAMS）
  * @returns 已带 sign 的查询串（如 `app=...&os=...&sign=...`）
  */
-const buildClsQuery = async (extra: Record<string, string> = {}): Promise<string> => {
-  const params = { ...CLS_COMMON_PARAMS, ...extra };
+export const buildClsQuery = async (
+  extra: Record<string, string> = {},
+  common: Record<string, string> = CLS_COMMON_PARAMS,
+): Promise<string> => {
+  const params = { ...common, ...extra };
   const sorted = Object.keys(params)
     .sort()
     .map((k) => `${k}=${params[k]}`)
@@ -1018,4 +1036,237 @@ export const fetchThsThemeFeed = async (
       img: item.picUrl?.[0] ?? '',
     }));
   return { items, hasMore: items.length >= num };
+};
+
+// ---------- 通达信 财富圈资讯（要闻 / A股 / 产经） ----------
+// 页面 http://mbser.tdx.com.cn:7615/site/tdx_sns/page_index.html#/index 右侧「资讯」栏
+// （栏目 要闻 / A股 / 产经）。底层是 TDX 服务总线 TQL 协议：页面走的 /TQL 端点要求
+// ASPSessionID 会话（游客登录 ACL.checkuser 亦被 WAF 拦），**无法在应用侧复刻**；
+// 但同一网关的 **/TQLEX 端点免会话**（web 端 client 的默认通道，实测 2026-09-28），
+// 与「今天炒什么」热榜共用同一网关与 Referer 约定，故直接复用 TDX_TQLEX_URL。
+// 三条通道均为单页快照（无翻页；上游一次返回 20 行，页面只取前 10）。
+
+/** 通达信资讯子视图：yw 要闻 / ag A股 / cj 产经（与 constants/hot-news.constants.ts 的 TdxSubView 一致） */
+export type TdxNewsChannel = 'yw' | 'ag' | 'cj';
+
+/** 资讯详情页地址（SPA 路由，跳转目标 = 官网「事件详情」页；sns 主域为 https 正式域名） */
+const TDX_NEWS_DETAIL_BASE =
+  'https://sns.tdx.com.cn/site/tdx_sns/page_index.html#/detail?resId=';
+
+/** 资讯配图相对路径的补全前缀（photo 列存的是 zxfile 域下的相对路径） */
+const TDX_NEWS_IMAGE_BASE = 'https://zxfile.icfqs.com/';
+
+/** 财富圈页地址（作为 Referer 携带，与站点自身请求同源，防网关后续收紧校验） */
+const TDX_NEWS_REFERER = 'https://sns.tdx.com.cn/site/tdx_sns/page_index.html';
+
+/** TQLEX 表格结果集（列名两种形态：ColName 字符串数组 / ColDes 对象数组） */
+interface TdxTableResultSet {
+  ColName?: string[];
+  ColDes?: Array<{ Name?: string }>;
+  Content?: unknown[][];
+}
+
+/** TQLEX JSON 响应壳（tzx_rcache 无 ErrorCode，lmzx 带 ErrorCode） */
+interface TdxNewsResponse {
+  ErrorCode?: number;
+  ResultSets?: TdxTableResultSet[];
+}
+
+/**
+ * 把结果集的列定义归一成列名数组（兼容 ColName / ColDes 两种形态）
+ * @param resultSet 表格结果集
+ * @returns 列名数组（无列定义时为空数组）
+ */
+const resolveTdxColumns = (resultSet: TdxTableResultSet): string[] => {
+  if (resultSet.ColName) return resultSet.ColName;
+  return (resultSet.ColDes ?? []).map(
+    (column) => column.Name ?? '',
+  );
+};
+
+/**
+ * 把一行表格数据按列名拍成记录
+ * @param columns 列名数组
+ * @param row 行数据（与列名按位对齐）
+ * @returns 列名 → 单元格值的记录
+ */
+const toTdxRow = (
+  columns: readonly string[],
+  row: readonly unknown[],
+): Record<string, string> => {
+  const record: Record<string, string> = {};
+  columns.forEach((name, index) => {
+    if (name) record[name] = String(row[index] ?? '');
+  });
+  return record;
+};
+
+/**
+ * "YYYY-MM-DD HH:mm:SS" 发布时间文本转秒级时间戳字符串（与其余新闻源口径一致）
+ * @param text 发布时间文本
+ * @returns 秒级时间戳字符串（不可解析时返回空串）
+ */
+const tdxDateToCtime = (text: string): string => {
+  if (!text) return '';
+  const parsed = new Date(text.replace(/-/g, '/')).getTime();
+  return Number.isNaN(parsed) ? '' : String(Math.floor(parsed / 1000));
+};
+
+/**
+ * 补全资讯配图地址（相对路径补 zxfile 域，绝对地址原样返回）
+ * @param photo photo / img 列的原始值
+ * @returns 可直接加载的图片地址（空值返回空串）
+ */
+const toTdxImageUrl = (photo: string): string => {
+  if (!photo) return '';
+  return /^https?:\/\//.test(photo) ? photo : `${TDX_NEWS_IMAGE_BASE}${photo}`;
+};
+
+/**
+ * 拉取通达信财富圈资讯（单页快照，要闻 / A股 / 产经三通道）
+ * @param channel 资讯子通道
+ * @param num 条数（上游一次返回 20 行，默认全取）
+ * @returns 新闻条目（按上游顺序，即时间倒序）
+ */
+export const fetchTdxHotNews = async (
+  channel: TdxNewsChannel,
+  num = 20,
+): Promise<HotNewsItem[]> => {
+  // 要闻 / A股 是编辑缓存池（key 区分栏目）；产经走栏目资讯接口（105 = 产经栏目 id）
+  const request =
+    channel === 'cj'
+      ? { entry: 'CWServ.mzx_zxzx_lmzx', body: { Params: ['105', 1] } }
+      : {
+          entry: 'CWSearch.tzx_rcache',
+          body: { action: 'get', key: channel === 'yw' ? 'kz:10012:1' : 'kz:10013:1' },
+        };
+  const response = await proxyFetch(`${TDX_TQLEX_URL}?Entry=${request.entry}&RI=`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Referer: TDX_NEWS_REFERER },
+    body: JSON.stringify(request.body),
+  });
+  if (!response.ok) {
+    throw new Error(`通达信资讯请求失败：${response.status}`);
+  }
+  const payload = (await response.json()) as TdxNewsResponse;
+  if (payload.ErrorCode) {
+    throw new Error(`通达信资讯业务异常：${payload.ErrorCode}`);
+  }
+  const resultSet = payload.ResultSets?.[0];
+  const columns = resultSet ? resolveTdxColumns(resultSet) : [];
+  return (resultSet?.Content ?? [])
+    .map((row) => toTdxRow(columns, row))
+    .filter((row) => row.title && row.rec_id)
+    .map((row) => ({
+      oid: `tdx-${row.rec_id}`,
+      title: row.title,
+      summary: row.summary ?? '',
+      url:
+        `${TDX_NEWS_DETAIL_BASE}${row.rec_id}` +
+        `&tableid=${encodeURIComponent(row.tableid ?? '')}&resType=99`,
+      ctime: tdxDateToCtime(row.issue_date ?? ''),
+      media: row.source || row.info_src || '通达信',
+      img: toTdxImageUrl(row.photo || row.img || ''),
+    }))
+    .slice(0, num);
+};
+
+// ---------- 新闻正文抓取（AI 分析带正文 / Agent fetch_news_content 工具共用） ----------
+// 按原文 url 抓详情页 HTML → 容器级抽取正文纯文本；正文发布后不变，会话内按 url 缓存。
+// 域名覆盖：Tauri 走 Rust 直连（http scope 为 https://*）；浏览器走 /stock-proxy
+// （白名单覆盖五大新闻站主域，转载到第三方域的链接在浏览器态抓取失败 → 回退标题 + 摘要）。
+
+/** 正文抓取缓存（url → 正文文本；'' = 已判定无有效正文，避免重复试错） */
+const newsContentCache = new Map<string, string>();
+
+/**
+ * 写入正文缓存（超上限按写入顺序淘汰最旧条目）
+ * @param url 原文链接
+ * @param content 正文文本（空串 = 无有效正文）
+ */
+const putNewsContentCache = (url: string, content: string): void => {
+  if (newsContentCache.size >= NEWS_CONTENT_CACHE_MAX_ENTRIES) {
+    const oldest = newsContentCache.keys().next().value;
+    if (oldest !== undefined) newsContentCache.delete(oldest);
+  }
+  newsContentCache.set(url, content);
+};
+
+/**
+ * 判定链接是否不值得抓正文（站内搜索页等合成链接，非原文页）
+ * @param url 原文链接
+ * @returns 是否跳过抓取
+ */
+const isUnfetchableNewsUrl = (url: string): boolean =>
+  NEWS_BODY_UNFETCHABLE_URL_PREFIXES.some((prefix) => url.startsWith(prefix));
+
+/**
+ * 抓取单条新闻正文
+ *
+ * 流程：缓存命中直接返回 → GET 原文页 HTML → 容器级抽取正文 →
+ * 校验（长度下限 + 乱码占比）→ 截断缓存。任何失败都返回空串（不抛错），
+ * 由调用方回退到标题 + 摘要分析。
+ * @param url 新闻原文链接
+ * @returns 正文文本；无有效正文返回空串
+ */
+export const fetchNewsContent = async (url: string): Promise<string> => {
+  const cached = newsContentCache.get(url);
+  if (cached !== undefined) return cached;
+  try {
+    const response = await proxyFetch(url, {
+      signal: AbortSignal.timeout(NEWS_CONTENT_FETCH_TIMEOUT_MS),
+    });
+    if (!response.ok) {
+      throw new Error(`新闻正文请求失败：${response.status}`);
+    }
+    const text = extractNewsBody(await response.text());
+    const replacementCount = (text.match(/\uFFFD/g) ?? []).length;
+    const valid =
+      text.length >= NEWS_CONTENT_MIN_CHARS &&
+      replacementCount / text.length <= NEWS_CONTENT_REPLACEMENT_MAX_RATIO;
+    const body = valid ? text.slice(0, NEWS_CONTENT_MAX_CHARS) : '';
+    putNewsContentCache(url, body);
+    return body;
+  } catch {
+    // 抓取失败也缓存空串：同一批分析内不重复试错（正文页不可得是稳定事实）
+    putNewsContentCache(url, '');
+    return '';
+  }
+};
+
+/**
+ * 批量抓取新闻正文（AI 分析前置步骤）
+ *
+ * 按 url 去重后走并发上限 + 请求间隔的 worker 池（新闻站红线口径），
+ * 未命中的 url 先错峰再发请求；缓存命中零延迟。逐条失败返回空串，
+ * 不中断整批。返回结果以 url 为键，正文为值（无正文的条目不在结果里或为空串）。
+ * @param items 新闻条目（内部按 url 去重、剔除无链接 / 不可抓链接）
+ * @param onProgress 每完成一条回调（completed / total，total 为实际待抓条数）
+ * @returns url → 正文文本的映射（含空串结果）
+ */
+export const fetchNewsBodies = async (
+  items: readonly HotNewsItem[],
+  onProgress?: (completed: number, total: number) => void,
+): Promise<Map<string, string>> => {
+  const urls = [
+    ...new Set(
+      items
+        .map((item) => item.url)
+        .filter((url) => url !== '' && !isUnfetchableNewsUrl(url)),
+    ),
+  ];
+  const results = new Map<string, string>();
+  if (urls.length === 0) return results;
+  await mapWithConcurrency(
+    urls,
+    async (url) => {
+      if (!newsContentCache.has(url)) {
+        await delay(NEWS_BODY_FETCH_INTERVAL_MS);
+      }
+      results.set(url, await fetchNewsContent(url));
+      return url;
+    },
+    { concurrency: NEWS_BODY_FETCH_CONCURRENCY, onProgress },
+  );
+  return results;
 };

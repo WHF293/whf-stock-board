@@ -24,3 +24,19 @@ export const CHART_PERIOD_OPTIONS: readonly { label: string; value: ChartPeriod 
  * `detailChartPeriod` 记住上一次选择（见 composables/use-chart-period.ts）
  */
 export const CHART_PERIOD_DEFAULT: ChartPeriod = 'minute';
+
+/** 详情页底部页签值 */
+export type DetailBottomTab = 'trade' | 'etf';
+
+/**
+ * 详情页底部页签选项（交易记录 / ETF 持仓股）
+ *
+ * 「ETF 持仓股」仅当场内基金时由页面追加渲染（DETAIL_BOTTOM_TAB_OPTIONS[0..1]）
+ */
+export const DETAIL_BOTTOM_TAB_OPTIONS: readonly { label: string; value: DetailBottomTab }[] = [
+  { label: '交易记录', value: 'trade' },
+  { label: 'ETF 持仓股', value: 'etf' },
+] as const;
+
+/** 详情页底部页签默认值（交易记录） */
+export const DETAIL_BOTTOM_TAB_DEFAULT: DetailBottomTab = 'trade';

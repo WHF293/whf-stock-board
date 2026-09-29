@@ -23,7 +23,9 @@ serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
 tauri = { version = "2.11.3", features = ["tray-icon"] }
 tauri-plugin-log = "2"
-tauri-plugin-http = "2"
+# unsafe-headers：允许 JS 侧显式设置 Referer 等 fetch 规范「forbidden header」——
+# 天天基金 f10（ETF 持仓）等上游严格校验 Referer，插件默认会静默丢弃导致 404
+tauri-plugin-http = { version = "2", features = ["unsafe-headers"] }
 tauri-plugin-opener = "2.5.5"
 tauri-plugin-autostart = "2"
 tauri-plugin-sql = { version = "2", features = ["sqlite"] }

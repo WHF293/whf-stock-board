@@ -33,6 +33,20 @@ let capturing = false;
 /** 原始 console.error（保留给开发者在控制台看，以及内部调用） */
 let originalConsoleError: (...args: unknown[]) => void = () => {};
 
+/** 原始 console.warn（开发者模式关闭时 warn 直接透传） */
+let originalConsoleWarn: (...args: unknown[]) => void = () => {};
+
+/** 开发者模式 · console.warn 采集开关（设置页运行期切换，缺省关） */
+let warnCaptureEnabled = false;
+
+/**
+ * 切换开发者模式的 console.warn 采集
+ * @param enabled true = 把 console.warn（含插件 [info] / [warn] 日志）也记入系统日志
+ */
+export const setWeblogWarnCapture = (enabled: boolean): void => {
+  warnCaptureEnabled = enabled;
+};
+
 /**
  * 把任意抛出值描述成一句可读文案
  * @param value 抛出值
@@ -145,6 +159,30 @@ const onConsoleError = (...args: unknown[]): void => {
 };
 
 /**
+ * console.warn 包装：透传原始输出；开发者模式开启时采集一条 warn 级日志
+ * （插件内核的 [info] / [warn] 全走 console.warn，常规采集看不到它们 ——
+ * 开发者模式就是为「插件静默降级排查」准备的）
+ * @param args 原始参数
+ */
+const onConsoleWarn = (...args: unknown[]): void => {
+  originalConsoleWarn(...args);
+  if (!warnCaptureEnabled || capturing) return;
+  const message = truncateText(args.map(describeUnknown).join(' '), WEBLOG_MESSAGE_MAX);
+  if (!message || isIgnoredMessage(message)) return;
+  capturing = true;
+  try {
+    reportError({
+      level: 'warn',
+      kind: 'console-warn',
+      message,
+      pagePath: currentPath(),
+    });
+  } finally {
+    capturing = false;
+  }
+};
+
+/**
  * 挂载全局错误采集（应用启动时调用一次）
  * @param app Vue 应用实例（用于接管 config.errorHandler）
  */
@@ -154,6 +192,8 @@ export const initWeblogErrorCapture = (app: App): void => {
 
   originalConsoleError = console.error.bind(console);
   console.error = onConsoleError;
+  originalConsoleWarn = console.warn.bind(console);
+  console.warn = onConsoleWarn;
 
   window.addEventListener('error', onWindowError, true);
   window.addEventListener('unhandledrejection', onUnhandledRejection);
@@ -182,6 +222,7 @@ export const destroyWeblogErrorCapture = (): void => {
   if (!installed) return;
   installed = false;
   console.error = originalConsoleError;
+  console.warn = originalConsoleWarn;
   window.removeEventListener('error', onWindowError, true);
   window.removeEventListener('unhandledrejection', onUnhandledRejection);
 };

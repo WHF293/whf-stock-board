@@ -4,35 +4,60 @@ import BaseButton from '../ui/BaseButton.vue';
 import BaseModal from '../ui/BaseModal.vue';
 import BaseTabs from '../ui/BaseTabs.vue';
 import BaseTag from '../ui/BaseTag.vue';
+import PluginPackageIntakeCard from './PluginPackageIntakeCard.vue';
 import { auditPluginClassNames } from '../../plugin/user-plugin-class-audit';
 import { importUserPluginCode } from '../../plugin/user-plugin-loader';
 import { BUILTIN_PLUGINS } from '../../plugins';
+import { usePluginPackageIntake } from '../../composables/use-plugin-package-intake';
 import { useUserPlugins } from '../../composables/use-user-plugins';
 import { useUserPluginsStore } from '../../stores/user-plugins';
-import { checkManifestConsistency, parsePluginPackage } from '../../utils/plugin-package';
 import {
   USER_PLUGIN_AUTHOR_LABEL,
+  USER_PLUGIN_INTAKE_CLOSE_LABEL,
+  USER_PLUGIN_INTAKE_DROP_ACTIVE_HINT,
+  USER_PLUGIN_INTAKE_DROP_HINT,
+  USER_PLUGIN_INTAKE_EMPTY_TEXT,
+  USER_PLUGIN_INTAKE_FINISH_LABEL,
+  USER_PLUGIN_INTAKE_INSTALL_ALL_LABEL,
+  USER_PLUGIN_INTAKE_WARN_LINE,
+  USER_PLUGIN_INTAKE_WARN_TITLE,
   USER_PLUGIN_PACKAGE_ACCEPT,
   USER_PLUGIN_SOURCE,
 } from '../../constants/plugin.constants';
-import type { PluginPackage } from '../../utils/plugin-package';
 import type { PluginDefinition } from '../../types/plugin.types';
 
 /**
  * 插件安装弹窗（应用内安装用户插件）
  *
- * 两种来源，同一条安装链路：
- * - **zip 插件包**（第三方分发的常态）：manifest.json + 入口产物 + 可选 README，
- *   解包后取入口产物代码 → 静态预检 → 结构校验 → 清单一致性校验 → 安装；
- * - **粘贴 / 选择单文件 JS**：给作者自己调试用，同一条链路，只是没有清单。
+ * 两种来源，两条不同的交互节奏：
+ * - **zip 插件包**（第三方分发的常态）：拖拽 / 多选入队，**选中即自动解析** ——
+ *   每个包各跑各的六步流水线（解包 → 静态预检 → 加载产物 → 结构校验 → 清单比对 → 冲突检测），
+ *   先传先解析、互不阻塞；解析完由用户拍板单装或批量装。
+ *   同一批次里两个包抢同一 id 按上传顺序仲裁（先上传者胜出），被判冲突的卡给「和谁撞了 + 怎么办」；
+ *   与已装记录同 id 是升级、与内置插件同 id 是接管，都不算冲突。
+ * - **粘贴 / 选择单文件 JS**：给作者自己调试用，保持「解析预览 → 确认安装」两步。
  *
- * 流程：「解析预览」（结构校验，不落内核）→「确认安装」（持久化代码 + 内核挂载，
- * 面板 / 菜单 / 路由即时生效）。插件代码与应用同权限执行，弹窗内有固定风险提示。
+ * 无论哪条路，最终都落到 `useUserPlugins.install`（写持久化 + 内核挂载，面板 / 菜单 /
+ * 路由即时生效）。插件代码与应用同权限执行，弹窗内有固定风险提示。
  */
 const open = defineModel<boolean>('open', { required: true });
 
 const { install } = useUserPlugins();
 const userPluginsStore = useUserPluginsStore();
+
+/** zip 包队列与解析编排（批量上传的全部状态机都在里面） */
+const {
+  tasks,
+  installableCount,
+  allInstalled,
+  busy: parseBusy,
+  enqueue,
+  remove,
+  installOne: installTask,
+  installAll: installTasks,
+  cancelPendingInstalls,
+  reset: resetIntake,
+} = usePluginPackageIntake();
 
 /** 安装来源切换选项 */
 const SOURCE_OPTIONS = [
@@ -40,26 +65,32 @@ const SOURCE_OPTIONS = [
   { label: '粘贴代码', value: 'code' },
 ] as const;
 
-/** README 预览最多展示的字符数（包内文档可能很长，弹窗里只给个开头） */
-const README_PREVIEW_MAX = 600;
-
 /** 当前安装来源（zip 包 / 单文件代码） */
 const mode = ref<'package' | 'code'>('package');
 
-/** 代码输入框内容（zip 包模式下由解包结果填充，不展示在界面上） */
+/** 拖拽悬停态（投放区高亮） */
+const dragging = ref(false);
+
+/** 批量安装进行中（期间禁用按钮防重复提交） */
+const installing = ref(false);
+
+/** 代码输入框内容（zip 包模式不使用） */
 const code = ref('');
 
-/** 当前选中的本地文件名（仅展示用） */
+/** 当前选中的本地文件名（仅展示用，zip 包模式不使用） */
 const fileName = ref('');
 
-/** zip 包解析结果（null = 未选择或解析失败） */
-const pkg = ref<PluginPackage | null>(null);
-
-/** 解析出的插件定义预览（null = 尚未解析或解析失败） */
+/** 解析出的插件定义预览（code 模式；null = 尚未解析或解析失败） */
 const parsed = ref<PluginDefinition | null>(null);
 
-/** 解析 / 安装的错误文案 */
+/** code 模式的解析 / 安装错误文案 */
 const errorMessage = ref('');
+
+/** code 模式的非致命提醒 */
+const warningLines = ref<string[]>([]);
+
+/** code 模式的解析 / 安装进行中 */
+const codeBusy = ref(false);
 
 /** 待覆盖的旧安装记录（同 id 已装过 = 升级 / 重装；null = 首次安装） */
 const existingRecord = computed(() => {
@@ -79,8 +110,7 @@ const builtinConflict = computed(() => {
 const upgradeHint = computed(() => {
   const previous = existingRecord.value;
   if (!previous || !parsed.value) return '';
-  const same = previous.version === parsed.value.version;
-  return same
+  return previous.version === parsed.value.version
     ? `已安装 v${previous.version}，本次将覆盖重装（插件数据表保留）`
     : `已安装 v${previous.version}，本次将升级到 v${parsed.value.version}（插件数据表保留）`;
 });
@@ -91,18 +121,23 @@ const takeoverHint = computed(() => {
   return `内置版 v${builtinConflict.value.version} 将被本版本接管；卸载本插件即刻恢复内置实现`;
 });
 
-/** 安装按钮文案（说清楚这次到底是装、升级还是接管，避免误以为装出第二份） */
-const installLabel = computed(() => {
+/** code 模式安装按钮文案（说清楚这次到底是装、升级还是接管） */
+const codeInstallLabel = computed(() => {
   if (existingRecord.value) return '确认升级';
   if (builtinConflict.value) return '确认接管安装';
   return '确认安装';
 });
 
-/** 静态预检的非致命提醒（能装，但可能显示不正常） */
-const warningLines = ref<string[]>([]);
+/** 底部主按钮文案（全部装完变「完成」，否则显示可安装数量） */
+const installAllLabel = computed(() =>
+  allInstalled.value
+    ? USER_PLUGIN_INTAKE_FINISH_LABEL
+    : USER_PLUGIN_INTAKE_INSTALL_ALL_LABEL(installableCount.value));
 
-/** 安装进行中（动态 import 是异步的，期间禁用按钮防重复提交） */
-const busy = ref(false);
+/** 底部主按钮是否可点（有可装的包且没有任务在跑；全部装完后点它即关闭） */
+const canInstallAll = computed(
+  () => allInstalled.value || (installableCount.value > 0 && !parseBusy.value && !installing.value),
+);
 
 /** 预览元信息行（name / version / id / author） */
 const metaLines = computed(() => {
@@ -110,52 +145,58 @@ const metaLines = computed(() => {
   return [
     `id：${parsed.value.id}`,
     `版本：v${parsed.value.version}`,
-    `作者：${parsed.value.author || pkg.value?.manifest.author || USER_PLUGIN_AUTHOR_LABEL}`,
+    `作者：${parsed.value.author || USER_PLUGIN_AUTHOR_LABEL}`,
   ];
 });
 
-/** 包信息行（入口 / 包内文件数 / 清单有无） */
-const packageLines = computed(() => {
-  if (!pkg.value) return [];
-  return [
-    `入口：${pkg.value.entryPath}`,
-    `包内 ${pkg.value.files.length} 个文件`,
-    pkg.value.hasManifest ? '含 manifest.json' : '无 manifest.json（元信息取自产物）',
-  ];
-});
-
-/** README 预览文本（超长截断） */
-const readmePreview = computed(() => {
-  const text = pkg.value?.readme ?? '';
-  if (text.length <= README_PREVIEW_MAX) return text;
-  return `${text.slice(0, README_PREVIEW_MAX)}…`;
-});
-
-/** 清空解析态（换来源 / 换文件 / 改代码时都要重来） */
-const resetParseState = (): void => {
-  parsed.value = null;
-  errorMessage.value = '';
-  warningLines.value = [];
-};
-
-/** 打开弹窗时重置表单 */
+/** 打开 / 关闭弹窗：打开时重置表单与队列；关闭时清空队列（不留残留的解析结果） */
 watch(open, (value) => {
-  if (!value) return;
+  if (!value) {
+    if (installing.value) {
+      // 安装途中被 ESC / 点遮罩关掉（关闭按钮本身已禁用）：正在飞的那一次收不回来，跑完为止，
+      // 但队列里**剩下的**必须停下 —— 用户已经 dismiss 了，不能在他看不见的时候继续往上装插件。
+      // 队列本身留着不动（任务此刻正处在 installing 中间态），下次打开弹窗时统一 reset。
+      cancelPendingInstalls();
+      return;
+    }
+    // 安装进行中被 ESC / 点遮罩关掉之外的情况：直接清队列，不留上一次会话的包
+    resetIntake();
+    return;
+  }
   mode.value = 'package';
-  code.value = '';
-  fileName.value = '';
-  pkg.value = null;
-  resetParseState();
-  busy.value = false;
+  dragging.value = false;
+  installing.value = false;
+  resetCodeState();
+  resetIntake();
 });
 
 /** 切换来源时清掉另一侧的残留（避免装到旧内容） */
 watch(mode, () => {
+  resetCodeState();
+  resetIntake();
+});
+
+/** 清空 code 模式的输入与解析态（打开弹窗 / 切换来源时用，避免装到上一次的内容） */
+function resetCodeState(): void {
   code.value = '';
   fileName.value = '';
-  pkg.value = null;
-  resetParseState();
-});
+  parsed.value = null;
+  errorMessage.value = '';
+  warningLines.value = [];
+  codeBusy.value = false;
+}
+
+/**
+ * 只清 code 模式的解析结果（改代码时用）
+ *
+ * 与 `resetCodeState` 的区别：**不动输入框内容** —— 这个挂在 textarea 的 input 事件上，
+ * 清了输入框就等于用户每敲一个字都被清空。
+ */
+function clearCodeParse(): void {
+  parsed.value = null;
+  errorMessage.value = '';
+  warningLines.value = [];
+}
 
 /**
  * 汇总要展示的非致命提醒
@@ -172,42 +213,32 @@ const pushWarnings = (
   warningLines.value = [
     ...(issues ?? []),
     ...auditPluginClassNames(source),
-  ].map((issue) => `第 ${issue.line} 行：${issue.message}`);
+  ].map((issue) => USER_PLUGIN_INTAKE_WARN_LINE(issue.line, issue.message));
 };
 
-/** 解析预览：只校验，不安装 */
+/** code 模式：解析预览（只校验，不安装） */
 const onParse = async (): Promise<void> => {
-  resetParseState();
-  busy.value = true;
+  errorMessage.value = '';
+  parsed.value = null;
+  codeBusy.value = true;
   // 复用安装链路的前半段（静态预检 + import + 结构校验 + id 占用检查），但不落存储与内核
   // 内置 id 与已装过的 id 都**不算占用**：前者是接管、后者是升级，
   // 都由 install 的高层政策处理；交给底层只会得到一句「已被占用」，用户无从下手。
   const result = await importUserPluginCode(code.value, []);
-  busy.value = false;
+  codeBusy.value = false;
   pushWarnings(code.value, result.warnings);
   if (!result.ok) {
     errorMessage.value = result.error;
     return;
   }
-  // zip 包：清单与产物必须一致，否则「包里写一套、装进去是另一套」
-  if (pkg.value) {
-    const inconsistency = checkManifestConsistency(pkg.value.manifest, result.definition);
-    if (inconsistency) {
-      errorMessage.value = inconsistency;
-      return;
-    }
-  }
   parsed.value = result.definition;
 };
 
-/** 确认安装：写持久化 + 内核挂载，成功后收起弹窗 */
+/** code 模式：确认安装（写持久化 + 内核挂载，成功后收起弹窗） */
 const onInstall = async (): Promise<void> => {
-  busy.value = true;
-  const result = await install(code.value, {
-    manifest: pkg.value?.manifest,
-    source: pkg.value ? USER_PLUGIN_SOURCE.PACKAGE : USER_PLUGIN_SOURCE.CODE,
-  });
-  busy.value = false;
+  codeBusy.value = true;
+  const result = await install(code.value, { source: USER_PLUGIN_SOURCE.CODE });
+  codeBusy.value = false;
   pushWarnings(code.value, result.warnings);
   if (result.ok) {
     open.value = false;
@@ -218,29 +249,7 @@ const onInstall = async (): Promise<void> => {
 };
 
 /**
- * 选择 zip 插件包并解包
- * @param event 文件选择框 change 事件
- */
-const onPickPackage = async (event: Event): Promise<void> => {
-  const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
-  if (!file) return;
-  fileName.value = file.name;
-  pkg.value = null;
-  code.value = '';
-  resetParseState();
-  input.value = '';
-  try {
-    const parsedPackage = parsePluginPackage(await file.arrayBuffer());
-    pkg.value = parsedPackage;
-    code.value = parsedPackage.code;
-  } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : String(error);
-  }
-};
-
-/**
- * 选择本地 .js 文件，读入文本框
+ * code 模式：选择本地 .js 文件，读入文本框
  * @param event 文件选择框 change 事件
  */
 const onPickFile = async (event: Event): Promise<void> => {
@@ -249,13 +258,85 @@ const onPickFile = async (event: Event): Promise<void> => {
   if (!file) return;
   fileName.value = file.name;
   code.value = await file.text();
-  resetParseState();
+  parsed.value = null;
+  errorMessage.value = '';
+  warningLines.value = [];
   input.value = '';
+};
+
+/**
+ * zip 包模式：选择文件（支持一次选多个），选中即入队并自动开始解析
+ * @param event 文件选择框 change 事件
+ */
+const onPickPackages = (event: Event): void => {
+  const input = event.target as HTMLInputElement;
+  enqueue(Array.from(input.files ?? []));
+  // 清空 value：否则连选两次同一批文件时第二次不会触发 change
+  input.value = '';
+};
+
+/**
+ * zip 包模式：拖放文件入队（同样选中即解析）
+ * @param event 拖放事件
+ */
+const onDropPackages = (event: DragEvent): void => {
+  dragging.value = false;
+  enqueue(Array.from(event.dataTransfer?.files ?? []));
+};
+
+/**
+ * 拖拽悬停：必须 preventDefault，否则浏览器不会派发 drop
+ * @param event 拖拽事件
+ */
+const onDragOver = (event: DragEvent): void => {
+  event.preventDefault();
+  dragging.value = true;
+};
+
+/**
+ * 拖拽离开：只有真正离开投放区（不是移动到子元素）才取消高亮
+ * @param event 拖拽事件
+ */
+const onDragLeave = (event: DragEvent): void => {
+  const current = event.currentTarget as HTMLElement | null;
+  const related = event.relatedTarget as Node | null;
+  if (current && related && current.contains(related)) return;
+  dragging.value = false;
+};
+
+/**
+ * 安装单个包（串行链路的一次执行；失败时卡片自己转红框，弹窗不关）
+ * @param uid 入队任务 uid
+ */
+const onInstallOne = async (uid: string): Promise<void> => {
+  installing.value = true;
+  await installTask(uid);
+  installing.value = false;
+};
+
+/** 安装全部可安装的包（串行；装完且队列里再无可装包才收起弹窗，有失败则留在弹窗里看红框） */
+const onInstallAll = async (): Promise<void> => {
+  if (allInstalled.value) {
+    open.value = false;
+    return;
+  }
+  installing.value = true;
+  const summary = await installTasks();
+  installing.value = false;
+  // 关窗的前提是「没有东西还值得用户看」：本轮可能把同 id 的后来者提升成了待安装
+  // （升则可能顶掉刚装上的那个），这时必须留在页面上让他看见，而不是悄悄收摊。
+  if (summary.failed === 0 && installableCount.value === 0 && !parseBusy.value) {
+    open.value = false;
+  }
 };
 </script>
 
 <template>
-  <BaseModal v-model:open="open" title="安装插件" max-width-class="max-w-xl">
+  <BaseModal
+    v-model:open="open"
+    title="安装插件"
+    :max-width-class="mode === 'package' ? 'max-w-2xl' : 'max-w-xl'"
+  >
     <div class="rounded-card border border-primary/30 bg-primary-weak/60 px-3 py-2 text-xs text-text-secondary">
       ⚠️ 插件代码会以与应用相同的权限运行，请只安装来源可信的插件。
     </div>
@@ -265,36 +346,40 @@ const onPickFile = async (event: Event): Promise<void> => {
     </div>
 
     <div v-if="mode === 'package'" class="mt-3">
-      <div class="flex items-center justify-between">
-        <p class="text-xs text-text-tertiary">选择第三方打包好的 .zip 插件包</p>
-        <label class="cursor-pointer text-xs text-primary hover:underline">
-          选择 .zip 文件
-          <input type="file" :accept="USER_PLUGIN_PACKAGE_ACCEPT" class="hidden" @change="onPickPackage" />
-        </label>
-      </div>
-      <p v-if="fileName" class="mt-1 text-xs text-text-tertiary">已读取：{{ fileName }}</p>
-      <div
-        v-if="pkg"
-        class="mt-2 rounded-card border border-flat-weak bg-surface px-3 py-2"
+      <label
+        class="block cursor-pointer rounded-card border border-dashed px-4 py-5 text-center text-xs transition-colors"
+        :class="dragging
+          ? 'border-primary bg-primary-weak/60 text-primary'
+          : 'border-flat-weak text-text-tertiary hover:border-primary/60 hover:text-text-secondary'"
+        @dragover="onDragOver"
+        @dragleave="onDragLeave"
+        @drop.prevent="onDropPackages"
       >
-        <div class="flex items-center gap-2">
-          <span class="text-sm font-medium text-text">{{ pkg.manifest.name || '待解析的插件包' }}</span>
-          <BaseTag v-if="pkg.manifest.version" tone="flat">v{{ pkg.manifest.version }}</BaseTag>
-        </div>
-        <p v-if="pkg.manifest.description" class="mt-1 text-xs text-text-secondary">
-          {{ pkg.manifest.description }}
-        </p>
-        <p class="mt-1 text-xs text-text-tertiary">{{ packageLines.join(' · ') }}</p>
-        <details v-if="readmePreview" class="mt-2 text-xs text-text-tertiary">
-          <summary class="cursor-pointer select-none hover:text-text-secondary">README</summary>
-          <pre
-            class="mt-1.5 max-h-40 overflow-auto whitespace-pre-wrap rounded-card bg-flat-weak px-2.5 py-2 font-mono text-xs leading-relaxed text-text-secondary"
-          >{{ readmePreview }}</pre>
-        </details>
-      </div>
-      <p v-else class="mt-2 text-xs text-text-tertiary">
-        包内需含入口产物（默认 main.js），建议带 manifest.json 与 README.md。
+        <input
+          type="file"
+          multiple
+          :accept="USER_PLUGIN_PACKAGE_ACCEPT"
+          class="hidden"
+          @change="onPickPackages"
+        />
+        <p>{{ dragging ? USER_PLUGIN_INTAKE_DROP_ACTIVE_HINT : USER_PLUGIN_INTAKE_DROP_HINT }}</p>
+        <p class="mt-1 text-text-tertiary">包内需含入口产物（默认 main.js），建议带 manifest.json 与 README.md。</p>
+      </label>
+
+      <p v-if="tasks.length === 0" class="mt-2 text-xs text-text-tertiary">
+        {{ USER_PLUGIN_INTAKE_EMPTY_TEXT }}
       </p>
+
+      <ul v-else class="mt-2 space-y-2">
+        <li v-for="task in tasks" :key="task.uid">
+          <PluginPackageIntakeCard
+            :task="task"
+            :busy="installing"
+            @remove="remove"
+            @install="onInstallOne"
+          />
+        </li>
+      </ul>
     </div>
 
     <div v-else class="mt-3">
@@ -312,7 +397,7 @@ const onPickFile = async (event: Event): Promise<void> => {
         spellcheck="false"
         placeholder="export default { id: 'my-plugin', name: '我的插件', version: '1.0.0', description: '…', apply(ctx) { … } }"
         class="w-full resize-y rounded-card border border-flat-weak bg-surface px-3 py-2 font-mono text-xs text-text outline-none focus:border-primary"
-        @input="resetParseState"
+        @input="clearCodeParse"
       />
     </div>
 
@@ -321,13 +406,13 @@ const onPickFile = async (event: Event): Promise<void> => {
     </div>
 
     <div v-if="warningLines.length > 0" class="mt-2 rounded-card border border-primary/30 bg-primary-weak/60 px-3 py-2">
-      <p class="text-xs font-medium text-primary">能装，但可能显示不正常：</p>
-      <p v-for="line in warningLines" :key="line" class="mt-0.5 whitespace-pre-line text-xs text-text-secondary">
+      <p class="text-xs font-medium text-primary">{{ USER_PLUGIN_INTAKE_WARN_TITLE }}</p>
+      <p v-for="(line, warnIndex) in warningLines" :key="warnIndex" class="mt-0.5 whitespace-pre-line text-xs text-text-secondary">
         {{ line }}
       </p>
     </div>
 
-    <div v-if="parsed" class="mt-2 rounded-card border border-flat-weak px-3 py-2">
+    <div v-if="mode === 'code' && parsed" class="mt-2 rounded-card border border-flat-weak px-3 py-2">
       <div class="flex items-center gap-2">
         <span class="text-sm font-medium text-text">{{ parsed.name }}</span>
         <BaseTag tone="primary">校验通过</BaseTag>
@@ -364,12 +449,20 @@ const onPickFile = async (event: Event): Promise<void> => {
     </details>
 
     <template #footer>
-      <div class="flex items-center justify-end gap-2">
-        <BaseButton variant="ghost" :disabled="busy || code.trim().length === 0" @click="onParse">
+      <div v-if="mode === 'package'" class="flex items-center justify-end gap-2">
+        <BaseButton variant="ghost" :disabled="installing" @click="open = false">
+          {{ USER_PLUGIN_INTAKE_CLOSE_LABEL }}
+        </BaseButton>
+        <BaseButton variant="primary" :disabled="!canInstallAll" @click="onInstallAll">
+          {{ installAllLabel }}
+        </BaseButton>
+      </div>
+      <div v-else class="flex items-center justify-end gap-2">
+        <BaseButton variant="ghost" :disabled="codeBusy || code.trim().length === 0" @click="onParse">
           解析预览
         </BaseButton>
-        <BaseButton variant="primary" :disabled="!parsed || busy" @click="onInstall">
-          {{ installLabel }}
+        <BaseButton variant="primary" :disabled="!parsed || codeBusy" @click="onInstall">
+          {{ codeInstallLabel }}
         </BaseButton>
       </div>
     </template>

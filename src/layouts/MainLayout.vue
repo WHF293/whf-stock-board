@@ -105,6 +105,17 @@ const openWhitepaper = (): void => {
 /** 头部页面标题（路由 meta.title） */
 const pageTitle = computed(() => route.meta.title ?? "");
 
+/**
+ * 是否存在可返回的上一页（路由历史栈里有 back 记录）
+ *
+ * history.state 非响应式，借 route.fullPath 让其在每次导航后重估
+ * @returns 是否显示返回按钮
+ */
+const hasHistoryBack = computed(() => {
+  void route.fullPath;
+  return router.options.history.state.back != null;
+});
+
 // ---------- 侧栏顺序（用户可在设置页编排，持久化在 settings.menuOrder） ----------
 
 /** 宿主内置菜单（声明顺序即默认顺序） */
@@ -562,6 +573,17 @@ void marketStatusStore.refresh();
           class="flex h-14 shrink-0 items-center justify-between border-b border-flat-weak bg-surface px-6"
         >
           <div class="flex min-w-0 items-center gap-2">
+            <!-- 返回上一页：仅历史栈存在 back 记录时展示（直达 / 首页不显示） -->
+            <button
+              v-if="hasHistoryBack"
+              type="button"
+              class="pressable rounded-lg p-1.5 text-text-tertiary hover:bg-flat-weak hover:text-text active:scale-90"
+              aria-label="返回上一页"
+              title="返回上一页"
+              @click="router.back()"
+            >
+              <MenuIcon name="arrowLeft" :size="16" />
+            </button>
             <h1 class="truncate text-base font-semibold text-text">
               {{ pageTitle }}
             </h1>

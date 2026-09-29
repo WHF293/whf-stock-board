@@ -12,10 +12,11 @@ export const ROUTE_PATH = {
 
   MARKET_EVENT: "/market-event", // 兼容旧路由跳转
   MARKET_MOOD: "/market-mood",
-  SCREENER: "/screener",
+  // SCREENER("/screener")已改为插件分发（dsh-stock-screener），路径由插件注册
   HOT_NEWS: "/hot-news",
+  WHAT_TO_TRADE: "/what-to-trade", // 今天炒什么（五平台热股榜单聚合）
   MARKET_RANK: "/market-rank",
-  SECTOR_FLOW_HISTORY: "/sector-flow-history", // 板块历史净流入（市场榜单-板块净流入 → 「查看历史净流入」，不入菜单）
+  SECTOR_FLOW_HISTORY: "/sector-flow-history", // 板块历史净流入（行情全景-板块资金 → 「查看历史净流入」，不入菜单）
   STOCK_ACCOUNT: "/stock-account",
   PLUGIN_LAB: "/plugin-lab", // 插件工坊（宿主自带功能：插件体系的自省与管理页）
   AGENT_WINDOW: "/agent-window", // Agent 分析独立 WebviewWindow（standalone 布局，不入菜单）
@@ -23,6 +24,18 @@ export const ROUTE_PATH = {
   WHITEPAPER: "/whitepaper", // 软件白皮书（顶栏入口进入，不入菜单）
   SETTINGS: "/settings",
   STOCK_DETAIL: "/stock-detail", // 股票详情整页（+/:symbol，不入菜单）
+} as const;
+
+/**
+ * 白皮书页文档 tab 的路由查询参数（如插件工坊「开发者文档」入口带 `?tab=dev` 直达「开发者指南」）
+ *
+ * 值与 WhitepaperView 的 DOC_TABS 对应；不带该参数时白皮书维持默认「使用说明」tab。
+ */
+export const WHITEPAPER_TAB_QUERY = {
+  /** query 键名 */
+  KEY: "tab",
+  /** 「开发者指南」tab 值 */
+  DEV: "dev",
 } as const;
 
 /**
@@ -71,8 +84,10 @@ export const MENU_ITEMS: readonly SidebarMenuEntry[] = [
   // 板块日历紧跟行情全景：同为「板块维度的行情视角」
   { path: ROUTE_PATH.BOARD_CALENDAR, title: "板块日历", icon: MENU_ICON.CALENDAR },
   { path: ROUTE_PATH.WATCHLIST, title: "自选股", icon: MENU_ICON.STAR },
-  { path: ROUTE_PATH.SCREENER, title: "选股器", icon: MENU_ICON.FILTER },
+  // 选股器已改为插件分发（dsh-stock-screener），由插件注册菜单与 /screener 路由
   { path: ROUTE_PATH.HOT_NEWS, title: "热点新闻", icon: MENU_ICON.NEWS },
+  // 今天炒什么紧跟热点新闻：同为「盘前 / 盘中扫一眼市场在炒什么」的日常视角
+  { path: ROUTE_PATH.WHAT_TO_TRADE, title: "今天炒什么", icon: MENU_ICON.FLAME },
   { path: ROUTE_PATH.STOCK_ACCOUNT, title: "账户管理", icon: MENU_ICON.ACCOUNT },
   // 插件工坊：宿主自带的插件自省与管理页，同时是「插件页随插件撤销」的兜底落点
   { path: ROUTE_PATH.PLUGIN_LAB, title: "插件工坊", icon: MENU_ICON.PLUG, fallbackLanding: true },

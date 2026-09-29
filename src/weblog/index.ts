@@ -17,7 +17,11 @@ import {
   WEBLOG_RETENTION_MS,
 } from '../constants/weblog.constants';
 import { destroyWeblogAutoTrack, initWeblogAutoTrack } from './weblog-auto-track';
-import { destroyWeblogErrorCapture, initWeblogErrorCapture } from './weblog-error';
+import {
+  destroyWeblogErrorCapture,
+  initWeblogErrorCapture,
+  setWeblogWarnCapture,
+} from './weblog-error';
 import { enrichWeblogEnv } from './weblog-env';
 import { pruneWeblogLogs } from './weblog-store';
 import {
@@ -36,6 +40,8 @@ export interface InitWeblogOptions {
   router: Router;
   /** 采集开关初值（来自设置页持久化，缺省开启） */
   enabled?: boolean;
+  /** 开发者模式初值（开启后 console.warn / 插件 [info] [warn] 也记入系统日志，缺省关） */
+  developerMode?: boolean;
 }
 
 /** 裁剪定时器句柄 */
@@ -62,6 +68,7 @@ const pruneExpiredLogs = async (): Promise<void> => {
  */
 export const initWeblog = (options: InitWeblogOptions): void => {
   setWeblogEnabled(options.enabled ?? true);
+  setWeblogWarnCapture(options.developerMode ?? false);
   initWeblogErrorCapture(options.app);
   initWeblogAutoTrack(options.router);
   startWeblogFlush();
@@ -107,6 +114,7 @@ export {
   trackClickFallback,
   trackPageView,
 } from './weblogActions';
+export { setWeblogWarnCapture } from './weblog-error';
 export type { TrackActionOptions, TrackApiRequestInput } from './weblogActions';
 export {
   WEBLOG_ACTIONS,

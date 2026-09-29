@@ -45,6 +45,8 @@ export const openAgentAnalysisWindow = async (): Promise<boolean> => {
         height: AGENT_WINDOW_HEIGHT,
         center: true,
         resizable: true,
+        // 与主窗口一致：去系统标题栏，用应用内 AgentWindowTitlebar 自绘
+        decorations: false,
       });
       win.once('tauri://created', () => resolve(true));
       win.once('tauri://error', (event) => {

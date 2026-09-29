@@ -56,12 +56,14 @@
 
 /* 暗色变量覆盖：级联位于 @theme 之后，.dark 与 :root 同特异性故此处胜出 */
 .dark {
-  --color-bg: #101418;
-  --color-surface: #1a2027;
+  /* 底色对齐黑金近黑（#09090b）：越接近纯黑，行情配色越聚焦；
+     卡片面比底色抬一档保持分层（纯黑 + 纯黑会让看板失去卡片边界） */
+  --color-bg: #09090b;
+  --color-surface: #15161a;
   --color-primary-weak: #123f3b;
   --color-up-weak: #3a1a1a;
   --color-down-weak: #12332a;
-  --color-flat-weak: #232a33;
+  --color-flat-weak: #212226;
   --color-text: #e6eaf0;
   --color-text-secondary: #9aa6b6;
   --color-text-tertiary: #6b7686;
@@ -105,16 +107,6 @@
   --color-primary-weak: #e8f0fb;
 }
 
-[data-theme='pink'] {
-  --color-primary: #e886a8;
-  --color-primary-weak: #fdeef4;
-}
-
-[data-theme='purple'] {
-  --color-primary: #9061f9;
-  --color-primary-weak: #f1ecfe;
-}
-
 /* 活力橙：暖色主色，配更暖的浅底（避免橙字落在冷灰底上发闷） */
 [data-theme='orange'] {
   --color-primary: #f97316;
@@ -138,30 +130,19 @@
   --color-primary-weak: #1e3a5f;
 }
 
-.dark[data-theme='pink'] {
-  --color-primary-weak: #4a2338;
-}
-
-.dark[data-theme='purple'] {
-  --color-primary-weak: #37245e;
-}
-
 .dark[data-theme='orange'] {
   --color-primary-weak: #4a2410;
 }
 
 /*
- * 黑金暗色：特异性 (0,2,0) 高于 .dark (0,1,0)，故能覆盖上面的暗色底/面
+ * 黑金暗色：特异性 (0,2,0) 高于 .dark (0,1,0)。
+ * 底色 / 卡片面 / flat-weak 已上提到 .dark 基础块（全主题共用近黑底，
+ * 见 .dark 注释），这里只保留黑金的主色与弱色底。
  * 主色直接采用参考站品牌金本体 #e6ac00 —— 压在近黑底上对比度 9.6:1，浓而不暗
- * 底色取参考站的 --dark-c-bg:#09090b，越接近纯黑，金越有金属光泽
- * 卡片面比底色抬一档以保持分层（纯黑 + 纯黑会让看板失去卡片边界）
  */
 .dark[data-theme='gold'] {
   --color-primary: #e6ac00;
   --color-primary-weak: #2e2508;
-  --color-bg: #09090b;
-  --color-surface: #15161a;
-  --color-flat-weak: #212226;
 }
 
 /*
