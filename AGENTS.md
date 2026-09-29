@@ -407,7 +407,7 @@ tauri fetch 绕 webview CORS）。
 
 - 表格统一 `BaseTable` 列配置驱动（`TableColumn<T>`），滚动容器 `table-scroll` / `table-scroll-sm`（吸顶吸左），长列表配 `useLazyRows`
 - 主区容器已开 `@container`：页面栅格用容器断点（`@2xl/@3xl/@4xl`）而非视口断点，右侧面板打开时自动换行
-- 主题：`<html data-theme>`（4 套主题色）+ `<html data-trend>`（3 套涨跌配色）；图表不走 CSS 类，经 `utils/trend-colors.ts` / `read-css-var.ts` 运行时读变量
+- 主题：`<html data-theme>`（4 套内置主题色 + 自定义档 `custom`：无 CSS 规则，由 `use-document-theme.ts` 以内联 CSS 变量下发 `settings.customThemeColor`）+ `<html data-trend>`（3 套涨跌配色）；图表不走 CSS 类，经 `utils/trend-colors.ts` / `read-css-var.ts` 运行时读变量
 - 新增 ECharts 图表类型必须在 `charts/echarts-setup.ts` 注册，否则 setOption 静默失败（svg 容器空白）
 - 按钮等可交互元素带 `pressable` 按压动效
 

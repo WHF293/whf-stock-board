@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onActivated, ref } from 'vue';
 import BaseCard from '../components/ui/BaseCard.vue';
 import BaseEmpty from '../components/ui/BaseEmpty.vue';
 import BaseTabs from '../components/ui/BaseTabs.vue';
@@ -36,7 +36,7 @@ import { POLLING_INTERVAL } from '../constants/polling.constants';
 /** 模块 tab 选项 */
 const MODULE_TABS = [
   { label: 'A股全景', value: 'cn' },
-  { label: '板块资金', value: 'sector-flow' },
+  { label: '最新板块资金', value: 'sector-flow' },
   { label: '美股全景', value: 'us' },
   { label: '全球宏观', value: 'macro' },
   { label: '历史牛熊复盘', value: 'review' },
@@ -140,6 +140,19 @@ const loadActiveModule = async (): Promise<void> => {
 if (activeModule.value !== 'cn') {
   void loadActiveModule();
 }
+
+// KeepAlive 缓存页面：切走再切回不重新挂载，重拉当前非自管模块（快照秒出后静默覆盖；
+// 首次 onActivated 紧跟首屏触发，跳过避免重复请求；宏观无轮询兜底，这里是它唯一的自动刷新点）
+let panoramaActivatedOnce = false;
+onActivated(() => {
+  if (!panoramaActivatedOnce) {
+    panoramaActivatedOnce = true;
+    return;
+  }
+  if (!isSelfManagedModule.value && !isLoading.value) {
+    void loadActiveModule();
+  }
+});
 
 // 美股全景轮询：仅在美股轮询窗口（21:30-24:00 与 00:00-04:00）内按间隔刷新，
 // 窗口外与非 us tab 自动跳过

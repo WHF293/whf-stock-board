@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onActivated, ref, watch } from "vue";
 import BaseCard from "../components/ui/BaseCard.vue";
 import BaseEmpty from "../components/ui/BaseEmpty.vue";
 import BaseSkeleton from "../components/ui/BaseSkeleton.vue";
@@ -150,6 +150,21 @@ watch(activeTab, () => {
   void loadAll();
 });
 
+// KeepAlive 缓存页面：切走再切回不重新挂载，重拉当前页签数据（快照秒出后静默覆盖；
+// 首次 onActivated 紧跟 setup 的 loadAll 触发，跳过避免重复请求）
+let dragonActivatedOnce = false;
+onActivated(() => {
+  if (!dragonActivatedOnce) {
+    dragonActivatedOnce = true;
+    return;
+  }
+  if (activeTab.value === "dragon-tiger") {
+    if (!isDragonLoading.value) void loadDragon();
+  } else if (!isBlockLoading.value) {
+    void loadBlock();
+  }
+});
+
 /** 龙虎榜日期选项（从数据提取，倒序） */
 const dragonDateOptions = computed(() => {
   const dates = [...new Set(dragonItems.value.map((item) => item.date))]
@@ -235,7 +250,13 @@ const dragonColumns: TableColumn<DragonTigerDetailItem>[] = [
     sortable: true,
     sortValue: (item) => item.changePercent,
   },
-  { key: "netBuyAmount", label: "龙虎榜净买额", align: "right" },
+  {
+    key: "netBuyAmount",
+    label: "龙虎榜净买额",
+    align: "right",
+    sortable: true,
+    sortValue: (item) => item.netBuyAmount,
+  },
   { key: "netBuyRatio", label: "净买占比", align: "right" },
   { key: "reason", label: "上榜原因" },
   { key: "afterChange5d", label: "上榜后5日", align: "right" },

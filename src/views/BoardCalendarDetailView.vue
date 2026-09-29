@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import BoardDetailMatrix from '../components/business/BoardDetailMatrix.vue';
 import BaseButton from '../components/ui/BaseButton.vue';
@@ -293,6 +293,19 @@ watch(() => settingsStore.boardDetailRange, () => {
 
 onMounted(() => {
   void load({ useCache: true });
+});
+
+// KeepAlive 缓存页面：切走再切回不重新挂载，重取矩阵（会话缓存播种秒出后静默覆盖；
+// 首次 onActivated 紧跟 onMounted 触发，跳过避免重复取数；进行中的一轮由 controller 中断接管）
+let boardDetailActivatedOnce = false;
+onActivated(() => {
+  if (!boardDetailActivatedOnce) {
+    boardDetailActivatedOnce = true;
+    return;
+  }
+  if (!isLoading.value) {
+    void load({ useCache: true });
+  }
 });
 
 onBeforeUnmount(() => {

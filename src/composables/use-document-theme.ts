@@ -4,8 +4,14 @@ import {
   STORAGE_NS_COLOR_SCHEME,
   STORAGE_NS_SETTINGS,
 } from '../constants/storage-key.constants';
+import {
+  CUSTOM_THEME_COLOR_PATTERN,
+  CUSTOM_THEME_WEAK_TINT,
+  CSS_VAR_PRIMARY,
+} from '../constants/theme-color.constants';
 import { parseColorScheme, useTheme } from './use-theme';
 import { useSettingsStore } from '../stores/settings';
+import { pickContrastText } from '../utils/pick-contrast-text';
 import type { ThemeColor } from '../constants/theme-color.constants';
 import type { TrendTheme } from '../constants/trend-theme.constants';
 
@@ -15,7 +21,8 @@ import type { TrendTheme } from '../constants/trend-theme.constants';
  * 三件事：
  * 1. 暗色 class —— useTheme（useDark，class 策略挂 <html class="dark">，
  *    无偏好记录时默认黑暗模式）；
- * 2. 主题色 —— settings.themeColor 写 <html data-theme>；
+ * 2. 主题色 —— settings.themeColor 写 <html data-theme>；custom 档额外以内联
+ *    CSS 变量下发自定义主色（色值 settings.customThemeColor，亮暗切换重算弱色底）；
  * 3. 涨跌配色 —— settings.trendTheme 写 <html data-trend>。
  *
  * ⚠️ 必须在 App.vue 而非 MainLayout 调用：独立 WebviewWindow（Agent 分析、
@@ -37,10 +44,44 @@ export const useDocumentThemeSync = (): void => {
   const { isDark } = useTheme();
   const settingsStore = useSettingsStore();
 
+  /**
+   * 应用自定义主题色：以内联 CSS 变量覆盖主色（特异性高于一切 CSS 规则）
+   *
+   * 三件事：主色本体 / 弱色底（color-mix 向透明掺主色，亮暗模式掺不同比例）/
+   * 主色上的文字色（按明度自动选白或深，对齐内置黑金手工调 --color-on-primary 的思路）。
+   * 弱色底用透明掺色而非实色：不感知具体的 bg 变量，亮暗主题与卡片底色上都自然。
+   * @param hex 自定义色值（#rrggbb）
+   */
+  const applyCustomThemeColor = (hex: string): void => {
+    const style = document.documentElement.style;
+    if (!CUSTOM_THEME_COLOR_PATTERN.test(hex)) return;
+    const tint = (isDark.value ? CUSTOM_THEME_WEAK_TINT.DARK : CUSTOM_THEME_WEAK_TINT.LIGHT) * 100;
+    style.setProperty(CSS_VAR_PRIMARY, hex);
+    style.setProperty(
+      `${CSS_VAR_PRIMARY}-weak`,
+      `color-mix(in srgb, ${hex} ${tint}%, transparent)`,
+    );
+    style.setProperty('--color-on-primary', pickContrastText(hex));
+  };
+
+  /** 清除自定义主题色的内联覆盖（切回内置主题时，避免残留变量压住 CSS 规则） */
+  const clearCustomThemeColor = (): void => {
+    const style = document.documentElement.style;
+    style.removeProperty(CSS_VAR_PRIMARY);
+    style.removeProperty(`${CSS_VAR_PRIMARY}-weak`);
+    style.removeProperty('--color-on-primary');
+  };
+
+  // 主题色与明暗双依赖：自定义色值要在明暗切换时重算弱色底掺色比例
   watchImmediate(
-    () => settingsStore.themeColor,
-    (color) => {
+    [() => settingsStore.themeColor, () => settingsStore.customThemeColor, isDark],
+    ([color, customHex]) => {
       document.documentElement.dataset.theme = color;
+      if (color === 'custom') {
+        applyCustomThemeColor(customHex);
+      } else {
+        clearCustomThemeColor();
+      }
     },
   );
 
@@ -74,12 +115,19 @@ export const useDocumentThemeSync = (): void => {
         const settings = JSON.parse(settingsRaw) as {
           themeColor?: ThemeColor;
           trendTheme?: TrendTheme;
+          customThemeColor?: string;
         };
         if (
           typeof settings.themeColor === 'string' &&
           settings.themeColor !== settingsStore.themeColor
         ) {
           settingsStore.themeColor = settings.themeColor;
+        }
+        if (
+          typeof settings.customThemeColor === 'string' &&
+          settings.customThemeColor !== settingsStore.customThemeColor
+        ) {
+          settingsStore.customThemeColor = settings.customThemeColor;
         }
         if (
           typeof settings.trendTheme === 'string' &&

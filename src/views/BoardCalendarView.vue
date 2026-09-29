@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router';
 import BoardCalendarGrid from '../components/business/BoardCalendarGrid.vue';
 import BoardCellDetailModal from '../components/business/BoardCellDetailModal.vue';
 import BoardFilterModal from '../components/business/BoardFilterModal.vue';
+import BoardMainlinePanel from '../components/business/BoardMainlinePanel.vue';
 import BoardProfitBubblePanel from '../components/business/BoardProfitBubblePanel.vue';
 import BaseButton from '../components/ui/BaseButton.vue';
 import BaseCard from '../components/ui/BaseCard.vue';
@@ -28,6 +29,7 @@ import {
   BOARD_CALENDAR_VIEW_DEFAULT,
   BOARD_CALENDAR_VIEW_OPTIONS,
   BOARD_DATA_LEVEL,
+  BOARD_MAINLINE_TOP_N,
   BOARD_SCORE_BUCKET,
   BOARD_SCORE_LEGEND,
   CALENDAR_BOARDS,
@@ -46,6 +48,7 @@ import type {
   BoardCalendarViewMode,
   BoardColumnSelection,
   BoardDailyRow,
+  BoardMainlineCell,
   BoardProfile,
   BoardScoreBucket,
 } from '../types/board-calendar.types';
@@ -54,6 +57,7 @@ import {
   normalizeBoardHidden,
   normalizeBoardOrder,
 } from '../utils/board-order';
+import { buildBoardMainlineMatrix } from '../utils/build-board-mainline-matrix';
 import {
   getBoardBucketBackground,
   resolveBoardScoreBucket,
@@ -326,6 +330,16 @@ const profitSnapshot = computed<{
 });
 
 /**
+ * 板块分析矩阵：每个交易日按得分绝对值取前 N 名转置成「行 = 名次、列 = 日期」
+ *
+ * 与日历矩阵共用同一份 dailyRows 与展示范围（板块过滤器不影响——
+ * 分析看的是全市场在做什么，隐藏个别板块不改变市场结构）。
+ */
+const mainlineMatrix = computed(() =>
+  buildBoardMainlineMatrix(dailyRows.value, selectedDates.value, BOARD_MAINLINE_TOP_N),
+);
+
+/**
  * 从本地库读取矩阵数据（交易日轴 + 板块日聚合 + 板块档案）
  *
  * 两步分别归因：交易日轴失败是上游问题，读库失败是本地库问题，
@@ -444,6 +458,14 @@ const onCellClick = (
  */
 const onBoardClick = (row: BoardCalendarRow): void => {
   void router.push(`${ROUTE_PATH.BOARD_DETAIL}/${row.code}`);
+};
+
+/**
+ * 点击主线分析单元格：进入板块详情页（与板块名点击同一路由）
+ * @param cell 被点击的单元格（携带板块代码）
+ */
+const onMainlineCellClick = (cell: BoardMainlineCell): void => {
+  void router.push(`${ROUTE_PATH.BOARD_DETAIL}/${cell.boardCode}`);
 };
 
 /**
@@ -570,6 +592,23 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
         @cell-click="onCellClick"
         @board-click="onBoardClick"
       />
+    </BaseCard>
+
+    <!-- 板块分析卡片：每日得分绝对值 Top10 的「名次 × 日期」转置表 -->
+    <BaseCard
+      v-else-if="calendarView === BOARD_CALENDAR_VIEW.MAINLINE"
+      fill
+      class="min-h-0 flex-1"
+      title="板块分析"
+    >
+      <BaseSkeleton v-if="isLoading && dailyRows.length === 0" />
+      <BaseEmpty
+        v-else-if="dailyRows.length === 0"
+        text="暂无板块日历数据，请点击右上角「刷新」采集"
+      />
+      <div v-else class="min-h-0 flex-1">
+        <BoardMainlinePanel :matrix="mainlineMatrix" @cell-click="onMainlineCellClick" />
+      </div>
     </BaseCard>
 
     <!-- 赚钱效应气泡图卡片（原「查看赚钱效应」弹窗内容内嵌为主区视图） -->
