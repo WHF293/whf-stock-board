@@ -7,6 +7,7 @@ import TabConfigButton from '../components/ui/TabConfigButton.vue';
 import { useTabConfig } from '../composables/use-tab-config';
 import PanoramaCnBoard from '../components/business/PanoramaCnBoard.vue';
 import PanoramaSectorFlowBoard from '../components/business/PanoramaSectorFlowBoard.vue';
+import PanoramaIpoBoard from '../components/business/PanoramaIpoBoard.vue';
 import PanoramaReviewBoard from '../components/business/panorama-review/PanoramaReviewBoard.vue';
 import {
   fetchGlobalFuturesPanorama,
@@ -37,6 +38,7 @@ import { POLLING_INTERVAL } from '../constants/polling.constants';
 const MODULE_TABS = [
   { label: 'A股全景', value: 'cn' },
   { label: '最新板块资金', value: 'sector-flow' },
+  { label: '新股次新股', value: 'ipo' },
   { label: '美股全景', value: 'us' },
   { label: '全球宏观', value: 'macro' },
   { label: '历史牛熊复盘', value: 'review' },
@@ -56,6 +58,7 @@ const isSelfManagedModule = computed(
   () =>
     activeModule.value === 'cn' ||
     activeModule.value === 'sector-flow' ||
+    activeModule.value === 'ipo' ||
     activeModule.value === 'review',
 );
 
@@ -223,6 +226,7 @@ const isEmpty = computed(
 
     <!-- 板块资金：板块净流入榜单 + 行业资金曲线（数据自管；撑满剩余高度） -->
     <PanoramaSectorFlowBoard v-else-if="activeModule === 'sector-flow'" class="min-h-0 flex-1" />
+    <PanoramaIpoBoard v-else-if="activeModule === 'ipo'" class="min-h-0 flex-1" />
 
     <!-- 加载骨架（美股 / 宏观） -->
     <BaseCard v-else-if="isLoading">
