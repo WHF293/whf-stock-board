@@ -4,7 +4,7 @@ import BaseButton from '../ui/BaseButton.vue';
 import MenuIcon from '../ui/MenuIcon.vue';
 import { useSettingsStore } from '../../stores/settings';
 import { useTheme } from '../../composables/use-theme';
-import { THEME_COLOR_OPTIONS } from '../../constants/theme-color.constants';
+import { THEME_COLOR, THEME_COLOR_OPTIONS } from '../../constants/theme-color.constants';
 import { TREND_THEME_OPTIONS } from '../../constants/trend-theme.constants';
 import {
   FIRST_RUN_APPEARANCE_HINT,
@@ -18,6 +18,7 @@ import {
   FIRST_RUN_SETTINGS_DESC,
   FIRST_RUN_SETTINGS_DONE_BUTTON,
   FIRST_RUN_SETTINGS_TITLE,
+  FIRST_RUN_THEME_CUSTOM_HINT,
   FIRST_RUN_THEME_LABEL,
   FIRST_RUN_TITLE,
   FIRST_RUN_TREND_HINT,
@@ -76,6 +77,21 @@ const welcomeText = computed(() =>
 const doneButtonText = computed(() =>
   isSettingsMode.value ? FIRST_RUN_SETTINGS_DONE_BUTTON : FIRST_RUN_DONE_BUTTON,
 );
+
+/** 内置主题色选项（自定义项已拆出循环，用 label 包原生取色器单独渲染） */
+const builtinThemeOptions = computed(
+  () => THEME_COLOR_OPTIONS.filter((option) => option.value !== THEME_COLOR.CUSTOM),
+);
+
+/**
+ * 自定义取色：写入色值并选中自定义主题（选择即应用，经 useDocumentThemeSync 落 <html>）
+ * @param event 取色器输入事件
+ */
+const onCustomColorInput = (event: Event): void => {
+  const hex = (event.target as HTMLInputElement).value;
+  settingsStore.setCustomThemeColor(hex);
+  settingsStore.setThemeColor(THEME_COLOR.CUSTOM);
+};
 
 /** 关闭弹窗（完成引导 / 主题设置均走此处；是否记为「已完成」由调用方按 mode 决定） */
 const onDone = (): void => {
@@ -214,7 +230,7 @@ onBeforeUnmount(() => {
                   :aria-label="FIRST_RUN_THEME_LABEL"
                 >
                   <button
-                    v-for="option in THEME_COLOR_OPTIONS"
+                    v-for="option in builtinThemeOptions"
                     :key="option.value"
                     type="button"
                     role="radio"
@@ -232,7 +248,32 @@ onBeforeUnmount(() => {
                     <span class="h-5 w-5 rounded-full" :style="{ backgroundColor: option.swatch }" />
                     {{ option.label }}
                   </button>
+                  <!-- 自定义：label 包裹原生取色器（取色器本体即色块），点色块选颜色、点整粒选中自定义主题 -->
+                  <label
+                    role="radio"
+                    :aria-checked="settingsStore.themeColor === THEME_COLOR.CUSTOM"
+                    data-track="THEME_COLOR_CHANGE"
+                    data-track-detail="自定义"
+                    class="pressable flex cursor-pointer items-center gap-2 rounded-full py-1 pl-1 pr-3 text-xs font-medium active:scale-95"
+                    :class="
+                      settingsStore.themeColor === THEME_COLOR.CUSTOM
+                        ? 'bg-flat-weak text-text ring-1 ring-primary'
+                        : 'bg-flat-weak text-text-secondary hover:text-text'
+                    "
+                    @click="settingsStore.setThemeColor(THEME_COLOR.CUSTOM)"
+                  >
+                    <input
+                      type="color"
+                      class="color-swatch-input h-5 w-5 cursor-pointer rounded-full"
+                      :value="settingsStore.customThemeColor"
+                      :aria-label="`自定义${FIRST_RUN_THEME_LABEL}颜色`"
+                      @click.stop
+                      @input="onCustomColorInput($event)"
+                    />
+                    自定义
+                  </label>
                 </div>
+                <p class="mt-1.5 text-xs text-text-tertiary">{{ FIRST_RUN_THEME_CUSTOM_HINT }}</p>
               </div>
 
               <!-- 涨跌主题色 -->
@@ -298,5 +339,21 @@ onBeforeUnmount(() => {
 .modal-fade-enter-from,
 .modal-fade-leave-to {
   opacity: 0;
+}
+
+/* 原生取色器外观裁成圆形色块：剥默认边框与内衬，swatch 圆角跟随 */
+.color-swatch-input {
+  appearance: none;
+  -webkit-appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+}
+.color-swatch-input::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+.color-swatch-input::-webkit-color-swatch {
+  border: none;
+  border-radius: 9999px;
 }
 </style>

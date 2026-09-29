@@ -329,6 +329,38 @@ export interface BoardColumnSelection {
 }
 
 /**
+ * 主线分析单元格（视图模型：某交易日得分第 N 名的板块）
+ */
+export interface BoardMainlineCell {
+  /** 交易日 YYYY-MM-DD */
+  tradeDate: string;
+  /** 板块代码（BKxxxx，跳板块详情用） */
+  boardCode: string;
+  /** 板块名称 */
+  boardName: string;
+  /** 涨停家数 */
+  limitUp: number;
+  /** 跌停家数 */
+  limitDown: number;
+  /** 当日净额口径原始得分 */
+  score: number;
+  /** 得分率（单元格色阶用，与日历矩阵同口径） */
+  scoreRate: number;
+  /** 数据级别：1 = 完整快照，0 = 仅回补到涨跌停（不上色阶） */
+  dataLevel: number;
+}
+
+/**
+ * 主线分析矩阵（视图模型）：行 = 名次位（index 0 = 第 1 名），列 = 交易日
+ */
+export interface BoardMainlineMatrix {
+  /** 交易日（降序，最近在左，与 cells 下标一一对应） */
+  dates: string[];
+  /** 每行 = 一个名次位；格为 null 表示该日不足此名次（板块缺快照或当日无数据） */
+  ranks: (BoardMainlineCell | null)[][];
+}
+
+/**
  * 一次采集编排的结果（页面提示用）
  */
 export interface BoardSyncResult {

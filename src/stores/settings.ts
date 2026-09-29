@@ -9,7 +9,12 @@ import { BOARD_DETAIL_RANGE_DEFAULT } from '../constants/board-detail.constants'
 import { STORAGE_NS_SETTINGS } from '../constants/storage-key.constants';
 import { appStorage } from '../utils/app-local-storage';
 import { REFRESH_INTERVAL_DEFAULT } from '../constants/polling.constants';
-import { THEME_COLOR_DEFAULT, isThemeColor } from '../constants/theme-color.constants';
+import {
+  CUSTOM_THEME_COLOR_DEFAULT,
+  CUSTOM_THEME_COLOR_PATTERN,
+  THEME_COLOR_DEFAULT,
+  isThemeColor,
+} from '../constants/theme-color.constants';
 import type { ThemeColor } from '../constants/theme-color.constants';
 import { TREND_THEME_DEFAULT } from '../constants/trend-theme.constants';
 import type { TrendTheme } from '../constants/trend-theme.constants';
@@ -71,8 +76,10 @@ interface SettingsState {
   headerOrder: string[];
   /** 顶栏中被隐藏的条目键（编排弹窗里关掉开关的项；不渲染） */
   hiddenHeaderItems: string[];
-  /** 主题色（清新绿 / 淡雅蓝 / 活力橙 / 黑金） */
+  /** 主题色（清新绿 / 淡雅蓝 / 活力橙 / 黑金 / 自定义） */
   themeColor: ThemeColor;
+  /** 自定义主题色值（#rrggbb；themeColor = 'custom' 时经内联 CSS 变量生效） */
+  customThemeColor: string;
   /** 涨跌配色主题（红涨绿跌 / 红跌绿涨 / 红涨蓝跌） */
   trendTheme: TrendTheme;
   /** 全局水印开关（默认开启） */
@@ -121,6 +128,7 @@ export const useSettingsStore = defineStore('settings', {
     headerOrder: [...HEADER_DEFAULT_ORDER],
     hiddenHeaderItems: [],
     themeColor: THEME_COLOR_DEFAULT,
+    customThemeColor: CUSTOM_THEME_COLOR_DEFAULT,
     trendTheme: TREND_THEME_DEFAULT,
     watermarkEnabled: WATERMARK_ENABLED_DEFAULT,
     boardCalendarHeatBasis: BOARD_CALENDAR_HEAT_BASIS_DEFAULT,
@@ -185,6 +193,15 @@ export const useSettingsStore = defineStore('settings', {
      */
     setThemeColor(color: ThemeColor): void {
       this.themeColor = color;
+    },
+
+    /**
+     * 设置自定义主题色值（themeColor = 'custom' 时经内联 CSS 变量生效）
+     * @param hex 色值（#rrggbb；非法格式忽略，保持原值）
+     */
+    setCustomThemeColor(hex: string): void {
+      if (!CUSTOM_THEME_COLOR_PATTERN.test(hex)) return;
+      this.customThemeColor = hex;
     },
 
     /**
@@ -384,6 +401,11 @@ export const useSettingsStore = defineStore('settings', {
       // 旧版存过、现已删除的主题色（淡雅粉 / 极光紫）回落默认，避免 data-theme 落在无 CSS 规则的值上
       if (!isThemeColor(context.store.themeColor)) {
         context.store.themeColor = THEME_COLOR_DEFAULT;
+      }
+      // 自定义色值坏数据回落：内联 CSS 变量拿到非法值会让主色整体失色
+      if (typeof context.store.customThemeColor !== 'string' ||
+        !CUSTOM_THEME_COLOR_PATTERN.test(context.store.customThemeColor)) {
+        context.store.customThemeColor = CUSTOM_THEME_COLOR_DEFAULT;
       }
     },
   },

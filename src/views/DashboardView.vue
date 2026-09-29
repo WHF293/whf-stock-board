@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onActivated, onMounted, ref } from 'vue';
 import BaseCard from '../components/ui/BaseCard.vue';
 import BaseEmpty from '../components/ui/BaseEmpty.vue';
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue';
@@ -305,6 +305,17 @@ const fetchTurnoverHistory = async (): Promise<void> => {
 
 // KeepAlive 下仅首次挂载拉取；历史数据不变性强，无需轮询
 onMounted(() => {
+  void fetchTurnoverHistory();
+});
+
+// KeepAlive 缓存页面：切走再切回不重新挂载，重拉一次成交额历史（跨交易日 / 盘中更新兜底；
+// 首次 onActivated 紧跟 onMounted 触发，跳过避免与首屏重复请求）
+let dashboardActivatedOnce = false;
+onActivated(() => {
+  if (!dashboardActivatedOnce) {
+    dashboardActivatedOnce = true;
+    return;
+  }
   void fetchTurnoverHistory();
 });
 

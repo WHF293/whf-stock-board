@@ -3,16 +3,26 @@
  *
  * 色值需与 `src/assets/styles/theme.css` 里的 `[data-theme='*']` 保持一致：
  * 这里只用于设置页色块展示，真正的换肤发生在 CSS。
+ * custom 例外：无内置 CSS 规则，主色由 useDocumentThemeSync 以内联 CSS 变量
+ * 动态下发（色值来自 settings.customThemeColor，用户在颜色选择器里自选）。
  */
 export const THEME_COLOR = {
   GREEN: 'green',
   BLUE: 'blue',
   ORANGE: 'orange',
   GOLD: 'gold',
+  /** 自定义（色值取 settings.customThemeColor，运行期内联覆盖主色变量） */
+  CUSTOM: 'custom',
 } as const;
 
 /** 主题色类型 */
 export type ThemeColor = (typeof THEME_COLOR)[keyof typeof THEME_COLOR];
+
+/** 自定义主题色合法格式（#rrggbb，颜色选择器原生输出即此形态） */
+export const CUSTOM_THEME_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
+
+/** 自定义主题色默认值（首次切到「自定义」时的初始色 = 默认清新绿主色） */
+export const CUSTOM_THEME_COLOR_DEFAULT = '#0e9488';
 
 /**
  * 主题色选项（swatch 供设置页色块展示）
@@ -25,6 +35,7 @@ export const THEME_COLOR_OPTIONS: readonly { label: string; value: ThemeColor; s
   { label: '淡雅蓝', value: THEME_COLOR.BLUE, swatch: '#4f83cc' },
   { label: '活力橙', value: THEME_COLOR.ORANGE, swatch: '#f97316' },
   { label: '黑金', value: THEME_COLOR.GOLD, swatch: '#c8920b' },
+  { label: '自定义', value: THEME_COLOR.CUSTOM, swatch: CUSTOM_THEME_COLOR_DEFAULT },
 ];
 
 /**
@@ -38,6 +49,19 @@ export const isThemeColor = (value: unknown): value is ThemeColor =>
 
 /** 默认主题色 */
 export const THEME_COLOR_DEFAULT: ThemeColor = THEME_COLOR.GREEN;
+
+/**
+ * 自定义主题色的弱色底（--color-primary-weak）掺色比例
+ *
+ * 内置主题的弱色底是「主色的浅淡底」，这里用 color-mix 按比例向透明掺主色得到：
+ * 暗色模式比例更高（低比例掺色压在近黑底上几乎不可见）。
+ */
+export const CUSTOM_THEME_WEAK_TINT = {
+  /** 亮色模式：主色掺 14% */
+  LIGHT: 0.14,
+  /** 暗色模式：主色掺 24% */
+  DARK: 0.24,
+} as const;
 
 /** 主题色 CSS 变量名（ECharts 等非 CSS 上下文经 readCssVar 运行时读取） */
 export const CSS_VAR_PRIMARY = '--color-primary';

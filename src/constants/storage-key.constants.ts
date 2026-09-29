@@ -53,3 +53,6 @@ export const STORAGE_NS_USER_PLUGINS = 'plugin.user';
 
 /** 市场榜单页 - 板块历史净流入独立存储 key（不走 whf:app 整包：历史数据量随使用增长，避免整包写放大） */
 export const STORAGE_KEY_SECTOR_FLOW_HISTORY = 'whf:sector-flow-history';
+
+/** ETF 持仓股缓存命名空间（详情页 ETF 持仓 Tab，按 ETF 代码整包存取） */
+export const STORAGE_NS_ETF_HOLDINGS = 'etf.holdings';

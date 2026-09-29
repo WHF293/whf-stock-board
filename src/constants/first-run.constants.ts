@@ -49,6 +49,9 @@ export const FIRST_RUN_APPEARANCE_OPTIONS: readonly {
 /** 主题色分组标签 */
 export const FIRST_RUN_THEME_LABEL = '系统主题色';
 
+/** 主题色「自定义」项说明文案 */
+export const FIRST_RUN_THEME_CUSTOM_HINT = '点「自定义」的色块可任选主色，界面与图表随之换色';
+
 /** 涨跌配色分组标签 */
 export const FIRST_RUN_TREND_LABEL = '涨跌主题色';
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onActivated, ref, watch } from 'vue';
 import BaseButton from '../components/ui/BaseButton.vue';
 import BaseCard from '../components/ui/BaseCard.vue';
 import BaseEmpty from '../components/ui/BaseEmpty.vue';
@@ -41,7 +41,7 @@ import { delay } from '../utils/delay';
 
 /**
  * 市场榜单（原「市场异动」页已并入为页签）：
- * 个股主力资金榜 → 涨停 / 异动 / 龙虎榜 / 大宗交易（自管数据，重接口不轮询）
+ * 个股主力资金榜 → 连板 / 异动 / 龙虎榜 / 大宗交易（自管数据，重接口不轮询）
  * → 全 A 报价排序榜（涨跌幅 / 成交额 / 换手率）。
  * 板块维度的资金流向（板块净流入 / 行业资金曲线）已在「行情全景-板块资金」模块。
  *
@@ -61,13 +61,13 @@ const dataCache = useDataCacheStore();
 const DISPLAY_COUNT = 100;
 
   /**
-   * 页签：个股主力资金榜 → 涨停 / 异动 / 龙虎榜 / 大宗交易（原「市场异动」页并入）
+   * 页签：个股主力资金榜 → 连板 / 异动 / 龙虎榜 / 大宗交易（原「市场异动」页并入）
    * → 全 A 报价排序榜（自管数据；北向持股已下线——上游长期无数据，
    * 接口仍保留给 Agent MCP 工具；板块净流入已迁至「行情全景-板块资金」）
    */
 const SORT_TAB_OPTIONS = [
   { label: '个股主力', value: 'stock' },
-  { label: '涨停', value: 'event' },
+  { label: '连板', value: 'event' },
   { label: '异动', value: 'events' },
   { label: '龙虎榜', value: 'dragon-tiger' },
   { label: '大宗交易', value: 'block-trade' },
@@ -113,7 +113,7 @@ const { visibleOptions: sortTabOptions, activeValue: sortKey } = useTabConfig<Ra
 /** 是否为资金流榜单类页签（个股主力） */
 const isFlowTab = computed(() => sortKey.value === 'stock');
 
-/** 是否为原「市场异动」类页签（涨停 / 异动 / 龙虎榜 / 大宗；自管数据，重接口不轮询） */
+/** 是否为原「市场异动」类页签（连板 / 异动 / 龙虎榜 / 大宗；自管数据，重接口不轮询） */
 const isMoodTab = computed(() =>
   sortKey.value === 'event' ||
   sortKey.value === 'events' ||
@@ -207,6 +207,19 @@ void (async () => {
     void loadFlowRanks();
   }
 })();
+
+// KeepAlive 缓存页面：切走再切回不重新挂载，重拉个股主力榜（快照秒出后静默覆盖；
+// 首次 onActivated 紧跟首屏触发，跳过避免重复请求；重复触发由共享任务防重入兜住）
+let rankActivatedOnce = false;
+onActivated(() => {
+  if (!rankActivatedOnce) {
+    rankActivatedOnce = true;
+    return;
+  }
+  if (isFlowTab.value && !isFlowLoading.value) {
+    void loadFlowRanks();
+  }
+});
 
 /**
  * 当前排序维度的可比数值（null 视为 -Infinity 排到末尾）
@@ -326,7 +339,7 @@ const openDetail = (code: string): void => {
 const settingsStore = useSettingsStore();
 const notifications = useNotificationsStore();
 
-/** 涨停 / 异动子视图（数据在其组件内，按钮点击时经 expose 方法获取） */
+/** 连板 / 异动子视图（数据在其组件内，按钮点击时经 expose 方法获取） */
 const eventViewRef = ref<InstanceType<typeof MarketEventView> | null>(null);
 /** 龙虎榜 / 大宗子视图（同上） */
 const dragonViewRef = ref<InstanceType<typeof DragonTigerView> | null>(null);
@@ -367,7 +380,7 @@ const stockExportColumns: { label: string; key: string }[] = [
 
 /**
  * 汇总当前页签的榜单数据段（AI 分析与导出 Excel 共用的数据出口）。
- * 涨停 / 异动 / 龙虎榜 / 大宗四页签的数据在子视图组件内，经 expose 方法获取
+ * 连板 / 异动 / 龙虎榜 / 大宗四页签的数据在子视图组件内，经 expose 方法获取
  * @returns 数据段列表；子视图未挂载 / 尚无数据时为空数组
  */
 const collectRankDatasets = (): RankDataset[] => {
@@ -476,7 +489,7 @@ const onRankExport = async (): Promise<void> => {
       </BaseButton>
     </div>
 
-    <!-- 原市场异动页签：涨停 / 异动 / 龙虎榜 / 大宗交易（自管数据，重接口不轮询） -->
+    <!-- 原市场异动页签：连板 / 异动 / 龙虎榜 / 大宗交易（自管数据，重接口不轮询） -->
     <MarketEventView v-if="sortKey === 'event'" ref="eventViewRef" mode="zt" class="min-h-0 flex-1" />
     <MarketEventView v-else-if="sortKey === 'events'" ref="eventViewRef" mode="events" class="min-h-0 flex-1" />
     <DragonTigerView v-else-if="isMoodTab" ref="dragonViewRef" v-model="dragonTab" class="min-h-0 flex-1" />

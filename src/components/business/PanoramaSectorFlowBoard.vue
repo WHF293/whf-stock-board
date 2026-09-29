@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onActivated, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import BaseButton from '../ui/BaseButton.vue';
 import BaseCard from '../ui/BaseCard.vue';
@@ -141,13 +141,13 @@ const loadSectorRank = (): Promise<void> => {
   return flowRankTask;
 };
 
-// 首次挂载拉取（快照已有数据则跳过；错峰延迟与相邻模块请求错开）
+// 挂载即重拉排名（快照先行秒出、请求返回静默覆盖；错峰延迟与相邻模块请求错开。
+// 原「快照已有则跳过」在 KeepAlive / 重挂载场景下会让榜单永不更新，改为无条件重拉，
+// 重复触发由 flowRankTask 共享任务防重入兜住）
 onMounted(() => {
   void (async () => {
     await new Promise((resolve) => setTimeout(resolve, FLOW_REQUEST_GAP_MS));
-    if (sectorRank.value.length === 0) {
-      void loadSectorRank();
-    }
+    void loadSectorRank();
   })();
 });
 
@@ -280,6 +280,20 @@ const sectorRankByCode = computed(
   () => new Map(sectorRank.value.map((item) => [item.code, item])),
 );
 
+// 榜单晚于曲线就绪（或首次合并时榜单请求失败）时回填名称 / 涨跌幅：
+// mergeCurveView 只在曲线到位瞬间合并一次，错过即永远显示 BK 编号
+watch(sectorRankByCode, (map) => {
+  if (map.size === 0 || curveViews.value.length === 0) {
+    return;
+  }
+  curveViews.value = curveViews.value.map((row) => {
+    const item = map.get(row.code);
+    return item
+      ? { ...row, name: item.name, changePercent: item.changePercent }
+      : row;
+  });
+});
+
 /** 曲线「截至」文案（交易日 + 最后分钟点） */
 const curveAsOfText = computed(() => {
   const first = curveViews.value[0];
@@ -388,10 +402,13 @@ watch(selectedCurveCodes, (codes) => {
   }
 });
 
-/** 打开选择行业弹窗：以当前已选初始化暂存勾选 */
+/** 打开选择行业弹窗：以当前已选初始化暂存勾选（榜单缺席时顺带补拉，弹窗内展示加载 / 重试态） */
 const openCurvePicker = (): void => {
   pendingCurveCodes.value = [...selectedCurveCodes.value];
   isCurvePickerOpen.value = true;
+  if (sectorRank.value.length === 0 && !isFlowLoading.value) {
+    void loadSectorRank();
+  }
 };
 
 /**
@@ -427,6 +444,30 @@ const refreshCurves = (): void => {
   curveViews.value = [];
   void loadSectorCurves(selectedCurveCodes.value);
 };
+
+// KeepAlive 缓存页面：切走再切回不重新挂载（首次 onActivated 紧跟 onMounted 触发，跳过）——
+// 列表视图重拉排名；曲线视图整场刷新（与新交易日 / 盘中进度对齐，同手动「刷新」按钮）
+let sectorFlowActivatedOnce = false;
+onActivated(() => {
+  if (!sectorFlowActivatedOnce) {
+    sectorFlowActivatedOnce = true;
+    return;
+  }
+  if (isCurveLoading.value) return;
+  if (!isCurveMode.value) {
+    void loadSectorRank();
+    return;
+  }
+  // 曲线视图：先就绪榜单（曲线名称依赖它），再整场刷新
+  void (async () => {
+    if (sectorRank.value.length === 0) {
+      await loadSectorRank();
+    }
+    if (isCurveMode.value && !isCurveLoading.value) {
+      refreshCurves();
+    }
+  })();
+});
 
 // ---------- 板块历史净流入（本地渐进累积；详见 sector-flow-history.api） ----------
 
@@ -727,7 +768,19 @@ const onRankExport = async (): Promise<void> => {
           </button>
         </div>
       </template>
-      <div class="grid grid-cols-2 gap-1">
+      <!-- 榜单未就绪：加载中骨架 / 失败空态（附重试），避免弹窗静默空白 -->
+      <div v-if="isFlowLoading && sectorRank.length === 0" class="py-6">
+        <BaseSkeleton />
+      </div>
+      <div v-else-if="sectorRank.length === 0" class="py-10">
+        <BaseEmpty text="行业榜单加载失败，请稍后重试" />
+        <div class="flex justify-center">
+          <BaseButton variant="ghost" :disabled="isFlowLoading" @click="void loadSectorRank()">
+            重试
+          </BaseButton>
+        </div>
+      </div>
+      <div v-else class="grid grid-cols-2 gap-1">
         <label
           v-for="item in sectorRank"
           :key="item.code"

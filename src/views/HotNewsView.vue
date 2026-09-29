@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onActivated, onMounted, ref, watch } from "vue";
 import { isTauri } from "@tauri-apps/api/core";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -378,6 +378,8 @@ interface SnapshotState<T> {
   error: boolean;
   /** 是否已完成首次加载（切走再切回直接复用） */
   initialized: boolean;
+  /** 快照抓取时间（毫秒），判定缓存是否过期 */
+  fetchedAt: number;
 }
 
 const createSnapshotState = <T,>(): SnapshotState<T> => ({
@@ -385,6 +387,7 @@ const createSnapshotState = <T,>(): SnapshotState<T> => ({
   loading: false,
   error: false,
   initialized: false,
+  fetchedAt: 0,
 });
 
 /** 东财推荐资讯（映射成通用新闻条目，复用列表渲染） */
@@ -418,6 +421,7 @@ const ensureSnapshot = async <T,>(
   try {
     state.items = await fetcher();
     state.initialized = true;
+    state.fetchedAt = Date.now();
   } catch (error) {
     state.error = true;
     console.error(`[hot-news] ${label}`, error);
@@ -789,7 +793,7 @@ const asSourceState = (
   loading: snap.loading,
   error: snap.error,
   initialized: snap.initialized,
-  fetchedAt: 0,
+  fetchedAt: snap.fetchedAt,
 });
 
 /** 东财卡片当前子视图的通用状态（快讯 = 原生通道，其余 = 快照适配） */
@@ -1086,6 +1090,56 @@ watch(
   },
   { deep: true },
 );
+
+/**
+ * 判断单张卡片当前子视图的快照是否已过期（已初始化且超过 CACHE_TTL_MS）
+ * @param card 卡片源
+ * @returns 是否需要重拉
+ */
+const isCardStale = (card: NewsSource): boolean => {
+  if (card === "eastmoney") {
+    if (emSubView.value === "flash") {
+      const state = states.value.eastmoney;
+      return state.initialized && !isFresh(state.fetchedAt);
+    }
+    const snap =
+      emSubView.value === "rec"
+        ? emRecState.value
+        : emSubView.value === "hot"
+          ? emHotState.value
+          : emConceptState.value;
+    return snap.initialized && !isFresh(snap.fetchedAt);
+  }
+  if (card === "thepaper") {
+    if (tpSubView.value === "hot") {
+      const snap = tpHotState.value;
+      return snap.initialized && !isFresh(snap.fetchedAt);
+    }
+    const state = states.value.thepaper;
+    return state.initialized && !isFresh(state.fetchedAt);
+  }
+  if (card === "cls") {
+    const snap =
+      clsSubView.value === "hot" ? clsHotState.value : clsDepthState.value;
+    return snap.initialized && !isFresh(snap.fetchedAt);
+  }
+  if (card === "tdx") {
+    const snap = tdxStates.value[tdxSubView.value];
+    return snap.initialized && !isFresh(snap.fetchedAt);
+  }
+  const channel: NewsChannel =
+    card === "ths" ? THS_SUB_VIEW_CHANNEL[thsSubView.value] : card;
+  const state = states.value[channel];
+  return state.initialized && !isFresh(state.fetchedAt);
+};
+
+// KeepAlive 缓存页面：切走再切回不重新挂载，这里兜底「缓存超 30 分钟自动刷新」——
+// 只重拉已启用且当前子视图已过期的卡片（未初始化的交给 onMounted 首屏，避免重复请求）
+onActivated(() => {
+  for (const { value, enabled } of sourceItems.value) {
+    if (enabled && isCardStale(value)) refreshCard(value);
+  }
+});
 
 // ---------- 卡片放大弹窗（卡片仅 375px 宽，宽版弹窗便于读长内容） ----------
 // 复用卡片当前通道的数据与分页状态（不另开请求），弹窗内切换子视图 / 主题同样作用于卡片

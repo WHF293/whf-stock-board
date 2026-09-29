@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onActivated, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import BaseButton from '../components/ui/BaseButton.vue';
 import BaseModal from '../components/ui/BaseModal.vue';
@@ -288,6 +288,18 @@ const forceRefresh = (source: BoardSource): void => {
 onMounted(() => {
   for (const { value, enabled } of sourceItems.value) {
     if (enabled) ensureSourceLoaded(value);
+  }
+});
+
+// KeepAlive 缓存页面：切走再切回不重新挂载，这里兜底「缓存超 30 分钟自动刷新」——
+// 已初始化且快照过期的平台当前分组强制重拉（未初始化的交给 onMounted 首屏，避免重复请求）
+onActivated(() => {
+  for (const { value, enabled } of sourceItems.value) {
+    if (!enabled) continue;
+    const state = getOrCreateState(value, selectedGroups.value[value]);
+    if (state.initialized && !isFresh(state.fetchedAt)) {
+      forceRefresh(value);
+    }
   }
 });
 
