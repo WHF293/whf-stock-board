@@ -67,7 +67,7 @@
 
 ## 2. stock-sdk 方法调用（`sdk` 单例，`src/api/sdk.ts`）
 
-`stock-sdk` 内部按方法路由到腾讯 / 东方财富不同域。**走东财 `push2` 的方法在本机不可用**（TCP 层封禁，改道 push2delay，见 §0）；**`push2his` 资金流历史依赖它，不要再改道**（2026-09-18 恢复过，2026-09-20 又被临时封禁，间歇性，恢复后即用，见 §0）；走腾讯源的方法（`quotes` / `calendar` / `search` / `timeline`）正常；「个股详情」的日 K 仍走新浪（复权口径原因，见 §1）。
+`stock-sdk` 内部按方法路由到腾讯 / 东方财富不同域。**走东财 `push2` 的方法在本机不可用**（TCP 层封禁，改道 push2delay，见 §0）；**`push2his` 资金流历史依赖它，不要再改道**（2026-09-18 恢复过，2026-09-20 又被临时封禁，间歇性，恢复后即用，见 §0）；走腾讯源的方法（`quotes` / `calendar` / `search`）正常；**个股 K 线 / 分时不走 SDK**（新浪源 `kline-cache.api` + 腾讯源 `fetchFullQuotes`，SDK 的 kline / timeline 方法已于 2026-09-29 随死代码删除）。
 
 | 封装函数 | 文件 | SDK 方法 | 上游域（实测） | 说明 |
 | --- | --- | --- | --- | --- |
@@ -88,9 +88,8 @@
 | `fetchNorthboundHoldingRank` | `api/flow.api.ts` | `sdk.northbound.holdingRank({market:'all',period:'today'})` | 东财 | 北向持股排名 |
 | `fetchIsTradingDay` | `api/calendar.api.ts` | `sdk.calendar.isTradingDay()` | 腾讯日历 | 是否 A 股交易日（异步，带缓存） |
 | `getMarketStatus` | `api/calendar.api.ts` | `sdk.calendar.marketStatus(market)` | 同步 | 当前市场状态（盘前/交易中/午休/盘后/休市，不识假） |
-| `fetchTodayTimeline` | `api/kline.api.ts` | `sdk.quotes.timeline(symbol)` | 腾讯(JSONP) | 当日分时（昨收+逐分钟价/均价） |
-| `fetchKlineWithIndicators` | `api/kline.api.ts` | `sdk.kline.withIndicators(symbol,{period,adjust,startDate,indicators})` | 东财 K线(push2 系列) | ⚠️ 上游为东财行情域，**本机被封 → 大概率失败**；个股详情主图 K 线已改用新浪源 `fetchSinaKline`；信号扫描 / MA 回测也已改走新浪 + SDK 纯函数（2026-09-14 方案 A） |
-| `fetchKlineSignals` | `api/kline.api.ts` | `sdk.kline.signals(symbol,{...})` | 东财 | 技术信号（MA/MACD 金叉死叉等 14 种） |
+| `fetchTodayTimeline` | ~~api/kline.api.ts~~ | ~~sdk.quotes.timeline(symbol)~~ | 腾讯(JSONP) | ⚠️ **已删除（2026-09-29 死代码清理）**：宿主无调用方；个股详情分时经 `kline-cache.api`（新浪 K 线通道）与 `fetchFullQuotes` 取数。淘汰 stock-sdk 时如需分时，直连腾讯分时接口 |
+| ~~fetchKlineWithIndicators / fetchKlineSignals~~ | ~~api/kline.api.ts~~ | ~~sdk.kline.withIndicators / signals~~ | 东财 K线(push2 系列) | ⚠️ **已删除（2026-09-29 死代码清理）**：上游为本机被封的东财行情域，且宿主零调用方；个股详情 K 线走新浪 `fetchSinaKline`（经 `kline-cache.api`），指标/信号由新浪数据 + SDK 纯函数自算（见 `agent/mcp/stocksdk-tools.ts`） |
 | `searchStocks` | `api/search.api.ts` | `sdk.search(keyword)` | 腾讯搜索 | 模糊搜索（代码/名称/拼音） |
 | `fetchDragonTigerDetail` | `api/dragon-tiger.api.ts` | `sdk.dragonTiger.detail({startDate,endDate})` | 东财 | 龙虎榜明细（近 N 日） |
 | `fetchBlockTradeDetail` | `api/dragon-tiger.api.ts` | `sdk.blockTrade.detail({startDate,endDate})` | 东财 | 大宗交易明细 |
@@ -112,7 +111,7 @@
 - **选股器（插件 `dsh-stock-screener`，v3.3.0 起自宿主迁出）**：基础筛选 / 信号扫描 / 尾盘选股与 MA 回测的取数逻辑随插件自带（东财快照 + 新浪日 K + 腾讯分时/JSONP，经 `app:http` 与 JSONP 直连），接口清单见插件仓库 `plugins/dsh-stock-screener/`；宿主 `api/screener.api.ts` 与 `api/analysis.api.ts` 已删除
 - **热点新闻 `HotNewsView`**：`fetchSinaHotNews` · `fetchEastmoneyHotNews` · `fetchThsHotNews` · `fetchThepaperHotNews` · `fetchTdxHotNews`（通达信资讯卡片，要闻/A股/产经三栏目均为单页快照，详见 §1）；「AI 分析」另经 `fetchNewsBodies` 批量抓新闻正文（并发 3 + 300ms 间隔，详见 §1），失败回退标题 + 摘要
 - **今天炒什么 `HotBoardView`**：`fetchHotBoard(source, group)`（五平台热股榜统一入口，分发细节见 §1 各分支行：同花顺 dq.10jqka / 东财 emappdata POST + 腾讯行情补齐 / 财联社 api3 sign / 通达信 TQLEX POST / 雪球 stock.xueqiu.com + guest cookie）；「AI 分析」经 `buildHotBoardPrompt` 拼五榜清单投递 Agent（无正文抓取，榜单数据自包含）。各分组均为单页快照，30 分钟 TTL 缓存（`hot-board.items.<source>#<group>`），不轮询
-- **个股详情（停靠面板）`StockDetailPanel`**：`fetchSinaKline`(K线) · `fetchTodayTimeline`(分时) · `fetchIndividualFundFlow` · `fetchKlineWithIndicators` · `fetchKlineSignals`
+- **个股详情（停靠面板）`StockDetailPanel`**：`fetchFullQuotes`(报价头) · `fetchKlineCached`(K线，新浪源经 `kline-cache.api`) · `fetchIndividualFundFlow`（⚠️ 2026-09-29 更正：原记录的 `fetchTodayTimeline` / `fetchKlineWithIndicators` / `fetchKlineSignals` 已随死代码 `api/kline.api.ts` 删除，该面板从未经它们取数）
 - **股票主线（侧栏插件 `dsh-mainline`）**：`fetchThsBoardPage`(清单+结构快照，含 1 次分页) · `fetchThsBoardKline`(×90) · `fetchMarketTurnover`(复用宿主，算成交占比分母) · `fetchZtPool('zt', 基准日)`(涨停结构)；**跨源兜底专用** `fetchEmBoardUniverse`(东财板块清单) · `fetchEmBoardKline`(东财板块日 K)
   ⚠️ 只由用户点击「扫描主线」触发、**不轮询**；同上游并发 3 + 连续间隔 500ms（`MAINLINE_SCAN_CONCURRENCY` / `MAINLINE_SCAN_DELAY_MS`）；东财侧**串行 1 + 间隔 1200ms**（`EM_SCAN_CONCURRENCY` / `EM_SCAN_DELAY_MS`，实测 `push2his` 突发限流，连接会被切断）。
   单次扫描请求数 ≈ **94**（清单首页 1 + 分页 1 + 板块年 K 90 + 两市成交额 1 + 涨停池 1；板块失败补采轮另计）；降级东财时 ≈ **96 + 6 页清单**（清单分页 ≤6 + 90 个板块日 K）。

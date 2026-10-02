@@ -34,13 +34,9 @@ import type { AppUpdateStatus } from "../types/app-update.types";
 import type { WeblogActionKey } from "../weblog/weblogActions.enum";
 import { useSettingsStore } from "../stores/settings";
 import { setWeblogEnabled, setWeblogWarnCapture, trackAction } from "../weblog";
-import {
-  DATA_SOURCE_LABEL,
-  DATA_SOURCE_URL,
-} from "@/constants/data-source.constants";
 
 /**
- * 设置页：轮询规则公告 + 数据来源 + 代理自检 + 轮询总开关 + 刷新间隔 + 主题配置 + 系统日志 + 缓存管理
+ * 设置页：轮询规则公告 + 数据获取（代理自检 + 缓存管理）+ 轮询总开关 + 刷新间隔 + 主题配置 + 系统日志
  * （偏好 localStorage 持久化）
  */
 
@@ -637,15 +633,6 @@ const onProbeProxy = async (): Promise<void> => {
   <div class="space-y-4">
     <NoticeBar :text="POLLING_RULE_NOTICE" />
     <BaseCard title="数据获取">
-      <a
-        :href="DATA_SOURCE_URL"
-        target="_blank"
-        rel="noreferrer"
-        class="pressable mb-2 block text-sm font-medium text-primary hover:opacity-80"
-        title="数据来源：stock-sdk"
-      >
-        数据来源：{{ DATA_SOURCE_LABEL }}
-      </a>
       <!-- 代理连通性自检：手动触发一次轻量请求 -->
       <div class="flex items-center justify-between gap-4">
         <p class="text-xs text-text-tertiary">

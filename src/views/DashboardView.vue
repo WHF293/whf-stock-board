@@ -20,6 +20,7 @@ import { fetchGlobalIndexQuotes } from '../api/panorama.api';
 import { fetchIndustryBoards } from '../api/board.api';
 import { fetchMarketFundFlow } from '../api/flow.api';
 import { fetchMarketTurnover } from '../api/turnover.api';
+import { fetchZtPool } from '../api/event.api';
 import { usePolling } from '../composables/use-polling';
 import {
   INDEX_SYMBOLS,
@@ -52,11 +53,14 @@ import type {
 } from '../types/board.types';
 import type { MarketFundFlow } from '../types/flow.types';
 import type { TurnoverDayItem } from '../types/turnover.types';
+import type { ZTPoolItem } from '../types/event.types';
+import type { MarketSentiment } from '../types/market-sentiment.types';
 import type { TurnoverTableRow } from '../constants/turnover.constants';
 import type { TableColumn } from '../types/table.types';
 import type { FullQuote } from '../types/stock-quote.types';
-import { formatPercent } from '../utils/format-percent';
+import { formatPercent, formatPercentUnsigned } from '../utils/format-percent';
 import { formatAmount } from '../utils/format-amount';
+import { computeMarketSentiment } from '../utils/compute-market-sentiment';
 import { formatYuanWithSign } from '../utils/format-yuan';
 import { formatTurnoverChange } from '../utils/format-turnover-change';
 import { countDistribution } from '../utils/count-distribution';
@@ -96,7 +100,8 @@ const marketViewMode = ref<typeof VIEW_MODE[keyof typeof VIEW_MODE]>(VIEW_MODE.C
 
 /**
  * 市场总览：指数卡片（轮询，点击跳 K 线详情）+ 全部指数一次渲染、收起只看首行（见 useRowClamp）+
- * 涨跌分布 / 资金速览 + 板块热力（轮询，支持热力图 / 列表两种展示形式，
+ * 涨跌分布 / 资金速览 + 市场情绪（涨停 / 跌停 / 炸板 / 连板梯队 / 打板溢价）+
+ * 板块热力（轮询，支持热力图 / 列表两种展示形式，
  * 下钻状态两视图共享；点击下钻成分股 → 点击个股跳详情）
  *
  * 数据先取内存快照秒出 UI，接口成功后写回快照并刷新显示
@@ -255,6 +260,44 @@ usePolling({
 });
 usePolling({
   task: fetchMarketBreadth,
+  intervalMs: POLLING_INTERVAL.MARKET_BREADTH,
+  tradingAware: true,
+});
+
+// ---------- 市场情绪（涨停 / 炸板 / 跌停 / 昨日涨停四池聚合；与市场宽度同频轮询） ----------
+
+/** 市场情绪速览（快照播种 + 轮询刷新） */
+const sentiment = ref<MarketSentiment | null>(null);
+
+/** 情绪首载是否失败（且无快照）——供卡片空态展示 */
+const isSentimentError = ref(false);
+
+// 快照播种：切换回本页先展示上次数据
+const cachedSentiment = dataCache.get<MarketSentiment>(DATA_CACHE_KEY.DASHBOARD_SENTIMENT);
+if (cachedSentiment) {
+  sentiment.value = cachedSentiment;
+}
+
+/** 拉取情绪四池（串行错峰，与市场宽度同上游）并聚合指标（成功后写快照） */
+const fetchMarketSentiment = async (): Promise<void> => {
+  try {
+    const limitUp: ZTPoolItem[] = await fetchZtPool('zt');
+    await delay(BREADTH_REQUEST_GAP_MS);
+    const broken: ZTPoolItem[] = await fetchZtPool('broken');
+    await delay(BREADTH_REQUEST_GAP_MS);
+    const limitDown: ZTPoolItem[] = await fetchZtPool('dt');
+    await delay(BREADTH_REQUEST_GAP_MS);
+    const yesterdayZt: ZTPoolItem[] = await fetchZtPool('yesterday');
+    sentiment.value = computeMarketSentiment(limitUp, broken, limitDown, yesterdayZt);
+    dataCache.set(DATA_CACHE_KEY.DASHBOARD_SENTIMENT, sentiment.value);
+  } catch (error) {
+    isSentimentError.value = sentiment.value === null;
+    console.error('[dashboard] sentiment', error);
+  }
+};
+
+usePolling({
+  task: fetchMarketSentiment,
   intervalMs: POLLING_INTERVAL.MARKET_BREADTH,
   tradingAware: true,
 });
@@ -730,6 +773,86 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
         </template>
       </BaseCard>
     </div>
+
+    <!--
+      市场情绪：涨停 / 跌停 / 炸板 / 炸板率 / 连板高度 / 打板溢价（标题跳市场榜单）。
+      四池数据与市场宽度同上游（东财），每轮串行错峰 4 请求；梯队口径与市场榜单-连板页签一致
+    -->
+    <BaseCard
+      title="市场情绪"
+      clickable-title
+      @title-click="goMarketRank"
+    >
+      <div v-if="isSentimentError" class="py-8">
+        <BaseEmpty text="情绪数据加载失败，请稍后重试" />
+      </div>
+      <BaseSkeleton v-else-if="!sentiment" />
+      <template v-else>
+        <!-- 速览六格：窄容器 3×2，宽容器 6×1（主区已开 @container） -->
+        <div class="grid grid-cols-3 gap-4 @2xl:grid-cols-6">
+          <div>
+            <p class="text-xs text-text-tertiary">涨停</p>
+            <p class="mt-1 text-xl font-semibold tabular-nums text-up">
+              {{ sentiment.limitUpCount }}
+            </p>
+          </div>
+          <div>
+            <p class="text-xs text-text-tertiary">跌停</p>
+            <p class="mt-1 text-xl font-semibold tabular-nums text-down">
+              {{ sentiment.limitDownCount }}
+            </p>
+          </div>
+          <div>
+            <p class="text-xs text-text-tertiary">炸板</p>
+            <p class="mt-1 text-xl font-semibold tabular-nums text-text">
+              {{ sentiment.brokenCount }}
+            </p>
+          </div>
+          <div>
+            <p class="text-xs text-text-tertiary">炸板率</p>
+            <p class="mt-1 text-xl font-semibold tabular-nums text-text">
+              {{ sentiment.brokenRate === null ? '--' : formatPercentUnsigned(sentiment.brokenRate) }}
+            </p>
+          </div>
+          <div>
+            <p class="text-xs text-text-tertiary">连板高度</p>
+            <p
+              class="mt-1 text-xl font-semibold tabular-nums"
+              :class="sentiment.maxLadder >= 3 ? 'text-up' : 'text-text'"
+            >
+              {{ sentiment.maxLadder > 0 ? `${sentiment.maxLadder} 板` : '--' }}
+            </p>
+          </div>
+          <div>
+            <p class="text-xs text-text-tertiary">昨日涨停均涨</p>
+            <p
+              class="mt-1 text-xl font-semibold tabular-nums"
+              :class="
+                sentiment.yesterdayZtAvgPct === null
+                  ? 'text-text'
+                  : sentiment.yesterdayZtAvgPct >= 0
+                    ? 'text-up'
+                    : 'text-down'
+              "
+            >
+              {{ sentiment.yesterdayZtAvgPct === null ? '--' : formatPercent(sentiment.yesterdayZtAvgPct) }}
+            </p>
+          </div>
+        </div>
+        <!-- 连板梯队药丸：与市场榜单-连板页签同款样式（≥3 板红色高亮） -->
+        <div v-if="sentiment.ladder.length > 0" class="mt-4 flex flex-wrap items-center gap-2">
+          <span
+            v-for="tier in sentiment.ladder"
+            :key="tier.board"
+            class="rounded-full px-3 py-1 text-xs font-medium"
+            :class="tier.board >= 3 ? 'bg-up-weak text-up' : 'bg-flat-weak text-text-secondary'"
+          >
+            {{ tier.board >= 2 ? `${tier.board}板` : '首板' }} · {{ tier.count }} 家
+          </span>
+        </div>
+        <p v-else class="mt-4 text-xs text-text-tertiary">今日暂无涨停个股</p>
+      </template>
+    </BaseCard>
 
     <!-- 板块热力（标题跳行情全景 A 股全景模块） -->
     <BaseCard

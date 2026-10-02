@@ -8,6 +8,8 @@ export const DATA_CACHE_KEY = {
   DASHBOARD_BREADTH: 'dashboard.breadth',
   /** 总览：沪深两市总成交额历史（成交量变化模块） */
   DASHBOARD_TURNOVER: 'dashboard.turnover',
+  /** 总览：市场情绪速览（涨停 / 炸板 / 跌停 / 昨日涨停四池聚合） */
+  DASHBOARD_SENTIMENT: 'dashboard.sentiment',
   /** 自选：报价映射 */
   WATCHLIST_QUOTES_MAP: 'watchlist.quotesMap',
   /** 板块排行（按 tab） */
