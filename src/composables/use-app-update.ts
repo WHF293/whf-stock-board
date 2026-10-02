@@ -58,21 +58,29 @@ const check = async (silent: boolean): Promise<void> => {
   if (status.value === 'checking' || status.value === 'downloading') return;
   status.value = 'checking';
   lastMessage.value = '';
-  const currentVersion = await getCurrentAppVersion();
-  const info = await fetchLatestRelease();
-  if (!info) {
-    // 网络不通 / 未开源 / 限流：按「无新版本」处理（用户指定口径），仅手动检测给轻提示
+  try {
+    const currentVersion = await getCurrentAppVersion();
+    const info = await fetchLatestRelease();
+    if (!info) {
+      // 网络不通 / 未开源 / 限流：按「无新版本」处理（用户指定口径），仅手动检测给轻提示
+      status.value = 'idle';
+      if (!silent) lastMessage.value = '暂时无法获取版本信息（网络不可用或仓库未发布），稍后再试';
+      return;
+    }
+    if (compareVersion(currentVersion, info.version) >= 0) {
+      status.value = 'up-to-date';
+      return;
+    }
+    pendingRelease = info;
+    latestVersion.value = info.version;
+    status.value = 'available';
+  } catch (error) {
+    // 兜底：版本读取等意外异常不得把状态卡死在 checking（徽标永不出现、设置页按钮永久禁用）
     status.value = 'idle';
-    if (!silent) lastMessage.value = '暂时无法获取版本信息（网络不可用或仓库未发布），稍后再试';
-    return;
+    if (!silent) {
+      lastMessage.value = `检查更新失败：${error instanceof Error ? error.message : String(error)}`;
+    }
   }
-  if (compareVersion(currentVersion, info.version) >= 0) {
-    status.value = 'up-to-date';
-    return;
-  }
-  pendingRelease = info;
-  latestVersion.value = info.version;
-  status.value = 'available';
 };
 
 /**

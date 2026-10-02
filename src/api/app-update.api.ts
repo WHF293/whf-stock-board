@@ -18,10 +18,10 @@ import type { GithubReleasePayload, LatestReleaseInfo, ReleaseAssetInfo } from '
 /**
  * 应用自动更新（GitHub Releases）· API
  *
+ * 检测与下载均经 tauri-plugin-http（Rust 直连，无 CORS / 稳定跟随系统代理）：
  * 检测：GET releases/latest（未认证，仓库开源后免鉴权；失败返回 null，
- * 由调用方按「无新版本」静默处理）；下载：browser_download_url 经
- * tauri-plugin-http（Rust 直连，无 CORS 限制）流式拉取 NSIS 安装包到
- * $APPDATA/updates/，边下边按分块落盘并回报进度；安装：调 Rust 命令
+ * 由调用方按「无新版本」静默处理）；下载：browser_download_url 流式拉取
+ * NSIS 安装包到 $APPDATA/updates/，边下边按分块落盘并回报进度；安装：调 Rust 命令
  * `install_update` 以 /S + /R 参数启动安装包并退出当前应用（装完自动重启）。
  *
  * 全链路仅 Tauri 桌面端可用；浏览器端所有函数为空操作。
@@ -29,6 +29,19 @@ import type { GithubReleasePayload, LatestReleaseInfo, ReleaseAssetInfo } from '
 
 /** 当前应用版本缓存（getVersion 是异步 IPC，取一次复用；浏览器端回退常量） */
 let cachedAppVersion: string | null = null;
+
+/**
+ * 检测请求实现（与插件更新 `plugin-update.api` 同款通道）：桌面端走 Rust 直连，
+ * 浏览器端原生 fetch（本文件检测函数不会走到，仅为类型对齐）
+ *
+ * ⚠️ 检测不能用 WebView2 原生 fetch：其网络栈只在启动时读一次系统代理，
+ * Clash 后开 / 切换模式时已启动的应用不感知，GitHub 请求会间歇性失败且被
+ * 「静默按无新版本」的口径吞掉（实测安装版检测不触发即此因）；Rust reqwest
+ * 走 `system-proxy` 稳定跟随系统代理，插件更新的 GitHub 请求实测一直正常。
+ */
+const netFetch: typeof globalThis.fetch = isTauri()
+  ? (tauriFetch as unknown as typeof globalThis.fetch)
+  : globalThis.fetch;
 
 /**
  * 取当前应用版本（Tauri 下读 tauri.conf.json 的 version，浏览器端回退 APP_VERSION 常量）
@@ -82,7 +95,7 @@ export const fetchLatestRelease = async (): Promise<LatestReleaseInfo | null> =>
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), UPDATE_CHECK_TIMEOUT_MS);
   try {
-    const response = await fetch(UPDATE_LATEST_API, {
+    const response = await netFetch(UPDATE_LATEST_API, {
       signal: controller.signal,
       headers: { Accept: UPDATE_API_ACCEPT },
     });
