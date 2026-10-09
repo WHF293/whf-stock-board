@@ -5,6 +5,9 @@ import MenuIcon from '../components/ui/MenuIcon.vue';
 import { HEADER_MARQUEE_TONE_CLASS } from '../constants/header.constants';
 import { CHART_LABEL_ON_TREND_COLOR } from '../constants/chart.constants';
 import {
+  WATCH_WIDGET_COLOR_CYCLE,
+  WATCH_WIDGET_COLOR_DEFAULT,
+  WATCH_WIDGET_COLOR_HEX,
   WATCH_WIDGET_EVENTS,
   WATCH_WIDGET_POPOVER_FOOTER_PADDING,
   WATCH_WIDGET_POPOVER_HEADER_HEIGHT,
@@ -17,6 +20,7 @@ import { getTrendColorCss } from '../utils/trend-colors';
 import { squarifyLayout } from './watch-heatmap-layout';
 import type { TreemapRect } from './watch-heatmap-layout';
 import type {
+  WatchWidgetColorPayload,
   WatchWidgetHeatmapPayload,
   WatchWidgetIndexesPayload,
   WatchWidgetPopoverView,
@@ -34,6 +38,7 @@ import type {
  *   指数行情），切换经 popover-view 事件上报主窗口重算窗口高度；
  * - 挂载时也上报一次当前视图：窗口销毁重建后组件态重置，主窗口侧的视图记忆随之自愈；
  * - 单击列表行 → 主窗口唤起 + 跳详情整页（左列 = 盯盘候选）；
+ *   单击行首分类颜色圆点 → 循环切换颜色并上报主窗口持久化（持仓 / 关注 / 其他分类）；
  *   「收起」按钮走与迷你条单击相同的切换事件（展开态下即隐藏）。
  */
 
@@ -118,6 +123,23 @@ onBeforeUnmount(() => {
  */
 const onPick = (row: WatchWidgetRow): void => {
   if (row.symbol) void emit(WATCH_WIDGET_EVENTS.OPEN_STOCK, { symbol: row.symbol });
+};
+
+/**
+ * 点击行首分类圆点：按固定顺序循环切换颜色并上报主窗口持久化
+ * （`@click.stop` 阻断行点击，不会顺带打开详情页）
+ * @param row 被点的候选行
+ */
+const onCycleColor = (row: WatchWidgetRow): void => {
+  if (!row.symbol) return;
+  // 旧载荷可能缺 color 字段：按默认白色起算，保证循环永远有下一个
+  const order = WATCH_WIDGET_COLOR_CYCLE;
+  const current = order.indexOf(row.color ?? WATCH_WIDGET_COLOR_DEFAULT);
+  const next = order[(current + 1) % order.length] ?? WATCH_WIDGET_COLOR_DEFAULT;
+  void emit(WATCH_WIDGET_EVENTS.SET_COLOR, {
+    symbol: row.symbol,
+    color: next,
+  } satisfies WatchWidgetColorPayload);
 };
 
 /** 收起气泡（走切换事件：展开态下即隐藏） */
@@ -228,6 +250,13 @@ const heatTiles = computed<HeatTile[]>(() => {
         @click="onPick(row)"
       >
         <span v-if="row.fired" class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+        <!-- 分类颜色圆点：点击循环切换（白 → 红 → 橙 → 黄 → 蓝 → 绿 → 紫 → 粉），不触发行点击 -->
+        <span
+          class="h-2 w-2 shrink-0 cursor-pointer rounded-full border border-flat-weak"
+          :style="{ backgroundColor: WATCH_WIDGET_COLOR_HEX[row.color] }"
+          title="点击切换分类颜色（持仓 / 关注 / 其他）"
+          @click.stop="onCycleColor(row)"
+        />
         <span class="min-w-0 flex-1 truncate text-left text-text">{{ row.name }}</span>
         <span class="w-16 shrink-0 text-right tabular-nums text-text-secondary">{{ row.price }}</span>
         <span class="w-14 shrink-0 text-right tabular-nums" :class="HEADER_MARQUEE_TONE_CLASS[row.tone]">
