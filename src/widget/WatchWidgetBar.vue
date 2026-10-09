@@ -5,6 +5,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { HEADER_MARQUEE_TONE_CLASS } from '../constants/header.constants';
 import {
   WATCH_WIDGET_CLICK_DELAY_MS,
+  WATCH_WIDGET_COLOR_HEX,
   WATCH_WIDGET_EVENTS,
   WATCH_WIDGET_ROTATE_MS,
 } from '../plugins/watch-widget/constants';import type { WatchWidgetRow } from '../types/watch-widget.types';
@@ -110,6 +111,11 @@ const onDblclick = (): void => {
     >
       <template v-if="current">
         <span v-if="current.fired" class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+        <!-- 分类颜色圆点（持仓 / 关注 / 其他；色名由主窗口持久化，条内只展示不切换） -->
+        <span
+          class="h-2 w-2 shrink-0 rounded-full border border-flat-weak"
+          :style="{ backgroundColor: WATCH_WIDGET_COLOR_HEX[current.color] }"
+        />
         <span class="min-w-0 flex-1 truncate text-text">{{ current.name }}</span>
         <span class="w-16 shrink-0 text-right tabular-nums text-text-secondary">{{ current.price }}</span>
         <span class="shrink-0 text-right tabular-nums" :class="HEADER_MARQUEE_TONE_CLASS[current.tone]">

@@ -2,7 +2,7 @@ import type {
   WatchWidgetMode,
   WatchWidgetPower,
 } from '../constants/watch-widget.constants';
-import type { WATCH_WIDGET_POPOVER_VIEW } from '../plugins/watch-widget/constants';
+import type { WATCH_WIDGET_POPOVER_VIEW, WatchWidgetColor } from '../plugins/watch-widget/constants';
 import type { ThemeColor } from '../constants/theme-color.constants';
 import type { TrendTheme } from '../constants/trend-theme.constants';
 import type { HeaderMarqueeTone } from './plugin.types';
@@ -38,6 +38,16 @@ export interface WatchWidgetRow {
   tone: HeaderMarqueeTone;
   /** 阈值已触发待回差（行首提示点） */
   fired: boolean;
+  /** 分类颜色（行首圆点；主窗口按持久化的 symbol → 颜色映射补齐，未设置时为白色） */
+  color: WatchWidgetColor;
+}
+
+/** `set-color` 事件载荷（气泡 → 主窗口：设置候选的分类颜色） */
+export interface WatchWidgetColorPayload {
+  /** 完整符号（sh600519） */
+  symbol: string;
+  /** 设置后的颜色（必须是 WATCH_WIDGET_COLOR 的合法取值，主窗口侧会再校验一次） */
+  color: WatchWidgetColor;
 }
 
 /** 小组件停靠位置（物理像素；用户拖动后由主窗口记忆） */
