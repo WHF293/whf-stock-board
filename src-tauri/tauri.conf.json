@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "stock-board",
-  "version": "4.1.0",
+  "version": "4.1.1",
   "identifier": "cn.whf.stockboard",
   "build": {
     "frontendDist": "../dist",

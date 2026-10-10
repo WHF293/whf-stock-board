@@ -535,8 +535,10 @@ body {
   border: 1px solid var(--glass-border);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+  /* 淡淡一圈即可（王总 2026-10-10：原 0.4 黑投影太大） */
+  box-shadow: 0 1px 4px rgba(31, 39, 51, 0.12);
 }
+.dark .m-home-index { box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3); }
 .m-home-index__name { font-size: 10.5px; font-weight: 700; color: var(--color-text-2); }
 .m-home-index__px { font-family: var(--font-num); font-size: 15px; font-weight: 800; line-height: 1.3; }
 .m-home-index__pct { font-family: var(--font-num); font-size: 10.5px; font-weight: 800; }
@@ -601,7 +603,11 @@ body {
   font-size: 19px; font-weight: 700;
   background: var(--glass-light-strong);
   border: 1px solid var(--glass-border);
-  box-shadow: inset 0 1px 0 var(--glass-highlight);
+  /* 淡淡一圈阴影托起图标（王总 2026-10-10） */
+  box-shadow: inset 0 1px 0 var(--glass-highlight), 0 2px 6px rgba(31, 39, 51, 0.14);
+}
+.dark .m-home-king__ic {
+  box-shadow: inset 0 1px 0 var(--glass-highlight), 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 .m-home-king__name { font-size: 10.5px; font-weight: 600; color: var(--color-text-2); }
 .m-home-king__ic.k-gold { color: #f7b500; }
@@ -736,8 +742,13 @@ body {
    ============================================================ */
 /* 二级页骨架：flex 纵向 + 内容区原生滚动 + 底部让位（无 TabBar，仅手势区） */
 .m-sub-scroll { flex: 1; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; }
+/* 二级页内容超屏时必须滚动而不是压扁子项：.m-card 等 overflow:hidden 容器在
+   flex 列里自动最小尺寸归零，默认 shrink 会把卡片压扁（K 线图曾被压到 194px 裁切，
+   王总 2026-10-10 反馈「分时图显示补全」），这里统一禁止收缩 */
+.m-sub-scroll > * { flex-shrink: 0; }
 .m-sub-scroll .van-pull-refresh { flex: 1; display: flex; flex-direction: column; }
 .m-sub-scroll .van-pull-refresh__track { flex: 1; display: flex; flex-direction: column; }
+.m-sub-scroll .van-pull-refresh__track > * { flex-shrink: 0; }
 /* loading 骨架撑满内容区（避免半屏空白的观感） */
 .m-skel-fill { flex: 1; }
 .m-sub-tail { height: calc(16px + env(safe-area-inset-bottom, 0px)); }
@@ -845,15 +856,26 @@ body {
 .m-cal-legend i { width: 14px; height: 10px; border-radius: 2px; }
 
 /* === 个股详情 === */
-.m-stk-head { padding: 10px 16px 12px; border-bottom: 1px solid var(--glass-border); }
+.m-stk-head {
+  padding: 10px 16px 12px;
+  border-bottom: 1px solid var(--glass-border);
+  /* 左侧名称/价格 + 右侧 3×2 指标网格（王总 2026-10-10：最高/最低移除，其余 6 项右移） */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.m-stk-head__main { flex-shrink: 0; }
 .m-stk-head__nm { font-size: 15px; font-weight: 800; }
 .m-stk-head__nm .code { font-family: var(--font-num); font-size: 10.5px; font-weight: 600; color: var(--color-text-3); margin-left: 6px; }
-.m-stk-head__px { font-family: var(--font-num); font-size: 30px; font-weight: 800; line-height: 1.25; }
+.m-stk-head__px { font-family: var(--font-num); font-size: 26px; font-weight: 800; line-height: 1.25; }
 .m-stk-head__chg { font-family: var(--font-num); font-size: 12.5px; font-weight: 800; }
-.m-stk-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px 10px; padding: 10px 16px; }
+.m-stk-grid { display: grid; grid-template-columns: repeat(3, auto); gap: 7px 16px; justify-content: end; text-align: left; }
 .m-stk-grid__t { font-size: 9.5px; font-weight: 600; color: var(--color-text-3); }
 .m-stk-grid__v { font-family: var(--font-num); font-size: 12px; font-weight: 800; }
-.m-stk-chart { height: 320px; padding: 6px 0 0; }
+/* 高度交给 KlineChart（autoHeight：min 420px，主图+VOL+MACD 三面板需要），
+   固定 320px 会与 min-h-420 冲突导致图表被裁（王总 2026-10-10） */
+.m-stk-chart { height: 420px; padding: 6px 0 0; }
 .m-stk-ob { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; padding: 8px 16px 12px; font-size: 11.5px; }
 .m-stk-ob__row { display: flex; justify-content: space-between; padding: 3px 0; font-family: var(--font-num); }
 .m-stk-ob__row .lbl { color: var(--color-text-3); }
@@ -873,6 +895,37 @@ body {
 .m-wl-row .m-row__nm .sub { font-family: var(--font-num); }
 /* 左滑删除按钮（Vant 要求固定宽高） */
 .m-wl-del { height: 100%; width: 68px; }
+/* 长按行防误触：禁掉系统文本选择 / iOS 长按放大镜 */
+.m-wl-row {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* 长按个股弹层：分组归属点选 + 删除自选 */
+.m-wl-sheet { padding: 6px 16px calc(10px + env(safe-area-inset-bottom, 0px)); }
+.m-wl-sheet__head { display: flex; align-items: baseline; gap: 8px; padding: 8px 2px 2px; }
+.m-wl-sheet__head .nm { font-size: 15px; font-weight: 700; }
+.m-wl-sheet__head .sub { font-family: var(--font-num); font-size: 11px; color: var(--color-text-3); }
+.m-wl-sheet__label { padding: 8px 2px; font-size: 11px; font-weight: 600; color: var(--color-text-3); }
+.m-wl-sheet__groups { display: flex; flex-wrap: wrap; gap: 8px; padding-bottom: 12px; }
+.m-wl-sheet__g {
+  display: inline-flex; align-items: center; gap: 5px;
+  min-height: 34px; padding: 0 13px;
+  border-radius: 999px; border: 1px solid var(--color-border);
+  background: var(--color-surface); font-size: 12.5px; font-weight: 600; color: var(--color-text-2);
+}
+.m-wl-sheet__g.on {
+  border-color: var(--color-primary);
+  background: var(--color-primary-weak);
+  color: var(--color-primary);
+}
+.m-wl-sheet__del {
+  width: 100%; min-height: 42px; border: none; border-radius: 10px;
+  background: var(--color-up-weak); color: var(--color-up);
+  font-size: 13.5px; font-weight: 700;
+}
+.dark .m-wl-sheet__del { background: rgba(210, 60, 60, 0.16); }
 /* 搜索弹层 */
 .m-wl-search { padding-bottom: env(safe-area-inset-bottom, 0px); }
 .m-wl-search__list { max-height: 46vh; overflow-y: auto; padding-bottom: 12px; }

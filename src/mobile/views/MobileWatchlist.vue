@@ -90,9 +90,13 @@ const activeRows = computed<WatchRowView[]>(() =>
   }),
 );
 
-/** 行点击进个股详情（symbol 已是 sh600519 完整形态）
+/** 行点击进个股详情（长按弹层触发后吞掉本次 click）
  * @param symbol 完整符号（如 sh600519） */
 const goStock = (symbol: string): void => {
+  if (suppressClick.value) {
+    suppressClick.value = false;
+    return;
+  }
   void router.push(`/stock/${symbol}`);
 };
 
@@ -185,6 +189,82 @@ const onRemoveStock = (row: WatchRowView): void => {
   store.removeStock(activeGroupId.value, row.stock.symbol);
   showToast('已从当前分组移除');
 };
+
+/* === 长按行：分组归属点选切换 + 删除自选（底部弹层，参考 PC 多组归属模型） === */
+const sheetOpen = ref(false);
+const sheetStock = ref<WatchlistStock | null>(null);
+
+/** 弹层里的分组清单（含归属状态） */
+const sheetGroups = computed(() => {
+  if (!sheetStock.value) return [];
+  return store.groups.map((group) => ({
+    id: group.id,
+    name: group.name,
+    joined: group.stocks.some((stock) => stock.symbol === sheetStock.value?.symbol),
+  }));
+});
+
+let pressTimer: number | undefined;
+const clearPress = (): void => {
+  window.clearTimeout(pressTimer);
+  pressTimer = undefined;
+};
+
+/** 长按触发后吞掉紧随其后的 click（否则弹层关闭时会误跳个股详情） */
+const suppressClick = ref(false);
+
+/** 触摸开始：按住 500ms 弹出操作层（touchmove 即取消，不与滚动 / 左滑删除冲突）
+ * @param stock 行内自选条目 */
+const onTouchStart = (stock: WatchlistStock): void => {
+  clearPress();
+  pressTimer = window.setTimeout(() => {
+    pressTimer = undefined;
+    suppressClick.value = true;
+    sheetStock.value = stock;
+    sheetOpen.value = true;
+  }, 500);
+};
+
+const onTouchMove = clearPress;
+const onTouchEnd = clearPress;
+
+/** 切换股票在某分组的归属（在组内则移出，不在则加入）
+ * @param groupId 目标分组 id */
+const toggleGroup = async (groupId: string): Promise<void> => {
+  const stock = sheetStock.value;
+  if (!stock) return;
+  const group = store.groups.find((item) => item.id === groupId);
+  if (!group) return;
+  const joined = group.stocks.some((item) => item.symbol === stock.symbol);
+  if (joined) {
+    store.removeStock(groupId, stock.symbol);
+    showToast(`已移出「${group.name}」`);
+  } else {
+    const ok = store.addStock(
+      { symbol: stock.symbol, name: stock.name, addedAt: stock.addedAt },
+      groupId,
+    );
+    showToast(ok ? `已加入「${group.name}」` : '操作失败');
+  }
+  await loadQuotes();
+};
+
+/** 从所有分组删除该自选（带确认） */
+const onSheetRemove = (): void => {
+  const stock = sheetStock.value;
+  if (!stock) return;
+  void showConfirmDialog({
+    title: '删除自选',
+    message: `将把「${stock.name}」从所有分组中移除`,
+  })
+    .then(() => {
+      store.removeStockFromAllGroups(stock.symbol);
+      sheetOpen.value = false;
+      showToast('已删除自选');
+      void loadQuotes();
+    })
+    .catch(() => {});
+};
 </script>
 
 <template>
@@ -222,7 +302,14 @@ const onRemoveStock = (row: WatchRowView): void => {
       </div>
       <div v-else class="m-card">
         <van-swipe-cell v-for="row in activeRows" :key="row.stock.symbol" class="m-wl-cell">
-          <div class="m-row m-wl-row" @click="goStock(row.stock.symbol)">
+          <div
+            class="m-row m-wl-row"
+            @click="goStock(row.stock.symbol)"
+            @touchstart.passive="onTouchStart(row.stock)"
+            @touchmove.passive="onTouchMove"
+            @touchend.passive="onTouchEnd"
+            @touchcancel.passive="onTouchEnd"
+          >
             <div class="m-row__nm">
               {{ row.stock.name }}
               <span class="sub">{{ row.stock.symbol }}</span>
@@ -272,5 +359,34 @@ const onRemoveStock = (row: WatchRowView): void => {
     >
       <van-field v-model="newGroupName" placeholder="分组名称" maxlength="10" />
     </van-dialog>
+
+    <!-- 长按个股：分组归属切换 + 删除自选 -->
+    <van-action-sheet
+      v-model:show="sheetOpen"
+      :close-on-click-action="false"
+      cancel-text="取消"
+      :teleport="'body'"
+    >
+      <div class="m-wl-sheet">
+        <div class="m-wl-sheet__head">
+          <span class="nm">{{ sheetStock?.name }}</span>
+          <span class="sub">{{ sheetStock?.symbol }}</span>
+        </div>
+        <div class="m-wl-sheet__label">所属分组（点选切换归属）</div>
+        <div class="m-wl-sheet__groups">
+          <button
+            v-for="group in sheetGroups"
+            :key="group.id"
+            class="m-wl-sheet__g"
+            :class="{ on: group.joined }"
+            @click="toggleGroup(group.id)"
+          >
+            <van-icon :name="group.joined ? 'checked' : 'circle'" />
+            {{ group.name }}
+          </button>
+        </div>
+        <button class="m-wl-sheet__del" @click="onSheetRemove">删除自选</button>
+      </div>
+    </van-action-sheet>
   </div>
 </template>
