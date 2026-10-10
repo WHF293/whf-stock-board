@@ -242,7 +242,7 @@ loadRank('stock');
 
     <div class="m-sub-scroll">
       <van-pull-refresh v-model="refreshing" @refresh="onRefresh">
-        <div v-if="loading" class="m-card">
+        <div v-if="loading" class="m-card m-skel-fill">
           <div v-for="i in 10" :key="i" class="m-skel-row"></div>
         </div>
         <div v-else-if="error" class="m-state">

@@ -6,8 +6,11 @@ name: Mobile Release (Android APK)
 # 前置条件（缺失时本流程会失败，不影响桌面发布）：
 # 1. src-tauri/tauri.android.conf.json 已存在（beforeBuildCommand 指向 pnpm build:mobile）
 # 2. 阶段 1 完成后 gen/android 由 init 在 CI 内生成（该目录已 gitignore）
-# 3. 签名：当前产物为 Tauri 模板默认签名（可直接安装）；正式签名在 gen/android 生成后
-#    按 Tauri 文档接入 keystore（Secrets 建议：ANDROID_KEYSTORE / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS）
+# 3. 签名：构建后用 Secrets 的 keystore 做 zipalign+apksigner 签名
+#    （ANDROID_KEYSTORE=base64 后的 keystore / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS），
+#    未签名 APK 无法安装（解析报错 packageInfo is null）
+# 4. 图标：gen/android 被 gitignore，CI 重新 init 得到的是 Tauri 默认图标，
+#    用仓库提交的 src-tauri/android-res-icons/（与真机验证过的图标一致）覆盖 res/
 
 on:
   push:
@@ -82,15 +85,44 @@ jobs:
       - name: Init Android project
         run: pnpm tauri android init
 
+      # android init 只出 Tauri 模板默认图标（gen/android 被 gitignore，
+      # 本地手工替换的图标不会进 CI），用仓库提交的 K 线图标集覆盖
+      - name: Apply app icons
+        run: cp -r src-tauri/android-res-icons/. src-tauri/gen/android/app/src/main/res/
+
       # beforeBuildCommand 由 tauri.android.conf.json 提供（pnpm build:mobile）
       # 只编 arm64（aarch64）：安卓真机均为 arm64，universal 四 ABI 会让 APK 膨胀到 ~62MB，
       # 单 arm64 约 18MB；如需模拟器（x86_64）或其他 ABI 再按需加 --target
       - name: Build APK
         run: pnpm tauri android build --apk --target aarch64
 
+      # tauri android build 产出的是未签名 APK（直接安装报「解析软件包时出现问题
+      # (33) packageInfo is null」），用 GitHub Secrets 里的 keystore 做 zipalign+签名。
+      # Secrets：ANDROID_KEYSTORE(base64) / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS
+      - name: Sign APK
+        env:
+          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          echo "$ANDROID_KEYSTORE" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          IN=$(find src-tauri/gen/android/app/build/outputs/apk -name '*unsigned.apk' | head -1)
+          echo "unsigned apk: $IN"
+          OUT="stockboard_${GITHUB_REF_NAME}_arm64.apk"
+          "$BT/zipalign" -p -f 4 "$IN" "$RUNNER_TEMP/aligned.apk"
+          "$BT/apksigner" sign \
+            --ks "$RUNNER_TEMP/release.keystore" \
+            --ks-key-alias "$ANDROID_KEY_ALIAS" \
+            --ks-pass "pass:$ANDROID_KEYSTORE_PASSWORD" \
+            --key-pass "pass:$ANDROID_KEYSTORE_PASSWORD" \
+            --out "$OUT" "$RUNNER_TEMP/aligned.apk"
+          "$BT/apksigner" verify --print-certs "$OUT"
+          rm -f "$RUNNER_TEMP/release.keystore"
+
       # 追加到同一 tag 的 Release（桌面流程创建的 Release 已存在则直接添加 Asset）
       - name: Upload APK to Release
         uses: softprops/action-gh-release@v2
         with:
-          files: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          files: stockboard_*_arm64.apk
           fail_on_unmatched_files: true

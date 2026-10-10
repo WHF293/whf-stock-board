@@ -104,6 +104,7 @@ export const MOBILE_NEWS_SOURCES: readonly MobileNewsSource[] = [
 /** 移动端底部 Tab（主 Tab 页路径 + 图标 + 文案；今天炒什么为首页模块跳转的二级页，不入 Tab） */
 export const MOBILE_TAB_ITEMS: readonly { path: string; label: string; icon: string }[] = [
   { path: '/', label: '首页', icon: '⌂' },
+  { path: '/watchlist', label: '自选', icon: '★' },
   { path: '/news', label: '热点新闻', icon: '✦' },
   { path: '/mine', label: '我的', icon: '☻' },
 ];

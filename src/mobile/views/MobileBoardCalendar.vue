@@ -271,7 +271,7 @@ const fmtPct = (v: number | null): string => (v === null ? '--' : `${v > 0 ? '+'
 
     <div v-else class="m-sub-scroll">
       <!-- 加载/错误 -->
-      <div v-if="isDetail ? detailLoading : matrixLoading" class="m-card">
+      <div v-if="isDetail ? detailLoading : matrixLoading" class="m-card m-skel-fill">
         <div v-for="i in 10" :key="i" class="m-skel-row"></div>
       </div>
       <div v-else-if="isDetail ? detailError : matrixError" class="m-state">

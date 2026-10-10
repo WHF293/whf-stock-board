@@ -188,7 +188,7 @@ const back = (): void => {
 
     <div class="m-sub-scroll">
       <!-- === 报价头 === -->
-      <div v-if="quoteLoading" class="m-card">
+      <div v-if="quoteLoading" class="m-card m-skel-fill">
         <div v-for="i in 4" :key="i" class="m-skel-row"></div>
       </div>
       <div v-else-if="quoteError || !quote" class="m-state">
