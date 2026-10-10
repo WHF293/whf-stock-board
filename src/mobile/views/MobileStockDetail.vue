@@ -57,15 +57,13 @@ const chgText = computed(() => {
   return `${q.change > 0 ? '+' : ''}${q.change.toFixed(2)}  ${q.changePercent > 0 ? '+' : ''}${q.changePercent.toFixed(2)}%`;
 });
 
-/** 4×2 指标网格（语义同 PC 报价头） */
+/** 3×2 指标网格，置于名称/价格右侧（语义同 PC 报价头；最高/最低按王总 2026-10-10 要求移除） */
 const headGrid = computed(() => {
   const q = quote.value;
   const f = (v: number | null | undefined, digits = 2): string =>
     v === null || v === undefined ? '--' : v.toFixed(digits);
   return [
     { t: '今开', v: f(q?.open), cls: pctClass(q && q.open > q.prevClose ? 1 : q && q.open < q.prevClose ? -1 : 0) },
-    { t: '最高', v: f(q?.high), cls: pctClass(q && q.high > q.prevClose ? 1 : 0) },
-    { t: '最低', v: f(q?.low), cls: pctClass(q && q.low < q.prevClose ? -1 : 0) },
     { t: '昨收', v: f(q?.prevClose), cls: 'm-flat' },
     { t: '成交量', v: q ? `${((q.volume ?? 0) / 1e6).toFixed(1)}万手` : '--', cls: 'm-flat' },
     { t: '成交额', v: q ? `${((q.amount ?? 0) / 1e8).toFixed(2)}亿` : '--', cls: 'm-flat' },
@@ -91,7 +89,8 @@ const loadKline = async (): Promise<void> => {
   klineError.value = false;
   bars.value = [];
   try {
-    bars.value = await fetchKlineCached(symbol.value, period.value, { barLimit: 120 });
+    // 不传 barLimit，与 PC 同口径（分时需全天 ~242 根、五日需 5×242 根，120 会截掉上午盘）
+    bars.value = await fetchKlineCached(symbol.value, period.value);
   } catch {
     klineError.value = true;
   } finally {
@@ -197,14 +196,16 @@ const back = (): void => {
       </div>
       <template v-else>
         <div class="m-stk-head m-card" style="border-top: none">
-          <div class="m-stk-head__nm">
-            {{ quote.name }}<span class="code">{{ symbol }}</span>
-          </div>
-          <div class="m-stk-head__px" :class="pctClass(quote.changePercent)">
-            {{ quote.price?.toFixed(2) ?? '--' }}
-          </div>
-          <div class="m-stk-head__chg" :class="pctClass(quote.changePercent)">
-            {{ chgText }}
+          <div class="m-stk-head__main">
+            <div class="m-stk-head__nm">
+              {{ quote.name }}<span class="code">{{ symbol }}</span>
+            </div>
+            <div class="m-stk-head__px" :class="pctClass(quote.changePercent)">
+              {{ quote.price?.toFixed(2) ?? '--' }}
+            </div>
+            <div class="m-stk-head__chg" :class="pctClass(quote.changePercent)">
+              {{ chgText }}
+            </div>
           </div>
           <div class="m-stk-grid">
             <div v-for="g in headGrid" :key="g.t">
