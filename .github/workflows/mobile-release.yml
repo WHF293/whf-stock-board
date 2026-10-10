@@ -83,10 +83,10 @@ jobs:
         run: pnpm tauri android init
 
       # beforeBuildCommand 由 tauri.android.conf.json 提供（pnpm build:mobile）
-      # 默认 universal APK（覆盖全部 ABI）；只要 arm64 真机可改：
-      #   pnpm tauri android build --apk --target aarch64
+      # 只编 arm64（aarch64）：安卓真机均为 arm64，universal 四 ABI 会让 APK 膨胀到 ~62MB，
+      # 单 arm64 约 18MB；如需模拟器（x86_64）或其他 ABI 再按需加 --target
       - name: Build APK
-        run: pnpm tauri android build --apk
+        run: pnpm tauri android build --apk --target aarch64
 
       # 追加到同一 tag 的 Release（桌面流程创建的 Release 已存在则直接添加 Asset）
       - name: Upload APK to Release
