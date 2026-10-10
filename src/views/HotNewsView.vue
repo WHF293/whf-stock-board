@@ -116,14 +116,14 @@ const SOURCE_LABELS: Record<NewsSource, string> = {
   tdx: "通达信资讯",
 };
 
-/** 默认源顺序（首次进入 / 持久化数据缺源时按此补齐） */
+/** 默认源顺序（首次进入 / 持久化数据缺源时按此补齐；2026-10-10 调整为财联社优先，与移动端一致） */
 const DEFAULT_SOURCE_ORDER: readonly NewsSource[] = [
-  "sina",
-  "eastmoney",
-  "ths",
-  "thepaper",
   "cls",
   "tdx",
+  "ths",
+  "eastmoney",
+  "sina",
+  "thepaper",
 ];
 
 // 同花顺卡片的子视图（ThsSubView）与展示名定义在 constants/hot-news.constants.ts，

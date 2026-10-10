@@ -3,6 +3,7 @@
 A 股看板 SPA（个人学习用）：行情总览 / 自选股 / 行情全景 / 资金动向 / 涨停异动 / 龙虎榜·大宗 / 今天炒什么（五平台热股榜聚合）。
 
 - **PC 客户端（推荐）**：Tauri 2 打包的 Windows 桌面应用，全部数据源可用（Rust 直连，无 CORS 限制）
+- **安卓客户端（开发中）**：同一代码库的移动端形态，底部三 Tab（热点新闻 / 今天炒什么 / 我的），Vant 4 组件库，直装 APK 无需商店
 
 ## 软件截图
 
@@ -62,6 +63,22 @@ pnpm tauri build
 - 版本号以 `src-tauri/tauri.conf.json` 的 `version` 为准（与安装包文件名、Release 版本一致）
 - 本机构建 WiX / NSIS 工具链需下载，国内网络建议先设置代理：
   `export HTTPS_PROXY=http://127.0.0.1:7897`
+
+## 安卓客户端（移动端）
+
+与桌面端共用同一代码库（数据层 / API / 常量完全复用），通过 Vite `--mode mobile` 构建期分流：
+移动端入口挂载 `src/mobile/`（底部 TabBar 壳 + 移动页面），桌面入口与布局完全不受影响；
+组件库使用 [Vant 4](https://vant-ui.github.io/vant/)（Swipe 横滑切换 / PullRefresh 下拉刷新 / List 上拉加载），主题经 CSS 变量桥接 `DESIGN.md` token。
+
+```bash
+pnpm dev:mobile    # 移动端前端开发（浏览器预览，mode=mobile）
+pnpm tauri android dev    # 真机 / 模拟器开发（需 Android SDK + NDK + Rust android targets）
+pnpm tauri android build --apk    # 打安卓 APK（直装分发，产出在 src-tauri/gen/android/...）
+```
+
+- 移动端仅保留两个数据 Tab 与「我的」（设置 / 主题设置），桌面专属能力（AI 分析 / 停靠面板 / 插件 / 自选）不打包
+- CI：`mobile-release.yml` 与桌面 `release.yml` 共用同一版本 tag，自动把 APK 追加到同一个 GitHub Release
+- 数据同样经 Rust 直连上游（无自建后端）；榜单与新闻快照 30 分钟 TTL 持久化缓存，前台轮询间隔可在 App 内设置
 
 ## 发布到 GitHub Release
 

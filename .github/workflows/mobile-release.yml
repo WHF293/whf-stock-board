@@ -1,0 +1,96 @@
+name: Mobile Release (Android APK)
+
+# 与桌面 release.yml 共用同一 tag：
+# - 桌面 release.yml 负责「创建 Release + 名称/变更描述 + msi/nsis」（Release 的属主流程）
+# - 本流程只把安卓 APK 作为额外 Asset 追加到同一个 Release
+# 前置条件（缺失时本流程会失败，不影响桌面发布）：
+# 1. src-tauri/tauri.android.conf.json 已存在（beforeBuildCommand 指向 pnpm build:mobile）
+# 2. 阶段 1 完成后 gen/android 由 init 在 CI 内生成（该目录已 gitignore）
+# 3. 签名：当前产物为 Tauri 模板默认签名（可直接安装）；正式签名在 gen/android 生成后
+#    按 Tauri 文档接入 keystore（Secrets 建议：ANDROID_KEYSTORE / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS）
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-android:
+    # 手动触发仅限仓库所有者（与桌面 release.yml 同一守卫口径）
+    if: github.event_name != 'workflow_dispatch' || github.actor == 'WHF293'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # 拉全量历史，与桌面流程相同：校验 tag 必须在 main / dev 历史上
+          fetch-depth: 0
+
+      - name: Verify tag is on main or dev
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          if git merge-base --is-ancestor "${GITHUB_SHA}" origin/main || git merge-base --is-ancestor "${GITHUB_SHA}" origin/dev; then
+            echo "tag ${GITHUB_REF_NAME} 位于 main 或 dev 分支历史上，允许发布"
+          else
+            echo "::error::tag ${GITHUB_REF_NAME} 的提交不在 main 或 dev 分支上，拒绝发布"
+            exit 1
+          fi
+
+      # Android Gradle Plugin 要求 JDK 17+（与桌面 job 的 Node/Rust 环境互不影响）
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Setup Rust (Android targets)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # ubuntu runner 自带 ANDROID_HOME 与 cmdline-tools；补装固定版本 NDK 并导出 NDK_HOME
+      - name: Install Android NDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.0.12077973"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # gen/android 已 gitignore：CI 内重新生成（identifier 取自 tauri.conf.json，非交互）
+      - name: Init Android project
+        run: pnpm tauri android init
+
+      # beforeBuildCommand 由 tauri.android.conf.json 提供（pnpm build:mobile）
+      # 默认 universal APK（覆盖全部 ABI）；只要 arm64 真机可改：
+      #   pnpm tauri android build --apk --target aarch64
+      - name: Build APK
+        run: pnpm tauri android build --apk
+
+      # 追加到同一 tag 的 Release（桌面流程创建的 Release 已存在则直接添加 Asset）
+      - name: Upload APK to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          fail_on_unmatched_files: true

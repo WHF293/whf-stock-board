@@ -1,6 +1,9 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
+// 菜单 / 托盘是桌面专属 API（Android / iOS 目标下 tauri 不暴露），移动编译必须整体门控
+#[cfg(desktop)]
 use tauri::menu::{Menu, MenuItem};
+#[cfg(desktop)]
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Manager, State};
 use tauri_plugin_sql::{Migration, MigrationKind};
@@ -78,6 +81,8 @@ fn run_installer_and_exit(_app: &tauri::AppHandle, _installer_path: &str) -> Res
 /// 构建系统托盘：左键单击显示主窗口，菜单提供「显示主窗口 / 退出」；
 /// 真正的退出只走托盘菜单「退出」（`app.exit`），关闭按钮的语义由
 /// `on_window_event` 的 CloseRequested 拦截逻辑决定。
+/// 桌面专属：移动目标无托盘概念，编译期整体剔除。
+#[cfg(desktop)]
 fn build_tray(app: &tauri::App) -> tauri::Result<()> {
   let show = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
   let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
@@ -791,15 +796,19 @@ fn stock_board_db_migrations() -> Vec<Migration> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-  tauri::Builder::default()
+  let builder = tauri::Builder::default()
     .plugin(tauri_plugin_http::init())
-    .plugin(tauri_plugin_opener::init())
-    // 开机自动启动（Windows 写 HKCU Run 注册表键，无需提权；启停在设置页经 JS API 控制，
-    // 注册表为持久事实源，应用内不做启动时强制回写）
-    .plugin(tauri_plugin_autostart::init(
-      tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-      None,
-    ))
+    .plugin(tauri_plugin_opener::init());
+
+  // 开机自动启动（Windows 写 HKCU Run 注册表键，无需提权；启停在设置页经 JS API 控制，
+  // 注册表为持久事实源，应用内不做启动时强制回写）。桌面专属插件：移动端无自启动概念。
+  #[cfg(desktop)]
+  let builder = builder.plugin(tauri_plugin_autostart::init(
+    tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+    None,
+  ));
+
+  builder
     .plugin(
       tauri_plugin_sql::Builder::default()
         .add_migrations("sqlite:agent.db", agent_db_migrations())
@@ -840,7 +849,8 @@ pub fn run() {
       if let Some(main_window) = app.get_webview_window("main") {
         window_syscmd::enable(&main_window);
       }
-      // 系统托盘：左键唤起主窗口，右键菜单「显示主窗口 / 退出」
+      // 系统托盘：左键唤起主窗口，右键菜单「显示主窗口 / 退出」（桌面专属）
+      #[cfg(desktop)]
       build_tray(app)?;
       Ok(())
     })

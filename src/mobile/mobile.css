@@ -1,0 +1,402 @@
+/* ============================================================
+   移动端全局样式（仅 mobile 构建加载，见 src/mobile/bootstrap.ts）
+   主题 token 全部引用 theme.css 的 CSS 变量（data-theme / data-trend /
+   html.dark 三轴自动跟随），并把 Vant 变量桥接到同一套 token
+   ============================================================ */
+
+:root {
+  /* Vant → DESIGN.md token 桥接 */
+  --van-primary-color: var(--color-primary);
+  --van-danger-color: var(--color-up);
+  --van-warning-color: #b45309;
+  --van-text-color: var(--color-text);
+  --van-text-color-2: var(--color-text-2);
+  --van-text-color-3: var(--color-text-3);
+  --van-background: var(--color-bg);
+  --van-background-2: var(--color-surface);
+  --van-border-color: var(--color-border);
+  --van-nav-bar-height: 48px;
+  --van-cell-background: var(--color-surface);
+  --van-toast-background: rgba(31, 39, 51, 0.9);
+}
+
+html,
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 涨跌语义色（跟随 data-trend / html.dark 的变量覆盖） */
+.m-up { color: var(--color-up); }
+.m-down { color: var(--color-down); }
+.m-flat { color: var(--color-flat); }
+.m-num { font-family: var(--font-num, 'SF Mono', Menlo, Consolas, monospace); }
+
+/* 应用壳：不承担页面滚动。主 Tab 页（m-page-flex）为「固定高度 + 面板内部原生滚动」结构，
+   二级页（设置 / 主题）仍走 window 滚动 */
+.m-root { min-height: 100dvh; }
+
+/* 主 Tab 页骨架：navbar / 摘要条 / Tab 内容纵向排满一屏，垂直滚动发生在各面板内部。
+   这是 Vant Tabs + PullRefresh + 无限加载的标准宿主结构：
+   面板原生滚动（pan-y）不会被 Tabs 的横向手势方向锁拦截，两个方向都能滚 */
+.m-page-flex {
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.m-page-flex .m-tabs {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.m-page-flex .m-tabs .van-tabs__content {
+  flex: 1;
+  min-height: 0;
+}
+.m-page-flex .m-tabs .van-swipe,
+.m-page-flex .m-tabs .van-swipe__track,
+.m-page-flex .m-tabs .van-swipe-item,
+.m-page-flex .m-tabs .van-tab__panel-wrapper { height: 100%; }
+.m-page-flex .van-tab__panel {
+  height: 100%;
+  overflow-y: auto;
+  touch-action: pan-y;
+  box-sizing: border-box;
+  /* 底部 TabBar + 全面屏手势区让位 */
+  padding-bottom: calc(70px + env(safe-area-inset-bottom, 0px));
+}
+
+/* 主 Tab 页内无 Tabs 的页面（我的）同样留出 TabBar 高度 */
+.m-tab-safe { padding-bottom: calc(70px + env(safe-area-inset-bottom, 0px)); }
+
+/* 底部 TabBar（fixed；全面屏手势区用 safe-area 抬高） */
+.m-tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 100;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+}
+.m-tabbar__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-2);
+  text-decoration: none;
+}
+.m-tabbar__item--active { color: var(--color-primary); }
+.m-tabbar__icon { font-size: 17px; line-height: 1.2; }
+
+/* 顶部导航（van-nav-bar 之上补来源标注位） */
+.m-nav { background: var(--color-surface); border-bottom: 1px solid var(--color-border); }
+.m-nav__title { font-size: 16px; font-weight: 600; }
+
+/* chips 横滚区（一级源 / 二级子栏目 / 平台 / 分组共用） */
+.m-chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.m-chips::-webkit-scrollbar { display: none; }
+.m-chip {
+  flex-shrink: 0;
+  min-height: 30px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text-2);
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.m-chip--active { background: var(--color-primary-weak); color: var(--color-primary); font-weight: 800; }
+.m-chip--sub { min-height: 26px; font-size: 11.5px; background: var(--color-border); }
+.m-chip--sub.m-chip--active { background: var(--color-primary-weak); color: var(--color-primary); }
+
+/* 新闻流 */
+.m-news-list { background: var(--color-surface); }
+.m-news-row {
+  display: flex;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border);
+  align-items: flex-start;
+  cursor: pointer;
+}
+.m-news-row:active { background: var(--color-border); }
+.m-news-row__main { flex: 1; min-width: 0; }
+.m-news-row__title {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.m-news-row__meta { margin-top: 6px; font-size: 11px; color: var(--color-text-3); display: flex; gap: 6px; align-items: center; }
+.m-news-row__src { color: var(--color-primary); font-weight: 600; }
+.m-news-row__thumb {
+  width: 84px;
+  height: 56px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  object-fit: cover;
+  background: var(--color-primary-weak);
+}
+
+/* 榜单 */
+.m-board-card { background: var(--color-surface); overflow: hidden; }
+.m-board-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 16px 8px;
+}
+.m-board-head__logo {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--color-primary-weak);
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+.m-board-head__title { font-size: 14px; font-weight: 600; flex: 1; min-width: 0; }
+.m-board-head__time { font-size: 10.5px; color: var(--color-text-3); font-weight: 600; }
+.m-board-row {
+  display: grid;
+  grid-template-columns: 24px 1.3fr 0.95fr 0.8fr;
+  column-gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--color-border);
+  align-items: center;
+}
+.m-board-row:last-child { border-bottom: 0; }
+.m-board-row__rank {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: var(--color-border);
+  color: var(--color-text-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 800;
+}
+.m-board-row__rank--top { background: var(--color-up-weak); color: var(--color-up-strong); }
+.m-board-row__name { min-width: 0; }
+.m-board-row__name .t { font-size: 13.5px; font-weight: 700; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.m-board-row__name .c { font-size: 10px; color: var(--color-text-3); font-weight: 600; margin-top: 2px; }
+.m-board-row__px { text-align: right; }
+.m-board-row__px .p { font-size: 12.5px; font-weight: 700; line-height: 1.25; }
+.m-board-row__px .g { font-size: 11px; font-weight: 800; margin-top: 2px; }
+.m-board-row__heat { text-align: right; }
+.m-board-row__heat .h { font-size: 12px; font-weight: 700; color: var(--color-text-2); line-height: 1.25; }
+.m-board-row__heat .hc { font-size: 10px; font-weight: 800; margin-top: 2px; display: inline-block; }
+.m-board-row__heat .hc--new { color: var(--color-primary); background: var(--color-primary-weak); border-radius: 4px; padding: 0 4px; }
+
+/* 快照摘要条（Vant NoticeBar 桥接主题 token） */
+.m-notice {
+  --van-notice-bar-height: 32px;
+  --van-notice-bar-background: var(--color-primary-weak);
+  --van-notice-bar-text-color: var(--color-primary);
+  font-weight: 600;
+}
+
+/* 一级 Tab（源 / 平台，Vant Tabs；不加触摸拦截，垂直滚动走面板原生滚动） */
+.m-tabs {
+  --van-tab-active-text-color: var(--color-primary);
+  --van-tab-text-color: var(--color-text-2);
+  --van-tab-font-size: 13px;
+  --van-tabs-bottom-bar-color: var(--color-primary);
+  --van-tabs-bottom-border-color: var(--color-border);
+  background: var(--color-surface);
+}
+
+/* 分段选择（轮询间隔等四档选项） */
+.m-seg { display: flex; background: var(--color-border); border-radius: 8px; padding: 2px; }
+.m-seg__opt {
+  flex: 1;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 0;
+  border-radius: 6px;
+  border: none;
+  color: var(--color-text-2);
+  background: transparent;
+  cursor: pointer;
+}
+.m-seg__opt--on { background: var(--color-surface); color: var(--color-primary); font-weight: 800; }
+
+/* 设置行 */
+.m-set-group { background: var(--color-surface); border-radius: 12px; margin: 0 16px; overflow: hidden; }
+.m-set-label { padding: 12px 16px 4px; font-size: 11px; font-weight: 800; color: var(--color-text-3); }
+.m-set-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--color-border);
+  width: 100%;
+  background: var(--color-surface);
+  border-left: 0;
+  border-right: 0;
+  border-top: 0;
+  text-align: left;
+  cursor: pointer;
+}
+.m-set-row:last-child { border-bottom: 0; }
+.m-set-row__ic {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--color-primary-weak);
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+.m-set-row__t { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; }
+.m-set-row__t .d { display: block; font-size: 10.5px; color: var(--color-text-3); font-weight: 500; margin-top: 2px; }
+.m-set-row__extra { font-size: 12px; color: var(--color-text-3); font-weight: 600; }
+.m-set-row__arr { color: var(--color-text-3); }
+.m-mini-btn {
+  min-height: 28px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 999px;
+  background: var(--color-primary-weak);
+  color: var(--color-primary);
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* 主题设置 */
+.m-swatches { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.m-sw {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.m-sw--on { box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-primary); }
+.m-trend-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.m-trend-card {
+  border: 2px solid var(--color-border);
+  border-radius: 8px;
+  padding: 9px 2px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  background: var(--color-surface);
+  cursor: pointer;
+}
+.m-trend-card--on { border-color: var(--color-primary); background: var(--color-primary-weak); }
+.m-trend-card__nm { font-size: 11px; font-weight: 700; color: var(--color-text); }
+.m-trend-card__pill {
+  font-size: 10px;
+  font-weight: 800;
+  border-radius: 999px;
+  padding: 2px 6px;
+  width: fit-content;
+}
+
+/* 原文页 */
+.m-wv-bar { height: 3px; background: var(--color-border); }
+.m-wv-bar i { display: block; height: 100%; background: var(--color-primary); border-radius: 999px; transition: width 0.4s ease; }
+.m-wv-frame { width: 100%; height: 100%; border: 0; background: var(--color-surface); }
+.m-wv-hint {
+  margin: 12px 16px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--color-primary-weak);
+  border: 1px solid var(--color-primary);
+  color: var(--color-primary);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+/* 平台设置弹层行 */
+.m-sheet-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 11px 2px;
+  border-bottom: 1px solid var(--color-border);
+}
+.m-sheet-row__name { flex: 1; min-width: 0; font-size: 13.5px; font-weight: 600; }
+.m-sheet-row__name span { font-size: 10.5px; color: var(--color-text-3); font-weight: 500; margin-left: 6px; }
+.m-sheet-row__name--off { color: var(--color-text-3); }
+.m-order-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 8px;
+  background: var(--color-border);
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.m-order-btn:disabled { opacity: 0.4; cursor: default; }
+
+/* 通用辅助 */
+.m-empty { padding: 36px 16px; text-align: center; color: var(--color-text-3); font-size: 12.5px; background: var(--color-surface); }
+.m-error { padding: 30px 16px; text-align: center; color: var(--color-text-2); font-size: 12.5px; background: var(--color-surface); }
+.m-error__retry {
+  margin-top: 10px;
+  display: inline-flex;
+  min-height: 30px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 15px;
+  background: var(--color-primary-weak);
+  color: var(--color-primary);
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.m-footer { padding: 12px 0 14px; text-align: center; font-size: 11.5px; color: var(--color-text-3); background: var(--color-surface); }
+.m-load-sentinel { height: 1px; }
+.m-foot-note { padding: 14px 24px 4px; text-align: center; font-size: 10.5px; color: var(--color-text-3); line-height: 1.7; }

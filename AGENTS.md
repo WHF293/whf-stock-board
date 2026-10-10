@@ -31,6 +31,9 @@ pnpm tauri dev    # PC 客户端开发（Rust 直连数据源，无 CORS）
 pnpm build        # vue-tsc 类型检查 + vite 构建
 pnpm lint         # ESLint（提交前必须 0 error / 0 warning）
 pnpm tauri build  # Windows 安装包（msi + nsis，产出 src-tauri/target/release/bundle/）
+pnpm dev:mobile   # 移动端前端开发（vite --mode mobile）
+pnpm tauri android dev    # 安卓真机 / 模拟器开发（需 Android SDK + NDK + Rust android targets）
+pnpm tauri android build --apk    # 安卓直装 APK（产出 src-tauri/gen/android/...）
 ```
 
 注意：`cargo` 需在 PATH（`~/.cargo/bin`）；bash 会话中用 `export PATH="/c/Users/wanghaofeng/.cargo/bin:$PATH"`。
@@ -402,6 +405,29 @@ tauri fetch 绕 webview CORS）。
 - tradingAware 时仅在交易窗口内轮询，窗口外自动暂停（挂载首次请求照常执行）
 - 窗口：A 股交易日 09:15-15:00（SDK 日历）；美股 21:30-24:00 与 00:00-04:00（按星期近似）
 - 窗口 getter 在 `stores/market-status.ts`（分钟级 clockTick 驱动）；规则文案与设置页 NoticeBar 保持一致
+
+## 移动端（Android，Tauri 2 Mobile）
+
+与桌面共用同一代码库，`vite --mode mobile` **构建期分流**：桌面入口（`main.ts` → `App.vue` → MainLayout）
+完全不受影响；移动端入口挂 `src/mobile/`（`MobileApp.vue` 底部三 Tab：热点新闻 / 今天炒什么 / 我的，
+二级页：设置 / 主题设置 / 原文阅读页）。方案与交互定稿见
+`.ai/开发方案/2026-10-09-客户端-热点新闻与今天炒什么安卓App可行性报告.md` 与
+`local_docs/stock-board-mobile/stock-board-mobile-dual-tab-v1.html`（v1.1 需求稿）。
+
+- **组件库**：Vant 4（仅移动入口引入，桌面 bundle 不含）；Swipe（源/平台横滑切换，`:loop="false"`
+  边界无效，与 chips 双向联动）、PullRefresh（顶部下拉刷新）、List（上拉加载）、Skeleton/Empty/Toast；
+  主题经 CSS 变量桥接 DESIGN.md token；榜单行 / 新闻行等数据展示保持自研轻组件
+- **复用与禁区**：移动页只准 import 数据层（`api/news.api.ts` / `api/hot-board.api.ts`）、
+  constants、stores 与纯函数；**禁止 import 桌面专属模块**（`WebviewWindow` / `agent-bridge` /
+  `dock-panel` / 停靠面板组件等）——import 了就会把桌面代码拖进移动包或直接报错
+- **双端纪律（硬性）**：改动共享 api / composable / stores 后必须双端各验一次：
+  `pnpm lint && pnpm build`（桌面）+ `pnpm tauri android dev`（移动真机）
+- **Rust 门控**：`tauri_plugin_autostart::init` 与 `build_tray` 已 `#[cfg(desktop)]`；
+  以后新增任何桌面专属 Rust 能力必须同样门控，否则 Android 目标编译失败
+- **CI**：`.github/workflows/mobile-release.yml` 与桌面 `release.yml` 共用同一 `v*` tag，
+  APK 自动追加到同一个 GitHub Release（桌面流程是 Release 属主）；`gen/android` 已 gitignore，
+  CI 内 `tauri android init` 重建；签名 keystore 永不入库
+- 本机环境（SDK/NDK/环境变量/rust targets）现状见 `.ai/memory/` 当日日志
 
 ## UI 约定
 
