@@ -2,14 +2,12 @@
 @import './theme.css';
 
 /*
- * 抑制滚动边界的系统橡皮筋弹性（WebView2 elastic overscroll）：
- * 触摸/触控板滚到边界继续滑会把整页内容推离视口边缘、露出底色黑边（上下/左右四个方向）。
- * 通配设置使根视口与所有内部滚动容器（主区纵向 / 横向卡片流 / 表格）一律禁止弹性与滚动链；
- * 该属性对非滚动容器无效果，且顺带阻断了「表格滚到底带动整页」的链式滚动。
+ * 滚动边界保留系统默认行为（弹性 overscroll / 滚动链均不拦截）。
+ * 2026-10-10 撤销 v3.3.3 的 `* { overscroll-behavior: none }`：
+ * 该通配抑制在移动端（Android WebView）会一并改变面板内滚动容器的边界表现，
+ * 弹性滚动属于系统原生手感，不再全局禁用。
  */
 * {
-  overscroll-behavior: none;
-
   /* Firefox */
   scrollbar-width: thin;
   scrollbar-color: rgb(148 155 165 / 0.4) transparent;
