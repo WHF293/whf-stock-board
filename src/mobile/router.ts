@@ -7,12 +7,14 @@ import MobileHotNews from './views/MobileHotNews.vue';
 import MobileMarketRank from './views/MobileMarketRank.vue';
 import MobileMine from './views/MobileMine.vue';
 import MobilePanorama from './views/MobilePanorama.vue';
+import MobileSearch from './views/MobileSearch.vue';
 import MobileSettings from './views/MobileSettings.vue';
 import MobileStockDetail from './views/MobileStockDetail.vue';
 import MobileTheme from './views/MobileTheme.vue';
+import MobileWatchlist from './views/MobileWatchlist.vue';
 
 /** 主 Tab 页路径（底部 TabBar 只在这些路由显示；二级页由页面 meta 控制） */
-export const MOBILE_TAB_PATHS: readonly string[] = ['/', '/news', '/mine'];
+export const MOBILE_TAB_PATHS: readonly string[] = ['/', '/watchlist', '/news', '/mine'];
 
 /**
  * 移动端路由（hash 模式：Tauri Android WebView 的 file/本地加载形态下无需服务端配合）
@@ -25,10 +27,13 @@ export const mobileRouter = createRouter({
   history: createWebHashHistory(),
   routes: [
     { path: '/', name: 'home', component: MobileHome, meta: { tab: true } },
+    { path: '/watchlist', name: 'watchlist', component: MobileWatchlist, meta: { tab: true } },
     { path: '/news', name: 'news', component: MobileHotNews, meta: { tab: true } },
     { path: '/board', name: 'board', component: MobileBoard },
     { path: '/mine', name: 'mine', component: MobileMine, meta: { tab: true } },
     { path: '/settings', name: 'settings', component: MobileSettings },
+    // 股票搜索：首页 navbar 搜索入口的落点（二级页，无 TabBar）
+    { path: '/search', name: 'search', component: MobileSearch },
     { path: '/theme', name: 'theme', component: MobileTheme },
     {
       path: '/article',

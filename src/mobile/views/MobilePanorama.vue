@@ -334,7 +334,7 @@ const onHistoryClick = (): void => {
       <van-pull-refresh v-model="refreshing" @refresh="onRefresh">
         <!-- === A股 === -->
         <template v-if="activeModule === 'cn'">
-          <div v-if="boardLoading" class="m-card">
+          <div v-if="boardLoading" class="m-card m-skel-fill">
             <div v-for="i in 8" :key="i" class="m-skel-row"></div>
           </div>
           <div v-else-if="boardError" class="m-state">
@@ -418,7 +418,7 @@ const onHistoryClick = (): void => {
 
         <!-- === 板块资金 === -->
         <template v-else-if="activeModule === 'flow'">
-          <div v-if="flowLoading" class="m-card">
+          <div v-if="flowLoading" class="m-card m-skel-fill">
             <div v-for="i in 8" :key="i" class="m-skel-row"></div>
           </div>
           <div v-else-if="flowError" class="m-state">
@@ -476,7 +476,7 @@ const onHistoryClick = (): void => {
 
         <!-- === 美球 === -->
         <template v-else-if="activeModule === 'global'">
-          <div v-if="globalLoading" class="m-card">
+          <div v-if="globalLoading" class="m-card m-skel-fill">
             <div v-for="i in 8" :key="i" class="m-skel-row"></div>
           </div>
           <div v-else-if="globalError" class="m-state">
@@ -516,7 +516,7 @@ const onHistoryClick = (): void => {
 
         <!-- === 新股 === -->
         <template v-else>
-          <div v-if="ipoLoading" class="m-card">
+          <div v-if="ipoLoading" class="m-card m-skel-fill">
             <div v-for="i in 8" :key="i" class="m-skel-row"></div>
           </div>
           <div v-else-if="ipoError" class="m-state">
