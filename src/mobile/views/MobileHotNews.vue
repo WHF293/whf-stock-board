@@ -12,8 +12,8 @@ import {
   fetchThsHotNews,
   fetchThepaperHotNews,
   fetchTdxHotNews,
-} from '../../api/news.api';
-import type { HotNewsItem, TdxNewsChannel } from '../../api/news.api';
+} from '../../common/api/news.api.ts';
+import type { HotNewsItem, TdxNewsChannel } from '../../common/api/news.api.ts';
 import {
   MOBILE_CACHE_TTL_MS,
   MOBILE_NEWS_PAGE_SIZE,
@@ -22,6 +22,8 @@ import {
   SINA_LID_STOCK,
 } from '../constants';
 import type { MobileNewsChannel, MobileNewsSource } from '../constants';
+import { STORAGE_NS_MOBILE_NEWS_SETTINGS } from '../../common/constants/storage-key.constants.ts';
+import { appStorage } from '../../common/utils/app-local-storage';
 import {
   mobileCacheGet,
   mobileCacheGetStale,
@@ -150,6 +152,69 @@ const loadChannelPage = async (
 
 const router = useRouter();
 
+/** 新闻源设置持久化形态（order 全量序 / hidden 隐藏集合），与今天炒什么平台设置同构 */
+interface MobileNewsSettings {
+  order: string[];
+  hidden: string[];
+}
+
+const readNewsSettings = (): MobileNewsSettings => {
+  const raw = appStorage.getItem(STORAGE_NS_MOBILE_NEWS_SETTINGS);
+  if (raw !== null) {
+    try {
+      const parsed = JSON.parse(raw) as Partial<MobileNewsSettings>;
+      if (Array.isArray(parsed.order) && Array.isArray(parsed.hidden)) {
+        return { order: parsed.order, hidden: parsed.hidden };
+      }
+    } catch {
+      // 坏包回落默认
+    }
+  }
+  return { order: MOBILE_NEWS_SOURCES.map((source) => source.key), hidden: [] };
+};
+
+const newsSettings = reactive<MobileNewsSettings>(readNewsSettings());
+
+const persistNewsSettings = (): void => {
+  appStorage.setItem(
+    STORAGE_NS_MOBILE_NEWS_SETTINGS,
+    JSON.stringify({ order: newsSettings.order, hidden: newsSettings.hidden }),
+  );
+};
+
+/** 源 key → 源定义（popup 展示 label + 过滤持久化里的未知 key） */
+const sourceByKey = new Map(MOBILE_NEWS_SOURCES.map((source) => [source.key, source]));
+
+/**
+ * 新闻源展示名（popup 行渲染用）
+ * @param sourceKey 源 key
+ * @returns 展示名（未知 key 原样返回）
+ */
+const sourceLabel = (sourceKey: string): string => sourceByKey.get(sourceKey)?.label ?? sourceKey;
+
+/** 可见源（隐藏源不渲染 tab；顺序 = 源设置调整后的持久化序） */
+const visibleSources = computed<MobileNewsSource[]>(() =>
+  newsSettings.order
+    .filter((key) => !newsSettings.hidden.includes(key))
+    .map((key) => sourceByKey.get(key))
+    .filter((source): source is MobileNewsSource => source !== undefined),
+);
+
+const activeIndex = ref(0);
+const settingsOpen = ref(false);
+
+/** 安全取当前源（隐藏源后 activeIndex 越界时回落第一个可见源） */
+const activeSource = computed<MobileNewsSource>(() => {
+  const list = visibleSources.value;
+  return list[Math.min(activeIndex.value, list.length - 1)] ?? MOBILE_NEWS_SOURCES[0]!;
+});
+
+/** 隐藏源后校正 activeIndex（tabs 高亮与面板对齐，避免停在已消失的 tab 上） */
+const clampActiveIndex = (): void => {
+  const max = visibleSources.value.length - 1;
+  if (activeIndex.value > max) activeIndex.value = Math.max(max, 0);
+};
+
 /** 每源当前子栏目（默认取该源第一个；记忆到会话内，不做持久化） */
 const channelBySource = reactive<Record<string, string>>(
   Object.fromEntries(MOBILE_NEWS_SOURCES.map((source) => [source.key, source.channels[0]!.key])),
@@ -157,10 +222,6 @@ const channelBySource = reactive<Record<string, string>>(
 
 /** 全部已触达频道的分页状态 */
 const pages = reactive<Record<string, ChannelPageState>>({});
-
-const activeIndex = ref(0);
-
-const activeSource = computed<MobileNewsSource>(() => MOBILE_NEWS_SOURCES[activeIndex.value]!);
 
 /** 当前源当前栏目的缓存键 */
 const activeChannelKey = computed(
@@ -281,11 +342,51 @@ const ensureChannel = async (
 };
 
 /**
- * Tabs 激活源变化（点击 tab 或横滑手势回流）：确保当前源当前栏目已加载
+ * Tabs 激活源变化（点击 tab 切换）：确保当前源当前栏目已加载
  */
 watch(activeIndex, () => {
-  void ensureChannel(activeChannelKey.value);
+  const source = visibleSources.value[activeIndex.value] ?? activeSource.value;
+  void ensureChannel(`${source.key}:${channelBySource[source.key]}`);
 });
+
+/**
+ * 源显隐开关（至少保留一个源；隐藏只隐藏 tab，缓存保留）
+ * @param sourceKey 源 key
+ * @param visible true 显示，false 隐藏
+ */
+const toggleSource = (sourceKey: string, visible: boolean): void => {
+  const nextHidden = new Set(newsSettings.hidden);
+  if (visible) {
+    nextHidden.delete(sourceKey);
+  } else {
+    if (newsSettings.order.length - nextHidden.size <= 1) {
+      showFailToast('至少保留一个新闻源');
+      return;
+    }
+    nextHidden.add(sourceKey);
+  }
+  newsSettings.hidden = [...nextHidden];
+  persistNewsSettings();
+  clampActiveIndex();
+};
+
+/**
+ * 源排序（上移 / 下移；持久化；激活 tab 跟随当前源的新位置）
+ * @param index 当前序号（newsSettings.order 内）
+ * @param offset 移动偏移（-1 上移 / 1 下移）
+ */
+const moveSource = (index: number, offset: number): void => {
+  const target = index + offset;
+  if (target < 0 || target >= newsSettings.order.length) return;
+  const activeKey = activeSource.value.key;
+  const order = [...newsSettings.order];
+  const [moved] = order.splice(index, 1);
+  order.splice(target, 0, moved!);
+  newsSettings.order = order;
+  persistNewsSettings();
+  const newIndex = visibleSources.value.findIndex((source) => source.key === activeKey);
+  if (newIndex >= 0 && newIndex !== activeIndex.value) activeIndex.value = newIndex;
+};
 
 /**
  * 切换子栏目
@@ -397,7 +498,7 @@ onUnmounted(() => {
   <div class="m-page-flex">
     <van-nav-bar title="热点新闻" class="m-nav" safe-area-inset-top>
       <template #right>
-        <van-icon name="setting-o" size="18" @click="router.push('/settings')" />
+        <van-icon name="setting-o" size="18" @click="settingsOpen = true" />
       </template>
     </van-nav-bar>
 
@@ -411,14 +512,15 @@ onUnmounted(() => {
       快照生成于 {{ formatSnapshotTime(activeFetchedAt) }} · 缓存 30 分钟
     </van-notice-bar>
 
-    <!-- 一级源：Vant Tabs（仅点击切换；不加任何触摸拦截，垂直滚动完全原生） -->
+    <!-- 一级源：Vant Tabs（animated 点击切换横滑过渡；不开 swipeable，触摸拦截为零，垂直滚动完全原生） -->
     <van-tabs
       v-model:active="activeIndex"
       class="m-tabs"
+      animated
       :lazy-render="false"
       :ellipsis="false"
     >
-      <van-tab v-for="source in MOBILE_NEWS_SOURCES" :key="source.key" :title="source.label">
+      <van-tab v-for="source in visibleSources" :key="source.key" :title="source.label">
         <!-- 二级子栏目 chips -->
         <div class="m-chips">
           <button
@@ -459,5 +561,50 @@ onUnmounted(() => {
         </van-pull-refresh>
       </van-tab>
     </van-tabs>
+
+    <!-- 新闻源设置弹层（显隐 + 排序，与今天炒什么平台设置同构） -->
+    <van-popup v-model:show="settingsOpen" position="bottom" round>
+      <div style="padding: 14px 16px 18px">
+        <div class="m-board-head" style="padding-top: 0">
+          <div class="m-board-head__title">新闻源设置</div>
+          <div class="m-board-head__time">开关显隐 · ↑↓ 调整顺序</div>
+        </div>
+        <div
+          v-for="(sourceKey, index) in newsSettings.order"
+          :key="sourceKey"
+          class="m-sheet-row"
+        >
+          <div
+            class="m-sheet-row__name"
+            :class="{ 'm-sheet-row__name--off': newsSettings.hidden.includes(sourceKey) }"
+          >
+            {{ sourceLabel(sourceKey) }}
+            <span v-if="newsSettings.hidden.includes(sourceKey)">已隐藏 · 缓存保留</span>
+          </div>
+          <van-switch
+            :model-value="!newsSettings.hidden.includes(sourceKey)"
+            size="20px"
+            @update:model-value="(value: boolean) => toggleSource(sourceKey, value)"
+          />
+          <button
+            class="m-order-btn"
+            :disabled="index === 0"
+            @click="moveSource(index, -1)"
+          >
+            ↑
+          </button>
+          <button
+            class="m-order-btn"
+            :disabled="index === newsSettings.order.length - 1"
+            @click="moveSource(index, 1)"
+          >
+            ↓
+          </button>
+        </div>
+        <van-button type="primary" block round style="margin-top: 14px" @click="settingsOpen = false">
+          完成
+        </van-button>
+      </div>
+    </van-popup>
   </div>
 </template>

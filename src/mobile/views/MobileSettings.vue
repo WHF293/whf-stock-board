@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { showConfirmDialog, showToast } from 'vant';
-import { APP_VERSION, RELEASES_URL } from '../../constants/app-info.constants';
+import { APP_VERSION, RELEASES_URL } from '../../common/constants/app-info.constants.ts';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import {
   MOBILE_DISCLAIMER,

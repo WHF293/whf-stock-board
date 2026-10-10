@@ -1,5 +1,5 @@
-import { appStorage } from '../utils/app-local-storage';
-import { STORAGE_NS_MOBILE_CACHE } from '../constants/storage-key.constants';
+import { appStorage } from '../common/utils/app-local-storage';
+import { STORAGE_NS_MOBILE_CACHE } from '../common/constants/storage-key.constants.ts';
 import { MOBILE_CACHE_TTL_MS } from './constants';
 
 /**

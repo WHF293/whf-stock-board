@@ -1,5 +1,5 @@
-import { parseColorScheme, useTheme } from '../../composables/use-theme';import { STORAGE_NS_COLOR_SCHEME } from '../../constants/storage-key.constants';
-import { appStorage } from '../../utils/app-local-storage';
+import { parseColorScheme, useTheme } from '../../common/composables/use-theme';import { STORAGE_NS_COLOR_SCHEME } from '../../common/constants/storage-key.constants.ts';
+import { appStorage } from '../../common/utils/app-local-storage';
 
 /** 移动端明暗三档（浅色 / 深色 / 跟随系统；「跟随系统」= storage 写 'auto'） */
 export type MobileColorScheme = 'light' | 'dark' | 'auto';

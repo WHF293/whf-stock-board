@@ -1,4 +1,4 @@
-import type { SinaNewsLid } from '../api/news.api';
+import type { SinaNewsLid } from '../common/api/news.api.ts';
 
 /**
  * 移动端常量（需求稿 v1.1：local_docs/stock-board-mobile/stock-board-mobile-dual-tab-v1.html）
@@ -101,10 +101,10 @@ export const MOBILE_NEWS_SOURCES: readonly MobileNewsSource[] = [
   },
 ];
 
-/** 移动端底部 Tab（主 Tab 页路径 + 图标 + 文案） */
+/** 移动端底部 Tab（主 Tab 页路径 + 图标 + 文案；今天炒什么为首页模块跳转的二级页，不入 Tab） */
 export const MOBILE_TAB_ITEMS: readonly { path: string; label: string; icon: string }[] = [
+  { path: '/', label: '首页', icon: '⌂' },
   { path: '/news', label: '热点新闻', icon: '✦' },
-  { path: '/board', label: '今天炒什么', icon: '▤' },
   { path: '/mine', label: '我的', icon: '☻' },
 ];
 

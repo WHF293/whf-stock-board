@@ -1,4 +1,4 @@
-import type { HotNewsItem } from '../../api/news.api';
+import type { HotNewsItem } from '../../common/api/news.api.ts';
 
 /**
  * 新闻时间展示（ctime 为秒级 Unix 时间戳字符串）

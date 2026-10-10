@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { formatNewsTime } from '../utils/format';
-import type { HotNewsItem } from '../../api/news.api';
+import type { HotNewsItem } from '../../common/api/news.api.ts';
 
 /**
  * 新闻行（移动端通用列表行）：标题两行截断 + 来源/时间 + 缩略图（无图省略）

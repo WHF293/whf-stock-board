@@ -1,7 +1,7 @@
 // ⚠️ 必须最先导入：补 process/global 垫片，早于 deepagents 依赖链（micromatch →
 // picomatch）的模块求值，否则 WebView 下会白屏（详见该模块注释）
-import './utils/node-globals-shim';
-import './assets/styles/main.css';
+import './common/utils/node-globals-shim';
+import './common/assets/styles/main.css';
 
 // 构建期分流（vite --mode）：
 // - mobile（pnpm dev:mobile / build:mobile / tauri android dev|build）→ 只打包 src/mobile/ 移动壳，
@@ -11,5 +11,5 @@ import './assets/styles/main.css';
 if (import.meta.env.MODE === 'mobile') {
   void import('./mobile/bootstrap').then(({ bootstrapMobile }) => bootstrapMobile());
 } else {
-  void import('./bootstrap-desktop').then(({ bootstrapDesktop }) => bootstrapDesktop());
+  void import('./pc/bootstrap-desktop').then(({ bootstrapDesktop }) => bootstrapDesktop());
 }

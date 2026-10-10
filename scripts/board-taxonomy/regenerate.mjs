@@ -15,7 +15,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const ROOT = join(import.meta.dirname, '..', '..');
-const CONSTANTS_PATH = join(ROOT, 'src', 'constants', 'board-taxonomy.constants.ts');
+const CONSTANTS_PATH = join(ROOT, 'src', 'common', 'constants', 'board-taxonomy.constants.ts');
 const CALENDAR_PATH = join(ROOT, 'src', 'constants', 'board-calendar.constants.ts');
 
 const DRY_RUN = process.argv.includes('--dry-run');

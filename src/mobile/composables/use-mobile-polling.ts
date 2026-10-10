@@ -1,6 +1,6 @@
 import { onActivated, onDeactivated, onMounted, onUnmounted } from 'vue';
-import { appStorage } from '../../utils/app-local-storage';
-import { STORAGE_NS_MOBILE_POLLING } from '../../constants/storage-key.constants';
+import { appStorage } from '../../common/utils/app-local-storage';
+import { STORAGE_NS_MOBILE_POLLING } from '../../common/constants/storage-key.constants.ts';
 import { MOBILE_POLLING_DEFAULT, MOBILE_POLLING_OPTIONS } from '../constants';
 
 /**

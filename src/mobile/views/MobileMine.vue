@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router';
-import { APP_VERSION } from '../../constants/app-info.constants';
+import { APP_VERSION } from '../../common/constants/app-info.constants.ts';
 import { MOBILE_DISCLAIMER } from '../constants';
 
 /**

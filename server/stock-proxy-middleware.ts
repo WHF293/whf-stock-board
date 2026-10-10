@@ -5,7 +5,7 @@ import {
   PROXY_TIMEOUT_MS,
   STOCK_PROXY_ALLOWED_HOSTS,
   STOCK_PROXY_PATH,
-} from '../src/constants/proxy.constants.ts';
+} from '../src/common/constants/proxy.constants.ts';
 
 /**
  * 代理短 TTL 缓存条目

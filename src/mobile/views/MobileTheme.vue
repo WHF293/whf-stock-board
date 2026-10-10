@@ -3,13 +3,13 @@ import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import {
   THEME_COLOR_OPTIONS,
-} from '../../constants/theme-color.constants';
-import type { ThemeColor } from '../../constants/theme-color.constants';
+} from '../../common/constants/theme-color.constants.ts';
+import type { ThemeColor } from '../../common/constants/theme-color.constants.ts';
 import {
   TREND_THEME_OPTIONS,
-} from '../../constants/trend-theme.constants';
-import type { TrendTheme } from '../../constants/trend-theme.constants';
-import { useSettingsStore } from '../../stores/settings';
+} from '../../common/constants/trend-theme.constants.ts';
+import type { TrendTheme } from '../../common/constants/trend-theme.constants.ts';
+import { useSettingsStore } from '../../common/stores/settings';
 import {
   readMobileColorScheme,
   writeMobileColorScheme,

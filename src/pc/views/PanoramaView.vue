@@ -1,0 +1,283 @@
+<script setup lang="ts">
+import { computed, onActivated, ref } from 'vue';
+import BaseCard from '../components/ui/BaseCard.vue';
+import BaseEmpty from '../components/ui/BaseEmpty.vue';
+import BaseTabs from '../components/ui/BaseTabs.vue';
+import TabConfigButton from '../components/ui/TabConfigButton.vue';
+import { useTabConfig } from '../../common/composables/use-tab-config';
+import PanoramaCnBoard from '../components/business/PanoramaCnBoard.vue';
+import PanoramaSectorFlowBoard from '../components/business/PanoramaSectorFlowBoard.vue';
+import PanoramaIpoBoard from '../components/business/PanoramaIpoBoard.vue';
+import PanoramaReviewBoard from '../components/business/panorama-review/PanoramaReviewBoard.vue';
+import {
+  fetchGlobalFuturesPanorama,
+  fetchGlobalIndexPanorama,
+  fetchUsSectorPanorama,
+} from '../../common/api/panorama.api.ts';
+import { PANORAMA_MACRO_GROUPS } from '../../common/constants/panorama.constants.ts';
+import { DATA_CACHE_KEY } from '../../common/constants/data-cache.constants.ts';
+import type { PanoramaItem, PanoramaMacroGroup } from '../../common/types/panorama.types.ts';
+import { getTrendByChangePercent } from '../../common/constants/trend.constants.ts';
+import { TREND_TEXT_CLASS } from '../../common/constants/stock-colors.constants.ts';
+import { formatPercent } from '../../common/utils/format-percent';
+import { delay } from '../../common/utils/delay';
+import { useDataCacheStore } from '../../common/stores/data-cache';
+import { usePolling } from '../../common/composables/use-polling';
+import { POLLING_INTERVAL } from '../../common/constants/polling.constants.ts';
+
+/**
+ * 行情全景：A股全景（板块排行，含行业/概念/筛选/成分股）/ 板块资金（原「市场榜单-
+ * 板块净流入」迁入，曲线 / 列表双视图）/ 美股全景 / 全球宏观 / 历史复盘（牛熊模式库）
+ *
+ * 美股与全球宏观只展示名称 + 涨跌幅（网格卡片）；进入页面串行错峰拉取一次
+ * （不参与轮询）；数据先取内存快照秒出 UI，接口成功后写回快照并刷新；
+ * A股全景 / 板块资金 / 历史复盘由各自组件自管数据（历史复盘快照落 appStorage，重进零联网）
+ */
+
+/** 模块 tab 选项 */
+const MODULE_TABS = [
+  { label: 'A股全景', value: 'cn' },
+  { label: '最新板块资金', value: 'sector-flow' },
+  { label: '新股次新股', value: 'ipo' },
+  { label: '美股全景', value: 'us' },
+  { label: '全球宏观', value: 'macro' },
+  { label: '历史牛熊复盘', value: 'review' },
+] as const;
+
+/** 各接口请求间隔（毫秒）：对同一上游串行错峰 */
+const REQUEST_GAP_MS = 500;
+
+// 页签显隐 + 顺序可配置（持久化，右上角「配置页签」按钮）；激活值被隐藏时自动回退首个可见 tab
+const { visibleOptions: moduleTabOptions, activeValue: activeModule } = useTabConfig(
+  'panorama',
+  MODULE_TABS,
+);
+
+/** 是否处于组件自管数据的模块（A股 / 板块资金 / 历史复盘：宿主不拉数据，无骨架 / 空态逻辑） */
+const isSelfManagedModule = computed(
+  () =>
+    activeModule.value === 'cn' ||
+    activeModule.value === 'sector-flow' ||
+    activeModule.value === 'ipo' ||
+    activeModule.value === 'review',
+);
+
+const dataCache = useDataCacheStore();
+
+// 快照播种：切换回本页先展示上次数据
+const cachedUs = dataCache.get<PanoramaItem[]>(DATA_CACHE_KEY.PANORAMA_US_BOARDS);
+const cachedMacro = dataCache.get<PanoramaMacroGroup[]>(DATA_CACHE_KEY.PANORAMA_MACRO);
+
+/** 美股行业 ETF 全景 */
+const usBoards = ref<PanoramaItem[]>(cachedUs ?? []);
+/** 全球宏观分组 */
+const macroGroups = ref<PanoramaMacroGroup[]>(cachedMacro ?? []);
+/** 当前模块是否拉取中（有快照则不进骨架） */
+const isLoading = ref(
+  activeModule.value === 'us'
+    ? usBoards.value.length === 0
+    : activeModule.value === 'macro'
+      ? macroGroups.value.length === 0
+      : false,
+);
+/** 当前模块拉取是否失败（且无快照） */
+const isError = ref(false);
+
+/**
+ * 在条目列表内按关键词顺序匹配（名称包含即命中）：
+ * 优先名称与关键词完全一致的条目（指数 / 主力连续合约），否则取最后一个命中
+ * （外盘合约按到期月升序排列，最后一个为最新主力）
+ * @param items 上游条目
+ * @param keywords 展示关键词
+ * @returns 匹配到的条目（顺序与 keywords 一致，未命中跳过）
+ */
+const matchKeywords = (items: PanoramaItem[], keywords: readonly string[]): PanoramaItem[] =>
+  keywords.flatMap((keyword) => {
+    const hits = items.filter((item) => item.name.includes(keyword));
+    const exact = hits.find((item) => item.name === keyword);
+    const hit = exact ?? hits.at(-1);
+    return hit ? [hit] : [];
+  });
+
+/**
+ * 拉取全球宏观（全球指数 → 外盘商品串行错峰，再按配置分组匹配）
+ * @returns 分组后的宏观条目（无命中的分组剔除）
+ */
+const fetchMacro = async (): Promise<PanoramaMacroGroup[]> => {
+  const indexItems = await fetchGlobalIndexPanorama();
+  await delay(REQUEST_GAP_MS);
+  const futuresItems = await fetchGlobalFuturesPanorama();
+  return PANORAMA_MACRO_GROUPS.map((group) => {
+    const pool = group.source === 'index' ? indexItems : futuresItems;
+    return { label: group.label, items: matchKeywords(pool, group.keywords) };
+  }).filter((group) => group.items.length > 0);
+};
+
+/** 拉取美股全景（成功后写快照；供轮询与模块切换复用） */
+const fetchUsBoards = async (): Promise<void> => {
+  usBoards.value = await fetchUsSectorPanorama();
+  dataCache.set(DATA_CACHE_KEY.PANORAMA_US_BOARDS, usBoards.value);
+};
+
+/** 拉取当前模块数据（成功后写快照；A股模块由 PanoramaCnBoard 自管；插件面板自管数据） */
+const loadActiveModule = async (): Promise<void> => {
+  if (isSelfManagedModule.value) return;
+  isLoading.value = true;
+  isError.value = false;
+  try {
+    if (activeModule.value === 'us') {
+      await fetchUsBoards();
+    } else if (activeModule.value === 'macro') {
+      macroGroups.value = await fetchMacro();
+      dataCache.set(DATA_CACHE_KEY.PANORAMA_MACRO, macroGroups.value);
+    }
+  } catch (error) {
+    console.error('[panorama]', error);
+    isError.value = true;
+  } finally {
+    isLoading.value = false;
+  }
+};
+
+// 首次进入非 A 股模块时拉取一次（重接口不轮询，避免触发上游反爬）
+if (activeModule.value !== 'cn') {
+  void loadActiveModule();
+}
+
+// KeepAlive 缓存页面：切走再切回不重新挂载，重拉当前非自管模块（快照秒出后静默覆盖；
+// 首次 onActivated 紧跟首屏触发，跳过避免重复请求；宏观无轮询兜底，这里是它唯一的自动刷新点）
+let panoramaActivatedOnce = false;
+onActivated(() => {
+  if (!panoramaActivatedOnce) {
+    panoramaActivatedOnce = true;
+    return;
+  }
+  if (!isSelfManagedModule.value && !isLoading.value) {
+    void loadActiveModule();
+  }
+});
+
+// 美股全景轮询：仅在美股轮询窗口（21:30-24:00 与 00:00-04:00）内按间隔刷新，
+// 窗口外与非 us tab 自动跳过
+usePolling({
+  task: async () => {
+    if (activeModule.value === 'us') {
+      await fetchUsBoards();
+    }
+  },
+  intervalMs: POLLING_INTERVAL.US_BOARDS,
+  tradingAware: true,
+  market: 'US',
+  immediate: false,
+});
+
+/**
+ * 切换模块：插件面板自管数据；有快照直接展示，无快照则拉取（A股模块由组件自管）
+ */
+const onSelectModule = (): void => {
+  isError.value = false;
+  if (isSelfManagedModule.value) {
+    isLoading.value = false;
+    return;
+  }
+  const hasSnapshot =
+    activeModule.value === 'us'
+      ? usBoards.value.length > 0
+      : macroGroups.value.length > 0;
+  if (hasSnapshot) {
+    isLoading.value = false;
+    return;
+  }
+  void loadActiveModule();
+};
+
+/** 是否为全球宏观模块 */
+const isMacroModule = computed(() => activeModule.value === 'macro');
+
+/** 是否为美股模块 */
+const isUsModule = computed(() => activeModule.value === 'us');
+
+/** 当前模块是否无数据（失败 / 空集；仅美股 / 宏观使用） */
+const isEmpty = computed(
+  () => !isLoading.value && (isMacroModule.value ? macroGroups.value.length === 0 : usBoards.value.length === 0),
+);
+</script>
+
+<template>
+  <div class="flex h-[calc(100dvh-6.5rem)] min-h-0 flex-col gap-4">
+    <div class="flex shrink-0 items-center justify-between gap-2">
+      <div class="flex items-center gap-1">
+        <BaseTabs
+          v-model="activeModule"
+          :options="moduleTabOptions"
+          variant="underline"
+          @update:model-value="onSelectModule"
+        />
+        <TabConfigButton page-id="panorama" :options="MODULE_TABS" />
+      </div>
+      <span class="text-xs text-text-tertiary">未开盘时展示最近交易日收盘数据</span>
+    </div>
+
+    <!-- 历史复盘：牛熊模式库面板（数据自管，快照落 appStorage；撑满剩余高度） -->
+    <PanoramaReviewBoard v-if="activeModule === 'review'" class="min-h-0 flex-1" />
+
+    <!-- A股全景：板块排行组件（数据自管；撑满剩余高度，表格尽量高） -->
+    <PanoramaCnBoard v-else-if="activeModule === 'cn'" class="min-h-0 flex-1" />
+
+    <!-- 板块资金：板块净流入榜单 + 行业资金曲线（数据自管；撑满剩余高度） -->
+    <PanoramaSectorFlowBoard v-else-if="activeModule === 'sector-flow'" class="min-h-0 flex-1" />
+    <PanoramaIpoBoard v-else-if="activeModule === 'ipo'" class="min-h-0 flex-1" />
+
+    <!-- 加载骨架（美股 / 宏观） -->
+    <BaseCard v-else-if="isLoading">
+      <div class="grid grid-cols-4 gap-2" aria-hidden="true">
+        <div v-for="i in 12" :key="i" class="h-11 animate-pulse rounded-lg bg-flat-weak" />
+      </div>
+    </BaseCard>
+
+    <!-- 失败 / 空态 -->
+    <BaseCard v-else-if="isEmpty">
+      <BaseEmpty text="数据加载失败或暂无数据，请稍后重试（上游可能限频）" />
+    </BaseCard>
+
+    <!-- 全球宏观：分组网格 -->
+    <template v-else-if="isMacroModule">
+      <BaseCard v-for="group in macroGroups" :key="group.label" :title="group.label">
+        <div class="grid grid-cols-4 gap-2">
+          <div
+            v-for="item in group.items"
+            :key="item.name"
+            class="flex items-center justify-between gap-2 rounded-lg bg-flat-weak px-3 py-2.5"
+          >
+            <span class="truncate text-sm text-text">{{ item.name }}</span>
+            <span
+              class="shrink-0 text-sm font-semibold tabular-nums"
+              :class="TREND_TEXT_CLASS[getTrendByChangePercent(item.changePercent ?? 0)]"
+            >
+              {{ formatPercent(item.changePercent) }}
+            </span>
+          </div>
+        </div>
+      </BaseCard>
+    </template>
+
+    <!-- 美股：扁平网格 -->
+    <BaseCard v-else-if="isUsModule">
+      <div class="grid grid-cols-4 gap-2">
+        <div
+          v-for="item in usBoards"
+          :key="item.name"
+          class="flex items-center justify-between gap-2 rounded-lg bg-flat-weak px-3 py-2.5"
+        >
+          <span class="truncate text-sm text-text">{{ item.name }}</span>
+          <span
+            class="shrink-0 text-sm font-semibold tabular-nums"
+            :class="TREND_TEXT_CLASS[getTrendByChangePercent(item.changePercent ?? 0)]"
+          >
+            {{ formatPercent(item.changePercent) }}
+          </span>
+        </div>
+      </div>
+    </BaseCard>
+  </div>
+</template>

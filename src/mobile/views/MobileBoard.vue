@@ -1,18 +1,19 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { showFailToast } from 'vant';
-import { fetchHotBoard } from '../../api/hot-board.api';
-import type { HotBoardItem } from '../../types/hot-board.types';
+import { useRouter } from 'vue-router';
+import { fetchHotBoard } from '../../common/api/hot-board.api.ts';
+import type { HotBoardItem } from '../../common/types/hot-board.types.ts';
 import {
   BOARD_GROUPS,
   BOARD_SOURCE_LABELS,
   BOARD_SOURCE_ORDER,
-} from '../../constants/hot-board.constants';
-import type { BoardSource } from '../../constants/hot-board.constants';
-import { STORAGE_NS_MOBILE_BOARD_SETTINGS } from '../../constants/storage-key.constants';
+} from '../../common/constants/hot-board.constants.ts';
+import type { BoardSource } from '../../common/constants/hot-board.constants.ts';
+import { STORAGE_NS_MOBILE_BOARD_SETTINGS } from '../../common/constants/storage-key.constants.ts';
 import { MOBILE_CACHE_TTL_MS } from '../constants';
 import { mobileCacheGet, mobileCacheGetStale, mobileCacheSet } from '../cache';
-import { appStorage } from '../../utils/app-local-storage';
+import { appStorage } from '../../common/utils/app-local-storage';
 import { useMobilePolling } from '../composables/use-mobile-polling';
 import {
   formatPct,
@@ -57,6 +58,8 @@ const BOARD_PAGE_DEFAULT = (): BoardPageState => ({
   fetchedAt: null,
   initialized: false,
 });
+
+const router = useRouter();
 
 const readBoardSettings = (): MobileBoardSettings => {
   const raw = appStorage.getItem(STORAGE_NS_MOBILE_BOARD_SETTINGS);
@@ -278,7 +281,14 @@ onMounted(() => {
 
 <template>
   <div class="m-page-flex">
-    <van-nav-bar title="今天炒什么" class="m-nav" safe-area-inset-top>
+    <!-- v2 起为首页入口卡跳转的二级页（design-mobile.md §2.3）：navbar 带返回键 -->
+    <van-nav-bar
+      title="今天炒什么"
+      class="m-nav"
+      safe-area-inset-top
+      left-arrow
+      @click-left="router.back()"
+    >
       <template #right>
         <van-icon name="setting-o" size="18" @click="settingsOpen = true" />
       </template>
@@ -294,10 +304,11 @@ onMounted(() => {
       快照生成于 {{ formatSnapshotTime(activeFetchedAt) }} · 缓存 30 分钟 · 下拉刷新
     </van-notice-bar>
 
-    <!-- 平台 Tabs（仅点击切换；不加任何触摸拦截，垂直滚动完全原生） -->
+    <!-- 平台 Tabs（animated 点击切换横滑过渡；不开 swipeable，触摸拦截为零，垂直滚动完全原生） -->
     <van-tabs
       v-model:active="activeIndex"
       class="m-tabs"
+      animated
       :lazy-render="false"
       :ellipsis="false"
     >

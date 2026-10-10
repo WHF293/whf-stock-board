@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useDocumentThemeSync } from '../composables/use-document-theme';
+import { useDocumentThemeSync } from '../common/composables/use-document-theme';
 import MobileTabBar from './components/MobileTabBar.vue';
 
 // 主题三轴落 <html>（明暗 class / data-theme / data-trend），与桌面共用同一持久化；
