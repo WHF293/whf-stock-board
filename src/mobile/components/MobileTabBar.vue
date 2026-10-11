@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import {
   MOBILE_TAB_ITEMS,
@@ -11,15 +11,44 @@ import {
   MOBILE_TAB_THUMB_TRAVEL_OPACITY,
   MOBILE_TAB_THUMB_TRAVEL_SCALE,
 } from '../constants';
+import { attachLiquidGlass, type LiquidGlassHandle } from '../utils/liquid-glass';
 
 /**
  * 底部 TabBar：四个主 Tab（首页 / 自选 / 热点新闻 / 我的）
  * 仅在主 Tab 路由显示（二级页隐藏）；激活态由 router-link 的 active-class 按路径匹配；
  * 选中态的亮胶囊是指示器（__thumb），切换 tab 时平滑滑动到新位置——
  * 行程中均匀缩小至 80% 并降低不透明度，接近落点时回弹放大恢复（液态玻璃手感，规格见 DESIGN-MOBILE.md §3）
+ *
+ * 玻璃质感：Chromium 系 WebView 下由 util 挂 SVG 折射滤镜升级为真液态玻璃
+ * （边缘折射 + 低磨砂，`.m-tabbar--liquid` 档），不支持的环境保持原磨砂玻璃回退。
  */
 const route = useRoute();
 const visible = computed(() => MOBILE_TAB_ITEMS.some((item) => item.path === route.path));
+
+/** TabBar 根元素（液态玻璃滤镜的挂载目标） */
+const tabbarRef = ref<HTMLElement | null>(null);
+
+/** 液态玻璃滤镜句柄（null = 不支持或未挂载，走磨砂回退） */
+let glassHandle: LiquidGlassHandle | null = null;
+
+/** 按当前可见状态挂载 / 卸载折射滤镜（尺寸就绪后在 nextTick 量取） */
+const setupGlass = (): void => {
+  glassHandle?.destroy();
+  glassHandle = null;
+  if (visible.value && tabbarRef.value) {
+    glassHandle = attachLiquidGlass(tabbarRef.value);
+  }
+};
+
+onMounted(() => {
+  void nextTick(setupGlass);
+});
+
+watch(visible, () => {
+  void nextTick(setupGlass);
+});
+
+onUnmounted(() => glassHandle?.destroy());
 
 /** 当前激活 Tab 序号（驱动指示胶囊的横向位移；非主 Tab 页组件不渲染） */
 const activeIndex = computed(() =>
@@ -57,7 +86,7 @@ onUnmounted(() => window.clearTimeout(restoreTimer));
 </script>
 
 <template>
-  <nav v-if="visible" class="m-tabbar">
+  <nav v-if="visible" ref="tabbarRef" class="m-tabbar">
     <span class="m-tabbar__thumb" :style="thumbStyle"></span>
     <router-link
       v-for="item in MOBILE_TAB_ITEMS"

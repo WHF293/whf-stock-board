@@ -36,6 +36,9 @@ import type { FullQuote } from '../../common/types/stock-quote.types';
 import { appStorage } from '../../common/utils/app-local-storage';
 import { STORAGE_NS_MOBILE_BOARD_SETTINGS } from '../../common/constants/storage-key.constants';
 import { mobileCacheGet, mobileCacheSet } from '../cache';
+import { fetchIndustryBoards } from '../../common/api/board.api';
+import type { HeatmapBoard } from '../../common/types/board.types';
+import MobileHeatmap from '../components/MobileHeatmap.vue';
 import { useMobilePolling } from '../composables/use-mobile-polling';
 
 const router = useRouter();
@@ -43,23 +46,29 @@ const goTarget = (to: string): void => {
   void router.push(to);
 };
 
-/* === 金刚区（5×2：6 实位 + 4 预留，v3 稿；搜索入口在 navbar 不占格） ===
-   v3 清新版：图标统一湖青单色 tile（样式见 mobile.css .m-home-king__ic），不再按项配色 */
+/* === 金刚区（5×2：8 实位 + 2 预留，v3.1 稿；搜索入口在 navbar 不占格） ===
+   v4.2.1：icon 换 Vant 线性图标（unicode 观感差）；移除自选 / 热点新闻（TabBar 已有入口）；
+   连板 / 异动 / 龙虎榜独立榜页（/rank/:rank）与历史牛熊（/bull-review）为独立二级页。
+   2026-10-11：tile 底改浅灰（--m-king-ic-bg），icon 改每项固定彩色（color 字段，不随主题） */
 interface KingItem {
   icon: string;
   label: string;
   to: string;
+  /** icon 固定彩色（2026-10-11 王总指定：彩色不随主题，亮暗同一套） */
+  color: string;
 }
 const KING_ITEMS: readonly KingItem[] = [
-  { icon: '★', label: '自选', to: '/watchlist' },
-  { icon: '◉', label: '今天炒什么', to: '/board' },
-  { icon: '✦', label: '热点新闻', to: '/news' },
-  { icon: '▤', label: '行情全景', to: '/panorama' },
-  { icon: '☰', label: '市场榜单', to: '/market-rank' },
-  { icon: '▦', label: '板块日历', to: '/board-calendar' },
+  { icon: 'fire-o', label: '今天炒什么', to: '/board', color: '#f97316' },
+  { icon: 'eye-o', label: '行情全景', to: '/panorama', color: '#0ea5e9' },
+  { icon: 'chart-trending-o', label: '市场榜单', to: '/market-rank', color: '#8b5cf6' },
+  { icon: 'calendar-o', label: '板块日历', to: '/board-calendar', color: '#3b82f6' },
+  { icon: 'medal-o', label: '连板', to: '/rank/event', color: '#f59e0b' },
+  { icon: 'bell', label: '异动', to: '/rank/events', color: '#ef4444' },
+  { icon: 'flag-o', label: '龙虎榜', to: '/rank/dragon-tiger', color: '#ec4899' },
+  { icon: 'replay', label: '历史牛熊', to: '/bull-review', color: '#10b981' },
 ];
 /** 预留虚线位数量（后续新模块直接补位） */
-const KING_TODO_COUNT = 4;
+const KING_TODO_COUNT = 2;
 
 /* === 指数情绪条（一期 4 项：进入首页刷新一次，30s TTL） === */
 const INDEX_LABELS: Record<string, string> = {
@@ -179,13 +188,17 @@ const fmtTickYi = (v: number): string => (v >= 10000 ? `${(v / 10000).toFixed(1)
 const hoverIdx = ref<number | null>(null);
 /** 图区容器（pointer 命中与坐标换算基准） */
 const plotEl = ref<HTMLElement | null>(null);
-/** 悬停点信息：x 位置、日期、三线数值（亿元）与圆点坐标 */
+/** 悬停点信息：x 位置、日期、三线数值（亿元）、较上日差额与圆点坐标 */
 interface HoverPoint {
   x: number;
   date: string;
   total: string;
   sh: string;
   sz: string;
+  /** 较上一交易日差额（亿元，放量 + / 缩量 −；首日无前值） */
+  delta: string;
+  /** 差额的涨跌配色类（m-up / m-down / m-flat） */
+  deltaCls: string;
   dots: { k: string; x: number; y: number }[];
 }
 const hoverPoint = computed<HoverPoint | null>(() => {
@@ -196,12 +209,17 @@ const hoverPoint = computed<HoverPoint | null>(() => {
   const { max, min } = axis;
   const yOf = (v: number): number => 100 - ((v / 1e8 - min) / (max - min)) * 100;
   const x = (i / (axis.days.length - 1)) * 100;
+  // 相对成交量（PC 市场总览同口径）：当日总成交额 − 上一交易日，放量 + / 缩量 −（亿元，1 位小数）
+  const prev = i > 0 ? axis.days[i - 1]! : null;
+  const deltaRaw = prev ? (d.totalAmount - prev.totalAmount) / 1e8 : null;
   return {
     x,
     date: d.date,
     total: Math.round(d.totalAmount / 1e8).toLocaleString(),
     sh: Math.round(d.shanghaiAmount / 1e8).toLocaleString(),
     sz: Math.round(d.shenzhenAmount / 1e8).toLocaleString(),
+    delta: deltaRaw === null ? '--' : `${deltaRaw > 0 ? '+' : ''}${deltaRaw.toFixed(1)}`,
+    deltaCls: deltaRaw === null || deltaRaw === 0 ? 'm-flat' : deltaRaw > 0 ? 'm-up' : 'm-down',
     dots: [
       { k: 'total', x, y: yOf(d.totalAmount) },
       { k: 'sh', x, y: yOf(d.shanghaiAmount) },
@@ -364,7 +382,7 @@ const loadBoardCard = async (): Promise<void> => {
 const refreshing = ref(false);
 const onRefresh = async (): Promise<void> => {
   try {
-    await Promise.all([loadIndices(true), loadTurnover(true), loadMarketPulse(), loadBoardCard()]);
+    await Promise.all([loadIndices(true), loadTurnover(true), loadMarketPulse(), loadBoardCard(), loadHeat(true)]);
   } finally {
     refreshing.value = false;
   }
@@ -375,7 +393,43 @@ onMounted(() => {
   void loadTurnover();
   void loadMarketPulse();
   void loadBoardCard();
+  void loadHeat();
 });
+
+/* === 板块热力图（PC 市场总览同口径：总市值 Top 20，面积 = 市值，色 = 涨跌四档；30s TTL） === */
+const heatBoards = ref<HeatmapBoard[]>([]);
+const heatLoading = ref(false);
+const heatError = ref(false);
+const HEAT_CACHE_KEY = 'home.heatmap';
+
+const loadHeat = async (force = false): Promise<void> => {
+  if (heatLoading.value) return;
+  heatLoading.value = true;
+  try {
+    const cached = force ? null : mobileCacheGet<{ boards: HeatmapBoard[] }>(HEAT_CACHE_KEY, 30_000);
+    if (cached) {
+      heatBoards.value = cached.value.boards;
+    } else {
+      const boards = (await fetchIndustryBoards())
+        .filter((board) => board.changePercent !== null && board.totalMarketCap !== null)
+        .sort((a, b) => (b.totalMarketCap ?? 0) - (a.totalMarketCap ?? 0))
+        .slice(0, 20)
+        .map((board) => ({
+          code: board.code,
+          name: board.name,
+          changePercent: board.changePercent ?? 0,
+          weight: board.totalMarketCap ?? 0,
+        }));
+      heatBoards.value = boards;
+      mobileCacheSet(HEAT_CACHE_KEY, { boards });
+    }
+    heatError.value = false;
+  } catch {
+    if (heatBoards.value.length === 0) heatError.value = true;
+  } finally {
+    heatLoading.value = false;
+  }
+};
 
 /* === 格式化 === */
 const fmtPrice = (v: number): string => v.toFixed(2);
@@ -403,7 +457,7 @@ const pctClass = (v: number | null): string =>
           class="m-home-king__item"
           @click="goTarget(item.to)"
         >
-          <span class="m-home-king__ic">{{ item.icon }}</span>
+          <span class="m-home-king__ic"><van-icon :name="item.icon" :style="{ color: item.color }" /></span>
           <span class="m-home-king__name">{{ item.label }}</span>
         </div>
         <div v-for="n in KING_TODO_COUNT" :key="`todo-${n}`" class="m-home-king__item m-home-king__item--todo">
@@ -523,6 +577,7 @@ const pctClass = (v: number | null): string =>
                   <div class="m-home-tip__row"><i class="lg" style="background: var(--color-primary)"></i>两市<b>{{ hoverPoint.total }}亿</b></div>
                   <div class="m-home-tip__row"><i class="lg" style="background: #f97316"></i>上证<b>{{ hoverPoint.sh }}亿</b></div>
                   <div class="m-home-tip__row"><i class="lg" style="background: #22d3ee"></i>深证<b>{{ hoverPoint.sz }}亿</b></div>
+                  <div class="m-home-tip__row"><i class="lg" style="background: transparent"></i>较上日<b :class="hoverPoint.deltaCls">{{ hoverPoint.delta }}亿</b></div>
                 </div>
               </template>
             </div>
@@ -611,6 +666,18 @@ const pctClass = (v: number | null): string =>
         </template>
         <div v-else class="m-home-panel__skel">
           <van-skeleton title :row="2" :loading="true" />
+        </div>
+      </div>
+
+      <!-- 4.5 板块热力图（PC 市场总览同款口径：面积 = 总市值，固定 Top 20，颜色随涨跌四档色阶） -->
+      <div class="m-home-sec">
+        <span class="m-home-sec__t">板块热力</span>
+        <span class="m-home-sec__s">Top 20 · 面积 = 总市值</span>
+      </div>
+      <div class="m-card m-home-heat">
+        <MobileHeatmap :boards="heatBoards" :loading="heatLoading" :error="heatError" />
+        <div v-if="heatError" class="m-state">
+          <span class="retry" @click="loadHeat(true)">重试</span>
         </div>
       </div>
 

@@ -2,6 +2,7 @@ import { createRouter, createWebHashHistory } from 'vue-router';
 import MobileArticle from './views/MobileArticle.vue';
 import MobileBoard from './views/MobileBoard.vue';
 import MobileBoardCalendar from './views/MobileBoardCalendar.vue';
+import MobileBullReview from './views/MobileBullReview.vue';
 import MobileHome from './views/MobileHome.vue';
 import MobileHotNews from './views/MobileHotNews.vue';
 import MobileMarketRank from './views/MobileMarketRank.vue';
@@ -44,6 +45,14 @@ export const mobileRouter = createRouter({
     // === v2 二期二级页 ===
     { path: '/panorama', name: 'panorama', component: MobilePanorama },
     { path: '/market-rank', name: 'market-rank', component: MobileMarketRank },
+    // 独立榜页（连板 / 异动 / 龙虎榜，入口在首页金刚区）：同组件按 :rank 进入独立模式
+    {
+      path: '/rank/:rank(event|events|dragon-tiger)',
+      name: 'rank-standalone',
+      component: MobileMarketRank,
+    },
+    // 历史牛熊（PC 行情全景-历史复盘的移动版；数据复用 panorama-review 单源，月K落 appStorage）
+    { path: '/bull-review', name: 'bull-review', component: MobileBullReview },
     // /board-calendar 列表矩阵；/board-calendar/:code 板块详情矩阵
     { path: '/board-calendar/:code?', name: 'board-calendar', component: MobileBoardCalendar },
     // 个股 K 线详情：全站股票行点击统一落点（code 为完整符号，如 sh600519）
