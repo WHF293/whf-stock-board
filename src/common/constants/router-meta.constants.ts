@@ -21,21 +21,8 @@ export const ROUTE_PATH = {
   PLUGIN_LAB: "/plugin-lab", // 插件工坊（宿主自带功能：插件体系的自省与管理页）
   AGENT_WINDOW: "/agent-window", // Agent 分析独立 WebviewWindow（standalone 布局，不入菜单）
   SYSTEM_LOG: "/system-log", // 系统日志页（设置页入口进入，不入菜单）
-  WHITEPAPER: "/whitepaper", // 软件白皮书（顶栏入口进入，不入菜单）
   SETTINGS: "/settings",
   STOCK_DETAIL: "/stock-detail", // 股票详情整页（+/:symbol，不入菜单）
-} as const;
-
-/**
- * 白皮书页文档 tab 的路由查询参数（如插件工坊「开发者文档」入口带 `?tab=dev` 直达「开发者指南」）
- *
- * 值与 WhitepaperView 的 DOC_TABS 对应；不带该参数时白皮书维持默认「使用说明」tab。
- */
-export const WHITEPAPER_TAB_QUERY = {
-  /** query 键名 */
-  KEY: "tab",
-  /** 「开发者指南」tab 值 */
-  DEV: "dev",
 } as const;
 
 /**

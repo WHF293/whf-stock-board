@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useIntervalFn } from '@vueuse/core';
-import { useRouter } from 'vue-router';
 import BaseButton from '../components/ui/BaseButton.vue';
 import BaseCard from '../components/ui/BaseCard.vue';
 import BaseConfirmModal from '../components/ui/BaseConfirmModal.vue';
@@ -43,8 +42,7 @@ import {
   PLUGIN_UPDATE_SIZE_LABEL,
   PLUGIN_UPDATE_TAG_LABEL,
 } from '../../common/constants/plugin-update.constants.ts';
-import { ROUTE_PATH, WHITEPAPER_TAB_QUERY } from '../../common/constants/router-meta.constants.ts';
-import { formatTime } from '../../common/utils/format-time';
+import { SITE_URL } from '../../common/constants/app-info.constants.ts';import { formatTime } from '../../common/utils/format-time';
 import type { PluginRuntimeInfo } from '../../common/types/plugin.types.ts';
 import type { PluginUpdateCandidate } from '../../common/types/plugin-update.types.ts';
 
@@ -84,19 +82,14 @@ const {
   applyAll,
 } = usePluginUpdate();
 
-const router = useRouter();
-
 /** 插件安装弹窗显隐 */
 const installModalOpen = ref(false);
 
 /**
- * 跳转软件白皮书并定位「开发者指南」tab（插件开发 / 插件包格式的完整约定在那边）
+ * 打开官网「软件文档」并直达「开发者指南」tab（白皮书已迁官网；插件开发 / 插件包格式的完整约定在那边）
  */
 const openDevDocs = (): void => {
-  void router.push({
-    path: ROUTE_PATH.WHITEPAPER,
-    query: { [WHITEPAPER_TAB_QUERY.KEY]: WHITEPAPER_TAB_QUERY.DEV },
-  });
+  window.open(`${SITE_URL}#/docs?tab=dev`, "_blank", "noopener");
 };
 
 /** 当前处于「待确认卸载」状态的插件 id（再次点击才真正卸载） */

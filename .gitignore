@@ -43,3 +43,9 @@ src-tauri/gen/android
 .agents
 .chatgpt
 dist-apk
+
+# 官网构建产物（site.html 入口，部署 GitHub Pages）
+dist-site
+
+# 历史遗留工作目录（已废除，内容一律进 .ai；不再允许出现）
+local_docs

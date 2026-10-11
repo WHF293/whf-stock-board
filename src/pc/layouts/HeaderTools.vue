@@ -7,12 +7,12 @@ import { HOST_HEADER_ITEM } from "../../common/constants/header.constants.ts";
 import type { HeaderRenderItem } from "../../common/types/header.types.ts";
 
 /**
- * 应用顶栏工具条（市场状态徽标 + 明暗切换 / 搜索 / Agent / 白皮书 + 插件条目）
+ * 应用顶栏工具条（市场状态徽标 + 明暗切换 / 搜索 / Agent / 软件文档 + 插件条目）
  *
  * 纯渲染组件：条目列表与全部动作由使用方（MainLayout）提供 ——
  * 同一份模板渲染在三个位置：浏览器是页面 header 右侧；Tauri 桌面端在自绘
  * TitleBar 的左侧工具位（#leading-tools：交易状态 / Agent）与右侧工具条
- * （#tools：明暗 / 搜索 / 白皮书 + 插件条目如盯盘），页面 header 为空。
+ * （#tools：明暗 / 搜索 / 软件文档 + 插件条目如盯盘），页面 header 为空。
  */
 defineProps<{
   /** 顶栏渲染项：宿主自带项（按 id 分支）与插件条目（渲染 HeaderItemHost） */
@@ -28,8 +28,8 @@ defineEmits<{
   (event: 'open-search'): void;
   /** 打开 Agent 分析（桌面开独立窗口 / 浏览器站内路由） */
   (event: 'open-agent'): void;
-  /** 打开软件白皮书 */
-  (event: 'open-whitepaper'): void;
+  /** 打开官网「软件文档」页（白皮书已迁官网，新窗口外链） */
+  (event: 'open-site-docs'): void;
 }>();
 </script>
 
@@ -72,17 +72,17 @@ defineEmits<{
         <MenuIcon name="agent" :size="16" />
         <BaseTooltip text="Agent 分析" placement="bottom" />
       </button>
-      <!-- 软件白皮书：站内文档页，hover 提示用途 -->
+      <!-- 软件文档：官网文档页（白皮书已迁官网），hover 提示用途 -->
       <button
         v-else-if="item.id === HOST_HEADER_ITEM.WHITEPAPER"
         type="button"
         class="group relative pressable rounded-lg p-2 text-text-secondary hover:bg-flat-weak active:scale-90"
-        aria-label="软件白皮书"
-        data-track="NAV_WHITEPAPER_OPEN"
-        @click="$emit('open-whitepaper')"
+        aria-label="软件文档"
+        data-track="NAV_SITE_DOCS_OPEN"
+        @click="$emit('open-site-docs')"
       >
         <MenuIcon name="whitepaper" :size="16" />
-        <BaseTooltip text="软件白皮书" placement="bottom" />
+        <BaseTooltip text="软件文档（官网）" placement="bottom" />
       </button>
       <!-- 插件贡献的顶栏条目：图标 + 单条轮播，点击展开下拉面板 -->
       <HeaderItemHost v-else-if="item.panel" :item="item.panel" />

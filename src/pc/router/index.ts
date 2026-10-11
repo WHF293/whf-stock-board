@@ -17,7 +17,6 @@ import SectorFlowHistoryView from '../views/SectorFlowHistoryView.vue';
 import StockDetailView from '../views/StockDetailView.vue';
 import SystemLogView from '../views/SystemLogView.vue';
 import NotFoundView from '../views/NotFoundView.vue';
-import WhitepaperView from '../views/WhitepaperView.vue';
 import PluginLabView from '../views/PluginLabView.vue';
 
 /** 路由切换顶部进度条：钩子在路由表定义后立即挂载 */
@@ -113,12 +112,6 @@ const routes = [
         path: ROUTE_PATH.SYSTEM_LOG,
         component: SystemLogView,
         meta: { title: '系统日志' },
-      },
-      // 软件白皮书：由顶栏「软件白皮书」入口进入，不入左侧导航
-      {
-        path: ROUTE_PATH.WHITEPAPER,
-        component: WhitepaperView,
-        meta: { title: '软件白皮书' },
       },
       // 股票详情整页：全站双击个股进入；不入左侧导航
       {

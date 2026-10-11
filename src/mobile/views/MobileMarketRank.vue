@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 市场榜单（v2 二期二级页，稿：market-modules-v2 R0-R1；规范：design-mobile.md §5.2）
+ * 市场榜单（v2 二期二级页，稿：market-modules-v2 R0-R1；规范：DESIGN-MOBILE.md §5.2）
  *
  * 9 榜 chips 与 PC SORT_TAB_OPTIONS 对齐：
  * - 主力 fetchFundFlowRank；连板 fetchZtPool('zt')；异动 fetchStockChanges；

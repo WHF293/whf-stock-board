@@ -25,6 +25,7 @@ import { useTheme } from "../../common/composables/use-theme";
 import { MARKET_STATUS_REFRESH_INTERVAL_MS } from "../../common/constants/polling.constants.ts";
 import { HOST_HEADER_ITEM, HOST_HEADER_ITEMS } from "../../common/constants/header.constants.ts";
 import { MENU_ITEMS, ROUTE_PATH } from "../../common/constants/router-meta.constants.ts";
+import { SITE_URL } from "../../common/constants/app-info.constants.ts";
 import { openAgentAnalysisWindow } from "../../common/utils/agent-window";
 import { orderSidebarMenu } from "../../common/utils/order-sidebar-menu";
 import { useStockOpen } from "../../common/composables/use-stock-open";
@@ -89,13 +90,10 @@ const openAgentAnalysis = (): void => {
 };
 
 /**
- * 打开软件白皮书（站内文档页）
- *
- * 已在该页时不重复导航，避免 vue-router 抛重复导航告警
+ * 打开官网「软件文档」页（白皮书已迁至官网，顶栏书本图标改为外链）
  */
-const openWhitepaper = (): void => {
-  if (route.path === ROUTE_PATH.WHITEPAPER) return;
-  void router.push(ROUTE_PATH.WHITEPAPER);
+const openSiteDocs = (): void => {
+  window.open(`${SITE_URL}#/docs`, "_blank", "noopener");
 };
 
 // 暗色 class / data-theme / data-trend 的落 <html> 已上提到 App.vue 的
@@ -275,7 +273,7 @@ const headerItems = computed<HeaderRenderItem[]>(() => {
   return ordered;
 });
 
-/** 桌面端进自绘 TitleBar 的条目：宿主自带项 + 插件条目（盯盘入口与白皮书同一行） */
+/** 桌面端进自绘 TitleBar 的条目：宿主自带项 + 插件条目（盯盘入口与软件文档同一行） */
 const titleBarHeaderItems = computed<HeaderRenderItem[]>(() => headerItems.value);
 
 /**
@@ -295,7 +293,7 @@ const titleBarLeadingItems = computed<HeaderRenderItem[]>(() => {
     .sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0));
 });
 
-/** TitleBar 右侧工具条（明暗 / 搜索 / 白皮书，窗口控制按钮左侧） */
+/** TitleBar 右侧工具条（明暗 / 搜索 / 软件文档，窗口控制按钮左侧） */
 const titleBarTrailingItems = computed<HeaderRenderItem[]>(() =>
   titleBarHeaderItems.value.filter((item) => !TITLE_BAR_LEADING_ORDER.includes(item.id)),
 );
@@ -304,7 +302,7 @@ const titleBarTrailingItems = computed<HeaderRenderItem[]>(() =>
  * 页面 header 渲染的条目：浏览器 = 全部（无标题栏，宿主项留在页内）；
  * 桌面端 = 空（宿主项与插件条目都已移入 TitleBar）。
  *
- * 插件条目一并上移是用户指定（盯盘与白皮书同行）：插件下拉是 absolute z-50
+ * 插件条目一并上移是用户指定（盯盘与软件文档同行）：插件下拉是 absolute z-50
  * 定位，TitleBar 无 overflow 裁剪、也不构成独立堆叠上下文，下拉照常浮在
  * 内容上方——「下拉要留在页内层级」的旧顾虑不成立。
  */
@@ -442,7 +440,7 @@ void marketStatusStore.refresh();
 <template>
   <div class="flex h-screen flex-col overflow-hidden">
     <!-- 自绘标题栏（仅 Tauri 桌面端）：品牌区 + 侧栏开关 + 左侧工具（交易状态/Agent）
-         + 右侧工具（明暗/搜索/白皮书）+ 窗口控制 -->
+         + 右侧工具（明暗/搜索/软件文档）+ 窗口控制 -->
     <TitleBar v-if="isTauriDesktop">
       <template #leading-tools>
         <HeaderTools
@@ -451,7 +449,7 @@ void marketStatusStore.refresh();
           @toggle-theme="toggleDark()"
           @open-search="searchModalOpen = true"
           @open-agent="openAgentAnalysis"
-          @open-whitepaper="openWhitepaper"
+          @open-site-docs="openSiteDocs"
         />
       </template>
       <template #tools>
@@ -461,7 +459,7 @@ void marketStatusStore.refresh();
           @toggle-theme="toggleDark()"
           @open-search="searchModalOpen = true"
           @open-agent="openAgentAnalysis"
-          @open-whitepaper="openWhitepaper"
+          @open-site-docs="openSiteDocs"
         />
       </template>
     </TitleBar>
@@ -598,7 +596,7 @@ void marketStatusStore.refresh();
               @toggle-theme="toggleDark()"
               @open-search="searchModalOpen = true"
               @open-agent="openAgentAnalysis"
-              @open-whitepaper="openWhitepaper"
+              @open-site-docs="openSiteDocs"
             />
             <button
               type="button"

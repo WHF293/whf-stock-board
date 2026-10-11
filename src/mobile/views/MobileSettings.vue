@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { showConfirmDialog, showToast } from 'vant';
-import { APP_VERSION, RELEASES_URL } from '../../common/constants/app-info.constants.ts';
+import { APP_VERSION, RELEASES_URL, SITE_URL } from '../../common/constants/app-info.constants.ts';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import {
   MOBILE_DISCLAIMER,
@@ -75,6 +75,11 @@ const downloadLatest = (): void => {
   void openUrl(RELEASES_URL).catch(() => window.open(RELEASES_URL, '_blank'));
 };
 
+/** 打开官网（软件文档 / 下载中心 / 插件生态，系统浏览器） */
+const openSite = (): void => {
+  void openUrl(SITE_URL).catch(() => window.open(SITE_URL, '_blank'));
+};
+
 // ---- 轮询间隔 ----
 
 const pollingMs = ref(readMobilePollingMs());
@@ -119,6 +124,14 @@ const toggleAbout = (key: 'disclaimer' | 'source'): void => {
 
     <div class="m-set-label">通用</div>
     <div class="m-set-group">
+      <button class="m-set-row" @click="openSite">
+        <div class="m-set-row__ic">⌂</div>
+        <div class="m-set-row__t">
+          官方网站
+          <span class="d">软件文档 · 下载中心 · 插件生态</span>
+        </div>
+        <span class="m-set-row__extra">↗</span>
+      </button>
       <div class="m-set-row">
         <div class="m-set-row__ic">⭳</div>
         <div class="m-set-row__t">

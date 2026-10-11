@@ -49,12 +49,22 @@ pnpm vue-tsc -b   # 类型检查
 > `tauri-plugin-http` 由 Rust 直连（无 CORS，域名白名单见
 > `src-tauri/capabilities/default.json`）；浏览器内走同源 `/stock-proxy` 代理。
 
+## 官网
+
+项目官网（GitHub Pages）：<https://whf293.github.io/whf-stock-board/>——**软件文档**（白皮书整站迁移：使用说明 / 开发者指南，目录 + 搜索）、**下载中心**（v3.0.0 起全部版本按版本分组分页展示，运行时直连 GitHub Releases API）、**插件生态**（官方插件清单实时取自[插件仓库](https://github.com/jx62257070/stock-board-plugin)最新 Release 产物，只提供最新版下载，历史版本导流插件仓库）。
+
+源码在 `src/docs/`（入口 `src/docs/index.html`），独立构建配置 `vite.config.site.ts`，与桌面 / 移动端完全隔离：
+
+```bash
+pnpm dev:site      # 官网开发预览
+pnpm build:site    # 官网构建（产物 dist-site/）
+```
+
+推 main 且改动命中官网相关路径时由 `.github/workflows/site-release.yml` 自动部署，不发版、不打 tag（首次使用需在仓库 Settings → Pages 把 Source 设为「GitHub Actions」）。
+
 ## 打包方式
 
 ```bash
-# 浏览器产物（GitHub Pages 用）
-pnpm build
-
 # PC 客户端安装包（Windows：msi + nsis setup.exe，产出在 src-tauri/target/release/bundle/）
 pnpm tauri build
 ```
@@ -77,7 +87,7 @@ pnpm tauri android build --apk    # 打安卓 APK（直装分发，产出在 src
 ```
 
 - 移动端仅保留两个数据 Tab 与「我的」（设置 / 主题设置），桌面专属能力（AI 分析 / 停靠面板 / 插件 / 自选）不打包
-- CI：`mobile-release.yml` 与桌面 `release.yml` 共用同一版本 tag，自动把 APK 追加到同一个 GitHub Release
+- CI：统一走 `release.yml`——推 `v*` tag 全量发布（桌面 + 安卓同一 Release）；Actions 手动触发可按 `target` 单独发桌面或单独发安卓
 - 数据同样经 Rust 直连上游（无自建后端）；榜单与新闻快照 30 分钟 TTL 持久化缓存，前台轮询间隔可在 App 内设置
 
 ## 发布到 GitHub Release
@@ -93,10 +103,13 @@ git tag v0.2.0
 git push origin main v0.2.0
 ```
 
-CI 会在 Windows runner 上自动构建，并创建同名 GitHub Release（`v0.2.0`）上传安装包：
+CI 会同时构建桌面（Windows：msi + nsis）与安卓（APK，签好名），创建同名 GitHub Release（`v0.2.0`）并上传全部安装包：
 
 - Release 页面：https://github.com/WHF293/whf-stock-board/releases
 - 最新版固定链接：https://github.com/WHF293/whf-stock-board/releases/latest
+- 官网下载中心（按版本分组分页）：https://whf293.github.io/whf-stock-board/#/download
+
+**只改了一端时的省时发布**：在 Actions → Release App → Run workflow 手动触发，`target` 选 `desktop`（仅桌面）或 `android`（仅安卓），不必全量重打；`ref` 可选 main 或已有 tag（补传产物场景）。只改官网则无需发版——推 main 自动部署（见「官网」一节）。
 
 ## 更新方式
 
@@ -112,7 +125,7 @@ CI 会在 Windows runner 上自动构建，并创建同名 GitHub Release（`v0.
 
 - **启停入口**：设置页 → 「插件」卡片，可逐个启用/禁用（禁用状态记在本地，插件卸载后其贡献点全部消失）
 - **官方插件走「应用内安装」**（`dsh-mainline` 股票主线 / `dsh-dividend-screen` 股息筛选 / `dsh-quick-note` 速记 / `dsh-sidebar-watch` 自选盯盘）：
-  源码、清单与 zip 产物包都在**独立仓库 [jx62257070/tauri-plugin](https://github.com/jx62257070/tauri-plugin)**（`whf-stock-board-plugin`），本仓库 `src/plugins/` 下**没有任何插件源码**
+  源码、清单与 zip 产物包都在**独立仓库 [jx62257070/stock-board-plugin](https://github.com/jx62257070/stock-board-plugin)**（`whf-stock-board-plugin`），本仓库 `src/plugins/` 下**没有任何插件源码**
   （`BUILTIN_PLUGINS` 是空数组）—— 因此它们在应用里能正常安装 / 卸载，升级也只是再装一次新版本的包
 - **插件工坊**（左侧导航最后一项）是**应用自带页面而不是插件**：可视察当前插件清单、贡献点、服务与事件流，并直接启停 / 安装 / 卸载插件；正因它不可停用，插件页面被停用撤销时有稳定的退回落点
 - **开放给插件的 API**（九个贡献点、`ctx.storage` / `ctx.db` / `ctx.settings`、十六个宿主服务与六个内置事件、配额与红线）见 **[PLUGIN_API.md](./PLUGIN_API.md)**；
@@ -122,7 +135,7 @@ CI 会在 Windows runner 上自动构建，并创建同名 GitHub Release（`v0.
 - **依赖靠服务名**：插件 `inject: ['note:repo']` 声明依赖，未就绪时静默等待、就绪后自动挂载；依赖被禁用则级联暂停，恢复后自动重挂（环形依赖停在等待态，不死循环）
 
 自己写一个插件（例如左侧栏新增面板）只需三步：建目录 `src/plugins/<id>/` 写 `plugin.ts` 与面板组件 → 在 `src/plugins/index.ts` 的 `BUILTIN_PLUGINS` 登记 → 无需改任何宿主代码。字段与约定详见 [AGENTS.md](./AGENTS.md) 的「插件体系」一节。
-（注意：这样写出来的仍是**源码集成**插件，随应用分发、应用内卸载不了。想做成可卸载的插件包 —— 官方四个插件就是这么做的 —— 要把源码放到插件仓库 [jx62257070/tauri-plugin](https://github.com/jx62257070/tauri-plugin) 的 `plugins/<id>/` 里出包。）
+（注意：这样写出来的仍是**源码集成**插件，随应用分发、应用内卸载不了。想做成可卸载的插件包 —— 官方四个插件就是这么做的 —— 要把源码放到插件仓库 [jx62257070/stock-board-plugin](https://github.com/jx62257070/stock-board-plugin) 的 `plugins/<id>/` 里出包。）
 
 ## 开发说明
 

@@ -43,21 +43,20 @@ const goTarget = (to: string): void => {
   void router.push(to);
 };
 
-/* === 金刚区（5×2：6 实位 + 4 预留，v3 稿；搜索入口在 navbar 不占格） === */
+/* === 金刚区（5×2：6 实位 + 4 预留，v3 稿；搜索入口在 navbar 不占格） ===
+   v3 清新版：图标统一湖青单色 tile（样式见 mobile.css .m-home-king__ic），不再按项配色 */
 interface KingItem {
   icon: string;
   label: string;
   to: string;
-  /** 图标配色类（k-gold/k-blue/k-purple/k-cyan/k-orange；🔥 为彩色 emoji 无需配色） */
-  tone: string;
 }
 const KING_ITEMS: readonly KingItem[] = [
-  { icon: '★', label: '自选', to: '/watchlist', tone: 'k-gold' },
-  { icon: '🔥', label: '今天炒什么', to: '/board', tone: '' },
-  { icon: '✦', label: '热点新闻', to: '/news', tone: 'k-blue' },
-  { icon: '▦', label: '行情全景', to: '/panorama', tone: 'k-purple' },
-  { icon: '☰', label: '市场榜单', to: '/market-rank', tone: 'k-cyan' },
-  { icon: '▤', label: '板块日历', to: '/board-calendar', tone: 'k-orange' },
+  { icon: '★', label: '自选', to: '/watchlist' },
+  { icon: '◉', label: '今天炒什么', to: '/board' },
+  { icon: '✦', label: '热点新闻', to: '/news' },
+  { icon: '▤', label: '行情全景', to: '/panorama' },
+  { icon: '☰', label: '市场榜单', to: '/market-rank' },
+  { icon: '▦', label: '板块日历', to: '/board-calendar' },
 ];
 /** 预留虚线位数量（后续新模块直接补位） */
 const KING_TODO_COUNT = 4;
@@ -404,12 +403,12 @@ const pctClass = (v: number | null): string =>
           class="m-home-king__item"
           @click="goTarget(item.to)"
         >
-          <span class="m-home-king__ic" :class="item.tone">{{ item.icon }}</span>
+          <span class="m-home-king__ic">{{ item.icon }}</span>
           <span class="m-home-king__name">{{ item.label }}</span>
         </div>
         <div v-for="n in KING_TODO_COUNT" :key="`todo-${n}`" class="m-home-king__item m-home-king__item--todo">
           <span class="m-home-king__ic">＋</span>
-          <span class="m-home-king__name">敬请期待</span>
+          <span class="m-home-king__name">预留</span>
         </div>
       </div>
 
@@ -480,7 +479,7 @@ const pctClass = (v: number | null): string =>
               @pointercancel="onPlotLeave"
             >
               <svg viewBox="0 0 100 100" preserveAspectRatio="none">
-                <g stroke="rgba(128,140,155,.18)" stroke-width="1" vector-effect="non-scaling-stroke">
+                <g stroke="rgba(140,152,155,.14)" stroke-width="1" vector-effect="non-scaling-stroke">
                   <line x1="0" y1="0" x2="100" y2="0" vector-effect="non-scaling-stroke" />
                   <line x1="0" y1="33.33" x2="100" y2="33.33" vector-effect="non-scaling-stroke" />
                   <line x1="0" y1="66.66" x2="100" y2="66.66" vector-effect="non-scaling-stroke" />
@@ -491,7 +490,7 @@ const pctClass = (v: number | null): string =>
                   :key="`${line.key}-area`"
                   :d="`${line.d} L100,100 L0,100 Z`"
                   fill="var(--color-primary)"
-                  opacity="0.1"
+                  opacity="0.06"
                 />
                 <path
                   v-for="line in turnPaths"
@@ -559,7 +558,7 @@ const pctClass = (v: number | null): string =>
           </div>
           <div class="m-home-dist">
             <svg viewBox="0 0 100 100" preserveAspectRatio="none">
-              <g stroke="rgba(128,140,155,.18)" stroke-width="1">
+              <g stroke="rgba(140,152,155,.14)" stroke-width="1">
                 <line x1="0" y1="0" x2="100" y2="0" vector-effect="non-scaling-stroke" />
                 <line x1="0" y1="50" x2="100" y2="50" vector-effect="non-scaling-stroke" />
                 <line x1="0" y1="100" x2="100" y2="100" vector-effect="non-scaling-stroke" />
@@ -652,7 +651,7 @@ const pctClass = (v: number | null): string =>
         </div>
       </div>
 
-      <!-- 底部让位（悬浮 TabBar + 手势区，design-mobile.md §2.1） -->
+      <!-- 底部让位（悬浮 TabBar + 手势区，DESIGN-MOBILE.md §2.1） -->
       <div class="m-home-tail"></div>
     </van-pull-refresh>
   </div>
