@@ -101,6 +101,16 @@ export const MOBILE_NEWS_SOURCES: readonly MobileNewsSource[] = [
   },
 ];
 
+/** 新闻源 logo（public/news-logos/ 本地资源离线可用，key 对齐 MOBILE_NEWS_SOURCES；navbar 标题前展示） */
+export const MOBILE_NEWS_SOURCE_LOGOS: Record<string, string> = {
+  cls: '/news-logos/cls.ico',
+  tdx: '/news-logos/tdx.ico',
+  ths: '/news-logos/10jqka.ico',
+  em: '/news-logos/eastmoney.ico',
+  sina: '/news-logos/sina.ico',
+  tp: '/news-logos/thepaper.ico',
+};
+
 /** 移动端底部 Tab（主 Tab 页路径 + 图标 + 文案；今天炒什么为首页模块跳转的二级页，不入 Tab） */
 export const MOBILE_TAB_ITEMS: readonly { path: string; label: string; icon: string }[] = [
   { path: '/', label: '首页', icon: '⌂' },

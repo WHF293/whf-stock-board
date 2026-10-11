@@ -126,12 +126,25 @@
   --color-on-primary: #221a06;
 }
 
+/*
+ * 热情红：王总 2026-10-11 指定 #ff4134。
+ * ⚠️ 与涨跌语义色同处红色域——涨跌配色仍由 data-trend 独立控制，互不影响
+ */
+[data-theme='red'] {
+  --color-primary: #ff4134;
+  --color-primary-weak: #ffeceb;
+}
+
 .dark[data-theme='blue'] {
   --color-primary-weak: #1e3a5f;
 }
 
 .dark[data-theme='orange'] {
   --color-primary-weak: #4a2410;
+}
+
+.dark[data-theme='red'] {
+  --color-primary-weak: #471d1a;
 }
 
 /*

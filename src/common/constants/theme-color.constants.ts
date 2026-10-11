@@ -11,6 +11,8 @@ export const THEME_COLOR = {
   BLUE: 'blue',
   ORANGE: 'orange',
   GOLD: 'gold',
+  /** 热情红（王总 2026-10-11 指定 #ff4134） */
+  RED: 'red',
   /** 自定义（色值取 settings.customThemeColor，运行期内联覆盖主色变量） */
   CUSTOM: 'custom',
 } as const;
@@ -35,6 +37,7 @@ export const THEME_COLOR_OPTIONS: readonly { label: string; value: ThemeColor; s
   { label: '淡雅蓝', value: THEME_COLOR.BLUE, swatch: '#4f83cc' },
   { label: '活力橙', value: THEME_COLOR.ORANGE, swatch: '#f97316' },
   { label: '黑金', value: THEME_COLOR.GOLD, swatch: '#c8920b' },
+  { label: '热情红', value: THEME_COLOR.RED, swatch: '#ff4134' },
   { label: '自定义', value: THEME_COLOR.CUSTOM, swatch: CUSTOM_THEME_COLOR_DEFAULT },
 ];
 
