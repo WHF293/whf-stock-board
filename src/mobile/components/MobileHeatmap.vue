@@ -20,11 +20,13 @@ const props = defineProps<{
   error?: boolean;
 }>();
 
-/** 图高（像素；移动端固定，不做 PC 的多档高度） */
+/** 图高（像素）：默认档；实际渲染随容器（.m-heat-box flex 撑满）量高自适应 */
 const CHART_HEIGHT = 232;
 
 /** 容器宽（onMounted 量取；resize 重算） */
 const boxWidth = ref(358);
+/** 容器高（跟随 flex 撑满的 .m-heat-box 量取） */
+const boxHeight = ref(CHART_HEIGHT);
 const boxEl = ref<HTMLElement | null>(null);
 
 /** name → 板块（布局矩形反查数据用） */
@@ -35,7 +37,7 @@ const rects = computed(() =>
   squarifyTreemap(
     props.boards.map((board) => ({ name: board.name, value: board.weight })),
     boxWidth.value,
-    CHART_HEIGHT,
+    boxHeight.value,
   ).map((rect) => {
     const board = boardByName.value.get(rect.name);
     return {
@@ -64,9 +66,11 @@ const fillOf = (changePercent: number): string => getTrendColorCss(changePercent
 const pctText = (board: HeatmapBoard): string =>
   `${board.changePercent > 0 ? '+' : ''}${board.changePercent.toFixed(2)}%`;
 
-/** 量宽并重排（rAF 合并，避免 resize 抖动） */
+/** 量宽高并重排（rAF 合并，避免 resize 抖动） */
 const measure = (): void => {
-  if (boxEl.value) boxWidth.value = Math.max(boxEl.value.clientWidth, 100);
+  if (!boxEl.value) return;
+  boxWidth.value = Math.max(boxEl.value.clientWidth, 100);
+  boxHeight.value = Math.max(boxEl.value.clientHeight, CHART_HEIGHT);
 };
 let rafId = 0;
 const onResize = (): void => {
@@ -85,14 +89,23 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="boxEl">
-    <div v-if="props.loading" class="m-state">板块数据加载中…</div>
-    <div v-else-if="props.error" class="m-state">板块数据加载失败</div>
-    <div v-else-if="props.boards.length === 0" class="m-state">暂无数据</div>
+  <div ref="boxEl" class="m-heat-box">
+    <div v-if="props.loading" class="m-state m-heat-state">
+      <van-loading size="28" />
+      板块数据加载中…
+    </div>
+    <div v-else-if="props.error" class="m-state m-heat-state">
+      <van-icon name="warning-o" size="32" />
+      板块数据加载失败
+    </div>
+    <div v-else-if="props.boards.length === 0" class="m-state m-heat-state">
+      <van-icon name="chart-trending-o" size="32" />
+      暂无数据
+    </div>
     <svg
       v-else
-      :viewBox="`0 0 ${boxWidth} ${CHART_HEIGHT}`"
-      :style="{ width: '100%', height: `${CHART_HEIGHT}px`, display: 'block' }"
+      :viewBox="`0 0 ${boxWidth} ${boxHeight}`"
+      :style="{ width: '100%', height: `${boxHeight}px`, display: 'block' }"
       role="img"
       aria-label="板块热力图（面积=总市值，颜色=涨跌幅）"
     >
@@ -127,6 +140,17 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+/* 根容器：随 flex 父级（.m-home-heat）撑满卡片剩余高度，状态态居中不空旷 */
+.m-heat-box { flex: 1 1 auto; min-height: 232px; }
+.m-heat-state {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--color-text-3);
+}
 .hm-name { font-size: 10.5px; font-weight: 700; fill: #fff; pointer-events: none; }
 .hm-pct { font-size: 9.5px; font-weight: 600; fill: rgb(255 255 255 / 0.92); pointer-events: none; }
 </style>

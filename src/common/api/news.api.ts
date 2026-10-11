@@ -52,10 +52,24 @@ interface SinaNewsResponse {
       url: string;
       ctime: string;
       media: string;
-      img: string;
+      /** ⚠️ img 实际是对象 { u, w, h, t }，无图时是空数组 []，并非文档暗示的字符串 */
+      img: { u?: string; w?: number; h?: number; t?: string } | string;
     }>;
   };
 }
+
+/**
+ * 归一化新浪 img 字段：对象形态取 u（图片地址），空数组 / 缺失返回空串；
+ * u 实测为 http:// 协议，在 https 页面会被 mixed content 拦截，统一升级 https
+ * @param img 新浪接口原始 img 字段（对象 / 空数组 / 字符串兜底）
+ * @returns 可直接加载的图片地址（无图返回空串）
+ */
+const normalizeSinaImg = (img: SinaNewsResponse['result']['data'][number]['img']): string => {
+  if (!img) return '';
+  const raw = typeof img === 'string' ? img : (img.u ?? '');
+  if (!raw) return '';
+  return raw.replace(/^http:\/\//, 'https://');
+};
 
 /**
  * 判定新浪业务状态是否成功（兼容数字 0 与 { code: 0 } 对象两种形态）
@@ -100,13 +114,14 @@ export const fetchSinaHotNews = async (
     url: item.url,
     ctime: item.ctime,
     media: item.media,
-    img: item.img,
+    img: normalizeSinaImg(item.img),
   }));
 };
 
 // ---------- 东方财富 7×24 快讯 ----------
 // 文档中的 push2 clist 接口实测不可用；改用官方 7×24 快讯列表接口（实测 GET 直连、无需 Referer）。
-// 上游无 url 字段，点击跳转用站内搜索页按标题检索；翻页为 sortEnd 游标（上一页末条的 realSort）。
+// 上游无 url 字段，但快讯 code 即正文页文件名：https://finance.eastmoney.com/a/<code>.html
+// （实测 2026-10-11，标题与快讯一致）；翻页为 sortEnd 游标（上一页末条的 realSort）。
 
 /** 东财快讯翻页结果（游标式） */
 export interface EastmoneyNewsPage {
@@ -157,8 +172,8 @@ export const fetchEastmoneyHotNews = async (
     oid: item.code,
     title: item.title,
     summary: item.summary,
-    // 上游无原文链接：跳转东财站内搜索页按标题检索
-    url: `https://so.eastmoney.com/news/s?keyword=${encodeURIComponent(item.title)}`,
+    // 上游无原文链接字段：code 即正文页文件名（finance.eastmoney.com/a/<code>.html）
+    url: `https://finance.eastmoney.com/a/${item.code}.html`,
     // showTime 为 "YYYY-MM-DD HH:mm:SS"，转秒级时间戳与新浪口径统一
     ctime: String(Math.floor(new Date(item.showTime.replace(/-/g, '/')).getTime() / 1000)),
     media: '东方财富',
@@ -1049,8 +1064,13 @@ export const fetchThsThemeFeed = async (
 /** 通达信资讯子视图：yw 要闻 / ag A股 / cj 产经（与 constants/hot-news.constants.ts 的 TdxSubView 一致） */
 export type TdxNewsChannel = 'yw' | 'ag' | 'cj';
 
-/** 资讯详情页地址（SPA 路由，跳转目标 = 官网「事件详情」页；sns 主域为 https 正式域名） */
-const TDX_NEWS_DETAIL_BASE =
+/** 资讯详情页地址（SPA 路由，跳转目标 = 官网「事件详情」页；sns 主域为 https 正式域名）
+ *
+ * ⚠️ 该页数据靠 TDX WebSocket TQL 网关 + 会话 Cookie：桌面端新开标签页（第一方上下文）正常；
+ * 移动端应用内 iframe 属跨域第三方上下文，WebView 拦 Cookie → 白屏。移动端需直接走系统浏览器，
+ * 调用方用 startsWith(TDX_NEWS_DETAIL_BASE) 识别
+ */
+export const TDX_NEWS_DETAIL_BASE =
   'https://sns.tdx.com.cn/site/tdx_sns/page_index.html#/detail?resId=';
 
 /** 资讯配图相对路径的补全前缀（photo 列存的是 zxfile 域下的相对路径） */

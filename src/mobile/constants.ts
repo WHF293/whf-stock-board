@@ -124,7 +124,7 @@ export const MOBILE_DISCLAIMER =
   '行情与资讯数据来自第三方公开接口，仅供个人学习参考，不构成任何投资建议。请以官方行情软件为准。';
 
 /* ---- TabBar 指示胶囊切换动效（DESIGN-MOBILE.md §3）----
- * 行程：位移 + 均匀缩小至 80% + 降低不透明度；接近落点时回弹放大恢复默认。
+ * 行程：位移 + 均匀缩小至 65% + 降低不透明度；接近落点时回弹放大恢复默认。
  * 规格来源：.ai/项目资源/stock-board-mobile-ui-clean-v2.html 附录 §1-② */
 
 /** 行程位移时长（毫秒；先快后慢曲线） */
@@ -133,7 +133,7 @@ export const MOBILE_TAB_THUMB_TRAVEL_MS = 340;
 /** 行程缓动（easeOutQuint 感，与横滑过渡同族） */
 export const MOBILE_TAB_THUMB_EASE_TRAVEL = 'cubic-bezier(0.16, 1, 0.3, 1)';
 
-/** 行程中的缩小比例 */
+/** 行程中的缩小比例（拖拽跟手时用同一档，保持手感一致） */
 export const MOBILE_TAB_THUMB_TRAVEL_SCALE = 0.8;
 
 /** 行程中的不透明度 */
@@ -148,7 +148,24 @@ export const MOBILE_TAB_THUMB_RESTORE_MS = 220;
 /** 恢复缓动（轻微过冲的回弹） */
 export const MOBILE_TAB_THUMB_EASE_RESTORE = 'cubic-bezier(0.3, 1.35, 0.6, 1)';
 
-/* ---- TabBar 液态玻璃折射（SVG feDisplacementMap；移植自 shuding/liquid-glass）----
+/** 按住气泡拖拽时位移小于多少 px 视为普通点击（不进入拖拽态、不吞 click） */
+export const MOBILE_TAB_DRAG_SLOP_PX = 8;
+
+/* ---- 首页「书本翻页」容器（BookFlipBook：成交额 / 涨跌分布 / 板块热力 三模块横翻）---- */
+
+/** 单次翻页动画时长（毫秒；翻页中互斥锁按此时长持有） */
+export const MOBILE_BOOK_FLIP_MS = 560;
+
+/** 书页统一高度（px）：三模块共用一张「纸」的定高，超出裁切（440：分布含连板梯队不裁切） */
+export const MOBILE_BOOK_PAGE_HEIGHT = 440;
+
+/** 左右翻页热区宽度（px；贴书本左右边缘的透明点击条，避免误触图区交互） */
+export const MOBILE_BOOK_EDGE_WIDTH = 40;
+
+/** 底部滑块拖动位移小于多少 px 视为点选（按点位直接选页，不进入拖拽态） */
+export const MOBILE_BOOK_DRAG_SLOP_PX = 6;
+
+/** TabBar 液态玻璃折射（SVG feDisplacementMap；移植自 shuding/liquid-glass）----
  * 中间区域零位移、仅边缘环带折射；仅 Chromium 系 WebView 生效（backdrop-filter: url(#滤镜)），
  * 不支持的环境由 util 探测后回退现有磨砂玻璃。 */
 
