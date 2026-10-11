@@ -281,7 +281,7 @@ onMounted(() => {
 
 <template>
   <div class="m-page-flex">
-    <!-- v2 起为首页入口卡跳转的二级页（design-mobile.md §2.3）：navbar 带返回键 -->
+    <!-- v2 起为首页入口卡跳转的二级页（DESIGN-MOBILE.md §2.3）：navbar 带返回键 -->
     <van-nav-bar
       title="今天炒什么"
       class="m-nav"

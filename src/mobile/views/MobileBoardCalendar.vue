@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 板块日历（v2 二期二级页，稿：market-modules-v2 C0-C2；规范：design-mobile.md §5.3）
+ * 板块日历（v2 二期二级页，稿：market-modules-v2 C0-C2；规范：DESIGN-MOBILE.md §5.3）
  *
  * 双模式（路由参数区分，同组件）：
  * - 列表模式 /board-calendar：板块×交易日矩阵，格值=涨停/跌停家数，背景=得分率 7 档色阶

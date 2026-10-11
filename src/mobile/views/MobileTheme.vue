@@ -68,7 +68,7 @@ const selectTrendTheme = (theme: TrendTheme): void => {
   <div>
     <van-nav-bar title="主题设置" class="m-nav" fixed placeholder safe-area-inset-top left-arrow @click-left="router.back()" />
 
-    <div class="m-theme-block">
+    <div class="m-theme-block" style="margin-top: 12px">
       <div class="m-theme-block__h">明暗模式 <span class="d">跟随系统变化实时切换</span></div>
       <div class="m-seg">
         <button
@@ -147,7 +147,7 @@ const selectTrendTheme = (theme: TrendTheme): void => {
 .m-theme-block {
   background: var(--color-surface);
   border-radius: 12px;
-  margin: 12px 16px 0;
+  margin: 0 12px 10px;
   padding: 14px 16px;
 }
 .m-theme-block__h {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 个股 K 线详情（v2 二期二级页，稿：market-modules-v2 K0-K1，版式参考同花顺；规范：design-mobile.md §5.4）
+ * 个股 K 线详情（v2 二期二级页，稿：market-modules-v2 K0-K1，版式参考同花顺；规范：DESIGN-MOBILE.md §5.4）
  *
  * 结构：报价头（大字现价 + 4×2 指标网格）→ 周期 chips（分时/日K/周K/月K/5分/五日，
  * 值与 PC CHART_PERIOD_OPTIONS 一致）→ KlineChart（复用 PC 纯展示组件，已迁 common）
@@ -195,7 +195,7 @@ const back = (): void => {
         <span class="retry" @click="loadQuote()">重试</span>
       </div>
       <template v-else>
-        <div class="m-stk-head m-card" style="border-top: none">
+        <div class="m-stk-head m-card">
           <div class="m-stk-head__main">
             <div class="m-stk-head__nm">
               {{ quote.name }}<span class="code">{{ symbol }}</span>

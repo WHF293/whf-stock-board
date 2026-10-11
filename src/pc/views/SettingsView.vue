@@ -27,7 +27,7 @@ import {
 } from "../../common/constants/polling.constants.ts";
 import type { TableColumn } from "../../common/types/table.types.ts";
 import { WEBLOG_RETENTION_DAYS } from "../../common/constants/weblog.constants.ts";
-import { APP_VERSION, PLUGIN_REPO_URL, REPO_URL } from "../../common/constants/app-info.constants.ts";
+import { APP_VERSION, PLUGIN_REPO_URL, REPO_URL, SITE_URL } from "../../common/constants/app-info.constants.ts";
 import { getCurrentAppVersion } from "../../common/api/app-update.api.ts";
 import { useAppUpdate } from "../../common/composables/use-app-update";
 import type { AppUpdateStatus } from "../../common/types/app-update.types.ts";
@@ -521,12 +521,20 @@ onMounted(() => {
 /** 仓库地址展示文案（去掉协议头，短一些不挤行） */
 const repoDisplayUrl = computed(() => REPO_URL.replace(/^https?:\/\//, ""));
 
+/** 官网地址展示文案（同上去协议头与结尾斜杠） */
+const siteDisplayUrl = computed(() => SITE_URL.replace(/^https?:\/\//, "").replace(/\/$/, ""));
+
 /** 插件仓库地址展示文案（同上去协议头） */
 const pluginRepoDisplayUrl = computed(() => PLUGIN_REPO_URL.replace(/^https?:\/\//, ""));
 
 /** 「打开」仓库：与「前往下载」同口径开新窗口（不再用裸 <a>，按钮风格与同卡片其他按钮统一） */
 const onOpenRepo = (): void => {
   window.open(REPO_URL, "_blank", "noopener");
+};
+
+/** 「打开」官网（同 onOpenRepo 口径） */
+const onOpenSite = (): void => {
+  window.open(SITE_URL, "_blank", "noopener");
 };
 
 /** 「打开」插件仓库（同 onOpenRepo 口径） */
@@ -897,6 +905,20 @@ const onProbeProxy = async (): Promise<void> => {
     </BaseCard>
 
     <BaseCard title="系统">
+      <div class="mb-4 flex items-center justify-between gap-4">
+        <div class="min-w-0">
+          <p class="text-sm text-text">官方网站</p>
+          <p class="mt-0.5 truncate text-xs text-text-tertiary">
+            {{ siteDisplayUrl }}
+          </p>
+        </div>
+        <BaseButton
+          variant="ghost"
+          @click="onOpenSite"
+        >
+          打开
+        </BaseButton>
+      </div>
       <div class="mb-4 flex items-center justify-between gap-4">
         <div class="min-w-0">
           <p class="text-sm text-text">GitHub 仓库</p>

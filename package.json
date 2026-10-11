@@ -1,16 +1,18 @@
 {
   "name": "whf-stock-board",
   "private": true,
-  "version": "4.1.1",
+  "version": "4.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "dev:mobile": "vite --mode mobile",
+    "dev:site": "vite --config vite.config.site.ts",
     "build": "vue-tsc -b && vite build",
     "build:mobile": "vue-tsc -b && vite build --mode mobile",
     "preview": "vite preview",
     "lint": "eslint src server",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "build:site": "vue-tsc -b && vite build --config vite.config.site.ts"
   },
   "dependencies": {
     "@langchain/core": "^1.2.11",

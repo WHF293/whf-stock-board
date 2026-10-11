@@ -1,7 +1,7 @@
 import type { SinaNewsLid } from '../common/api/news.api.ts';
 
 /**
- * 移动端常量（需求稿 v1.1：local_docs/stock-board-mobile/stock-board-mobile-dual-tab-v1.html）
+ * 移动端常量（需求稿 v1.1：.ai/项目资源/stock-board-mobile-dual-tab-v1.html）
  *
  * 移动端专属取值集中于此；与桌面共用的业务常量（榜单分组 / 平台顺序 / 涨跌色等）
  * 直接从 src/constants 复用，不在本文件重复声明
@@ -112,3 +112,28 @@ export const MOBILE_TAB_ITEMS: readonly { path: string; label: string; icon: str
 /** 移动端免责声明（「我的」页底部与设置页「免责声明」共用一份文案） */
 export const MOBILE_DISCLAIMER =
   '行情与资讯数据来自第三方公开接口，仅供个人学习参考，不构成任何投资建议。请以官方行情软件为准。';
+
+/* ---- TabBar 指示胶囊切换动效（DESIGN-MOBILE.md §3）----
+ * 行程：位移 + 均匀缩小至 80% + 降低不透明度；接近落点时回弹放大恢复默认。
+ * 规格来源：.ai/项目资源/stock-board-mobile-ui-clean-v2.html 附录 §1-② */
+
+/** 行程位移时长（毫秒；先快后慢曲线） */
+export const MOBILE_TAB_THUMB_TRAVEL_MS = 340;
+
+/** 行程缓动（easeOutQuint 感，与横滑过渡同族） */
+export const MOBILE_TAB_THUMB_EASE_TRAVEL = 'cubic-bezier(0.16, 1, 0.3, 1)';
+
+/** 行程中的缩小比例 */
+export const MOBILE_TAB_THUMB_TRAVEL_SCALE = 0.8;
+
+/** 行程中的不透明度 */
+export const MOBILE_TAB_THUMB_TRAVEL_OPACITY = '0.55';
+
+/** 行程开始多少毫秒后开始恢复（接近落点） */
+export const MOBILE_TAB_THUMB_RESTORE_DELAY_MS = 160;
+
+/** 恢复时长（毫秒；轻回弹曲线） */
+export const MOBILE_TAB_THUMB_RESTORE_MS = 220;
+
+/** 恢复缓动（轻微过冲的回弹） */
+export const MOBILE_TAB_THUMB_EASE_RESTORE = 'cubic-bezier(0.3, 1.35, 0.6, 1)';

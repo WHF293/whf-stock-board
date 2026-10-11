@@ -14,7 +14,7 @@ import { ROUTE_PATH } from "../../common/constants/router-meta.constants.ts";
  * 替代系统原生标题栏：左侧品牌区（logo + 名称，自侧栏顶部上移，点击回市场总览）+
  * 侧栏收起/展开开关（自侧栏顶部移此，panelLeft 形状）+ 左侧工具位
  * （`#leading-tools` slot：Agent 分析 / 交易状态徽标），右侧经 `#tools` slot 渲染
- * 其余顶栏工具（明暗切换 / 搜索 / 白皮书，由 MainLayout 传入），最右是自绘
+ * 其余顶栏工具（明暗切换 / 搜索 / 软件文档，由 MainLayout 传入），最右是自绘
  * 最小化 / 最大化 / 关闭按钮；颜色走应用主题 token（bg-surface 等），
  * 跟随应用内明暗模式，与系统主题解耦。
  *
