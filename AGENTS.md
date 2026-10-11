@@ -34,6 +34,8 @@ pnpm tauri build  # Windows 安装包（msi + nsis，产出 src-tauri/target/rel
 pnpm dev:mobile   # 移动端前端开发（vite --mode mobile）
 pnpm tauri android dev    # 安卓真机 / 模拟器开发（需 Android SDK + NDK + Rust android targets）
 pnpm tauri android build --apk    # 安卓直装 APK（产出 src-tauri/gen/android/...）
+pnpm dev:site     # 官网开发（vite.config.site.ts，入口 src/docs/index.html，端口自动顺延）
+pnpm build:site   # 官网构建（vue-tsc + vite，产物 dist-site/，部署 GitHub Pages）
 ```
 
 注意：`cargo` 需在 PATH（`~/.cargo/bin`）；bash 会话中用 `export PATH="/c/Users/wanghaofeng/.cargo/bin:$PATH"`。
@@ -59,6 +61,8 @@ src/
   types/          # 全部类型（多为 stock-sdk re-export）
   utils/          # 原子函数（一函数一文件）
   views/          # 页面
+  docs/           # 官网（PC Web 静态站：首页/软件文档/下载中心/插件生态；入口 src/docs/index.html，
+                  #   独立 vite.config.site.ts 构建出 dist-site/，白皮书内容与 common 单源共享）
 src-tauri/        # Tauri 2 客户端（Rust：tauri-plugin-http 直连数据源）
 server/           # vite 中间件：/stock-proxy（仅浏览器 dev 使用）
 .ai/              # 本地开发沉淀（gitignore，不入库）
@@ -357,15 +361,16 @@ Agent 的内置 MCP 工具定义在 `src/agent/mcp/`（`app-tools.ts`「app-api�
 
 自检口径：改完跑 `pnpm lint` + `pnpm build`；问自己一句「Agent 现在调用这些接口/表的方式还和代码一致吗？」
 
-## 软件白皮书同步（硬性，勿漏）
+## 软件文档（原白皮书）同步（硬性，勿漏）
 
-软件白皮书（顶栏「软件白皮书」入口，`views/WhitepaperView.vue`）是面向用户的操作文档，按「当前版本的实际行为」逐页描述。凡改动**用户可感知的行为**，必须同步更新白皮书对应章节，否则文档与软件脱节：
+软件白皮书已迁出客户端（v4.2.0 起 `WhitepaperView.vue` 已删除，顶栏书本图标改为跳官网文档页），文档单源是 `src/common/constants/whitepaper-content.ts`（官网 `src/docs` 与客户端共享这一份），按「当前版本的实际行为」逐章描述。凡改动**用户可感知的行为**，必须同步更新该文件对应章节，否则文档与软件脱节：
 
 - **新增功能 / 页面 / 交互入口**：在对应章节补术语（`defs` 条目）或要点（`list` 条目）；全新页面则新增章节
 - **行为变更**（默认值 / 口径 / 交互方式 / 数据范围变化）：同步改写对应描述
 - **功能删除 / 入口迁移**：删除或改写对应段落，不留失效描述
+- 文案里指涉客户端 UI 的表述仍按「读者装了客户端」来写；官网侧（`src/docs/views/DocsView.vue`）只做渲染不再改内容
 
-自检口径：发版前问自己一句「用户照着白皮书操作，每一步都还能走通吗？」
+自检口径：发版前问自己一句「用户照着官网文档操作，每一步都还能走通吗？」
 
 ## MCP Apps 渲染约定（工具结果可视化，硬性）
 
@@ -412,7 +417,7 @@ tauri fetch 绕 webview CORS）。
 完全不受影响；移动端入口挂 `src/mobile/`（`MobileApp.vue` 底部三 Tab：热点新闻 / 今天炒什么 / 我的，
 二级页：设置 / 主题设置 / 原文阅读页）。方案与交互定稿见
 `.ai/开发方案/2026-10-09-客户端-热点新闻与今天炒什么安卓App可行性报告.md` 与
-`local_docs/stock-board-mobile/stock-board-mobile-dual-tab-v1.html`（v1.1 需求稿）。
+`.ai/项目资源/stock-board-mobile-dual-tab-v1.html`（v1.1 需求稿；`local_docs/` 已废除，稿类产物一律进 `.ai/项目资源/`）。
 
 - **组件库**：Vant 4（仅移动入口引入，桌面 bundle 不含）；Swipe（源/平台横滑切换，`:loop="false"`
   边界无效，与 chips 双向联动）、PullRefresh（顶部下拉刷新）、List（上拉加载）、Skeleton/Empty/Toast；
@@ -424,9 +429,12 @@ tauri fetch 绕 webview CORS）。
   `pnpm lint && pnpm build`（桌面）+ `pnpm tauri android dev`（移动真机）
 - **Rust 门控**：`tauri_plugin_autostart::init` 与 `build_tray` 已 `#[cfg(desktop)]`；
   以后新增任何桌面专属 Rust 能力必须同样门控，否则 Android 目标编译失败
-- **CI**：`.github/workflows/mobile-release.yml` 与桌面 `release.yml` 共用同一 `v*` tag，
-  APK 自动追加到同一个 GitHub Release（桌面流程是 Release 属主）；`gen/android` 已 gitignore，
+- **CI**：统一走 `.github/workflows/release.yml`——推 `v*` tag = 全量发布（桌面 + 安卓进同一个
+  GitHub Release）；Actions 手动触发可按 `target` 单独发桌面（desktop）/ 单独发安卓（android）/ 全量（all），
+  `ref` 可选分支或已有 tag（补传产物场景）。`gen/android` 已 gitignore，
   CI 内 `tauri android init` 重建；签名 keystore 永不入库
+- **官网**：`.github/workflows/site-release.yml` 独立部署 GitHub Pages（推 main 命中
+  `src/docs/**` 等路径自动部署，也可手动触发），与应用版本发布完全解耦——改官网不发版、不打 tag
 - 本机环境（SDK/NDK/环境变量/rust targets）现状见 `.ai/memory/` 当日日志
 
 ## UI 约定
@@ -475,10 +483,17 @@ tauri fetch 绕 webview CORS）。
    git push origin vX.Y.Z
    ```
 
-4. `release.yml` 在 Windows runner 自动构建并上传安装包到 GitHub Release；
+4. `release.yml` 同时构建桌面（Windows runner）与安卓（ubuntu runner）并上传到同一个 GitHub Release；
    Release 描述由 workflow 从「上一个 tag..HEAD」的提交主题自动生成带编号的变更列表
+5. **只改了一端时的省时发布**：Actions → Release App → Run workflow 手动触发，`target` 选
+   `desktop`（仅桌面）或 `android`（仅安卓），`ref` 选 main 或已有 tag；只改官网则无需发版——
+   推 main 自动部署 Pages（见下）
+6. **官网发布（GitHub Pages）**：`.github/workflows/site-release.yml`，推 main 且改动命中
+   `src/docs/**` / 官网配置 / 白皮书单源文件等路径时自动部署到
+   <https://whf293.github.io/whf-stock-board/>（首次需在仓库 Settings → Pages 把 Source 设为
+   「GitHub Actions」）；官网不发版、不打 tag，下载中心运行时直连 GitHub Releases API
 
-注意：tag 必须打在**已推送的最新 commit** 上（先 push 后打 tag）；若 push 后有他人新提交，先用 `git pull --rebase` 再走流程。`pnpm lint` 与 `pnpm build` 必须在 commit 前全绿。
+注意：tag 必须打在**已推送的最新 commit** 上（先 push 后打 tag）；若 push 后有他人新提交，先用 `git pull --rebase` 再走流程。`pnpm lint` 与 `pnpm build` 必须在 commit 前全绿（改了官网再跑 `pnpm build:site`）。
 
 ### 提交信息规范（Conventional Commits，硬性）
 

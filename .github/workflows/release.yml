@@ -1,28 +1,63 @@
-name: Release Tauri App
+name: Release App (Desktop / Android)
+
+# 发布口径（2026-10-11 起，替代原 release.yml + mobile-release.yml 两个分离流程）：
+# - 推送 v* tag  → 全量发布：桌面（msi / nsis）+ 安卓（apk）进同一个 GitHub Release
+# - Actions 手动触发 → 按需选择 target：all（桌面+安卓）/ desktop（仅桌面）/ android（仅安卓）
+#   ref 默认 main，也可选已有的 v* tag（补传产物场景）
+# 官网（GitHub Pages）独立走 site-release.yml，与应用版本发布完全解耦：
+# 改官网只推 main 即自动部署，不发版、不打 tag。
+#
+# 安卓前置条件（沿用原 mobile-release.yml）：
+# 1. src-tauri/tauri.android.conf.json 提供 beforeBuildCommand（pnpm build:mobile）
+# 2. gen/android 已 gitignore，CI 内 tauri android init 重建；图标用仓库提交的
+#    src-tauri/android-res-icons/ 覆盖（init 只出 Tauri 默认图标）
+# 3. 签名：Secrets 的 ANDROID_KEYSTORE(base64) / ANDROID_KEYSTORE_PASSWORD /
+#    ANDROID_KEY_ALIAS 做 zipalign + apksigner 签名（未签名 APK 无法安装）
+# 4. 只编 arm64：真机均为 arm64，universal 四 ABI 会让 APK 膨胀到 ~62MB，单 arm64 约 18MB
 
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      target:
+        description: 发布目标（all=桌面+安卓 / desktop=仅桌面 / android=仅安卓）
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - desktop
+          - android
+      ref:
+        description: 发布来源 ref（分支或已存在的 v* tag，默认 main）
+        required: false
+        default: main
+        type: string
 
 permissions:
   contents: write
 
+# 同一 ref 的发布串行化（避免两次发布对同一 Release 的竞写）；不同 ref 互不阻塞
+concurrency:
+  group: release-${{ github.event_name == 'push' && github.ref || inputs.ref }}
+  cancel-in-progress: false
+
 jobs:
-  # 手动触发仅限仓库所有者（tag 路径已由仓库规则集限制 v* tag 只有管理员能创建）
-  build:
-    if: github.event_name != 'workflow_dispatch' || github.actor == 'WHF293'
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: windows-latest
-    runs-on: ${{ matrix.platform }}
+  desktop:
+    name: Desktop（Windows msi / nsis）
+    runs-on: windows-latest
+    timeout-minutes: 60
+    if: >-
+      (github.event_name != 'workflow_dispatch' || github.actor == 'WHF293') &&
+      (github.event_name == 'push' || inputs.target == 'all' || inputs.target == 'desktop')
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # 拉全量历史，供「tag 是否在 main / dev 上」的祖先校验使用
+          # tag 触发时 github.ref 即 tag ref；手动触发用 inputs.ref（分支或已有 tag）
+          ref: ${{ inputs.ref || github.ref }}
+          # 拉全量历史，供「tag 是否在 main / dev 上」的祖先校验与变更列表生成使用
           fetch-depth: 0
 
       # 发布守卫：tag 指向的提交必须可从 main 或 dev 到达，
@@ -60,13 +95,15 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # 从上一个 tag 到当前 HEAD 的提交主题生成带编号的变更列表，
-      # 作为 Release 描述（提交须遵循 conventional commits：feat:/fix:/refactor: ...）
+      # 从上一个可到达 tag 到当前 HEAD 的提交主题生成带编号的变更列表，
+      # 作为 Release 描述（提交须遵循 conventional commits：feat:/fix:/refactor: ...）。
+      # 锚定 HEAD^：tag 触发时 HEAD 即当前 tag（describe 取上一个 tag）；
+      # 手动触发时 HEAD 为分支最新提交，同样取最近一个可到达 tag。
       - name: Generate release notes
         id: changelog
         shell: bash
         run: |
-          PREV_TAG=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
+          PREV_TAG=$(git describe --tags --abbrev=0 "HEAD^" 2>/dev/null || true)
           if [ -n "$PREV_TAG" ]; then
             SUBJECTS=$(git log --pretty=format:"%s" "${PREV_TAG}..HEAD")
           else
@@ -100,3 +137,151 @@ jobs:
           releaseBody: ${{ steps.changelog.outputs.body }}
           releaseDraft: false
           prerelease: false
+
+  android:
+    name: Android（arm64 APK）
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    if: >-
+      (github.event_name != 'workflow_dispatch' || github.actor == 'WHF293') &&
+      (github.event_name == 'push' || inputs.target == 'all' || inputs.target == 'android')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          fetch-depth: 0
+
+      - name: Verify tag is on main or dev
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          if git merge-base --is-ancestor "${GITHUB_SHA}" origin/main || git merge-base --is-ancestor "${GITHUB_SHA}" origin/dev; then
+            echo "tag ${GITHUB_REF_NAME} 位于 main 或 dev 分支历史上，允许发布"
+          else
+            echo "::error::tag ${GITHUB_REF_NAME} 的提交不在 main 或 dev 分支上，拒绝发布"
+            exit 1
+          fi
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Setup Rust (Android targets)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # ubuntu runner 自带 ANDROID_HOME 与 cmdline-tools；补装固定版本 NDK 并导出 NDK_HOME
+      - name: Install Android NDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.0.12077973"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # 目标 Release 的 tag 从 tauri.conf.json 读取（手动触发时没有 GITHUB_REF_NAME 可用）
+      - name: Resolve release version
+        run: |
+          VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+          echo "VERSION_TAG=v${VERSION}" >> "$GITHUB_ENV"
+          echo "目标 Release：v${VERSION}"
+
+      # 确保 Release 存在：tag 全量发布时桌面 job 已创建（这里直接命中视图）；
+      # 仅安卓手动发布且 Release 尚不存在时，用与桌面一致的口径生成变更描述并创建。
+      - name: Ensure release exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$VERSION_TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "Release $VERSION_TAG 已存在，APK 将直接追加"
+            exit 0
+          fi
+          PREV_TAG=$(git describe --tags --abbrev=0 "HEAD^" 2>/dev/null || true)
+          if [ -n "$PREV_TAG" ]; then
+            SUBJECTS=$(git log --pretty=format:"%s" "${PREV_TAG}..HEAD")
+          else
+            SUBJECTS=$(git log --pretty=format:"%s")
+          fi
+          NUMBERED=$(echo "$SUBJECTS" | sed '/^$/d' | awk '{printf "%d. %s\n", NR, $0}')
+          {
+            echo "## 更新内容"
+            echo ""
+            echo "$NUMBERED"
+            echo ""
+            echo "下载下方 Assets 中的安装包即可安装。"
+            echo ""
+            echo "## 安全提示"
+            echo ""
+            echo "本应用未购买代码签名证书，首次运行时 Windows SmartScreen / Android Play Protect 可能提示风险，属无签名二进制的常见误报，安装包由 GitHub Actions 从公开源码构建，可自行审计。"
+            echo ""
+            echo "数据仅供个人学习参考，不构成投资建议。"
+          } > notes.md
+          gh release create "$VERSION_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "股票看板 $VERSION_TAG" \
+            --notes-file notes.md \
+            || echo "Release 创建失败（可能为并行发布竞态，确认已存在则忽略）"
+
+      # gen/android 已 gitignore：CI 内重新生成（identifier 取自 tauri.conf.json，非交互）
+      - name: Init Android project
+        run: pnpm tauri android init
+
+      # android init 只出 Tauri 模板默认图标，用仓库提交的 K 线图标集覆盖
+      - name: Apply app icons
+        run: cp -r src-tauri/android-res-icons/. src-tauri/gen/android/app/src/main/res/
+
+      # beforeBuildCommand 由 tauri.android.conf.json 提供（pnpm build:mobile）
+      - name: Build APK
+        run: pnpm tauri android build --apk --target aarch64
+
+      # tauri android build 产出的是未签名 APK，用 Secrets 里的 keystore 做 zipalign + 签名
+      - name: Sign APK
+        env:
+          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          echo "$ANDROID_KEYSTORE" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          IN=$(find src-tauri/gen/android/app/build/outputs/apk -name '*unsigned.apk' | head -1)
+          echo "unsigned apk: $IN"
+          OUT="stockboard_${VERSION_TAG}_arm64.apk"
+          "$BT/zipalign" -p -f 4 "$IN" "$RUNNER_TEMP/aligned.apk"
+          "$BT/apksigner" sign \
+            --ks "$RUNNER_TEMP/release.keystore" \
+            --ks-key-alias "$ANDROID_KEY_ALIAS" \
+            --ks-pass "pass:$ANDROID_KEYSTORE_PASSWORD" \
+            --key-pass "pass:$ANDROID_KEYSTORE_PASSWORD" \
+            --out "$OUT" "$RUNNER_TEMP/aligned.apk"
+          "$BT/apksigner" verify --print-certs "$OUT"
+          rm -f "$RUNNER_TEMP/release.keystore"
+
+      # 追加到同版本 Release（已存在则直接添加 Asset；仅安卓发布且首次创建见上一步）
+      - name: Upload APK to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.VERSION_TAG }}
+          files: stockboard_*_arm64.apk
+          fail_on_unmatched_files: true

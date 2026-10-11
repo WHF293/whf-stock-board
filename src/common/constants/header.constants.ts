@@ -2,7 +2,7 @@
  * 顶栏（应用右上角工具条）常量
  *
  * 顶栏条目有两个来源，都会被设置页「顶栏工具」编排（顺序 + 显隐）：
- * - **宿主自带**：交易时段徽标 / 明暗切换 / 搜索 / Agent 分析 / 软件白皮书（本文件声明）；
+ * - **宿主自带**：交易时段徽标 / 明暗切换 / 搜索 / Agent 分析 / 软件文档（本文件声明，官网外链）；
  * - **插件贡献**：`ctx.header.add(...)`（内核注册表提供，见 `plugin/contributions.ts`）。
  *
  * 两侧合并后按 `settings.headerOrder` 渲染；默认顺序 = 本文件声明顺序 +
@@ -22,7 +22,7 @@ export const HOST_HEADER_ITEM = {
   SEARCH: 'host-search',
   /** Agent 分析（Tauri 独立窗口 / 浏览器站内页） */
   AGENT: 'host-agent',
-  /** 软件白皮书（站内文档页） */
+  /** 软件文档（官网文档页外链；id 沿用白皮书时代的 host-whitepaper，保住用户已有编排配置） */
   WHITEPAPER: 'host-whitepaper',
 } as const satisfies Record<string, string>;
 
@@ -32,7 +32,7 @@ export const HOST_HEADER_ITEMS = [
   { id: HOST_HEADER_ITEM.THEME, title: '明暗切换', icon: 'sun' },
   { id: HOST_HEADER_ITEM.SEARCH, title: '搜索个股', icon: 'search' },
   { id: HOST_HEADER_ITEM.AGENT, title: 'Agent 分析', icon: 'agent' },
-  { id: HOST_HEADER_ITEM.WHITEPAPER, title: '软件白皮书', icon: 'whitepaper' },
+  { id: HOST_HEADER_ITEM.WHITEPAPER, title: '软件文档', icon: 'whitepaper' },
 ] as const;
 
 /** 宿主自带顶栏条目的默认顺序（设置页编排弹窗的「恢复默认」与合并顺序用） */

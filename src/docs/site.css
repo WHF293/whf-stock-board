@@ -1,0 +1,168 @@
+/*
+ * 官网站点样式
+ *
+ * 只写 Tailwind 工具类不便表达的组件样式（步骤计数器、骨架 shimmer、灯泡高亮等）；
+ * 颜色 / 圆角 / 阴影一律消费 theme.css 的 token 变量（--color-* / --radius-card /
+ * --shadow-card），不引入规范外色值。布局与常规样式优先用 Tailwind 工具类。
+ */
+@import '../common/assets/styles/theme.css';
+
+/* ───────────────────────── 通用：按钮 ───────────────────────── */
+.s-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 16px;
+  border: 0;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
+  cursor: pointer;
+  text-decoration: none;
+  transition: transform 0.12s ease, opacity 0.12s ease, background-color 0.12s ease;
+}
+.s-btn:active { transform: scale(0.96); }
+.s-btn--primary { color: var(--color-on-primary); background: var(--color-primary); }
+.s-btn--primary:hover { opacity: 0.9; }
+.s-btn--ghost { color: var(--color-text); background: var(--color-flat-weak); }
+.s-btn--ghost:hover { opacity: 0.75; }
+.s-btn--outline { color: var(--color-primary); background: var(--color-surface); box-shadow: inset 0 0 0 1px var(--color-flat); }
+.s-btn--outline:hover { box-shadow: inset 0 0 0 1px var(--color-primary); }
+.s-btn--sm { padding: 6px 13px; font-size: 11.5px; }
+.s-btn--page { min-width: 30px; padding: 6px 0; font-size: 11.5px; }
+.s-btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+
+/* ───────────────────────── 通用：卡片 / 徽标 / 筛选 chip ───────────────────────── */
+.s-card {
+  background: var(--color-surface);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+.s-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2.5px 10px;
+  border-radius: 9999px;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.4;
+}
+.s-badge--latest { color: var(--color-down-strong); background: var(--color-down-weak); }
+.s-badge--plat { color: var(--color-primary); background: var(--color-primary-weak); }
+.s-badge--muted { color: var(--color-text-secondary); background: var(--color-flat-weak); }
+
+.s-chip {
+  padding: 5px 13px;
+  border: 0;
+  border-radius: 9999px;
+  background: var(--color-flat-weak);
+  color: var(--color-text-secondary);
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+.s-chip:hover { color: var(--color-text); }
+.s-chip.is-active { color: var(--color-on-primary); background: var(--color-primary); }
+
+/* ───────────────────────── 首页：Hero 截图墙 / 灯箱 ───────────────────────── */
+.s-hero-shot img { display: block; width: 100%; height: auto; }
+.s-shot-item img { width: 100%; height: 86px; object-fit: cover; object-position: top; }
+
+.s-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px;
+  background: rgb(15 23 26 / 0.86);
+  cursor: zoom-out;
+}
+.s-lightbox img { max-width: min(1200px, 94vw); max-height: 82vh; border-radius: var(--radius-card); }
+
+/* ───────────────────────── 文档中心：内容块 ───────────────────────── */
+.s-steps { counter-reset: s-step; margin: 0; padding: 0; list-style: none; }
+.s-steps li {
+  counter-increment: s-step;
+  position: relative;
+  padding: 10px 13px 10px 40px;
+  border-radius: 8px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+  color: var(--color-text-secondary);
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+.s-steps li + li { margin-top: 8px; }
+.s-steps li::before {
+  content: counter(s-step);
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.s-tip {
+  display: flex;
+  gap: 9px;
+  padding: 11px 13px;
+  border-radius: 8px;
+  background: var(--color-up-weak);
+  color: var(--color-up);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.s-code {
+  margin: 0;
+  padding: 13px 15px;
+  border-radius: 8px;
+  background: var(--color-flat-weak);
+  color: var(--color-text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.7;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.s-defs-row + .s-defs-row { margin-top: 8px; }
+
+.s-doc-section { scroll-margin-top: 72px; }
+.s-doc-section.is-flash { animation: s-flash 1.2s ease-out; }
+@keyframes s-flash {
+  0% { background: var(--color-primary-weak); }
+  100% { background: transparent; }
+}
+
+/* ───────────────────────── 下载中心：骨架 shimmer ───────────────────────── */
+.s-skeleton {
+  display: inline-block;
+  overflow: hidden;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--color-flat-weak) 0%, var(--color-surface) 50%, var(--color-flat-weak) 100%);
+  background-size: 200% 100%;
+  animation: s-shimmer 1.4s linear infinite;
+}
+@keyframes s-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .s-skeleton { animation: none; }
+}
