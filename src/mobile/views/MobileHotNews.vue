@@ -2,7 +2,8 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import type { ComponentPublicInstance } from 'vue';
 import { useRouter } from 'vue-router';
-import { showFailToast } from 'vant';
+import { showFailToast, showSuccessToast } from 'vant';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import {
   fetchClsDepth,
   fetchEastmoneyHotNews,
@@ -12,6 +13,7 @@ import {
   fetchThsHotNews,
   fetchThepaperHotNews,
   fetchTdxHotNews,
+  TDX_NEWS_DETAIL_BASE,
 } from '../../common/api/news.api.ts';
 import type { HotNewsItem, TdxNewsChannel } from '../../common/api/news.api.ts';
 import {
@@ -421,10 +423,18 @@ const retry = (channelKey: string): void => {
 };
 
 /**
- * 打开原文（应用内 webview 容器；东财快讯的 url 为其站内搜索页）
+ * 打开原文（应用内 webview 容器；东财快讯的 url 为其正文页）
+ *
+ * ⚠️ 通达信详情页数据靠其 WebSocket 网关 + 会话 Cookie，应用内 iframe 是跨域
+ * 第三方上下文、WebView 拦 Cookie → 白屏，故直接走系统浏览器（与 PC 新开标签页同为第一方上下文）
  * @param item 新闻条目
  */
 const openArticle = (item: HotNewsItem): void => {
+  if (item.url.startsWith(TDX_NEWS_DETAIL_BASE)) {
+    showSuccessToast('已在系统浏览器打开');
+    void openUrl(item.url).catch(() => window.open(item.url, '_blank'));
+    return;
+  }
   router.push({
     path: '/article',
     query: { url: item.url, title: item.title, media: item.media },

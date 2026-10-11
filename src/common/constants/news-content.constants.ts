@@ -24,8 +24,8 @@ export const NEWS_BODY_FETCH_CONCURRENCY = 3;
 export const NEWS_BODY_FETCH_INTERVAL_MS = 300;
 
 /**
- * 不抓正文的 URL 前缀：这些链接不是原文页（东财快讯上游无 url，
- * 是站内搜索页拼接），抓了也只有搜索页壳，直接按标题 + 摘要分析
+ * 不抓正文的 URL 前缀：这些链接不是原文页（合成链接，抓了也只有搜索页壳），
+ * 直接按标题 + 摘要分析。东财快讯 2026-10-11 起已改拼正文页（/a/<code>.html），不再产生此类链接
  */
 export const NEWS_BODY_UNFETCHABLE_URL_PREFIXES: readonly string[] = [
   'https://so.eastmoney.com/news/s',
