@@ -162,6 +162,11 @@ body {
     inset 0 1px 0 var(--glass-highlight),
     inset 0 -1px 0 rgba(0, 0, 0, 0.04),
     var(--glass-shadow);
+  /* 按住气泡左右拖拽：阻止浏览器把手势判成滚动/滑动（否则 move 中途发 pointercancel）；
+     底栏本身不可滚动，无副作用 */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 .dark .m-tabbar {
   /* 暗色玻璃同样加浓：抬亮的深灰玻璃（禁止深黑）、透明度更高，透白高光更明显 */
@@ -203,6 +208,8 @@ body {
   text-decoration: none;
   border-radius: 999px;
   transition: color 0.25s ease;
+  /* router-link 是 <a>，按住移动会触发浏览器原生链接拖拽（显示禁止光标、抢占手势）——禁掉 */
+  -webkit-user-drag: none;
 }
 .m-tabbar__item--active { color: var(--color-primary); }
 .m-tabbar__icon {
