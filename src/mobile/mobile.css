@@ -37,6 +37,9 @@
   /* 白卡极浅影（v3 清新版唯一投影档；暗色关闭，靠 hairline 分层） */
   --m-card-shadow: 0 1px 2px rgba(27, 37, 48, 0.05);
 
+  /* 金刚区 tile 底：浅灰（亮/暗各一档，与页面底、白卡面都拉开层级），
+     icon 本体彩色固定值（不随主题，见 MobileHome.vue KING_ITEMS.color） */
+  --m-king-ic-bg: #eef1f4;
   /* 液态玻璃 token：v3 起仅 TabBar 消费（内容层已去玻璃；TabBar 规则内还有加浓覆盖） */
   --glass-light: rgba(255, 255, 255, 0.62);
   --glass-light-strong: rgba(255, 255, 255, 0.78);
@@ -59,6 +62,8 @@
   --glass-border: rgba(255, 255, 255, 0.09);
   --glass-highlight: rgba(255, 255, 255, 0.1);
   --glass-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  /* 金刚区 tile 底（暗档）：卡面 #262e35 再抬一档的浅灰 */
+  --m-king-ic-bg: #313943;
 }
 
 html,
@@ -169,6 +174,20 @@ body {
     inset 0 1px 0 var(--glass-highlight),
     inset 0 -1px 0 rgba(0, 0, 0, 0.25),
     var(--glass-shadow);
+}
+
+/* 液态玻璃折射档（真液态玻璃）：util 在 Chromium 系 WebView 探测通过后加 m-tabbar--liquid，
+   backdrop-filter 引用 SVG feDisplacementMap 滤镜（--liquid-glass-filter 由 JS 注入），
+   背景在边缘环带产生折射变形、中间零位移——玻璃质感来自折射而非磨砂，因此底色/磨砂大幅调透。
+   iOS Safari 不支持 url() 引用，该条声明整条无效，自动回退上面的磨砂玻璃（渐进增强） */
+.m-tabbar--liquid {
+  --glass-light: rgba(255, 255, 255, 0.12);
+  --glass-light-strong: rgba(255, 255, 255, 0.66);
+  backdrop-filter: var(--liquid-glass-filter) blur(6px) saturate(1.3);
+}
+.dark .m-tabbar--liquid {
+  --glass-light: rgba(52, 60, 70, 0.26);
+  --glass-light-strong: rgba(62, 71, 82, 0.78);
 }
 .m-tabbar__item {
   position: relative;
@@ -603,7 +622,8 @@ body {
 .m-home-board-row__pct { font-family: var(--font-num); font-size: 12px; font-weight: 800; flex-shrink: 0; min-width: 58px; text-align: right; }
 .m-home-board-card .van-skeleton { padding: 12px 16px; }
 
-/* 金刚区 5×2（v3 清新版：白卡 + 湖青单色 tile，6 实位 + 4 预留虚线位） */
+/* 金刚区 5×2（白卡 + 浅灰 tile；icon 彩色固定值不随主题，2026-10-11 王总指定，
+   8 实位 + 2 预留虚线位） */
 .m-home-king {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
@@ -620,8 +640,7 @@ body {
   width: 42px; height: 42px; border-radius: 13px;
   display: flex; align-items: center; justify-content: center;
   font-size: 17px; font-weight: 600;
-  background: var(--color-primary-weak);
-  color: var(--color-primary);
+  background: var(--m-king-ic-bg);
 }
 .m-home-king__name { font-size: 10.5px; font-weight: 600; color: var(--color-text-2); }
 .m-home-king__item--todo { cursor: default; }
@@ -755,11 +774,14 @@ body {
    flex 列里自动最小尺寸归零，默认 shrink 会把卡片压扁（K 线图曾被压到 194px 裁切，
    王总 2026-10-10 反馈「分时图显示补全」），这里统一禁止收缩 */
 .m-sub-scroll > * { flex-shrink: 0; }
-.m-sub-scroll .van-pull-refresh { flex: 1; display: flex; flex-direction: column; }
-.m-sub-scroll .van-pull-refresh__track { flex: 1; display: flex; flex-direction: column; }
-.m-sub-scroll .van-pull-refresh__track > * { flex-shrink: 0; }
-/* loading 骨架撑满内容区（避免半屏空白的观感） */
-.m-skel-fill { flex: 1; }
+/* van-pull-refresh 必须「自然高度」：拉伸（flex:1）会让 vant track 自带的 overflow:hidden
+   把列表裁在视口高里，外层 .m-sub-scroll 拿不到滚动量 → 整页滚不动（v4.2.1 修复：
+   行情全景 / 市场榜单不可下滑即此因）。内容不足一屏的下拉手势不受影响（手势监听不依赖高度） */
+.m-sub-scroll .van-pull-refresh { flex: 0 0 auto; display: flex; flex-direction: column; }
+.m-sub-scroll .van-pull-refresh__track { flex: 0 0 auto; display: flex; flex-direction: column; }
+.m-sub-scroll .van-pull-refresh__track > * { flex-shrink: 0; width: 100%; }
+/* loading 骨架撑满内容区（避免半屏空白的观感）；track 不再拉伸后用 min-height 兜底 */
+.m-skel-fill { flex: 1; min-height: 62vh; }
 .m-sub-tail { height: calc(16px + env(safe-area-inset-bottom, 0px)); }
 
 /* 区块标题行（左右 12px 与卡片边对齐） */
@@ -939,25 +961,28 @@ body {
 .m-wl-search__list { max-height: 46vh; overflow-y: auto; padding-bottom: 12px; }
 
 /* ============================================================
-   股票搜索页（MobileSearch.vue：同花顺式搜索，v2.1）
+   股票搜索页（MobileSearch.vue：同花顺式搜索，v2.2）
    ============================================================ */
-/* navbar：左箭头 + 通栏搜索输入 + 「搜索」 */
-.m-sch-nav .van-nav-bar__content { display: flex; align-items: center; }
-.m-sch-nav .van-nav-bar__title {
-  position: static; transform: none; flex: 1; max-width: none; overflow: visible;
-  padding: 0 46px 0 10px;
+/* navbar：van-nav-bar 只放返回 + 标题；输入框独立成块在其下（.m-sch-bar），不再挤进导航行 */
+.m-sch-bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px;
+  background: var(--color-surface);
 }
 .m-sch-input {
-  width: 100%; height: 32px; border: 1px solid transparent; outline: none; border-radius: 9px;
+  flex: 1; width: auto; height: 34px; border: 1px solid transparent; outline: none; border-radius: 9px;
   padding: 0 12px; font-size: 13px; font-weight: 600;
   background: var(--m-page-bg); color: var(--color-text-1);
 }
 .m-sch-input:focus { border-color: var(--color-primary); }
 .m-sch-input::placeholder { color: var(--color-text-3); font-weight: 500; }
-.m-sch-go { font-size: 14px; font-weight: 700; color: var(--color-primary); }
+.m-sch-go { flex: 0 0 auto; font-size: 14px; font-weight: 700; color: var(--color-primary); cursor: pointer; }
 
 /* 热门搜索：双列排名榜（v3：名次去徽标盒改纯文字，1-2 红 / 3-4 橙 / 5-6 灰） */
 .m-sch-hot__t { padding: 18px 16px 4px; font-size: 15px; font-weight: 700; }
+/* 最近搜索标题行：左标题 + 右「清空」 */
+.m-sch-his__t { display: flex; align-items: baseline; justify-content: space-between; }
+.m-sch-his__clear { font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); cursor: pointer; }
 .m-sch-hot__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 20px; padding: 0 16px; }
 .m-sch-hot__item { display: flex; align-items: center; gap: 9px; padding: 11px 0; min-width: 0; cursor: pointer; }
 .m-sch-hot__rank {
@@ -987,3 +1012,86 @@ body {
   display: inline-grid; place-items: center; font-size: 14px; font-weight: 700;
 }
 .m-sch-add:active { opacity: 0.7; }
+
+/* ============================================================
+   历史牛熊（MobileBullReview.vue：三页签 + 轮次档案 + 模式库）
+   视觉口径：.ai/项目资源/stock-board-mobile-bull-review-v1.html
+   ============================================================ */
+.m-br-refresh { font-size: 11px; font-weight: 700; color: var(--color-primary); cursor: pointer; }
+.m-br-seg { display: flex; gap: 4px; margin: 10px 12px 0; padding: 3px; border-radius: 10px; background: var(--color-flat-weak); }
+.m-br-seg span { flex: 1; text-align: center; padding: 7px 0; border-radius: 8px; font-size: 12.5px; font-weight: 700; color: var(--color-text-2); cursor: pointer; }
+.m-br-seg span.on { background: var(--color-surface); color: var(--color-primary-dark, var(--color-primary)); box-shadow: var(--shadow-card); }
+.m-br-chips { display: flex; gap: 8px; overflow-x: auto; padding: 12px 12px 2px; scrollbar-width: none; }
+.m-br-chips::-webkit-scrollbar { display: none; }
+.m-br-chip { flex: 0 0 auto; padding: 6px 13px; border-radius: 999px; background: var(--color-flat-weak); color: var(--color-text-2); font-size: 11.5px; font-weight: 700; white-space: nowrap; cursor: pointer; }
+.m-br-chip.on { background: var(--color-primary); color: var(--color-on-primary); }
+.m-br-chip i { font-style: normal; opacity: 0.8; margin-left: 3px; font-size: 9.5px; }
+.m-br-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.m-br-name { font-size: 15px; }
+.m-badge { padding: 2px 8px; border-radius: 999px; font-size: 9.5px; font-weight: 800; }
+.m-badge--t { background: var(--color-primary-weak); color: var(--color-primary); }
+.m-badge--f { background: var(--color-flat-weak); color: var(--color-text-2); }
+.m-badge--l { background: var(--color-up-weak); color: var(--color-up); }
+.m-br-span { margin-top: 3px; font-size: 10.5px; color: var(--color-text-3); font-family: 'SF Mono', Menlo, Consolas, monospace; }
+.m-br-kv { display: grid; grid-template-columns: 56px 1fr; gap: 4px 8px; margin-top: 9px; font-size: 11px; }
+.m-br-kv b { color: var(--color-text-3); font-weight: 600; }
+.m-br-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; margin-top: 10px; }
+.m-br-stats .st { padding: 8px 4px; border-radius: 9px; background: var(--color-bg, var(--color-flat-weak)); text-align: center; }
+.m-br-stats .st b { display: block; font-size: 14.5px; font-family: 'SF Mono', Menlo, monospace; }
+.m-br-stats .st span { font-size: 9px; color: var(--color-text-tertiary); }
+.m-br-stats .u { color: var(--color-up); }
+.m-br-stats .d { color: var(--color-down-strong); }
+.m-br-stats .n { color: var(--color-text); }
+.m-br-nostats { grid-column: 1 / -1; text-align: center; font-size: 11px; color: var(--color-text-tertiary); padding: 10px 0; }
+.m-br-band { margin-top: 11px; }
+.m-br-band .cap { display: flex; justify-content: space-between; font-size: 10px; color: var(--color-text-tertiary); margin-bottom: 5px; }
+.m-br-band svg { width: 100%; height: 64px; display: block; }
+.m-br-band .s1 { fill: var(--color-primary-weak); }
+.m-br-band .s2 { fill: var(--color-up-weak); }
+.m-br-band .s3 { fill: var(--color-up-pale); }
+.m-br-band .s4 { fill: var(--color-down-weak); }
+.m-br-band .mk { fill: var(--color-up-strong); stroke: #fff; stroke-width: 0.8; }
+.m-br-sub { font-size: 13px; font-weight: 700; margin-bottom: 9px; }
+.m-br-stages { display: grid; gap: 7px; }
+.m-br-stage { display: grid; grid-template-columns: 4px 1fr auto; gap: 9px; padding: 9px 11px; border-radius: 9px; background: var(--color-flat-weak); }
+.m-br-stage .bar { border-radius: 3px; }
+.m-br-stage .s1 { background: var(--color-primary-weak); }
+.m-br-stage .s2 { background: var(--color-up-weak); }
+.m-br-stage .s3 { background: var(--color-up-pale); }
+.m-br-stage .s4 { background: var(--color-down-weak); }
+.m-br-stage .nm { font-size: 12px; font-weight: 700; }
+.m-br-stage .ts1 { color: var(--color-primary); }
+.m-br-stage .ts2, .m-br-stage .ts3 { color: var(--color-up-strong); }
+.m-br-stage .ts4 { color: var(--color-down-strong); }
+.m-br-stage .ds { font-size: 10.5px; color: var(--color-text-2); margin-top: 2px; }
+.m-br-stage .mo { font-size: 9.5px; color: var(--color-text-tertiary); font-family: 'SF Mono', Menlo, monospace; white-space: nowrap; }
+.m-br-tl { padding-left: 4px; }
+.m-br-ev { position: relative; padding: 0 0 12px 20px; }
+.m-br-ev::before { content: ''; position: absolute; left: 5px; top: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--color-primary); }
+.m-br-ev::after { content: ''; position: absolute; left: 8px; top: 15px; bottom: 0; width: 1.5px; background: var(--color-flat-weak); }
+.m-br-ev:last-child::after { display: none; }
+.m-br-ev .d { font-size: 9.5px; color: var(--color-text-tertiary); font-family: 'SF Mono', Menlo, monospace; }
+.m-br-ev .tt { font-size: 12px; font-weight: 700; margin-top: 1px; }
+.m-br-ev .cat { font-size: 9px; font-weight: 800; padding: 1px 6px; border-radius: 999px; background: var(--color-flat-weak); color: var(--color-text-2); margin-left: 5px; vertical-align: 1px; }
+.m-br-ev .cat.k { background: var(--color-primary-weak); color: var(--color-primary); }
+.m-br-ev .ds { font-size: 10.5px; color: var(--color-text-2); margin-top: 2px; }
+.m-br-mis { display: grid; gap: 6px; }
+.m-br-mis .mi { display: flex; align-items: center; justify-content: space-between; padding: 8px 11px; border-radius: 8px; background: var(--color-flat-weak); font-size: 11.5px; }
+.m-br-mis .v { font-size: 9.5px; font-weight: 800; padding: 2px 8px; border-radius: 999px; }
+.m-br-mis .v.hit { background: var(--color-up-weak); color: var(--color-up); }
+.m-br-mis .v.ok { background: var(--color-down-weak); color: var(--color-down-strong); }
+.m-br-review { font-size: 11.5px; color: var(--color-text-2); line-height: 1.75; margin: 0; }
+.m-br-tip { display: flex; gap: 8px; margin: 10px 12px 0; padding: 9px 11px; border-radius: 9px; background: var(--color-up-weak); color: var(--color-up); font-size: 10.5px; line-height: 1.6; }
+.m-br-tip b { font-weight: 900; }
+.m-br-librow { display: flex; gap: 8px; overflow-x: auto; padding: 2px 0 4px; scrollbar-width: none; }
+.m-br-librow::-webkit-scrollbar { display: none; }
+.m-br-lr { flex: 0 0 128px; padding: 9px 10px; border-radius: 9px; background: var(--color-flat-weak); cursor: pointer; }
+.m-br-lr .s { font-size: 11px; font-weight: 800; }
+.m-br-lr .g { font-size: 13px; font-family: 'SF Mono', Menlo, monospace; font-weight: 800; margin-top: 2px; }
+.m-br-lr .g.u2 { color: var(--color-up); }
+.m-br-lr .g.d2 { color: var(--color-down-strong); }
+.m-br-lr .f { font-size: 9.5px; color: var(--color-text-2); margin-top: 2px; }
+.m-br-rule { padding: 9px 11px; border-radius: 8px; background: var(--color-flat-weak); margin-bottom: 6px; font-size: 11px; color: var(--color-text-2); }
+.m-br-rule b { color: var(--color-text); display: block; margin-bottom: 2px; font-size: 11.5px; }
+.m-up-t { color: var(--color-up-strong); }
+.m-down-t { color: var(--color-down-strong); }
