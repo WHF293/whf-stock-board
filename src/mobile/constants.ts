@@ -151,7 +151,21 @@ export const MOBILE_TAB_THUMB_EASE_RESTORE = 'cubic-bezier(0.3, 1.35, 0.6, 1)';
 /** 按住气泡拖拽时位移小于多少 px 视为普通点击（不进入拖拽态、不吞 click） */
 export const MOBILE_TAB_DRAG_SLOP_PX = 8;
 
-/* ---- TabBar 液态玻璃折射（SVG feDisplacementMap；移植自 shuding/liquid-glass）----
+/* ---- 首页「书本翻页」容器（BookFlipBook：成交额 / 涨跌分布 / 板块热力 三模块横翻）---- */
+
+/** 单次翻页动画时长（毫秒；翻页中互斥锁按此时长持有） */
+export const MOBILE_BOOK_FLIP_MS = 560;
+
+/** 书页统一高度（px）：三模块共用一张「纸」的定高，超出裁切（440：分布含连板梯队不裁切） */
+export const MOBILE_BOOK_PAGE_HEIGHT = 440;
+
+/** 左右翻页热区宽度（px；贴书本左右边缘的透明点击条，避免误触图区交互） */
+export const MOBILE_BOOK_EDGE_WIDTH = 40;
+
+/** 底部滑块拖动位移小于多少 px 视为点选（按点位直接选页，不进入拖拽态） */
+export const MOBILE_BOOK_DRAG_SLOP_PX = 6;
+
+/** TabBar 液态玻璃折射（SVG feDisplacementMap；移植自 shuding/liquid-glass）----
  * 中间区域零位移、仅边缘环带折射；仅 Chromium 系 WebView 生效（backdrop-filter: url(#滤镜)），
  * 不支持的环境由 util 探测后回退现有磨砂玻璃。 */
 
