@@ -10,6 +10,7 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+dist-apk
 *.local
 
 # Editor directories and files
@@ -26,6 +27,13 @@ dist-ssr
 # AI 文档目录（本地开发沉淀，不入库）
 .ai
 
+# Tauri Android 工程生成物（pnpm tauri android init 生成，CI 内重建，不入库）
+src-tauri/gen/android
+
+# 签名 keystore 一律不入库
+*.keystore
+*.jks
+
 # AI 代理本地目录（工具缓存 / 会话记忆 / 冒烟截图，不入库）
 .codegraph
 .claude
@@ -34,3 +42,4 @@ dist-ssr
 .codex
 .agents
 .chatgpt
+dist-apk

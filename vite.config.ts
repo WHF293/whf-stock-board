@@ -36,7 +36,7 @@ export default defineConfig({
        */
       {
         find: /^path$/,
-        replacement: fileURLToPath(new URL('./src/utils/path-shim.ts', import.meta.url)),
+        replacement: fileURLToPath(new URL('./src/common/utils/path-shim.ts', import.meta.url)),
       },
       /** @ 指向 src 目录，业务代码统一用 @/xxx 导入 */
       { find: '@', replacement: fileURLToPath(new URL('./src', import.meta.url)) },

@@ -1,0 +1,36 @@
+/* 全局样式入口：Tailwind 与主题 token（theme.css 内引入 tailwindcss） */
+@import './theme.css';
+
+/*
+ * 滚动边界保留系统默认行为（弹性 overscroll / 滚动链均不拦截）。
+ * 2026-10-10 撤销 v3.3.3 的 `* { overscroll-behavior: none }`：
+ * 该通配抑制在移动端（Android WebView）会一并改变面板内滚动容器的边界表现，
+ * 弹性滚动属于系统原生手感，不再全局禁用。
+ */
+* {
+  /* Firefox */
+  scrollbar-width: thin;
+  scrollbar-color: rgb(148 155 165 / 0.4) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+  background: rgb(148 155 165 / 0.4);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgb(148 155 165 / 0.6);
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}

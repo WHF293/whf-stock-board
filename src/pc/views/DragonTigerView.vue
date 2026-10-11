@@ -1,0 +1,572 @@
+<script setup lang="ts">
+import { computed, onActivated, ref, watch } from "vue";
+import BaseCard from "../components/ui/BaseCard.vue";
+import BaseEmpty from "../components/ui/BaseEmpty.vue";
+import BaseSkeleton from "../components/ui/BaseSkeleton.vue";
+import BaseTable from "../components/ui/BaseTable.vue";
+import BaseTabs from "../components/ui/BaseTabs.vue";
+import TabConfigButton from "../components/ui/TabConfigButton.vue";
+import { useTabConfig } from "../../common/composables/use-tab-config";
+import type { TableColumn } from "../../common/types/table.types.ts";
+import {
+  fetchBlockTradeDetail,
+  fetchDragonTigerDetail,
+} from "../../common/api/dragon-tiger.api.ts";
+import type {
+  BlockTradeDetailItem,
+  DragonTigerDetailItem,
+} from "../../common/types/dragon-tiger.types.ts";
+import type { RankDataset } from "../../common/types/rank-dataset.types.ts";
+import { formatPercent } from "../../common/utils/format-percent";
+import { formatPrice } from "../../common/utils/format-price";
+import { formatYuanWithSign } from "../../common/utils/format-yuan";
+import { useLazyRows } from "../../common/composables/use-lazy-rows";
+import { useDataCacheStore } from "../../common/stores/data-cache";
+import { useStockOpen } from "../../common/composables/use-stock-open";
+import { DATA_CACHE_KEY } from "../../common/constants/data-cache.constants.ts";
+import { getTrendByChangePercent } from "../../common/constants/trend.constants.ts";
+import {
+  TREND_PILL_CLASS,
+  TREND_TEXT_CLASS,
+} from "../../common/constants/stock-colors.constants.ts";
+
+/** 明细表每批放行行数 */
+const LIST_CHUNK_SIZE = 50;
+
+const dataCache = useDataCacheStore();
+
+/**
+ * 龙虎榜·大宗：龙虎榜明细 / 大宗交易明细，近 7 日数据按日期下拉切换（重接口不轮询）
+ */
+const { openSidebar, openPage, toContextList } = useStockOpen();
+
+const VIEW_TAB_OPTIONS = [
+  { label: "龙虎榜", value: "dragon-tiger" },
+  { label: "大宗交易", value: "block-trade" },
+] as const;
+
+const props = defineProps<{
+  /**
+   * 受控视图：父级页面级 tabs 接管时传入，内部不再渲染视图切换；
+   * 未传入时保持内部自管（保持单页独立可用）
+   */
+  modelValue?: "dragon-tiger" | "block-trade";
+}>();
+
+const emit = defineEmits<{
+  /** 受控视图变化同步 */
+  "update:modelValue": [value: "dragon-tiger" | "block-trade"];
+}>();
+
+// 页签显隐 + 顺序可配置（持久化）；激活值被隐藏时自动回退首个可见 tab
+// （仅独立访问时生效；被父级市场榜单页接管时以父级页签为准）
+const { visibleOptions: viewTabOptions, activeValue: internalTab } = useTabConfig(
+  "dragon-tiger",
+  VIEW_TAB_OPTIONS,
+);
+
+/** 当前视图：受控优先 */
+const activeTab = computed<string>({
+  get: () => props.modelValue ?? internalTab.value,
+  set: (value) => {
+    internalTab.value = value as (typeof VIEW_TAB_OPTIONS)[number]["value"];
+    if (props.modelValue !== undefined) {
+      emit("update:modelValue", value as "dragon-tiger" | "block-trade");
+    }
+  },
+});
+
+/** 是否渲染内部视图切换（父级接管时隐藏） */
+const showViewTabs = computed(() => props.modelValue === undefined);
+
+/** 龙虎榜涨/跌筛选按钮组（参考板块热力「热力图/列表」样式） */
+const DIRECTION_TAB_OPTIONS = [
+  { label: "涨", value: "up" },
+  { label: "跌", value: "down" },
+] as const;
+const activeDirection =
+  ref<(typeof DIRECTION_TAB_OPTIONS)[number]["value"]>("up");
+
+// ---------- 龙虎榜（快照播种 + 成功写回） ----------
+const dragonItems = ref<DragonTigerDetailItem[]>(
+  dataCache.get<DragonTigerDetailItem[]>(DATA_CACHE_KEY.DRAGON_TIGER_ITEMS) ??
+    [],
+);
+const isDragonLoading = ref(dragonItems.value.length === 0);
+const dragonError = ref(false);
+
+/** 拉取龙虎榜明细 */
+const loadDragon = async (): Promise<void> => {
+  isDragonLoading.value = true;
+  dragonError.value = false;
+  try {
+    dragonItems.value = await fetchDragonTigerDetail();
+    dataCache.set(DATA_CACHE_KEY.DRAGON_TIGER_ITEMS, dragonItems.value);
+  } catch (error) {
+    dragonError.value = dragonItems.value.length === 0;
+    console.error("[dragon-tiger]", error);
+  } finally {
+    isDragonLoading.value = false;
+  }
+};
+
+// ---------- 大宗交易（快照播种 + 成功写回） ----------
+const blockItems = ref<BlockTradeDetailItem[]>(
+  dataCache.get<BlockTradeDetailItem[]>(DATA_CACHE_KEY.BLOCK_TRADE_ITEMS) ?? [],
+);
+const isBlockLoading = ref(blockItems.value.length === 0);
+const blockError = ref(false);
+
+/** 拉取大宗交易明细 */
+const loadBlock = async (): Promise<void> => {
+  isBlockLoading.value = true;
+  blockError.value = false;
+  try {
+    blockItems.value = await fetchBlockTradeDetail();
+    dataCache.set(DATA_CACHE_KEY.BLOCK_TRADE_ITEMS, blockItems.value);
+  } catch (error) {
+    blockError.value = blockItems.value.length === 0;
+    console.error("[block-trade]", error);
+  } finally {
+    isBlockLoading.value = false;
+  }
+};
+
+// 初始拉取（两个重接口错峰：切 tab 时按需再拉）
+const loadAll = async (): Promise<void> => {
+  if (activeTab.value === "dragon-tiger" && dragonItems.value.length === 0) {
+    await loadDragon();
+  } else if (
+    activeTab.value === "block-trade" &&
+    blockItems.value.length === 0
+  ) {
+    await loadBlock();
+  }
+};
+
+void loadAll();
+
+watch(activeTab, () => {
+  void loadAll();
+});
+
+// KeepAlive 缓存页面：切走再切回不重新挂载，重拉当前页签数据（快照秒出后静默覆盖；
+// 首次 onActivated 紧跟 setup 的 loadAll 触发，跳过避免重复请求）
+let dragonActivatedOnce = false;
+onActivated(() => {
+  if (!dragonActivatedOnce) {
+    dragonActivatedOnce = true;
+    return;
+  }
+  if (activeTab.value === "dragon-tiger") {
+    if (!isDragonLoading.value) void loadDragon();
+  } else if (!isBlockLoading.value) {
+    void loadBlock();
+  }
+});
+
+/** 龙虎榜日期选项（从数据提取，倒序） */
+const dragonDateOptions = computed(() => {
+  const dates = [...new Set(dragonItems.value.map((item) => item.date))]
+    .sort()
+    .reverse();
+  return dates.map((date) => ({ label: date, value: date }));
+});
+
+/** 大宗交易日期选项 */
+const blockDateOptions = computed(() => {
+  const dates = [...new Set(blockItems.value.map((item) => item.date))]
+    .sort()
+    .reverse();
+  return dates.map((date) => ({ label: date, value: date }));
+});
+
+/** 选中的龙虎榜日期（默认最新一日） */
+const dragonDate = ref<string>("");
+const blockDate = ref<string>("");
+
+// 数据到位后默认选中最新日期
+watch(dragonDateOptions, (options) => {
+  if (
+    options.length > 0 &&
+    !options.some((option) => option.value === dragonDate.value)
+  ) {
+    dragonDate.value = options[0].value;
+  }
+});
+watch(blockDateOptions, (options) => {
+  if (
+    options.length > 0 &&
+    !options.some((option) => option.value === blockDate.value)
+  ) {
+    blockDate.value = options[0].value;
+  }
+});
+
+/** 选中日期 + 涨/跌方向的龙虎榜明细（懒加载） */
+const dragonRowsFull = computed(() =>
+  dragonItems.value.filter((item) => {
+    if (dragonDate.value && item.date !== dragonDate.value) return false;
+    const change = item.changePercent ?? 0;
+    if (activeDirection.value === "up" && change <= 0) return false;
+    if (activeDirection.value === "down" && change >= 0) return false;
+    return true;
+  }),
+);
+const {
+  rows: dragonRows,
+  total: dragonTotal,
+  hasMore: dragonHasMore,
+  onScroll: onDragonScroll,
+} = useLazyRows<DragonTigerDetailItem>(
+  () => dragonRowsFull.value,
+  LIST_CHUNK_SIZE,
+);
+
+/** 选中日期的大宗明细（懒加载） */
+const blockRowsFull = computed(() =>
+  blockItems.value.filter(
+    (item) => !blockDate.value || item.date === blockDate.value,
+  ),
+);
+const {
+  rows: blockRows,
+  total: blockTotal,
+  hasMore: blockHasMore,
+  onScroll: onBlockScroll,
+} = useLazyRows<BlockTradeDetailItem>(
+  () => blockRowsFull.value,
+  LIST_CHUNK_SIZE,
+);
+
+/** 龙虎榜表列配置（涨跌幅默认开启排序） */
+const dragonColumns: TableColumn<DragonTigerDetailItem>[] = [
+  { key: "name", label: "个股" },
+  { key: "close", label: "收盘", align: "right" },
+  {
+    key: "changePercent",
+    label: "涨跌幅",
+    align: "right",
+    sortable: true,
+    sortValue: (item) => item.changePercent,
+  },
+  {
+    key: "netBuyAmount",
+    label: "龙虎榜净买额",
+    align: "right",
+    sortable: true,
+    sortValue: (item) => item.netBuyAmount,
+  },
+  { key: "netBuyRatio", label: "净买占比", align: "right" },
+  { key: "reason", label: "上榜原因" },
+  { key: "afterChange5d", label: "上榜后5日", align: "right" },
+];
+
+/** 大宗交易表列配置 */
+const blockColumns: TableColumn<BlockTradeDetailItem>[] = [
+  { key: "name", label: "个股" },
+  { key: "dealPrice", label: "成交价", align: "right" },
+  { key: "dealVolume", label: "成交量(万股)", align: "right" },
+  {
+    key: "dealAmount",
+    label: "成交额",
+    align: "right",
+    sortable: true,
+    sortValue: (item) => item.dealAmount,
+  },
+  { key: "premiumRate", label: "溢价率", align: "right" },
+  { key: "buyBranch", label: "买方营业部" },
+  { key: "sellBranch", label: "卖方营业部" },
+];
+
+// ---------- 榜单数据出口（父级市场榜单页 AI 分析 / 导出 Excel 消费） ----------
+
+/** 龙虎榜导出列（表格列 + 代码 / 日期；金额为原始元值，导出与 AI 分析共用） */
+const dragonExportColumns: { label: string; key: string }[] = [
+  { key: "name", label: "个股" },
+  { key: "code", label: "代码" },
+  { key: "date", label: "日期" },
+  { key: "close", label: "收盘" },
+  { key: "changePercent", label: "涨跌幅(%)" },
+  { key: "netBuyAmount", label: "龙虎榜净买额(元)" },
+  { key: "netBuyRatio", label: "净买占比(%)" },
+  { key: "reason", label: "上榜原因" },
+  { key: "afterChange5d", label: "上榜后5日(%)" },
+];
+
+/** 大宗交易导出列（表格列 + 代码 / 日期；成交量为原始股值） */
+const blockExportColumns: { label: string; key: string }[] = [
+  { key: "name", label: "个股" },
+  { key: "code", label: "代码" },
+  { key: "date", label: "交易日期" },
+  { key: "dealPrice", label: "成交价" },
+  { key: "dealVolume", label: "成交量(股)" },
+  { key: "dealAmount", label: "成交额(元)" },
+  { key: "premiumRate", label: "溢价率(%)" },
+  { key: "buyBranch", label: "买方营业部" },
+  { key: "sellBranch", label: "卖方营业部" },
+];
+
+/**
+ * 汇总当前视图的榜单数据段（已按当前选中日期与涨 / 跌方向过滤）
+ * @returns 数据段列表：龙虎榜 / 大宗交易各一段
+ */
+const getRankDatasets = (): RankDataset[] => {
+  if (activeTab.value === "block-trade") {
+    return [
+      {
+        title: `大宗交易 ${blockDate.value}`,
+        columns: blockExportColumns,
+        rows: blockRowsFull.value as unknown as Record<string, unknown>[],
+      },
+    ];
+  }
+  return [
+    {
+      title: `龙虎榜 ${dragonDate.value}·${activeDirection.value === "up" ? "涨" : "跌"}`,
+      columns: dragonExportColumns,
+      rows: dragonRowsFull.value as unknown as Record<string, unknown>[],
+    },
+  ];
+};
+
+defineExpose({ getRankDatasets });
+
+/**
+ * 个股跳详情（6 位纯代码 -> 完整符号）
+ * @param code 个股 6 位代码
+ */
+const openDetail = (code: string): void => {
+  openSidebar(code);
+};
+</script>
+
+<template>
+  <div class="flex min-h-0 flex-col gap-4">
+    <!-- 视图切换：龙虎榜 / 大宗交易（父级页面接管时不渲染） -->
+    <div v-if="showViewTabs" class="flex shrink-0 items-center justify-between gap-2">
+      <div class="flex items-center gap-1">
+        <BaseTabs v-model="activeTab" :options="viewTabOptions" variant="underline" />
+        <TabConfigButton page-id="dragon-tiger" :options="VIEW_TAB_OPTIONS" />
+      </div>
+      <span class="text-xs text-text-tertiary">近 7 日数据 · 按日期下拉切换</span>
+    </div>
+    <BaseCard fill class="min-h-0 flex-1">
+      <!-- 龙虎榜 -->
+      <template v-if="activeTab === 'dragon-tiger'">
+        <div v-if="isDragonLoading"><BaseSkeleton /></div>
+        <div v-else-if="dragonError" class="py-10">
+          <BaseEmpty text="龙虎榜数据加载失败，请稍后重试" />
+        </div>
+        <template v-else-if="dragonItems.length > 0">
+          <div class="mb-3 flex shrink-0 flex-wrap items-center justify-between gap-2">
+            <div>
+              <span class="text-xs text-text-tertiary mr-2">上榜日期</span>
+              <select
+                v-model="dragonDate"
+                class="rounded-lg bg-flat-weak px-2 py-1 text-xs text-text outline-none"
+              >
+                <option
+                  v-for="option in dragonDateOptions"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+            </div>
+            <!-- 涨/跌按钮组（与板块热力「热力图/列表」同 BaseTabs 样式） -->
+            <div>
+              <span class="text-xs text-text-tertiary mr-2">共 {{ dragonRows.length }} 只上榜（总 {{ dragonTotal }}）</span>
+              <BaseTabs
+                v-model="activeDirection"
+                :options="DIRECTION_TAB_OPTIONS"
+              />
+            </div>
+          </div>
+          <div class="flex min-h-0 flex-1 flex-col">
+            <BaseTable
+              :columns="dragonColumns"
+              :rows="dragonRows"
+              :row-key="(item) => `${item.date}-${item.code}`"
+              min-width="820px"
+              scroll-class="table-scroll-fill"
+              row-clickable
+              :footer-text="
+                dragonHasMore
+                  ? `已展示 ${dragonRows.length} / 共 ${dragonTotal}，继续滚动加载更多`
+                  : undefined
+              "
+              @row-click="(item) => openDetail(item.code)"
+              @scroll="onDragonScroll"
+              :enable-dblclick-nav="true"
+              @row-dblclick="(item) => openPage(item.code, toContextList(dragonRowsFull, (row) => row.code, (row) => row.close))"
+            >
+              <template #name="{ row }">
+                <span class="font-medium text-text">{{ row.name }}</span>
+                <span class="ml-1 text-xs text-text-tertiary">{{
+                  row.code
+                }}</span>
+              </template>
+              <template #close="{ row }">
+                <span class="text-text-secondary">{{
+                  formatPrice(row.close)
+                }}</span>
+              </template>
+              <template #changePercent="{ row }">
+                <span
+                  class="rounded-full px-2 py-0.5 text-xs font-semibold"
+                  :class="
+                    TREND_PILL_CLASS[
+                      getTrendByChangePercent(row.changePercent ?? 0)
+                    ]
+                  "
+                >
+                  {{ formatPercent(row.changePercent) }}
+                </span>
+              </template>
+              <template #netBuyAmount="{ row }">
+                <span
+                  class="font-medium"
+                  :class="
+                    (row.netBuyAmount ?? 0) >= 0 ? 'text-up' : 'text-down'
+                  "
+                >
+                  {{ formatYuanWithSign(row.netBuyAmount) }}
+                </span>
+              </template>
+              <template #netBuyRatio="{ row }">
+                <span class="text-text-secondary">{{
+                  formatPercent(row.netBuyRatio)
+                }}</span>
+              </template>
+              <template #reason="{ row }">
+                <span
+                  class="block max-w-56 truncate text-text-secondary"
+                  :title="row.reason"
+                >
+                  {{ row.reason }}
+                </span>
+              </template>
+              <template #afterChange5d="{ row }">
+                <span
+                  :class="
+                    TREND_TEXT_CLASS[
+                      getTrendByChangePercent(row.afterChange5d ?? 0)
+                    ]
+                  "
+                >
+                  {{
+                    row.afterChange5d === null
+                      ? "--"
+                      : formatPercent(row.afterChange5d)
+                  }}
+                </span>
+              </template>
+            </BaseTable>
+          </div>
+        </template>
+        <BaseEmpty v-else text="暂无龙虎榜数据" />
+      </template>
+
+      <!-- 大宗交易 -->
+      <template v-else>
+        <div v-if="isBlockLoading"><BaseSkeleton /></div>
+        <div v-else-if="blockError" class="py-10">
+          <BaseEmpty text="大宗交易数据加载失败，请稍后重试" />
+        </div>
+        <template v-else-if="blockItems.length > 0">
+          <div class="mb-3 flex shrink-0 items-center gap-2">
+            <span class="text-xs text-text-tertiary">交易日期</span>
+            <select
+              v-model="blockDate"
+              class="rounded-lg bg-flat-weak px-2 py-1 text-xs text-text outline-none"
+            >
+              <option
+                v-for="option in blockDateOptions"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+            <span class="text-xs text-text-tertiary">共 {{ blockRows.length }} 笔（总 {{ blockTotal }}）</span>
+          </div>
+          <div class="flex min-h-0 flex-1 flex-col">
+            <BaseTable
+              :columns="blockColumns"
+              :rows="blockRows"
+              :row-key="(item) => `${item.date}-${item.code}`"
+              min-width="820px"
+              scroll-class="table-scroll-fill"
+              row-clickable
+              :footer-text="
+                blockHasMore
+                  ? `已展示 ${blockRows.length} / 共 ${blockTotal}，继续滚动加载更多`
+                  : undefined
+              "
+              @row-click="(item) => openDetail(item.code)"
+              @scroll="onBlockScroll"
+              :enable-dblclick-nav="true"
+              @row-dblclick="(item) => openPage(item.code, toContextList(blockRowsFull, (row) => row.code, (row) => row.close))"
+            >
+              <template #name="{ row }">
+                <span class="font-medium text-text">{{ row.name }}</span>
+                <span class="ml-1 text-xs text-text-tertiary">{{
+                  row.code
+                }}</span>
+              </template>
+              <template #dealPrice="{ row }">
+                <span class="text-text-secondary">{{
+                  formatPrice(row.dealPrice)
+                }}</span>
+              </template>
+              <template #dealVolume="{ row }">
+                <span class="text-text-secondary">
+                  {{
+                    row.dealVolume === null
+                      ? "--"
+                      : (row.dealVolume / 10_000).toFixed(2)
+                  }}
+                </span>
+              </template>
+              <template #dealAmount="{ row }">
+                <span
+                  :class="
+                    TREND_TEXT_CLASS[
+                      getTrendByChangePercent(row.changePercent ?? 0)
+                    ]
+                  "
+                >
+                  {{ formatYuanWithSign(row.dealAmount) }}
+                </span>
+              </template>
+              <template #premiumRate="{ row }">
+                <span class="text-text-secondary">{{
+                  formatPercent(row.premiumRate)
+                }}</span>
+              </template>
+              <template #buyBranch="{ row }">
+                <span
+                  class="block max-w-52 truncate text-text-secondary"
+                  :title="row.buyBranch"
+                >
+                  {{ row.buyBranch || "--" }}
+                </span>
+              </template>
+              <template #sellBranch="{ row }">
+                <span
+                  class="block max-w-52 truncate text-text-secondary"
+                  :title="row.sellBranch"
+                >
+                  {{ row.sellBranch || "--" }}
+                </span>
+              </template>
+            </BaseTable>
+          </div>
+        </template>
+        <BaseEmpty v-else text="暂无大宗交易数据" />
+      </template>
+    </BaseCard>
+  </div>
+</template>
