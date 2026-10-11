@@ -120,66 +120,166 @@ const toneClass = (tone: ReviewStageTone): string => `s${tone[1]}`;
  * @returns 文字色 class */
 const toneTextClass = (tone: ReviewStageTone): string => `ts${tone[1]}`;
 
-/* === 阶段色带（月K收盘折线缩略 + 底部四段色带 + 顶/底标注） === */
+/* === 行情阶段图（PC RoundTimelineChart 移动版，自绘 SVG：全高阶段色带 +
+       月K收盘线 + 起点/顶点/低点标注 + 关键位虚线 + 双轴刻度） === */
+
+/** 绘图区常量（viewBox 内坐标；viewBox 366 宽 ≈ 390 屏 − 2×12 卡边距，近乎 1:1 不变形） */
+const CHART = {
+  W: 366, H: 226,
+  plotL: 36, plotR: 358, plotT: 18, plotB: 196,
+} as const;
+const PLOT_W = CHART.plotR - CHART.plotL;
+const PLOT_H = CHART.plotB - CHART.plotT;
 
 interface BandSegment {
   tone: ReviewStageTone;
   x: number;
   w: number;
 }
+interface BandMark {
+  x: number;
+  y: number;
+  label: string;
+  /** 文字锚定方向（靠右半区文字往左伸，防出界） */
+  anchor: 'start' | 'end';
+  /** 标注色 class：lb-u 红 / lb-d 绿 / lb-n 灰 */
+  cls: string;
+  /** 相对点的纵向偏移（顶点上浮 / 低点下沉） */
+  dy: number;
+}
+interface BandTick {
+  pos: number;
+  label: string;
+  anchor: 'start' | 'middle' | 'end';
+}
 interface BandView {
-  points: string;
-  lineColor: string;
+  linePoints: string;
+  areaPoints: string;
   segments: BandSegment[];
-  markX: number;
-  markY: number;
-  markLabel: string;
+  stageLabels: { tone: ReviewStageTone; x: number; name: string }[];
+  marks: BandMark[];
+  guideX: number | null;
+  guideCls: string;
+  yTicks: BandTick[];
+  xTicks: BandTick[];
 }
 
 /**
- * 计算阶段色带视图：窗口内月序为时间轴（0~100），色带段按阶段起止月定位，
- * 折线取窗口内月收盘；牛市标顶点、熊市标底点。
+ * 计算行情阶段图视图：窗口内月序为时间轴，色带段按阶段起止月铺满绘图区全高，
+ * 折线为月收盘；标注与关键位与 PC 同口径（judge.ts 回算：牛市起点/顶点/低点、熊市顶部/低点）。
  * @param round 轮次档案
  * @param bars 该轮叠加指数全量月K（升序）
- * @returns 色带视图；窗口内数据不足两根时为 null
+ * @returns 图视图；窗口内数据不足两根时为 null
  */
 const bandOf = (round: ReviewRoundMeta, bars: MonthlyBar[] | undefined): BandView | null => {
   if (!bars) return null;
   const inWindow = bars.filter((bar) => bar.month >= round.window.start && bar.month <= round.window.end);
   if (inWindow.length < 2) return null;
   const total = inWindow.length - 1;
+  const isBull = activeView.value !== 'bear';
+  /** 月份 → 绘图区 x（stage 边界月不命中时向后取最近月，末段兜底到终点）
+   * @param month 月份串（YYYY-MM）
+   * @returns 绘图区 x 坐标 */
   const xOf = (month: string): number => {
     const idx = inWindow.findIndex((bar) => bar.month >= month);
-    return ((idx < 0 ? total : idx) / total) * 100;
+    return CHART.plotL + ((idx < 0 ? total : idx) / total) * PLOT_W;
   };
   const closes = inWindow.map((bar) => bar.close);
   const min = Math.min(...closes);
   const max = Math.max(...closes);
   const span = max - min || 1;
-  const points = inWindow
-    .map((bar, i) => `${((i / total) * 100).toFixed(2)},${(56 - ((bar.close - min) / span) * 46).toFixed(2)}`)
-    .join(' ');
-  const segments = round.stages.map((stage) => {
+  const xAt = (i: number): number => CHART.plotL + (i / total) * PLOT_W;
+  const yAt = (close: number): number => CHART.plotT + (1 - (close - min) / span) * PLOT_H;
+
+  const pts = inWindow.map((bar, i) => ({ x: xAt(i), y: yAt(bar.close) }));
+  const linePoints = pts.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+  const areaPoints = `${CHART.plotL},${CHART.plotB} ${linePoints} ${CHART.plotR},${CHART.plotB}`;
+
+  const segments: BandSegment[] = round.stages.map((stage) => {
     const x1 = xOf(stage.start);
     const x2 = xOf(stage.end);
-    return { tone: stage.tone, x: x1, w: Math.max(x2 - x1, 1.5) };
+    return { tone: stage.tone, x: x1, w: Math.max(x2 - x1, 2) };
   });
-  const isBull = activeView.value !== 'bear';
-  const mark = isBull
-    ? inWindow.reduce((best, bar) => (bar.close > best.close ? bar : best), inWindow[0]!)
-    : inWindow.reduce((best, bar) => (bar.close < best.close ? bar : best), inWindow[0]!);
-  const markIdx = inWindow.indexOf(mark);
-  return {
-    points,
-    lineColor: isBull ? 'var(--color-primary)' : 'var(--color-down)',
-    segments,
-    markX: (markIdx / total) * 100,
-    markY: 56 - ((mark.close - min) / span) * 46,
-    markLabel: `${shortMonth(mark.month)} ${isBull ? '顶' : '底'} ${mark.close.toFixed(0)}`,
+  /** 阶段名图内标签：段宽能容纳文字（字数 × 10px + 6）才显示，窄段看图例，防重叠 */
+  const stageLabels = round.stages
+    .map((stage) => ({ tone: stage.tone, x: xOf(stage.start) + 5, name: stage.name, w: xOf(stage.end) - xOf(stage.start) }))
+    .filter((s) => s.w >= s.name.length * 10 + 6)
+    .map((s) => ({ tone: s.tone, x: Math.min(s.x, CHART.plotR - s.name.length * 10 - 4), name: s.name }));
+
+  /**
+   * 标注点通用组装（防出界：x 靠右 anchor 翻转，y 出界上下翻转）
+   * @param month 月份串（YYYY-MM）
+   * @param close 收盘点位
+   * @param label 标注文案
+   * @param cls 标注色 class
+   * @param above 文字是否在点上方
+   * @returns 标注点视图模型
+   */
+  const markOf = (month: string, close: number, label: string, cls: string, above: boolean): BandMark => {
+    const idx = inWindow.findIndex((bar) => bar.month >= month);
+    const t = (idx < 0 ? total : idx) / total;
+    const y = yAt(close);
+    return {
+      x: xAt(idx < 0 ? total : idx),
+      y,
+      label,
+      anchor: t > 0.62 ? 'end' : 'start',
+      cls,
+      dy: above ? -8 : (y + 14 > CHART.plotB ? -8 : 14),
+    };
   };
+
+  const marks: BandMark[] = [];
+  let guideX: number | null = null;
+  let guideCls = 'lb-u';
+  if (isBull) {
+    marks.push({
+      x: CHART.plotL, y: yAt(inWindow[0]!.close),
+      label: `起点 ${inWindow[0]!.close.toFixed(0)}`,
+      anchor: 'start', cls: 'lb-n', dy: -8,
+    });
+    const bull = bullStats.value[round.id];
+    if (bull) {
+      marks.push(
+        markOf(bull.peakMonth, bull.peakClose, `顶点 ${bull.peakClose.toFixed(0)}（${bull.peakMonth}）`, 'lb-u', true),
+        markOf(bull.troughMonth, bull.troughClose, `低点 ${bull.troughClose.toFixed(0)}（${bull.troughMonth}）`, 'lb-d', false),
+      );
+      guideX = xOf(bull.peakMonth);
+    }
+  } else {
+    const bear = bearStats.value[round.id];
+    marks.push({
+      x: CHART.plotL, y: yAt(inWindow[0]!.close),
+      label: `顶部 ${inWindow[0]!.close.toFixed(0)}（${inWindow[0]!.month}）`,
+      anchor: 'start', cls: 'lb-u', dy: -8,
+    });
+    if (bear) {
+      marks.push(markOf(bear.troughMonth, bear.troughClose, `低点 ${bear.troughClose.toFixed(0)}（${bear.troughMonth}）`, 'lb-d', false));
+      guideX = xOf(bear.troughMonth);
+      guideCls = 'lb-d';
+    }
+  }
+
+  /** y 轴 4 档刻度 + 浅网格 */
+  const yTicks = [0, 1, 2, 3].map((i) => {
+    const v = min + (span * i) / 3;
+    return { pos: yAt(v), label: v.toFixed(0), anchor: 'end' as const };
+  });
+  /** x 轴 ≤7 档月份刻度（全格式 YYYY-MM，同 PC）；末月已选时丢弃过近的倒数第二档，防重叠 */
+  const step = Math.max(1, Math.ceil(inWindow.length / 6));
+  const xTicks = inWindow
+    .map((bar, i) => ({ bar, i }))
+    .filter(({ i }) => i === total || (i % step === 0 && total - i >= Math.ceil(step * 0.6)))
+    .map(({ bar, i }) => ({
+      pos: xAt(i),
+      label: bar.month,
+      anchor: (i === 0 ? 'start' : i === total ? 'end' : 'middle') as 'start' | 'middle' | 'end',
+    }));
+
+  return { linePoints, areaPoints, segments, stageLabels, marks, guideX, guideCls, yTicks, xTicks };
 };
 
-/** 当前轮的色带视图（chips 切换即重算） */
+/** 当前轮的阶段图视图（chips 切换即重算） */
 const band = computed(() =>
   activeView.value === 'library' ? null : bandOf(currentRound.value!, barsMap.value[currentRound.value!.indexSymbol]),
 );
@@ -226,7 +326,7 @@ const bearCards = computed<LibCard[]>(() =>
 </script>
 
 <template>
-  <div class="m-page-flex">
+  <div class="m-page-flex m-br-page">
     <van-nav-bar title="历史牛熊" class="m-nav" safe-area-inset-top left-arrow @click-left="router.back()">
       <template #right>
         <span class="m-br-refresh" @click="load(true)">{{ refreshing ? '同步中…' : '更新到最新' }}</span>
@@ -262,7 +362,7 @@ const bearCards = computed<LibCard[]>(() =>
               :class="{ on: activeRoundId === round.id }"
               @click="pickRound(round.id)"
             >
-              {{ round.short }}
+              {{ round.name.split('（')[0] }}
               <i v-if="round.status.includes('进行中')">进行中</i>
             </span>
           </div>
@@ -300,22 +400,65 @@ const bearCards = computed<LibCard[]>(() =>
               <div v-else class="m-br-nostats">窗口内月K不足，暂无法回算统计</div>
             </div>
 
-            <!-- 阶段色带：月K收盘折线 + 四段色带 + 顶/底标注 -->
+            <!-- 行情阶段图：PC RoundTimelineChart 移动版（全高色带 + 月K收盘线 + 标注 + 关键位虚线） -->
             <div v-if="band" class="m-br-band">
-              <div class="cap"><span>{{ shortMonth(currentRound.window.start) }}</span><span>{{ band.markLabel }}</span><span>{{ shortMonth(currentRound.window.end) }}</span></div>
-              <svg viewBox="0 0 100 62" preserveAspectRatio="none">
-                <polyline :points="band.points" fill="none" :stroke="band.lineColor" stroke-width="1.4" />
+              <div class="hd">
+                <span class="t">行情阶段 · {{ currentRound.indexName }}月K</span>
+                <span class="lg">
+                  <span v-for="stage in currentRound.stages" :key="stage.name">
+                    <i :class="toneClass(stage.tone)"></i>{{ stage.name }}
+                  </span>
+                </span>
+              </div>
+              <svg viewBox="0 0 366 226" role="img" aria-label="行情阶段图">
                 <rect
                   v-for="seg in band.segments"
                   :key="seg.tone + String(seg.x)"
                   :x="seg.x"
-                  y="57"
+                  :y="18"
                   :width="seg.w"
-                  height="5"
+                  height="178"
                   :class="toneClass(seg.tone)"
                 />
-                <circle :cx="band.markX" :cy="band.markY" r="2.4" class="mk" />
+                <line
+                  v-for="tick in band.yTicks"
+                  :key="'gy' + tick.label"
+                  :x1="36" :x2="358" :y1="tick.pos" :y2="tick.pos"
+                  class="grid"
+                />
+                <line
+                  v-if="band.guideX !== null"
+                  :x1="band.guideX" :x2="band.guideX" :y1="18" :y2="196"
+                  :class="band.guideCls" stroke-dasharray="3 3" opacity="0.6"
+                />
+                <polygon :points="band.areaPoints" class="area" />
+                <polyline :points="band.linePoints" fill="none" class="line" stroke-width="1.6" />
+                <text
+                  v-for="stage in band.stageLabels"
+                  :key="'sl' + stage.name"
+                  :x="stage.x" y="30"
+                  :class="toneTextClass(stage.tone)"
+                >{{ stage.name }}</text>
+                <text
+                  v-for="tick in band.yTicks"
+                  :key="'yt' + tick.label"
+                  :x="30" :y="tick.pos + 3"
+                  class="axis-t"
+                  :text-anchor="tick.anchor"
+                >{{ tick.label }}</text>
+                <text
+                  v-for="tick in band.xTicks"
+                  :key="'xt' + tick.label"
+                  :x="tick.pos" y="209"
+                  class="axis-t"
+                  :text-anchor="tick.anchor"
+                >{{ tick.label }}</text>
+                <g v-for="mark in band.marks" :key="mark.label">
+                  <circle :cx="mark.x" :cy="mark.y" r="2.8" :class="mark.cls" stroke="#fff" stroke-width="0.8" />
+                  <text :x="mark.x + (mark.anchor === 'end' ? -5 : 5)" :y="mark.y + mark.dy" :class="mark.cls" :text-anchor="mark.anchor">{{ mark.label }}</text>
+                </g>
               </svg>
+              <p class="fn">色带为复盘档案声明的阶段区间；顶 / 底与涨跌幅由 judge.ts 从月K回算，关键位月份以数据为准。</p>
             </div>
           </div>
 

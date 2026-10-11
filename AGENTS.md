@@ -33,7 +33,7 @@ pnpm lint         # ESLint（提交前必须 0 error / 0 warning）
 pnpm tauri build  # Windows 安装包（msi + nsis，产出 src-tauri/target/release/bundle/）
 pnpm dev:mobile   # 移动端前端开发（vite --mode mobile）
 pnpm tauri android dev    # 安卓真机 / 模拟器开发（需 Android SDK + NDK + Rust android targets）
-pnpm tauri android build --apk    # 安卓直装 APK（产出 src-tauri/gen/android/...）
+pnpm build:apk    # 安卓直装 APK —— 只编 arm64（= tauri android build --apk --target aarch64，王总 2026-10-11 指定；本地产物 unsigned，真机点验用 pnpm build:apk:debug）
 pnpm dev:site     # 官网开发（vite.config.site.ts，入口 src/docs/index.html，端口自动顺延）
 pnpm build:site   # 官网构建（vue-tsc + vite，产物 dist-site/，部署 GitHub Pages）
 ```

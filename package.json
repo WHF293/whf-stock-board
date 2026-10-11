@@ -1,7 +1,7 @@
 {
   "name": "whf-stock-board",
   "private": true,
-  "version": "4.3.0",
+  "version": "4.3.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,6 +12,8 @@
     "preview": "vite preview",
     "lint": "eslint src server",
     "tauri": "tauri",
+    "build:apk": "tauri android build --apk --target aarch64",
+    "build:apk:debug": "tauri android build --apk --target aarch64 --debug",
     "build:site": "vue-tsc -b && vite build --config vite.config.site.ts"
   },
   "dependencies": {

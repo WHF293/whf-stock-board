@@ -18,6 +18,7 @@ import {
   MOBILE_CACHE_TTL_MS,
   MOBILE_NEWS_PAGE_SIZE,
   MOBILE_NEWS_SOURCES,
+  MOBILE_NEWS_SOURCE_LOGOS,
   SINA_LID_FINANCE,
   SINA_LID_STOCK,
 } from '../constants';
@@ -496,7 +497,12 @@ onUnmounted(() => {
 
 <template>
   <div class="m-page-flex">
-    <van-nav-bar title="热点新闻" class="m-nav" safe-area-inset-top>
+    <!-- navbar 标题前带当前源 logo（王总 2026-10-11：选财联社则显示财联社 icon） -->
+    <van-nav-bar class="m-nav" safe-area-inset-top>
+      <template #title>
+        <img class="m-nav-src-logo" :src="MOBILE_NEWS_SOURCE_LOGOS[activeSource.key]" alt="" />
+        热点新闻
+      </template>
       <template #right>
         <van-icon name="setting-o" size="18" @click="settingsOpen = true" />
       </template>
