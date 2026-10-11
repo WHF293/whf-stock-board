@@ -7,6 +7,7 @@ import type { HotBoardItem } from '../../common/types/hot-board.types.ts';
 import {
   BOARD_GROUPS,
   BOARD_SOURCE_LABELS,
+  BOARD_SOURCE_LOGOS,
   BOARD_SOURCE_ORDER,
 } from '../../common/constants/hot-board.constants.ts';
 import type { BoardSource } from '../../common/constants/hot-board.constants.ts';
@@ -288,13 +289,17 @@ onMounted(() => {
 <template>
   <div class="m-page-flex">
     <!-- v2 起为首页入口卡跳转的二级页（DESIGN-MOBILE.md §2.3）：navbar 带返回键 -->
+    <!-- navbar 标题前带当前平台 logo（王总 2026-10-11） -->
     <van-nav-bar
-      title="今天炒什么"
       class="m-nav"
       safe-area-inset-top
       left-arrow
       @click-left="router.back()"
     >
+      <template #title>
+        <img class="m-nav-src-logo" :src="BOARD_SOURCE_LOGOS[activeSource]" alt="" />
+        今天炒什么
+      </template>
       <template #right>
         <van-icon name="setting-o" size="18" @click="settingsOpen = true" />
       </template>

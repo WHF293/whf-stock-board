@@ -10,36 +10,17 @@ import {
 } from '../../common/constants/trend-theme.constants.ts';
 import type { TrendTheme } from '../../common/constants/trend-theme.constants.ts';
 import { useSettingsStore } from '../../common/stores/settings';
-import {
-  readMobileColorScheme,
-  writeMobileColorScheme,
-  type MobileColorScheme,
-} from '../composables/use-mobile-color-scheme';
 
 /**
  * 主题设置页（移动端）
  *
- * 明暗三档 / 主题色（5 选项 + 自定义取色）/ 涨跌配色三套；
+ * 主题色（6 内置 + 自定义取色）/ 涨跌配色三套；
  * 全部写共享 settings store，html 属性由 MobileApp 的 useDocumentThemeSync 落盘生效。
+ * 明暗模式已于 2026-10-11 上移到「我的」页独立选项（王总指示拆分），本页不再重复。
  */
 
 const router = useRouter();
 const settingsStore = useSettingsStore();
-
-// ---- 明暗模式 ----
-
-const colorScheme = ref<MobileColorScheme>(readMobileColorScheme());
-
-const colorSchemeOptions: readonly { label: string; value: MobileColorScheme }[] = [
-  { label: '浅色', value: 'light' },
-  { label: '深色', value: 'dark' },
-  { label: '跟随系统', value: 'auto' },
-];
-
-const selectColorScheme = (scheme: MobileColorScheme): void => {
-  colorScheme.value = scheme;
-  writeMobileColorScheme(scheme);
-};
 
 // ---- 主题色 ----
 
@@ -69,21 +50,6 @@ const selectTrendTheme = (theme: TrendTheme): void => {
     <van-nav-bar title="主题设置" class="m-nav" fixed placeholder safe-area-inset-top left-arrow @click-left="router.back()" />
 
     <div class="m-theme-block" style="margin-top: 12px">
-      <div class="m-theme-block__h">明暗模式 <span class="d">跟随系统变化实时切换</span></div>
-      <div class="m-seg">
-        <button
-          v-for="option in colorSchemeOptions"
-          :key="option.value"
-          class="m-seg__opt"
-          :class="{ 'm-seg__opt--on': colorScheme === option.value }"
-          @click="selectColorScheme(option.value)"
-        >
-          {{ option.label }}
-        </button>
-      </div>
-    </div>
-
-    <div class="m-theme-block">
       <div class="m-theme-block__h">主题色 <span class="d">按钮 / 激活态 / TabBar</span></div>
       <div class="m-swatches">
         <button
