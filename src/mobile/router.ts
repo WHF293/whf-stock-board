@@ -21,7 +21,7 @@ export const MOBILE_TAB_PATHS: readonly string[] = ['/', '/watchlist', '/news', 
  *
  * meta.tab = true 的路由显示底部 TabBar（MobileApp 按 meta 判断）；
  * /board（今天炒什么）自 v1.2 起为首页模块跳转的二级页，不占 Tab；
- * /panorama /market-rank /board-calendar /stock 为 v2 二期二级页（design-mobile.md §4）
+ * /panorama /market-rank /board-calendar /stock 为 v2 二期二级页（DESIGN-MOBILE.md §4）
  */
 export const mobileRouter = createRouter({
   history: createWebHashHistory(),

@@ -1,13 +1,13 @@
 <script setup lang="ts">
 /**
- * 行情全景（v2 二期二级页，稿：market-modules-v2 P0-P2；规范：design-mobile.md §5.1）
+ * 行情全景（v2 二期二级页，稿：market-modules-v2 P0-P2；规范：DESIGN-MOBILE.md §5.1）
  *
  * 模块 chips：A股 / 资金 / 美球 / 新股；
  * - A股：涨跌统计 4 卡（由板块表现前端现算，口径同 PC）+ 行业/概念板块行（点击手风琴展开成分股，行点击进个股页）
  * - 资金：板块主力净流入榜 + 净流入/净流出前 2 板块的当日逐分钟累计曲线（SVG）
  * - 美球：美股行业 ETF / 全球指数 / 外盘商品 三组涨跌列表
  * - 新股：打新表（发行价/申购日/收益）
- * 数据层全部复用 PC common api；分区独立加载与降级（design-mobile.md §6）
+ * 数据层全部复用 PC common api；分区独立加载与降级（DESIGN-MOBILE.md §6）
  */
 import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';

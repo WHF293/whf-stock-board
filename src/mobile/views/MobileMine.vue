@@ -64,7 +64,7 @@ const goTheme = (): void => {
   padding: 20px 16px;
   background: var(--color-surface);
   border-radius: 12px;
-  margin-inline: 16px;
+  margin-inline: 12px;
 }
 .m-app-icon {
   width: 54px;
