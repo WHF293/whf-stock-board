@@ -2,14 +2,19 @@
 /**
  * 市场榜单（v2 二期二级页，稿：market-modules-v2 R0-R1；规范：DESIGN-MOBILE.md §5.2）
  *
- * 9 榜 chips 与 PC SORT_TAB_OPTIONS 对齐：
+ * 双模式（v4.2.1 起）：
+ * - 市场榜单页 /market-rank：6 榜 chips（主力/大宗/涨幅/跌幅/成交额/换手率）；
+ * - 独立榜页 /rank/:rank（连板 event / 异动 events / 龙虎榜 dragon-tiger，入口在首页金刚区）：
+ *   无 chips、navbar 标题为榜名，只渲染该榜。
+ *
+ * 数据源与 PC SORT_TAB_OPTIONS 对齐：
  * - 主力 fetchFundFlowRank；连板 fetchZtPool('zt')；异动 fetchStockChanges；
  *   龙虎榜 fetchDragonTigerDetail；大宗 fetchBlockTradeDetail；
  * - 涨幅/跌幅/成交额/换手率四榜共用一次全量报价（sdk.batch.cn()）前端排序取前 100
- * 所有股票行点击进个股页 /stock/:code（v1「点击不响应」终结）
+ * 所有股票行点击进个股页 /stock/:code
  */
-import { computed, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { computed, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { sdk } from '../../common/api/sdk';
 import { fetchFundFlowRank } from '../../common/api/flow.api';
 import { fetchStockChanges, fetchZtPool } from '../../common/api/event.api';
@@ -24,21 +29,38 @@ import type { FullQuote } from 'stock-sdk';
 import { toFullSymbol } from '../../common/utils/to-full-symbol';
 
 const router = useRouter();
+const route = useRoute();
 
-/** 9 榜定义（value 与 PC SORT_TAB_OPTIONS 一致） */
+/** 拆分为独立页的 3 榜（入口在首页金刚区，路由 /rank/:rank；不再作为市场榜单 chips 子项） */
+const STANDALONE_RANKS = {
+  event: '连板',
+  events: '异动',
+  'dragon-tiger': '龙虎榜',
+} as const satisfies Record<string, string>;
+type StandaloneKey = keyof typeof STANDALONE_RANKS;
+
+/** 市场榜单页 chips（6 榜；连板 / 异动 / 龙虎榜已拆为独立页） */
 const RANKS = [
   { key: 'stock', label: '主力' },
-  { key: 'event', label: '连板' },
-  { key: 'events', label: '异动' },
-  { key: 'dragon-tiger', label: '龙虎榜' },
   { key: 'block-trade', label: '大宗' },
   { key: 'changePercent', label: '涨幅榜' },
   { key: 'changePercentDesc', label: '跌幅榜' },
   { key: 'amount', label: '成交额榜' },
   { key: 'turnoverRate', label: '换手率榜' },
 ] as const;
-type RankKey = (typeof RANKS)[number]['key'];
+type RankKey = (typeof RANKS)[number]['key'] | StandaloneKey;
 const activeRank = ref<RankKey>('stock');
+
+/** 独立页模式：/rank/:rank 命中拆出榜时非空（隐藏 chips、标题用榜名、锁定该榜） */
+const standaloneRank = computed<StandaloneKey | null>(() => {
+  const rank = route.params.rank;
+  return typeof rank === 'string' && rank in STANDALONE_RANKS ? (rank as StandaloneKey) : null;
+});
+
+/** navbar 标题：独立页为榜名，市场榜单页为「市场榜单」 */
+const pageTitle = computed(() =>
+  standaloneRank.value ? STANDALONE_RANKS[standaloneRank.value] : '市场榜单',
+);
 
 /** 报价榜的排序键 */
 const QUOTE_SORT_KEYS: Record<string, (a: FullQuote, b: FullQuote) => number> = {
@@ -214,21 +236,28 @@ const onRefresh = async (): Promise<void> => {
   }
 };
 
-loadRank('stock');
+// 独立页模式锁定对应榜（进入即装载）；市场榜单页保持默认主力榜
+watch(standaloneRank, (rank) => {
+  if (rank) {
+    activeRank.value = rank;
+    void loadRank(rank);
+  }
+}, { immediate: true });
+if (!standaloneRank.value) void loadRank('stock');
 </script>
 
 <template>
   <div class="m-page-flex">
     <van-nav-bar
-      title="市场榜单"
+      :title="pageTitle"
       class="m-nav"
       safe-area-inset-top
       left-arrow
       @click-left="router.back()"
     />
 
-    <!-- 9 榜 chips -->
-    <div class="m-chips">
+    <!-- 6 榜 chips（独立页模式隐藏） -->
+    <div v-if="!standaloneRank" class="m-chips">
       <button
         v-for="r in RANKS"
         :key="r.key"

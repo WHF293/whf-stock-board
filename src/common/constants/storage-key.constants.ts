@@ -68,3 +68,9 @@ export const STORAGE_NS_MOBILE_BOARD_SETTINGS = 'mobile.boardSettings';
 
 /** 移动端 · 热点新闻源设置（顺序 + 显隐，JSON：{ order, hidden }） */
 export const STORAGE_NS_MOBILE_NEWS_SETTINGS = 'mobile.newsSettings';
+
+/** 移动端 · 搜索页最近搜索（上次点选的股票，JSON 数组：[{ code, name }]，最多 10 条） */
+export const STORAGE_NS_MOBILE_SEARCH_HISTORY = 'mobile.searchHistory';
+
+/** 移动端 · 历史牛熊指数月K快照（JSON：{ syncedAt, bars }，手动「更新到最新」刷新） */
+export const STORAGE_NS_MOBILE_BULL_REVIEW = 'mobile.bullReview';

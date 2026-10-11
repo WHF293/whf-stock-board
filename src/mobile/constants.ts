@@ -137,3 +137,16 @@ export const MOBILE_TAB_THUMB_RESTORE_MS = 220;
 
 /** 恢复缓动（轻微过冲的回弹） */
 export const MOBILE_TAB_THUMB_EASE_RESTORE = 'cubic-bezier(0.3, 1.35, 0.6, 1)';
+
+/* ---- TabBar 液态玻璃折射（SVG feDisplacementMap；移植自 shuding/liquid-glass）----
+ * 中间区域零位移、仅边缘环带折射；仅 Chromium 系 WebView 生效（backdrop-filter: url(#滤镜)），
+ * 不支持的环境由 util 探测后回退现有磨砂玻璃。 */
+
+/** 折射环带内边界：距边缘多少（占半高比例）开始位移，越小环带越厚 */
+export const MOBILE_TAB_GLASS_RIM = 0.12;
+
+/** 折射位移强度倍率（1 = 与原版一致；真机看着晕就调小） */
+export const MOBILE_TAB_GLASS_STRENGTH = 1;
+
+/** resize 后防抖多少毫秒再重建置换图（旋转 / 分屏场景） */
+export const MOBILE_TAB_GLASS_RESIZE_DEBOUNCE_MS = 300;

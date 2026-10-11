@@ -30,7 +30,7 @@ import {
  * 五平台 Vant Tabs 切换（点 tab 切平台），一次只渲染一个平台；
  * 每平台保留自己的分组 chips（命名与桌面 hot-board.constants.ts 一致）；
  * 榜单页状态按「平台 × 分组」独立持久化缓存（30 分钟 TTL）；
- * 榜单行点击 v1 不响应（二期 K 线详情页）；
+ * 榜单行点击进个股详情页 /stock/:symbol（与搜索页 / 市场榜单行同口径）；
  * ⚙ 平台设置弹层：开关显隐 + 上下移排序（拖拽排序为后续迭代），设置持久化
  */
 
@@ -60,6 +60,12 @@ const BOARD_PAGE_DEFAULT = (): BoardPageState => ({
 });
 
 const router = useRouter();
+
+/** 榜单行点击进个股详情页
+ * @param symbol 完整符号（如 sh600519，热股榜数据已归一） */
+const goStock = (symbol: string): void => {
+  if (symbol) void router.push(`/stock/${symbol}`);
+};
 
 const readBoardSettings = (): MobileBoardSettings => {
   const raw = appStorage.getItem(STORAGE_NS_MOBILE_BOARD_SETTINGS);
@@ -350,6 +356,7 @@ onMounted(() => {
                   v-for="item in pageOf(source).items"
                   :key="item.symbol"
                   class="m-board-row"
+                  @click="goStock(item.symbol)"
                 >
                   <span
                     class="m-board-row__rank"
