@@ -124,7 +124,7 @@ export const MOBILE_DISCLAIMER =
   '行情与资讯数据来自第三方公开接口，仅供个人学习参考，不构成任何投资建议。请以官方行情软件为准。';
 
 /* ---- TabBar 指示胶囊切换动效（DESIGN-MOBILE.md §3）----
- * 行程：位移 + 均匀缩小至 80% + 降低不透明度；接近落点时回弹放大恢复默认。
+ * 行程：位移 + 均匀缩小至 65% + 降低不透明度；接近落点时回弹放大恢复默认。
  * 规格来源：.ai/项目资源/stock-board-mobile-ui-clean-v2.html 附录 §1-② */
 
 /** 行程位移时长（毫秒；先快后慢曲线） */
@@ -133,7 +133,7 @@ export const MOBILE_TAB_THUMB_TRAVEL_MS = 340;
 /** 行程缓动（easeOutQuint 感，与横滑过渡同族） */
 export const MOBILE_TAB_THUMB_EASE_TRAVEL = 'cubic-bezier(0.16, 1, 0.3, 1)';
 
-/** 行程中的缩小比例 */
+/** 行程中的缩小比例（拖拽跟手时用同一档，保持手感一致） */
 export const MOBILE_TAB_THUMB_TRAVEL_SCALE = 0.8;
 
 /** 行程中的不透明度 */
@@ -147,6 +147,9 @@ export const MOBILE_TAB_THUMB_RESTORE_MS = 220;
 
 /** 恢复缓动（轻微过冲的回弹） */
 export const MOBILE_TAB_THUMB_EASE_RESTORE = 'cubic-bezier(0.3, 1.35, 0.6, 1)';
+
+/** 按住气泡拖拽时位移小于多少 px 视为普通点击（不进入拖拽态、不吞 click） */
+export const MOBILE_TAB_DRAG_SLOP_PX = 8;
 
 /* ---- TabBar 液态玻璃折射（SVG feDisplacementMap；移植自 shuding/liquid-glass）----
  * 中间区域零位移、仅边缘环带折射；仅 Chromium 系 WebView 生效（backdrop-filter: url(#滤镜)），
