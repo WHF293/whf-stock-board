@@ -7,8 +7,8 @@ import { squarifyTreemap } from '../utils/treemap.utils';
 /**
  * 板块热力图（移动端）：Squarified treemap 纯 SVG 渲染（无 ECharts 依赖，控制移动包体）
  *
- * 格子面积 = 板块总市值权重，颜色 = 涨跌幅四档色阶（getTrendColorCss，随主题 / 暗色自适应）；
- * 格子足够大时显示 板块名 + 涨跌幅，过小则省略 label。与 PC 市场总览热力图同数据同色口径。
+ * 格子面积 ∝ 板块总市值（√ 压缩，避免头部市值集中导致尾部细条），颜色 = 涨跌幅四档色阶
+ * （getTrendColorCss，随主题 / 暗色自适应）；格子足够大时显示 板块名 + 涨跌幅，过小则省略 label。
  */
 
 const props = defineProps<{
@@ -18,6 +18,11 @@ const props = defineProps<{
   loading?: boolean;
   /** 加载失败态 */
   error?: boolean;
+}>();
+
+/** 点击板块格子（对齐 PC 下钻交互：弹成分股列表） */
+const emit = defineEmits<{
+  select: [board: HeatmapBoard];
 }>();
 
 /** 图高（像素）：默认档；实际渲染随容器（.m-heat-box flex 撑满）量高自适应 */
@@ -32,10 +37,12 @@ const boxEl = ref<HTMLElement | null>(null);
 /** name → 板块（布局矩形反查数据用） */
 const boardByName = computed(() => new Map(props.boards.map((board) => [board.name, board])));
 
-/** 布局矩形（渲染内缩 1px 间隙；带板块引用供颜色与 label） */
+/** 布局矩形（渲染内缩 1px 间隙；带板块引用供颜色与 label）
+ *  ⚠️ 布局权重 = √总市值：头部板块市值是尾部的 5~10 倍，线性映射会让尾部挤成细条
+ *  （王总 2026-10-12 截图反馈）；开方压缩后大小关系与顺序不变，但每格都能占住可读面积 */
 const rects = computed(() =>
   squarifyTreemap(
-    props.boards.map((board) => ({ name: board.name, value: board.weight })),
+    props.boards.map((board) => ({ name: board.name, value: Math.sqrt(board.weight) })),
     boxWidth.value,
     boxHeight.value,
   ).map((rect) => {
@@ -107,9 +114,14 @@ onBeforeUnmount(() => {
       :viewBox="`0 0 ${boxWidth} ${boxHeight}`"
       :style="{ width: '100%', height: `${boxHeight}px`, display: 'block' }"
       role="img"
-      aria-label="板块热力图（面积=总市值，颜色=涨跌幅）"
+      aria-label="板块热力图（面积∝总市值，颜色=涨跌幅）"
     >
-      <g v-for="rect in rects" :key="rect.name">
+      <g
+        v-for="rect in rects"
+        :key="rect.name"
+        class="hm-cell"
+        @click="rect.board && emit('select', rect.board)"
+      >
         <rect
           :x="rect.x"
           :y="rect.y"
@@ -153,4 +165,7 @@ onBeforeUnmount(() => {
 }
 .hm-name { font-size: 10.5px; font-weight: 700; fill: #fff; pointer-events: none; }
 .hm-pct { font-size: 9.5px; font-weight: 600; fill: rgb(255 255 255 / 0.92); pointer-events: none; }
+/* 格子可点（下钻成分股弹窗）：按压轻微提亮反馈 */
+.hm-cell { cursor: pointer; }
+.hm-cell:active { opacity: 0.85; }
 </style>

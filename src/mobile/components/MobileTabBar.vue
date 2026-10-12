@@ -90,7 +90,11 @@ let suppressClick = false;
 /** 拖拽吸附触发的路由跳转：watch(activeIndex) 首帧跳过行程动画 */
 let skipNextTravel = false;
 
-/** 拖拽中气泡的 translateX（px）：clamp 在玻璃底座内（左右各 6px padding） */
+/**
+ * 拖拽中气泡的 translateX（px）：clamp 在玻璃底座内（左右各 6px padding）
+ * @param clientX 指针横坐标
+ * @returns translateX 样式值
+ */
 const dragTranslateX = (clientX: number): string => {
   if (!navRect) return '0px';
   const max = Math.max(navRect.width - 12 - slotWidth, 0);
@@ -98,7 +102,10 @@ const dragTranslateX = (clientX: number): string => {
   return `${Math.min(Math.max(raw, 0), max)}px`;
 };
 
-/** 进入拖拽跟手态：关过渡 + 缩至行程档（与点击切换同一缩小比例/透明度） */
+/**
+ * 进入拖拽跟手态：关过渡 + 缩至行程档（与点击切换同一缩小比例/透明度）
+ * @param clientX
+ */
 const enterDrag = (clientX: number): void => {
   dragging = true;
   thumbStyle.value = {
@@ -108,7 +115,10 @@ const enterDrag = (clientX: number): void => {
   };
 };
 
-/** 松手 / 取消：吸附最近 tab 并回弹落定 */
+/**
+ * 松手 / 取消：吸附最近 tab 并回弹落定
+ * @param clientX
+ */
 const endDrag = (clientX: number): void => {
   if (!dragging || !navRect) return;
   dragging = false;
@@ -181,7 +191,10 @@ const onPointerCancel = (e: PointerEvent): void => {
   if (dragging) endDrag(e.clientX);
 };
 
-/** 拖拽结束后吞一次 click，防止松手位置 router-link 的默认跳转 */
+/**
+ * 拖拽结束后吞一次 click，防止松手位置 router-link 的默认跳转
+ * @param e
+ */
 const onClickCapture = (e: MouseEvent): void => {
   if (!suppressClick) return;
   suppressClick = false;

@@ -18,8 +18,6 @@ import { fetchMarketTurnover } from '../../common/api/turnover.api';
 import { fetchZtPool } from '../../common/api/event.api';
 import { fetchHotBoard } from '../../common/api/hot-board.api';
 import { INDEX_SYMBOLS } from '../../common/constants/index-symbols.constants';
-import { TURNOVER_RANGE_DEFAULT } from '../../common/constants/turnover.constants';
-import type { TurnoverRange } from '../../common/constants/turnover.constants';
 import type { TurnoverDayItem } from '../../common/types/turnover.types';
 import { countDistribution } from '../../common/utils/count-distribution';
 import type { DistributionCount } from '../../common/types/distribution.types';
@@ -36,10 +34,14 @@ import type { FullQuote } from '../../common/types/stock-quote.types';
 import { appStorage } from '../../common/utils/app-local-storage';
 import { STORAGE_NS_MOBILE_BOARD_SETTINGS } from '../../common/constants/storage-key.constants';
 import { mobileCacheGet, mobileCacheSet } from '../cache';
-import { fetchIndustryBoards } from '../../common/api/board.api';
+import { fetchIndustryBoards, fetchIndustryConstituents } from '../../common/api/board.api';
+import { HEATMAP_DRILL_STOCK_COUNT } from '../../common/constants/heatmap.constants';
+import { toFullSymbol } from '../../common/utils/to-full-symbol';
 import type { HeatmapBoard } from '../../common/types/board.types';
+import type { IndustryBoardConstituent } from 'stock-sdk';
 import MobileHeatmap from '../components/MobileHeatmap.vue';
 import BookFlipBook from '../components/BookFlipBook.vue';
+import { MOBILE_TURNOVER_RANGE_DEFAULT, MOBILE_TURNOVER_RANGES } from '../constants';
 import { useMobilePolling } from '../composables/use-mobile-polling';
 
 const router = useRouter();
@@ -110,7 +112,7 @@ const loadIndices = async (force = false): Promise<void> => {
 const turnover = ref<TurnoverDayItem[]>([]);
 const turnoverError = ref(false);
 const turnoverLoading = ref(false);
-const turnoverRange = ref<TurnoverRange>(TURNOVER_RANGE_DEFAULT);
+const turnoverRange = ref<number>(MOBILE_TURNOVER_RANGE_DEFAULT);
 const TURN_CACHE_KEY = 'home.turnover';
 
 const loadTurnover = async (force = false): Promise<void> => {
@@ -177,6 +179,24 @@ const turnLegend = computed(() => {
   if (!last) return null;
   const yi = (v: number): string => Math.round(v / 1e8).toLocaleString();
   return { total: yi(last.totalAmount), sh: yi(last.shanghaiAmount), sz: yi(last.shenzhenAmount) };
+});
+
+/** 逐日常驻数据点（三线全画，与 PC TurnoverTrendChart showSymbol 同口径；
+ * 用 HTML overlay 而非 SVG circle——图区 preserveAspectRatio=none 会把圆拉扁，
+ * 与 crosshair 圆点同方案） */
+const turnDots = computed(() => {
+  const axis = turnAxis.value;
+  if (!axis) return [];
+  const { max, min, days } = axis;
+  const yOf = (v: number): number => 100 - ((v / 1e8 - min) / (max - min)) * 100;
+  return days.flatMap((d, i) => {
+    const x = (i / (days.length - 1)) * 100;
+    return [
+      { k: 'total', x, y: yOf(d.totalAmount) },
+      { k: 'sh', x, y: yOf(d.shanghaiAmount) },
+      { k: 'sz', x, y: yOf(d.shenzhenAmount) },
+    ];
+  });
 });
 
 /** y 轴刻度文案（亿 → 万亿）
@@ -246,7 +266,11 @@ const onPlotLeave = (): void => {
   hoverIdx.value = null;
 };
 
-const onRangeChange = (days: TurnoverRange): void => {
+/**
+ * 切换成交额窗口（移动端 10/30/60 交易日；PC 市场总览的 30/60/180 不受影响）
+ * @param days 目标窗口（交易日数）
+ */
+const onRangeChange = (days: number): void => {
   turnoverRange.value = days;
 };
 
@@ -397,7 +421,7 @@ onMounted(() => {
   void loadHeat();
 });
 
-/* === 板块热力图（PC 市场总览同口径：总市值 Top 20，面积 = 市值，色 = 涨跌四档；30s TTL） === */
+/* === 板块热力图（移动端口径：总市值 Top 10，面积 = 市值，色 = 涨跌四档；30s TTL） === */
 const heatBoards = ref<HeatmapBoard[]>([]);
 const heatLoading = ref(false);
 const heatError = ref(false);
@@ -414,7 +438,7 @@ const loadHeat = async (force = false): Promise<void> => {
       const boards = (await fetchIndustryBoards())
         .filter((board) => board.changePercent !== null && board.totalMarketCap !== null)
         .sort((a, b) => (b.totalMarketCap ?? 0) - (a.totalMarketCap ?? 0))
-        .slice(0, 20)
+        .slice(0, 10)
         .map((board) => ({
           code: board.code,
           name: board.name,
@@ -432,8 +456,60 @@ const loadHeat = async (force = false): Promise<void> => {
   }
 };
 
+/* === 板块热力下钻：成分股弹窗（对齐 PC 下钻口径：按成交额 Top 30；重接口仅点击触发，不缓存） === */
+const consOpen = ref(false);
+const consBoard = ref<HeatmapBoard | null>(null);
+const consLoading = ref(false);
+const consError = ref(false);
+const consRows = ref<IndustryBoardConstituent[]>([]);
+
+/**
+ * 点击热力图板块格子 → 弹出成分股列表
+ * @param board 目标板块
+ */
+const openConstituents = async (board: HeatmapBoard): Promise<void> => {
+  if (consLoading.value) return;
+  consBoard.value = board;
+  consOpen.value = true;
+  consLoading.value = true;
+  consError.value = false;
+  consRows.value = [];
+  try {
+    // 与 PC useHeatmapDrill 同口径：过滤无效值 → 成交额降序 → Top 30
+    consRows.value = (await fetchIndustryConstituents(board.code))
+      .filter((item) => item.changePercent !== null && (item.amount ?? 0) > 0)
+      .sort((a, b) => (b.amount ?? 0) - (a.amount ?? 0))
+      .slice(0, HEATMAP_DRILL_STOCK_COUNT);
+  } catch {
+    consError.value = true;
+  } finally {
+    consLoading.value = false;
+  }
+};
+
+/**
+ * 成分股行点击 → 个股详情页（code 为 6 位纯代码，归一化为 sh/sz 完整符号）
+ * @param code 成分股 6 位代码
+ */
+const goConstituent = (code: string): void => {
+  const symbol = toFullSymbol(code);
+  if (symbol) void router.push(`/stock/${symbol}`);
+};
+
 /* === 格式化 === */
+/**
+ * 最新价文案（两位小数）
+ * @param v 价格
+ * @returns 形如 `12.34`
+ */
 const fmtPrice = (v: number): string => v.toFixed(2);
+/**
+ * 成交额（元）→ 亿元文案
+ * @param v 成交额（元；null 显示 `--`）
+ * @returns 形如 `12.34亿`
+ */
+const fmtAmountYi = (v: number | null): string =>
+  v === null ? '--' : `${(v / 1e8).toFixed(2)}亿`;
 const fmtPct = (v: number | null): string =>
   v === null ? '--' : `${v > 0 ? '+' : ''}${v.toFixed(2)}%`;
 const pctClass = (v: number | null): string =>
@@ -442,7 +518,16 @@ const pctClass = (v: number | null): string =>
 
 <template>
   <div class="m-page-flex">
+    <!-- 2026-10-12：左侧 app logo 为「我的」页入口（TabBar 移除我的后）；右搜索不变 -->
     <van-nav-bar title="股票看板" class="m-nav" safe-area-inset-top>
+      <template #left>
+        <img
+          class="m-nav-app-logo"
+          src="/favicon.svg"
+          alt="我的"
+          @click="router.push('/mine')"
+        />
+      </template>
       <template #right>
         <van-icon name="search" size="19" @click="router.push('/search')" />
       </template>
@@ -495,11 +580,12 @@ const pctClass = (v: number | null): string =>
            数据加载逻辑不变） -->
       <BookFlipBook>
         <template #face0>
-          <div class="m-home-sec">
-            <span class="m-home-sec__t">成交额</span>
-            <span class="m-home-sec__s">单位：亿元</span>
-          </div>
           <div class="m-home-panel">
+            <!-- 标题行移入卡内（王总 2026-10-12：三模块标题统一进卡片，视觉更整体） -->
+            <div class="m-home-sec m-home-sec--in">
+              <span class="m-home-sec__t">成交额</span>
+              <span class="m-home-sec__s">单位：亿元</span>
+            </div>
             <div v-if="turnoverError" class="m-home-err-box m-home-err-box--turn">
               <van-icon name="warning-o" />
               成交额加载失败
@@ -510,13 +596,13 @@ const pctClass = (v: number | null): string =>
                 <span class="m-home-panel__t">近 {{ turnoverRange }} 日成交额</span>
                 <div class="m-home-chips">
                   <button
-                    v-for="(label, days) in { 30: '30日', 60: '60日', 180: '180日' }"
+                    v-for="days in MOBILE_TURNOVER_RANGES"
                     :key="days"
                     class="m-home-chip"
-                    :class="{ on: turnoverRange === Number(days) }"
-                    @click="onRangeChange(Number(days) as TurnoverRange)"
+                    :class="{ on: turnoverRange === days }"
+                    @click="onRangeChange(days)"
                   >
-                    {{ label }}
+                    {{ days }}日
                   </button>
                 </div>
               </div>
@@ -563,6 +649,14 @@ const pctClass = (v: number | null): string =>
                       :opacity="line.area ? 1 : 0.9"
                     />
                   </svg>
+                  <!-- 逐日常驻数据点（小号；crosshair 悬停时由大号白边点覆盖强调） -->
+                  <span
+                    v-for="(pt, idx) in turnDots"
+                    :key="`${idx}-${pt.k}`"
+                    class="m-home-dot m-home-dot--sm"
+                    :class="pt.k"
+                    :style="{ left: `${pt.x}%`, top: `${pt.y}%` }"
+                  ></span>
                   <!-- crosshair overlay：竖线 + 三线圆点 + 数值浮层 -->
                   <template v-if="hoverPoint">
                     <div class="m-home-cross" :style="{ left: `${hoverPoint.x}%` }"></div>
@@ -598,11 +692,11 @@ const pctClass = (v: number | null): string =>
           </div>
         </template>
         <template #face1>
-          <div class="m-home-sec">
-            <span class="m-home-sec__t">涨跌分布 · 市场情绪</span>
-            <span class="m-home-sec__s">全市场 A 股 · 30s 轮询</span>
-          </div>
           <div class="m-home-panel">
+            <div class="m-home-sec m-home-sec--in">
+              <span class="m-home-sec__t">涨跌分布 · 市场情绪</span>
+              <span class="m-home-sec__s">全市场 A 股 · 30s 轮询</span>
+            </div>
             <div v-if="distError" class="m-home-err-box m-home-err-box--dist">
               <van-icon name="warning-o" />
               涨跌分布加载失败
@@ -675,12 +769,18 @@ const pctClass = (v: number | null): string =>
           </div>
         </template>
         <template #face2>
-          <div class="m-home-sec">
-            <span class="m-home-sec__t">板块热力</span>
-            <span class="m-home-sec__s">Top 20 · 面积 = 总市值</span>
-          </div>
           <div class="m-card m-home-heat">
-            <MobileHeatmap v-if="!heatError" :boards="heatBoards" :loading="heatLoading" :error="false" />
+            <div class="m-home-sec m-home-sec--in">
+              <span class="m-home-sec__t">板块热力</span>
+              <span class="m-home-sec__s">Top 10 · 面积 ∝ 总市值</span>
+            </div>
+            <MobileHeatmap
+              v-if="!heatError"
+              :boards="heatBoards"
+              :loading="heatLoading"
+              :error="false"
+              @select="openConstituents"
+            />
             <div v-else class="m-state m-heat-err">
               <van-icon name="warning-o" size="32" />
               <div>板块数据加载失败</div>
@@ -730,11 +830,110 @@ const pctClass = (v: number | null): string =>
       <!-- 底部让位（悬浮 TabBar + 手势区，DESIGN-MOBILE.md §2.1） -->
       <div class="m-home-tail"></div>
     </van-pull-refresh>
+
+    <!-- 板块热力下钻：成分股弹窗（表格形式，王总 2026-10-12；PC 同口径 Top 30） -->
+    <van-popup v-model:show="consOpen" position="bottom" round style="height: 75dvh">
+      <div class="m-cons">
+        <div class="m-cons__head">
+          <div class="m-cons__title">
+            {{ consBoard?.name }} · 成分股
+            <span class="m-cons__sub">成交额 Top {{ consRows.length }}</span>
+          </div>
+          <van-icon name="cross" size="18" @click="consOpen = false" />
+        </div>
+        <div class="m-cons__row m-cons__row--head">
+          <span>名称</span>
+          <span class="num">最新价</span>
+          <span class="num">涨跌幅</span>
+          <span class="num">成交额</span>
+          <span class="num">换手</span>
+        </div>
+        <div class="m-cons__list">
+          <div v-if="consLoading" class="m-cons__state">
+            <van-loading size="26" />
+            成分股加载中…
+          </div>
+          <div v-else-if="consError" class="m-cons__state">
+            <van-icon name="warning-o" size="30" />
+            <div>成分股加载失败</div>
+            <button v-if="consBoard" class="m-cons__retry" @click="openConstituents(consBoard)">
+              ↻ 重新加载
+            </button>
+          </div>
+          <div v-else-if="consRows.length === 0" class="m-cons__state">该板块暂无成分股数据</div>
+          <template v-else>
+            <div
+              v-for="row in consRows"
+              :key="row.code"
+              class="m-cons__row"
+              @click="goConstituent(row.code)"
+            >
+              <span class="nm">
+                <b>{{ row.name }}</b>
+                <i>{{ row.code }}</i>
+              </span>
+              <span class="num m-num">{{ row.price === null ? '--' : fmtPrice(row.price) }}</span>
+              <span class="num m-num" :class="pctClass(row.changePercent)">
+                {{ fmtPct(row.changePercent) }}
+              </span>
+              <span class="num m-num">{{ fmtAmountYi(row.amount) }}</span>
+              <span class="num m-num">
+                {{ row.turnoverRate === null ? '--' : `${row.turnoverRate.toFixed(2)}%` }}
+              </span>
+            </div>
+          </template>
+        </div>
+      </div>
+    </van-popup>
   </div>
 </template>
 
 
 <style scoped>
+/* === 板块热力下钻 · 成分股表格弹窗（王总 2026-10-12） === */
+.m-cons { height: 100%; display: flex; flex-direction: column; padding: 16px 16px calc(12px + env(safe-area-inset-bottom, 0px)); }
+.m-cons__head { display: flex; align-items: center; justify-content: space-between; padding-bottom: 10px; }
+.m-cons__title { font-size: 15.5px; font-weight: 700; color: var(--color-text-1); }
+.m-cons__sub { font-size: 11px; font-weight: 500; color: var(--color-text-3); margin-left: 6px; }
+/* 表格行：5 列 grid，名称列自适应、数值列等宽右对齐 */
+.m-cons__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) repeat(4, minmax(0, 1fr));
+  align-items: center;
+  gap: 6px;
+  padding: 9px 2px;
+  border-bottom: 1px solid var(--color-border);
+}
+.m-cons__row--head {
+  font-size: 11px;
+  color: var(--color-text-3);
+  border-bottom-width: 1px;
+  padding-bottom: 7px;
+}
+.m-cons__list { flex: 1; min-height: 0; overflow-y: auto; }
+.m-cons__row .nm { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.m-cons__row .nm b { font-size: 13px; font-weight: 600; color: var(--color-text-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m-cons__row .nm i { font-style: normal; font-size: 10px; color: var(--color-text-3); font-family: var(--font-num); }
+.m-cons__row .num { text-align: right; font-size: 12px; }
+.m-cons__row--head .num { font-size: 11px; }
+.m-cons__state {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--color-text-3);
+  font-size: 13px;
+}
+.m-cons__retry {
+  border: none;
+  background: none;
+  color: var(--color-primary);
+  font-size: 13px;
+  padding: 4px 8px;
+}
+
 /* 热力卡：纵向 flex，让热力图 / 错误态撑满书页面板（2026-10-11 王总反馈错误态太空） */
 .m-home-heat { display: flex; flex-direction: column; }
 .m-heat-err {

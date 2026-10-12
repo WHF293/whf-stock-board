@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, ref, useSlots } from 'vue';
+import { showToast } from 'vant';
 import {
-  MOBILE_BOOK_DRAG_SLOP_PX,
   MOBILE_BOOK_EDGE_WIDTH,
   MOBILE_BOOK_FLIP_MS,
   MOBILE_BOOK_PAGE_HEIGHT,
+  MOBILE_BOOK_SWIPE_PX,
 } from '../constants';
 
 /**
@@ -15,9 +16,10 @@ import {
  * 是下一张纸的正面——所以每张纸的**正面放一个模块、背面留白纸**，翻一张露一张，
  * 这与掘金《实现一个书本翻页功能》的双页摊开式书本不同（那种背面内容在书内可见）。
  *
- * 交互（2026-10-11 王总定稿）：
- * - 底部**通栏滑轨 + 滑块**：滑块宽度 = 轨道 1/N（N = 纸张数，后续加模块自动收窄），
- *   与底部 TabBar 指示胶囊同族——拖动跟手、松手吸附到最近页，点轨道任意位置直达该页；
+ * 交互（2026-10-12 王总定稿，替代 10-11 的滑块拖动方案）：
+ * - 底部**通栏手势条**（无滑块）：条上横向滑动按方向切页——右→左下一个、左→右上一个
+ *   （阈值 48px、以横向为主，与资金流向页 MobileGesturePager 同一套交互语言），
+ *   已在边界再滑 toast 提示；点按条上任意位置仍直达该页；
  * - 左右边缘 40px 透明热区保留（快捷翻一页）；
  * - 翻页动画本身不做拖拽跟手（与 van-pull-refresh / 页面垂直滚动零冲突）。
  * 模块通过具名插槽 face0..faceN 注入，插槽个数即纸张数。
@@ -101,33 +103,19 @@ const goPrev = (): void => {
   goTo(currentPage.value - 1);
 };
 
-/* ---- 底部通栏滑块（拖动跟手 + 松手吸附 + 点选直达） ---- */
+/* ---- 底部通栏手势条（2026-10-12 王总定稿：滑块删除，滑动切向 + 点按直达） ---- */
 
-/** 滑轨元素（指针坐标换算基准） */
+/** 滑轨元素（点按坐标换算基准） */
 const trackEl = ref<HTMLElement | null>(null);
-/** 拖拽态：true 时滑块跟随手指（left 用 px、关过渡） */
-const dragging = ref(false);
-/** 拖拽中滑块左缘位置（px，相对滑轨） */
-const dragX = ref(0);
-/** 本轮手势起点 clientX */
-let dragStartX = 0;
-/** down 时刻的滑块位置（px，作为位移基准） */
-let dragBaseX = 0;
+/** 本轮手势起点 */
+let gestureStartX = 0;
+let gestureStartY = 0;
+/** 本轮手势是否已判定为横向滑动（判定即切页，一轮只切一次） */
+let swiped = false;
 
 /**
- * 滑块行内样式：拖拽中 left 取 px 并关过渡；常态 left 取百分比（currentPage/N）并带过渡
- */
-const thumbStyle = computed(() => ({
-  width: `${100 / sheetCount.value}%`,
-  left: dragging.value
-    ? `${dragX.value}px`
-    : `${currentPage.value * (100 / sheetCount.value)}%`,
-  transition: dragging.value ? 'none' : undefined,
-}));
-
-/**
- * 位置（px）换算目标页：取滑块中点落在的第几段
- * @param x 滑块左缘位置（px）
+ * 位置（px）换算目标页：取落点中点落在的第几段（点按直达用）
+ * @param x 落点位置（px，相对滑轨）
  * @param step 单页步长（px = 轨道宽 / N）
  * @returns 目标页下标（已收敛到 [0, N-1]）
  */
@@ -135,47 +123,47 @@ const pageOfX = (x: number, step: number): number =>
   Math.max(0, Math.min(Math.floor((x + step / 2) / step), sheetCount.value - 1));
 
 /**
- * 滑轨指针按下：进入拖拽态，滑块中心对准手指
+ * 手势条按下：记录起点（不立即动作，等滑动判定）
  * @param e 指针事件
  */
 const onTrackDown = (e: PointerEvent): void => {
-  const track = trackEl.value;
-  if (!track) return;
-  const rect = track.getBoundingClientRect();
-  const step = rect.width / sheetCount.value;
-  dragging.value = true;
-  dragStartX = e.clientX;
-  dragBaseX = Math.max(0, Math.min(e.clientX - rect.left - step / 2, rect.width - step));
-  dragX.value = dragBaseX;
+  gestureStartX = e.clientX;
+  gestureStartY = e.clientY;
+  swiped = false;
   (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
 };
 
 /**
- * 滑轨指针移动：拖拽跟手（超过 slop 记为拖动）
+ * 手势条移动：横向位移过阈值且以横向为主 → 按方向切一页（右→左下一个，左→右上一个）；
+ * 已在边界再滑 → toast 提示（与资金流向页翻页同一套交互语言）
  * @param e 指针事件
  */
 const onTrackMove = (e: PointerEvent): void => {
-  if (!dragging.value) return;
-  const track = trackEl.value;
-  if (!track) return;
-  if (Math.abs(e.clientX - dragStartX) > MOBILE_BOOK_DRAG_SLOP_PX) {
-    // 超过 slop 才算拖动；位移基准随首次判定刷新，避免滑块跳变
-    dragStartX = e.clientX;
-    dragBaseX = dragX.value;
+  if (swiped) return;
+  const dx = e.clientX - gestureStartX;
+  const dy = e.clientY - gestureStartY;
+  if (Math.abs(dx) < MOBILE_BOOK_SWIPE_PX || Math.abs(dx) <= Math.abs(dy)) return;
+  swiped = true;
+  if (dx < 0) {
+    if (currentPage.value >= sheetCount.value - 1) void showToast('已经是最后一个了');
+    else goNext();
+  } else {
+    if (currentPage.value <= 0) void showToast('已经是第一个了');
+    else goPrev();
   }
-  const rect = track.getBoundingClientRect();
-  const step = rect.width / sheetCount.value;
-  dragX.value = Math.max(0, Math.min(dragBaseX + (e.clientX - dragStartX), rect.width - step));
 };
 
-/** 滑轨指针抬起 / 取消：吸附到滑块中点所在页（点选与拖动同一套换算） */
-const onTrackUp = (): void => {
-  if (!dragging.value) return;
+/**
+ * 手势条抬起：滑动已切页则忽略；否则视为点按，落点在第几段直达第几页
+ * @param e 指针事件
+ */
+const onTrackUp = (e: PointerEvent): void => {
+  if (swiped) return;
   const track = trackEl.value;
-  dragging.value = false;
   if (!track) return;
-  const step = track.getBoundingClientRect().width / sheetCount.value;
-  goTo(pageOfX(dragX.value, step));
+  const rect = track.getBoundingClientRect();
+  const step = rect.width / sheetCount.value;
+  goTo(pageOfX(e.clientX - rect.left, step));
 };
 
 /** 热区行内样式（宽度走常量） */
@@ -220,7 +208,7 @@ const edgeStyle = { width: `${MOBILE_BOOK_EDGE_WIDTH}px` };
         @click="goNext"
       />
     </div>
-    <!-- 底部通栏滑轨：滑块步长 = 轨道 1/N，拖动跟手、松手吸附、点选直达（2026-10-11 王总定稿） -->
+    <!-- 底部通栏手势条（无滑块）：滑动按方向切页，点按直达（2026-10-12 王总定稿） -->
     <div
       ref="trackEl"
       class="m-book__slider"
@@ -229,7 +217,10 @@ const edgeStyle = { width: `${MOBILE_BOOK_EDGE_WIDTH}px` };
       @pointerup="onTrackUp"
       @pointercancel="onTrackUp"
     >
-      <div class="m-book__thumb" :style="thumbStyle" />
+      <!-- 页点提示（纯展示，事件全在条上）：让人一眼看出这是翻页控件 -->
+      <span class="m-book__dots">
+        <i v-for="s in sheetCount" :key="s" :class="{ on: s - 1 === currentPage }"></i>
+      </span>
     </div>
   </div>
 </template>
@@ -290,6 +281,13 @@ const edgeStyle = { width: `${MOBILE_BOOK_EDGE_WIDTH}px` };
 .m-book__face--front > :slotted(.m-card) {
   flex: 1 1 auto;
 }
+/* 底部手势条内嵌到卡片底部（王总 2026-10-12，同板块历史净流入的条效果）：
+   卡片底部留出 28px 内嵌区，条上移 24px 盖住卡片底圆角，左右内缩 12px */
+.m-book__face--front > :slotted(.m-home-panel),
+.m-book__face--front > :slotted(.m-card) {
+  margin-bottom: 0;
+  padding-bottom: 28px;
+}
 /* 面板内部也纵向排布：成交额图区自动拉伸撑满（2026-10-11 王总反馈成交额下方太空） */
 .m-book__face--front > :slotted(.m-home-panel) {
   display: flex;
@@ -313,28 +311,37 @@ const edgeStyle = { width: `${MOBILE_BOOK_EDGE_WIDTH}px` };
 }
 .m-book__edge--l { left: 0; }
 .m-book__edge--r { right: 0; }
-/* 底部通栏滑轨：整条可点可拖，触达区即全宽（2026-10-11 王总定稿，替代页码点） */
+/* 底部通栏手势条：内嵌卡片底部（同板块历史净流入的条），track 底色与卡面区分；
+   上移盖住卡片底圆角，整条为滑动/点按触达区（2026-10-12 王总定稿） */
 .m-book__slider {
   position: relative;
-  height: 26px;
-  margin: 8px 12px 0;
+  z-index: 5;
+  height: 22px;
+  margin: -24px 24px 12px;
   border-radius: 999px;
-  background: var(--color-surface);
-  box-shadow: var(--m-card-shadow);
+  background: var(--color-border);
   touch-action: none;
   cursor: pointer;
 }
-/* 滑块：布局宽度 = 1/N 轨道宽，border 透明 + background-clip 收出内缩药丸 */
-.m-book__thumb {
+/* 页点提示（纯展示）：当前页高亮主色，点数 = 纸张数 */
+.m-book__dots {
   position: absolute;
-  top: 0;
-  bottom: 0;
-  box-sizing: border-box;
-  border: 6px solid transparent;
-  border-radius: 999px;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  pointer-events: none;
+}
+.m-book__dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--m-page-bg);
+  transition: background 0.2s ease;
+}
+.m-book__dots i.on {
   background: var(--color-primary);
-  background-clip: padding-box;
-  transition: left 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 /* 减少动态效果：直接切换不播动画 */
 @media (prefers-reduced-motion: reduce) {

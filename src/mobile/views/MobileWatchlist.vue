@@ -296,9 +296,16 @@ const onSheetRemove = (): void => {
       <div v-if="quotesLoading && activeRows.length === 0" class="m-card m-skel-fill">
         <div v-for="i in 10" :key="i" class="m-skel-row"></div>
       </div>
-      <div v-else-if="activeRows.length === 0" class="m-state">
-        {{ activeGroup?.name ?? '默认' }}分组还没有自选股
-        <span class="retry" @click="openSearch">＋ 添加</span>
+      <div v-else-if="activeRows.length === 0" class="m-wl-empty">
+        <span class="m-wl-empty__icon"><van-icon name="star-o" size="26" /></span>
+        <div class="m-wl-empty__title">还没有自选股</div>
+        <div class="m-wl-empty__sub">
+          把关注的股票加进「{{ activeGroup?.name ?? '默认' }}」分组，行情、热度、资金流向一屏跟踪
+        </div>
+        <button class="m-wl-empty__btn" @click="openSearch">
+          <van-icon name="plus" size="14" />
+          添加自选股
+        </button>
       </div>
       <div v-else class="m-card">
         <van-swipe-cell v-for="row in activeRows" :key="row.stock.symbol" class="m-wl-cell">
