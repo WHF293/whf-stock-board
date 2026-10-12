@@ -2,11 +2,10 @@
 /**
  * 行情全景（v2 二期二级页，稿：market-modules-v2 P0-P2；规范：DESIGN-MOBILE.md §5.1）
  *
- * 模块 chips：A股 / 资金 / 美球 / 新股；
+ * 模块 chips：A股 / 资金 / 美球（新股次新股 v4.5.2 拆为独立页 /ipo，入口在首页金刚区）；
  * - A股：涨跌统计 4 卡（由板块表现前端现算，口径同 PC）+ 行业/概念板块行（点击手风琴展开成分股，行点击进个股页）
  * - 资金：板块主力净流入榜 + 净流入/净流出前 2 板块的当日逐分钟累计曲线（SVG）
  * - 美球：美股行业 ETF / 全球指数 / 外盘商品 三组涨跌列表
- * - 新股：打新表（发行价/申购日/收益）
  * 数据层全部复用 PC common api；分区独立加载与降级（DESIGN-MOBILE.md §6）
  */
 import { computed, ref } from 'vue';
@@ -28,11 +27,9 @@ import {
   fetchSectorFlowCurves,
   pickDefaultCurveCodes,
 } from '../../common/api/sector-flow-curve.api';
-import { fetchIpoBoard } from '../../common/api/ipo-board.api';
 import type { SectorFundFlowItem } from '../../common/types/flow.types';
 import type { SectorFlowCurve } from '../../common/types/sector-flow-curve.types';
 import type { PanoramaItem } from '../../common/types/panorama.types';
-import type { IpoBoardItem } from '../../common/types/ipo-board.types';
 import type { BoardRow } from '../../common/constants/boards.constants';
 import { BOARD_STAT_THRESHOLD } from '../../common/constants/boards.constants';
 import { toFullSymbol } from '../../common/utils/to-full-symbol';
@@ -46,7 +43,6 @@ const MODULES = [
   { key: 'cn', label: 'A股' },
   { key: 'flow', label: '资金' },
   { key: 'global', label: '美球' },
-  { key: 'ipo', label: '新股' },
 ] as const;
 type ModuleKey = (typeof MODULES)[number]['key'];
 const activeModule = ref<ModuleKey>('cn');
@@ -239,31 +235,6 @@ const loadGlobal = async (force = false): Promise<void> => {
   }
 };
 
-/* === 新股 === */
-const ipoList = ref<IpoBoardItem[]>([]);
-const ipoLoading = ref(false);
-const ipoError = ref(false);
-
-const loadIpo = async (force = false): Promise<void> => {
-  ipoLoading.value = true;
-  ipoError.value = false;
-  try {
-    const key = 'panorama.ipo';
-    const cached = force ? null : mobileCacheGet<IpoBoardItem[]>(key);
-    if (cached) {
-      ipoList.value = cached.value;
-    } else {
-      const list = await fetchIpoBoard();
-      ipoList.value = list;
-      mobileCacheSet(key, list);
-    }
-  } catch {
-    ipoError.value = true;
-  } finally {
-    ipoLoading.value = false;
-  }
-};
-
 /* === 模块切换：惰性加载 === */
 const loadedModules = new Set<ModuleKey>();
 const loadModule = (key: ModuleKey, force = false): void => {
@@ -271,8 +242,7 @@ const loadModule = (key: ModuleKey, force = false): void => {
   loadedModules.add(key);
   if (key === 'cn') void loadBoards(force);
   else if (key === 'flow') void loadFlow(force);
-  else if (key === 'global') void loadGlobal(force);
-  else void loadIpo(force);
+  else void loadGlobal(force);
 };
 loadModule('cn');
 
@@ -475,7 +445,7 @@ const onHistoryClick = (): void => {
         </template>
 
         <!-- === 美球 === -->
-        <template v-else-if="activeModule === 'global'">
+        <template v-else>
           <div v-if="globalLoading" class="m-card m-skel-fill">
             <div v-for="i in 8" :key="i" class="m-skel-row"></div>
           </div>
@@ -512,29 +482,6 @@ const onHistoryClick = (): void => {
               </div>
             </div>
           </template>
-        </template>
-
-        <!-- === 新股 === -->
-        <template v-else>
-          <div v-if="ipoLoading" class="m-card m-skel-fill">
-            <div v-for="i in 8" :key="i" class="m-skel-row"></div>
-          </div>
-          <div v-else-if="ipoError" class="m-state">
-            打新数据加载失败
-            <span class="retry" @click="loadModule('ipo', true)">重试</span>
-          </div>
-          <div v-else class="m-card">
-            <div v-for="it in ipoList" :key="it.code" class="m-row">
-              <div class="m-row__nm">
-                {{ it.name }}
-                <span class="sub">申购日 {{ it.applyDate || '--' }}</span>
-              </div>
-              <span class="m-row__val sm">发行 {{ it.issuePrice?.toFixed(2) ?? '--' }}</span>
-              <span class="m-row__pct" :class="pctClass(it.earn === null ? null : 1)">
-                {{ it.earn === null ? '--' : `${it.earn.toFixed(0)}元` }}
-              </span>
-            </div>
-          </div>
         </template>
       </van-pull-refresh>
       <div class="m-sub-tail"></div>
