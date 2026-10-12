@@ -74,3 +74,7 @@ export const STORAGE_NS_MOBILE_SEARCH_HISTORY = 'mobile.searchHistory';
 
 /** 移动端 · 历史牛熊指数月K快照（JSON：{ syncedAt, bars }，手动「更新到最新」刷新） */
 export const STORAGE_NS_MOBILE_BULL_REVIEW = 'mobile.bullReview';
+
+/** 移动端 · 资金流向页已选板块（板块资金曲线 + 历史净流入共用，JSON：{ codes }；
+ *  独立于 PC 的 marketRank.curve，两端互不影响） */
+export const STORAGE_NS_MOBILE_FUND_FLOW_CURVE = 'mobile.fundFlowCurve';

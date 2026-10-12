@@ -80,6 +80,7 @@ export const fetchSectorFlowCurve = async (bkCode: string): Promise<SectorFlowCu
   }
   return {
     code: bkCode,
+    name: payload.data?.name || undefined,
     tradeDate: points[0].date,
     points: points.map(({ time, mainNetInflow }) => ({ time, mainNetInflow })),
   };
