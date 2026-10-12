@@ -1294,3 +1294,14 @@ body {
 .m-br-rule b { color: var(--color-text); display: block; margin-bottom: 2px; font-size: 11.5px; }
 .m-up-t { color: var(--color-up-strong); }
 .m-down-t { color: var(--color-down-strong); }
+
+/* ============================================================
+   页面切换动画调速（仅移动构建）
+   .page-anim-forward/back 与 PC 共用 theme.css:414-444（0.25s）；
+   PC 未调整，移动端在手势语境下放慢一档。mobile.css 晚于 main.css
+   加载，同特异性下这里的 longhand 覆盖 shorthand 的时长分量
+   ============================================================ */
+.page-anim-forward,
+.page-anim-back {
+  animation-duration: 0.4s;
+}

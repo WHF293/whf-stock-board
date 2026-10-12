@@ -15,7 +15,8 @@ import MobileStockDetail from './views/MobileStockDetail.vue';
 import MobileTheme from './views/MobileTheme.vue';
 import MobileWatchlist from './views/MobileWatchlist.vue';
 
-/** 主 Tab 页路径（底部 TabBar 只在这些路由显示；显隐实际由 MobileTabBar 按 MOBILE_TAB_ITEMS 判定，此处为同构清单） */
+/** 主 Tab 页路径（底部 TabBar 只在这些路由显示，显隐由 MobileTabBar 按 MOBILE_TAB_ITEMS 判定；
+ * MobileApp 的页面切换动画也按此声明序判定前进/后退方向，二级页视为最末） */
 export const MOBILE_TAB_PATHS: readonly string[] = ['/', '/fund-flow', '/news', '/watchlist'];
 
 /**
