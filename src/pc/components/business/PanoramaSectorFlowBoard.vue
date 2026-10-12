@@ -242,7 +242,8 @@ interface CurveSelectionStorage {
 }
 
 /**
- * 读取持久化的已选行业（坏数据一律回退空，进入曲线视图时会按排名补默认勾选）
+ * 读取持久化的已选行业（坏数据一律回退空，进入曲线视图时会按排名补默认勾选；
+ * 按当前上限裁剪——上限从 26 收紧到 8 后，旧存档可能超过新上限）
  * @returns 已选板块代码列表
  */
 const readCurveSelection = (): string[] => {
@@ -250,7 +251,7 @@ const readCurveSelection = (): string[] => {
     const raw = appStorage.getItem(STORAGE_NS_MARKET_RANK_CURVE);
     const parsed = raw ? (JSON.parse(raw) as CurveSelectionStorage) : null;
     return Array.isArray(parsed?.codes)
-      ? parsed.codes.filter((code) => typeof code === 'string')
+      ? parsed.codes.filter((code) => typeof code === 'string').slice(0, SECTOR_CURVE_MAX_COUNT)
       : [];
   } catch {
     return [];

@@ -22,11 +22,11 @@ export const SECTOR_FLOW_KLINE_COLUMN = {
   MAIN: 1,
 } as const;
 
-/** 曲线行业数量上限（防请求风暴，用户自选不可超） */
-export const SECTOR_CURVE_MAX_COUNT = 26;
+/** 曲线行业数量上限（防请求风暴，用户自选不可超；PC 与移动端板块资金共用此上限 = 8） */
+export const SECTOR_CURVE_MAX_COUNT = 8;
 
-/** 默认展示数量：按收盘主力净流入取流入 / 流出各前 N */
-export const SECTOR_CURVE_DEFAULT_TOP = 8;
+/** 默认展示数量：按收盘主力净流入取流入 / 流出各前 N（2N ≤ SECTOR_CURVE_MAX_COUNT，与移动端每侧 4 同口径） */
+export const SECTOR_CURVE_DEFAULT_TOP = 4;
 
 /** 批量拉取并发上限（东财系红线：并发不得超过 3，与信号扫描同口径） */
 export const SECTOR_CURVE_CONCURRENCY = 3;

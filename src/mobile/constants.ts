@@ -209,8 +209,8 @@ export const MOBILE_TAB_GLASS_RESIZE_DEBOUNCE_MS = 300;
 /** 主力净流入折线展示天数（与 PC 市场总览 MARKET_FLOW_DAYS 同口径） */
 export const FUND_FLOW_MARKET_DAYS = 10;
 
-/** 板块资金 / 历史净流入最多选中板块数（板块池与 PC 一致 26 个，单轮最多勾 8 个） */
-export const FUND_FLOW_SECTOR_MAX = 8;
+/** 板块资金 / 历史净流入最多选中板块数（复用 PC 同一上限变量，单轮最多勾 8 个） */
+export { SECTOR_CURVE_MAX_COUNT as FUND_FLOW_SECTOR_MAX } from '../common/constants/sector-flow-curve.constants.ts';
 
 /** 默认勾选：按当日主力净流入流入 / 流出各取前 N（合计 2N ≤ 上限） */
 export const FUND_FLOW_SECTOR_DEFAULT_PER_SIDE = 4;
