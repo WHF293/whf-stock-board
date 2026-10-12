@@ -64,6 +64,8 @@ const marketStatus = useMarketStatusStore();
 const marketFlow = ref<MarketFundFlow[]>([]);
 const marketLoading = ref(false);
 const marketError = ref(false);
+/** 最近一次失败的真实错误（错误态透出，真机排障用） */
+const marketErrorDetail = ref('');
 
 /** 拉取大盘资金流并截取近 N 日 */
 const loadMarketFlow = async (): Promise<void> => {
@@ -72,8 +74,9 @@ const loadMarketFlow = async (): Promise<void> => {
   try {
     const flows = await fetchMarketFundFlow();
     marketFlow.value = flows.slice(-FUND_FLOW_MARKET_DAYS);
-  } catch {
+  } catch (error) {
     marketError.value = true;
+    marketErrorDetail.value = error instanceof Error ? error.message : String(error);
   } finally {
     marketLoading.value = false;
   }
@@ -160,6 +163,8 @@ const marketOption = computed<EChartsCoreOption>(() => {
 const sectorRank = ref<SectorFundFlowItem[]>([]);
 const rankLoading = ref(false);
 const rankError = ref(false);
+/** 最近一次失败的真实错误（错误态透出，真机排障用） */
+const rankErrorDetail = ref('');
 
 /** 已选板块代码（BK 编号，勾选顺序即历史卡展示顺序） */
 const selectedCodes = ref<string[]>([]);
@@ -189,8 +194,9 @@ const loadSectorRank = (): Promise<void> => {
       rankError.value = false;
       try {
         sectorRank.value = await fetchSectorFundFlowRank();
-      } catch {
+      } catch (error) {
         rankError.value = true;
+        rankErrorDetail.value = error instanceof Error ? error.message : String(error);
       } finally {
         rankLoading.value = false;
         rankTask = null;
@@ -213,6 +219,8 @@ watch(selectedCodes, (codes) => {
 const curveViews = ref<SectorFlowCurveView[]>([]);
 const curveLoading = ref(false);
 const curveError = ref(false);
+/** 最近一次失败的真实错误（全部板块拉取失败时透出，真机排障用） */
+const curveErrorDetail = ref('');
 /** 本轮加载进度（含失败条目，仅进度展示） */
 const curveProgress = ref({ done: 0, total: 0 });
 
@@ -267,6 +275,7 @@ const loadSectorCurves = async (codes: readonly string[]): Promise<void> => {
   }
   curveLoading.value = true;
   curveError.value = false;
+  curveErrorDetail.value = '';
   curveProgress.value = { done: 0, total: targets.length };
   try {
     await fetchSectorFlowCurves(targets, {
@@ -274,9 +283,16 @@ const loadSectorCurves = async (codes: readonly string[]): Promise<void> => {
         mergeCurveView(curve);
         curveProgress.value.done += 1;
       },
+      onError: (_code, error) => {
+        // 批量接口按条吞错不 reject；记下真实错误，全军覆没时透出（真机排障用）
+        curveErrorDetail.value = error instanceof Error ? error.message : String(error);
+      },
     });
-  } catch {
+    // 全部失败（批量接口不抛错，以产出为判据）
+    curveError.value = targets.length > 0 && curveViews.value.length === 0;
+  } catch (error) {
     curveError.value = curveViews.value.length === 0;
+    curveErrorDetail.value = error instanceof Error ? error.message : String(error);
   } finally {
     curveLoading.value = false;
   }
@@ -601,6 +617,7 @@ onMounted(() => {
         <div v-if="marketLoading && marketFlow.length === 0" class="m-ff-skeleton">加载中…</div>
         <div v-else-if="marketError && marketFlow.length === 0" class="m-ff-error">
           <span>加载失败，请检查网络后重试</span>
+          <span v-if="marketErrorDetail" class="m-ff-error__detail">{{ marketErrorDetail }}</span>
           <button class="m-ff-error__retry" @click="loadMarketFlow">↻ 重新加载</button>
         </div>
         <MobileEChart
@@ -631,6 +648,7 @@ onMounted(() => {
         </div>
         <div v-else-if="curveError && curveViews.length === 0" class="m-ff-error">
           <span>板块资金曲线加载失败</span>
+          <span v-if="curveErrorDetail" class="m-ff-error__detail">{{ curveErrorDetail }}</span>
           <button class="m-ff-error__retry" @click="refreshCurves">↻ 重新加载</button>
         </div>
         <MobileEChart
@@ -736,6 +754,7 @@ onMounted(() => {
         <div v-if="rankLoading && sectorRank.length === 0" class="m-ff-skeleton">加载中…</div>
         <div v-else-if="sectorRank.length === 0" class="m-ff-error">
           <span>行业榜单加载失败</span>
+          <span v-if="rankErrorDetail" class="m-ff-error__detail">{{ rankErrorDetail }}</span>
           <button class="m-ff-error__retry" :disabled="rankLoading" @click="loadSectorRank">
             ↻ 重试
           </button>
@@ -871,6 +890,14 @@ onMounted(() => {
 }
 .m-ff-error__retry:disabled {
   opacity: 0.5;
+}
+/* 真实错误详情（真机排障透出；小号弱色，可换行） */
+.m-ff-error__detail {
+  font-size: 10px;
+  color: var(--color-text-3);
+  word-break: break-all;
+  text-align: left;
+  max-width: 100%;
 }
 
 /* 历史卡（PC BoardFlowDailyCard 样式复刻：双向条形 + 中线零轴，最新交易日排最上） */

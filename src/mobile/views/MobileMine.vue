@@ -17,6 +17,8 @@ import {
 } from '../composables/use-mobile-color-scheme';
 import { mobileCacheClear, mobileCacheSize } from '../cache';
 import { readMobilePollingMs, writeMobilePollingMs } from '../composables/use-mobile-polling';
+import { isDebugMode, setDebugMode } from '../debug/debug-mode';
+import { DEBUG_TAP_COUNT, DEBUG_TAP_WINDOW_MS } from '../constants';
 
 /**
  * 我的（移动端）：应用信息卡 + 设置项全部平铺（2026-10-11 王总指示，原「设置」二级页内容并入）。
@@ -27,6 +29,28 @@ import { readMobilePollingMs, writeMobilePollingMs } from '../composables/use-mo
 
 const router = useRouter();
 const settingsStore = useSettingsStore();
+
+// ---- 调试模式：应用信息卡连点 10 次切换（2026-10-12 王总需求） ----
+
+/** 近次点按时间戳（滑动窗口，窗口外过期剔除） */
+const debugTapTimes: number[] = [];
+
+/**
+ * 应用信息卡点按处理：DEBUG_TAP_WINDOW_MS 内累计 DEBUG_TAP_COUNT 次
+ * 切换调试模式，触发时震动 + toast 反馈
+ */
+const onHeroTap = (): void => {
+  const now = Date.now();
+  debugTapTimes.push(now);
+  while (debugTapTimes.length > 0 && now - debugTapTimes[0] > DEBUG_TAP_WINDOW_MS) {
+    debugTapTimes.shift();
+  }
+  if (debugTapTimes.length < DEBUG_TAP_COUNT) return;
+  debugTapTimes.length = 0;
+  setDebugMode(!isDebugMode.value);
+  navigator.vibrate?.(30);
+  showToast(isDebugMode.value ? '调试模式已开启' : '调试模式已关闭');
+};
 
 const goTheme = (): void => {
   void router.push('/theme');
@@ -184,13 +208,15 @@ const toggleAbout = (key: 'disclaimer' | 'source'): void => {
       @click-left="router.back()"
     />
 
-    <!-- 应用信息卡：logo 用软件 logo（public/favicon.svg，与 PC TitleBar 同源），2026-10-11 名称定为「股票看板」 -->
-    <div class="m-mine-hero">
+    <!-- 应用信息卡：logo 用软件 logo（public/favicon.svg，与 PC TitleBar 同源），2026-10-11 名称定为「股票看板」；
+         连点 10 次（3s 窗口）切换调试模式 -->
+    <div class="m-mine-hero" @click="onHeroTap">
       <img class="m-app-logo" src="/favicon.svg" alt="股票看板" />
       <div>
         <div class="m-mine-hero__t">股票看板</div>
         <div class="m-mine-hero__d">
           v{{ APP_VERSION }} <span class="m-mini-tag">APK 直装版</span>
+          <span v-if="isDebugMode" class="m-mini-tag">调试</span>
         </div>
       </div>
     </div>

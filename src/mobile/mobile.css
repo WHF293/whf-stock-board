@@ -91,7 +91,15 @@ body {
 
 /* 应用壳：不承担页面滚动。主 Tab 页（m-page-flex）为「固定高度 + 面板内部原生滚动」结构，
    二级页（设置 / 主题）仍走 window 滚动 */
-.m-root { min-height: 100dvh; }
+.m-root {
+  min-height: 100dvh;
+  /* 页面切换动画 translateX(32px) 会把新页推出视口右缘，文档横向溢出 32px
+     （实测 scrollWidth 1256→1288→回落）。溢出会引发底部横向滚动条 /
+     Android WebView 文档可横向拖动，玻璃 TabBar 随之下坠-回弹
+     （王总 2026-10-12 反馈）。clip 掐掉横向溢出且不产生滚动容器，
+     也不影响 fixed 子元素的定位 */
+  overflow-x: clip;
+}
 
 /* 主 Tab 页骨架：navbar / 摘要条 / Tab 内容纵向排满一屏，垂直滚动发生在各面板内部。
    面板原生滚动（pan-y）不会被 Tabs 的横向手势方向锁拦截，两个方向都能滚。
@@ -167,6 +175,10 @@ body {
   touch-action: none;
   -webkit-user-select: none;
   user-select: none;
+  /* 玻璃条提升为独立合成层：相邻页面做 transform 进入动画时，防止 Chromium
+     对 backdrop-filter 层重光栅化造成的视觉位移（布局 rect 实测恒定，
+     位移发生在合成阶段） */
+  will-change: transform;
 }
 .dark .m-tabbar {
   /* 暗色玻璃同样加浓：抬亮的深灰玻璃（禁止深黑）、透明度更高，透白高光更明显 */

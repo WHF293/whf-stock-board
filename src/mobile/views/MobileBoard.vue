@@ -349,8 +349,12 @@ onMounted(() => {
     </van-notice-bar>
 
     <!-- 分组 Tabs（原平台 tabs 的位置，平台切换改由 navbar 标题两侧箭头承担；
-         animated 点击切换横滑过渡；不开 swipeable，触摸拦截为零，垂直滚动完全原生） -->
+         animated 点击切换横滑过渡；不开 swipeable，触摸拦截为零，垂直滚动完全原生）。
+         :key 按平台强制换源整体重挂载：换源当轮 Vant 的 setLine 会跑在新 TabTitle
+         ref 登记之前而静默跳过（浏览器实测 2026-10-12，nextTick resize 也救不了），
+         指示条停留在旧平台偏移；重挂载走 Tabs init 的测量路径，实测是准的 -->
     <van-tabs
+      :key="activeSource"
       v-model:active="activeGroupIndex"
       class="m-tabs"
       animated

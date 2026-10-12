@@ -2,6 +2,7 @@ import { isTauri } from '@tauri-apps/api/core';
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
 import { STOCK_PROXY_PATH } from '../constants/proxy.constants.ts';
 import { trackApiRequest } from '../../pc/weblog/weblogActions';
+import { notifyNetworkTap } from './network-tap.ts';
 
 /**
  * 给上游请求挂上行为埋点（成功与失败都记，失败另行落一条报错日志）
@@ -21,20 +22,41 @@ const withApiTracking = (
 ): Promise<Response> =>
   request.then(
     (response) => {
+      const durationMs = Date.now() - startedAt;
+      // 调试网络面板等观察方（未注册时零开销）；观察方只可 clone 响应体
+      notifyNetworkTap({
+        url: target,
+        method,
+        startedAt,
+        durationMs,
+        status: response.status,
+        ok: response.ok,
+        response,
+      });
       trackApiRequest({
         url: target,
         method,
-        durationMs: Date.now() - startedAt,
+        durationMs,
         status: response.status,
         ok: response.ok,
       });
       return response;
     },
     (error: unknown) => {
+      const durationMs = Date.now() - startedAt;
+      notifyNetworkTap({
+        url: target,
+        method,
+        startedAt,
+        durationMs,
+        status: null,
+        ok: false,
+        error,
+      });
       trackApiRequest({
         url: target,
         method,
-        durationMs: Date.now() - startedAt,
+        durationMs,
         status: null,
         ok: false,
         error,
