@@ -3,6 +3,8 @@ import { nextTick, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useDocumentThemeSync } from '../common/composables/use-document-theme';
 import MobileTabBar from './components/MobileTabBar.vue';
+import DebugOverlay from './debug/DebugOverlay.vue';
+import { isDebugMode } from './debug/debug-mode';
 import { MOBILE_TAB_PATHS } from './router';
 
 // 主题三轴落 <html>（明暗 class / data-theme / data-trend），与桌面共用同一持久化；
@@ -66,5 +68,8 @@ watch(
       </keep-alive>
     </router-view>
     <MobileTabBar />
+    <!-- 调试模式覆盖层（「我的」页应用卡连点 10 次开启）：悬浮球 + 网络请求面板，
+         放 router-view 之外，任意页面可唤起 -->
+    <DebugOverlay v-if="isDebugMode" />
   </div>
 </template>

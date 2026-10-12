@@ -82,3 +82,9 @@ export const STORAGE_NS_MOBILE_FUND_FLOW_CURVE = 'mobile.fundFlowCurve';
 /** 移动端 · 首页金刚区入口设置（顺序 + 显隐，JSON：{ order, hidden }；
  *  长按任意金刚区 tile 打开设置弹窗，key 为入口路由路径（to）） */
 export const STORAGE_NS_MOBILE_KING_SETTINGS = 'mobile.kingSettings';
+
+/** 移动端 · 调试模式开关（'1'/'0'；「我的」页应用信息卡连点 10 次切换） */
+export const STORAGE_NS_MOBILE_DEBUG = 'mobile.debug';
+
+/** 移动端 · 调试悬浮球位置（JSON：{ x, y }，视口 px 坐标，球心左上角） */
+export const STORAGE_NS_MOBILE_DEBUG_BALL = 'mobile.debugBall';
