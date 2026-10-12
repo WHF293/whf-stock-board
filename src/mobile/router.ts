@@ -6,6 +6,7 @@ import MobileBullReview from './views/MobileBullReview.vue';
 import MobileFundFlow from './views/MobileFundFlow.vue';
 import MobileHome from './views/MobileHome.vue';
 import MobileHotNews from './views/MobileHotNews.vue';
+import MobileIpoBoard from './views/MobileIpoBoard.vue';
 import MobileMarketRank from './views/MobileMarketRank.vue';
 import MobileMine from './views/MobileMine.vue';
 import MobilePanorama from './views/MobilePanorama.vue';
@@ -59,6 +60,8 @@ export const mobileRouter = createRouter({
     },
     // 历史牛熊（PC 行情全景-历史复盘的移动版；数据复用 panorama-review 单源，月K落 appStorage）
     { path: '/bull-review', name: 'bull-review', component: MobileBullReview },
+    // 新股次新股（v4.5.2 自行情全景拆出的独立二级页，入口在首页金刚区）
+    { path: '/ipo', name: 'ipo', component: MobileIpoBoard },
     // /board-calendar 列表矩阵；/board-calendar/:code 板块详情矩阵
     { path: '/board-calendar/:code?', name: 'board-calendar', component: MobileBoardCalendar },
     // 个股 K 线详情：全站股票行点击统一落点（code 为完整符号，如 sh600519）

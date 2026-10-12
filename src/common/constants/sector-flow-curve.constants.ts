@@ -7,9 +7,15 @@
  * 无数据，仅 klt=1 可用
  */
 
-/** 上游 URL 模板（{secid} 占位符，请求时注入 90.BKxxxx） */
+/** 上游 URL 模板（{secid} 占位符，请求时注入 90.BKxxxx；主用 push2delay——按本机 PC 网络
+ *  选定的镜像，见 eastmoney-reroute.ts 背景） */
 export const SECTOR_FLOW_KLINE_URL_TEMPLATE =
   'https://push2delay.eastmoney.com/api/qt/stock/fflow/kline/get?secid={secid}&fields1=f1,f2,f3,f7&fields2=f51,f52,f53,f54,f55,f56&klt=1&lmt=0' as const;
+
+/** 备用上游模板（主域传输层 / HTTP 失败时回落；push2delay 在其他网络（如真机）可能不可达，
+ *  push2 系原生域为东财该接口的原始 host。仅传输层回落，空数据仍按诚实错误抛出） */
+export const SECTOR_FLOW_KLINE_FALLBACK_URL_TEMPLATE =
+  'https://push2.eastmoney.com/api/qt/stock/fflow/kline/get?secid={secid}&fields1=f1,f2,f3,f7&fields2=f51,f52,f53,f54,f55,f56&klt=1&lmt=0' as const;
 
 /** 板块 secid 市场号前缀（90 = 沪深板块） */
 export const SECTOR_SECID_PREFIX = '90.' as const;
