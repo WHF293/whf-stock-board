@@ -234,3 +234,26 @@ export const MOBILE_TURNOVER_RANGES = [10, 30, 60] as const;
 
 /** 默认窗口（最近 10 个交易日） */
 export const MOBILE_TURNOVER_RANGE_DEFAULT: (typeof MOBILE_TURNOVER_RANGES)[number] = 10;
+
+/* ---- 调试模式（「我的」页应用信息卡连点开启；网络请求面板 + 悬浮球）---- */
+
+/** 开启调试模式的连击次数 */
+export const DEBUG_TAP_COUNT = 10;
+
+/** 连击判定时间窗口（毫秒，窗口内点击数达到 DEBUG_TAP_COUNT 才生效） */
+export const DEBUG_TAP_WINDOW_MS = 3_000;
+
+/** 网络请求环形缓冲上限（超出淘汰最旧记录） */
+export const DEBUG_NETWORK_MAX_RECORDS = 200;
+
+/** 单条响应体截断上限（字符数，防止大响应撑爆内存） */
+export const DEBUG_BODY_MAX_CHARS = 64 * 1024;
+
+/** 悬浮球直径（像素） */
+export const DEBUG_BALL_SIZE = 44;
+
+/** 悬浮球拖动位移判定阈值（px，小于此值视为点按开面板） */
+export const DEBUG_BALL_DRAG_SLOP_PX = 6;
+
+/** 悬浮球默认位置：距视口右缘 / 底缘的偏移（px；底部避开 TabBar） */
+export const DEBUG_BALL_DEFAULT_INSET = { x: 16, y: 120 };
