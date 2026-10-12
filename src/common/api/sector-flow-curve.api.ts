@@ -14,6 +14,7 @@ import {
   SECTOR_CURVE_CONCURRENCY,
   SECTOR_CURVE_DEFAULT_TOP,
   SECTOR_FLOW_KLINE_COLUMN,
+  SECTOR_FLOW_KLINE_FALLBACK_URL_TEMPLATE,
   SECTOR_FLOW_KLINE_URL_TEMPLATE,
   SECTOR_SECID_PREFIX,
 } from '../constants/sector-flow-curve.constants.ts';
@@ -58,20 +59,51 @@ const parseKlineLine = (line: string): ParsedKlinePoint | null => {
 };
 
 /**
- * 拉取单个行业板块的当日分时资金曲线
- * @param bkCode 板块代码（BK 编号，如 BK0475）
- * @returns 曲线（klines 为空或无有效点时抛错）
+ * 按模板拉取单个板块的 fflow/kline 响应体（传输层 / HTTP 状态失败抛错）
+ * @param template 上游 URL 模板（主用或备用域）
+ * @param bkCode 板块代码（BK 编号）
+ * @returns 响应体 JSON
  */
-export const fetchSectorFlowCurve = async (bkCode: string): Promise<SectorFlowCurve> => {
-  const url = SECTOR_FLOW_KLINE_URL_TEMPLATE.replace(
+const fetchKlinePayload = async (
+  template: string,
+  bkCode: string,
+): Promise<SectorFlowKlineResponse> => {
+  const url = template.replace(
     '{secid}',
     encodeURIComponent(`${SECTOR_SECID_PREFIX}${bkCode}`),
   );
   const response = await proxyFetch(url, { headers: { Accept: 'application/json' } });
   if (!response.ok) {
-    throw new Error(`sector flow kline ${bkCode} HTTP ${response.status}`);
+    throw new Error(`HTTP ${response.status}`);
   }
-  const payload = (await response.json()) as SectorFlowKlineResponse;
+  return (await response.json()) as SectorFlowKlineResponse;
+};
+
+/**
+ * 拉取单个行业板块的当日分时资金曲线
+ *
+ * 主域（push2delay）传输层 / HTTP 失败时回落备域（push2）重试一次：
+ * push2delay 是按本机 PC 网络选定的镜像，真机等其他网络下可能不可达而原生域可达
+ * （2026-10-12 真机「板块资金」全败的推断根因）；空数据（rc=0 但 klines 空，
+ * 如 push2his 的 klt=1 口径）属有效响应，不触发回落，仍按诚实错误抛出
+ * @param bkCode 板块代码（BK 编号，如 BK0475）
+ * @returns 曲线（klines 为空或无有效点时抛错）
+ */
+export const fetchSectorFlowCurve = async (bkCode: string): Promise<SectorFlowCurve> => {
+  let payload: SectorFlowKlineResponse;
+  try {
+    payload = await fetchKlinePayload(SECTOR_FLOW_KLINE_URL_TEMPLATE, bkCode);
+  } catch (primaryError) {
+    try {
+      payload = await fetchKlinePayload(SECTOR_FLOW_KLINE_FALLBACK_URL_TEMPLATE, bkCode);
+    } catch {
+      throw new Error(
+        `板块资金曲线上游不可达（主备域均失败）：${
+          primaryError instanceof Error ? primaryError.message : String(primaryError)
+        }`,
+      );
+    }
+  }
   const points = (payload.data?.klines ?? [])
     .map(parseKlineLine)
     .filter((point): point is ParsedKlinePoint => point !== null);
@@ -91,16 +123,23 @@ export const fetchSectorFlowCurve = async (bkCode: string): Promise<SectorFlowCu
  * @param codes 板块代码列表（BK 编号）
  * @param options 可选项
  * @param options.onCurve 单条曲线到位回调（渐进渲染用，仅成功条目触发）
+ * @param options.onError 单条失败回调（含真实错误，页面错误态透出用）
  * @returns 成功拉到的曲线（完成顺序，调用方按需排序）
  */
 export const fetchSectorFlowCurves = async (
   codes: readonly string[],
-  options?: { onCurve?: (curve: SectorFlowCurve) => void },
+  options?: {
+    onCurve?: (curve: SectorFlowCurve) => void;
+    onError?: (code: string, error: unknown) => void;
+  },
 ): Promise<SectorFlowCurve[]> => {
   const results = await mapWithConcurrency(
     codes,
     async (code) => {
-      const curve = await fetchSectorFlowCurve(code).catch(() => null);
+      const curve = await fetchSectorFlowCurve(code).catch((error: unknown) => {
+        options?.onError?.(code, error);
+        return null;
+      });
       if (curve) {
         options?.onCurve?.(curve);
       }
