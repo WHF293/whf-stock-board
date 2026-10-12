@@ -51,6 +51,61 @@ const RANKS = [
 type RankKey = (typeof RANKS)[number]['key'] | StandaloneKey;
 const activeRank = ref<RankKey>('stock');
 
+/** 各榜表头（名称列 / 值1 列 / 值2 列；空串渲染占位空槽，保持列对齐）
+ *  王总 2026-10-12：异动 / 连板 / 龙虎榜三页表格缺表头，补齐（对全部 10 榜生效） */
+const RANK_HEADERS: Record<RankKey, [string, string, string]> = {
+  stock: ['股票', '净流入', '涨跌幅'],
+  'block-trade': ['股票', '收盘价', '涨跌幅'],
+  changePercent: ['股票', '现价', '涨跌幅'],
+  changePercentDesc: ['股票', '现价', '涨跌幅'],
+  amount: ['股票', '成交额', '涨跌幅'],
+  turnoverRate: ['股票', '换手率', '涨跌幅'],
+  event: ['股票', '连板', '涨跌幅'],
+  events: ['股票', '异动类型', ''],
+  'dragon-tiger': ['股票', '净买额', '涨跌幅'],
+};
+
+/** 可排序榜：表头列下标（0=值1 列，1=值2 列）→ 排序键；不在表内的榜表头不可点 */
+const SORTABLE: Partial<Record<RankKey, readonly (SortKey | null)[]>> = {
+  event: ['boardCount', 'changePct'],
+  'dragon-tiger': ['netBuy', 'changePct'],
+};
+
+/** 当前排序键（null = 上游默认序）；点击表头切换列，再点同列升降序翻转 */
+const sortKey = ref<SortKey | null>(null);
+const sortAsc = ref(false);
+
+/** 重置排序（切榜时回落上游默认序） */
+const resetSort = (): void => {
+  sortKey.value = null;
+  sortAsc.value = false;
+};
+
+/**
+ * 取某榜某列的排序键（不可排序榜返回 null）
+ * @param rank 榜 key
+ * @param colIndex 值列下标（0 / 1）
+ * @returns 排序键或 null
+ */
+const sortKeyOf = (rank: RankKey, colIndex: number): SortKey | null =>
+  SORTABLE[rank]?.[colIndex] ?? null;
+
+/**
+ * 表头点击排序：点新列默认降序，点同列翻转升降
+ * @param rank 榜 key
+ * @param colIndex 值列下标
+ */
+const onHeaderSort = (rank: RankKey, colIndex: number): void => {
+  const key = sortKeyOf(rank, colIndex);
+  if (!key) return;
+  if (sortKey.value === key) {
+    sortAsc.value = !sortAsc.value;
+  } else {
+    sortKey.value = key;
+    sortAsc.value = false;
+  }
+};
+
 /** 独立页模式：/rank/:rank 命中拆出榜时非空（隐藏 chips、标题用榜名、锁定该榜） */
 const standaloneRank = computed<StandaloneKey | null>(() => {
   const rank = route.params.rank;
@@ -80,7 +135,40 @@ interface RankRowView {
   v1Cls: string;
   v2: string;
   v2Cls: string;
+  /** 可排序数值键（连板数 / 涨跌幅 / 净买额；表头排序用） */
+  sort?: Partial<Record<SortKey, number>>;
 }
+
+/** 排序键 */
+type SortKey = 'boardCount' | 'changePct' | 'netBuy';
+
+/** 异动类型 → 涨跌语义色（changeType 枚举映射，比中文标签匹配稳） */
+const CHANGE_TONE: Record<string, 'm-up' | 'm-down'> = {
+  // 多方 / 拉升类（红）
+  rocket_launch: 'm-up',
+  quick_rebound: 'm-up',
+  large_buy: 'm-up',
+  limit_up_seal: 'm-up',
+  limit_down_open: 'm-up',
+  big_buy_order: 'm-up',
+  auction_up: 'm-up',
+  high_open_5d: 'm-up',
+  gap_up: 'm-up',
+  high_60d: 'm-up',
+  surge_60d: 'm-up',
+  // 空方 / 下杀类（绿）
+  accelerate_down: 'm-down',
+  high_dive: 'm-down',
+  large_sell: 'm-down',
+  limit_down_seal: 'm-down',
+  limit_up_open: 'm-down',
+  big_sell_order: 'm-down',
+  auction_down: 'm-down',
+  low_open_5d: 'm-down',
+  gap_down: 'm-down',
+  low_60d: 'm-down',
+  drop_60d: 'm-down',
+};
 
 const loading = ref(false);
 const error = ref(false);
@@ -108,11 +196,13 @@ const buildZtRows = (list: ZTPoolItem[]): RankRowView[] =>
     key: `zt-${r.code}-${i}`,
     code: String(r.code),
     name: r.name,
-    sub: `${r.continuousBoardCount ?? 1}连板 · 封单 ${fmtYi(r.boardAmount)}`,
-    v1: r.price?.toFixed(2) ?? '--',
-    v1Cls: '',
+    // 连板数升级为独立列（王总 2026-10-12：新增【连板】列 + 可排序），现价/封单留在副行
+    sub: `现价 ${r.price?.toFixed(2) ?? '--'} · 封单 ${fmtYi(r.boardAmount)}`,
+    v1: `${r.continuousBoardCount ?? 1}板`,
+    v1Cls: 'm-up',
     v2: pct(r.changePercent),
     v2Cls: cls(r.changePercent),
+    sort: { boardCount: r.continuousBoardCount ?? 0, changePct: r.changePercent ?? -999 },
   }));
 
 const buildChangeRows = (list: StockChangeItem[]): RankRowView[] =>
@@ -120,11 +210,14 @@ const buildChangeRows = (list: StockChangeItem[]): RankRowView[] =>
     key: `sc-${r.code}-${i}`,
     code: String(r.code),
     name: r.name,
-    sub: `${r.time.slice(0, 5)} ${r.changeTypeLabel || r.info}`,
-    v1: r.changeTypeLabel || '--',
-    v1Cls: 'm-flat',
-    v2: r.info,
-    v2Cls: 'm-flat',
+    // ⚠️ info 是上游原始逗号串（如 "236500,72.04,..."），曾直接塞进右侧定宽槽把名称
+    //    挤成竖排（王总 2026-10-12 截图反馈）；这里只展示时间 + 异动类型标签
+    sub: r.time.slice(0, 5),
+    v1: r.changeTypeLabel || r.changeType,
+    // 类型按涨跌语义着色（王总 2026-10-12）：火箭发射/封涨停等红，高台跳水/封跌停等绿
+    v1Cls: CHANGE_TONE[r.changeType] ?? 'm-flat',
+    v2: '',
+    v2Cls: '',
   }));
 
 const buildDragonRows = (list: DragonTigerDetailItem[]): RankRowView[] =>
@@ -137,6 +230,8 @@ const buildDragonRows = (list: DragonTigerDetailItem[]): RankRowView[] =>
     v1Cls: cls(r.netBuyAmount),
     v2: pct(r.changePercent),
     v2Cls: cls(r.changePercent),
+    // 龙虎榜支持按净买额 / 涨跌幅排序（王总 2026-10-12）
+    sort: { netBuy: r.netBuyAmount ?? 0, changePct: r.changePercent ?? -999 },
   }));
 
 const buildBlockRows = (list: BlockTradeDetailItem[]): RankRowView[] =>
@@ -167,7 +262,8 @@ const buildQuoteRows = (quotes: FullQuote[], rank: RankKey): RankRowView[] => {
       v2Cls: cls(q.changePercent),
     };
     if (rank === 'changePercent' || rank === 'changePercentDesc') {
-      return { ...base, sub: `现价 ${q.price?.toFixed(2) ?? '--'}`, v1: pct(q.changePercent), v1Cls: cls(q.changePercent) };
+      // 表头列 = 现价（此前 v1 与 v2 重复显示涨跌幅）
+      return { ...base, sub: '', v1: q.price?.toFixed(2) ?? '--', v1Cls: '' };
     }
     if (rank === 'amount') {
       return { ...base, sub: `现价 ${q.price?.toFixed(2) ?? '--'}`, v1: fmtYi(q.amount), v1Cls: 'm-flat' };
@@ -212,9 +308,19 @@ const loadRank = async (key: RankKey, force = false): Promise<void> => {
   }
 };
 
-const activeRows = computed(() => rowsByRank.value[activeRank.value] ?? []);
+const activeRows = computed(() => {
+  const base = rowsByRank.value[activeRank.value] ?? [];
+  const key = sortKey.value;
+  // 仅可排序榜（连板 / 龙虎榜）应用表头排序；无键 = 上游默认序
+  if (!key || !(activeRank.value in SORTABLE)) return base;
+  const dir = sortAsc.value ? 1 : -1;
+  return [...base].sort(
+    (a, b) => ((a.sort?.[key] ?? -Infinity) - (b.sort?.[key] ?? -Infinity)) * dir,
+  );
+});
 
 const onRankClick = (key: RankKey): void => {
+  resetSort();
   activeRank.value = key;
   void loadRank(key);
 };
@@ -239,6 +345,7 @@ const onRefresh = async (): Promise<void> => {
 // 独立页模式锁定对应榜（进入即装载）；市场榜单页保持默认主力榜
 watch(standaloneRank, (rank) => {
   if (rank) {
+    resetSort();
     activeRank.value = rank;
     void loadRank(rank);
   }
@@ -279,6 +386,26 @@ if (!standaloneRank.value) void loadRank('stock');
           <span class="retry" @click="loadRank(activeRank, true)">重试</span>
         </div>
         <div v-else class="m-card">
+          <!-- 表头（王总 2026-10-12：异动 / 连板 / 龙虎榜三页缺表头，对全部榜补齐；
+               连板 / 龙虎榜的值列可点击排序，箭头指示当前列与升降序） -->
+          <div class="m-rowhead">
+            <div class="m-rowhead__nm">{{ RANK_HEADERS[activeRank][0] }}</div>
+            <span
+              v-for="(head, ci) in RANK_HEADERS[activeRank].slice(1)"
+              :key="ci"
+              class="m-rowhead__v"
+              :class="{
+                'm-rowhead__v--sort': sortKeyOf(activeRank, ci),
+                'm-rowhead__v--on': sortKey === sortKeyOf(activeRank, ci) && sortKey !== null,
+              }"
+              @click="onHeaderSort(activeRank, ci)"
+            >
+              {{ head }}
+              <template v-if="sortKey !== null && sortKey === sortKeyOf(activeRank, ci)">
+                {{ sortAsc ? '▲' : '▼' }}
+              </template>
+            </span>
+          </div>
           <div
             v-for="row in activeRows"
             :key="row.key"
@@ -287,10 +414,10 @@ if (!standaloneRank.value) void loadRank('stock');
           >
             <div class="m-row__nm">
               {{ row.name }}
-              <span class="sub">{{ row.sub }}</span>
+              <span v-if="row.sub" class="sub">{{ row.sub }}</span>
             </div>
-            <span class="m-row__val" :class="[row.v1Cls, 'sm']">{{ row.v1 }}</span>
-            <span class="m-row__pct" :class="row.v2Cls">{{ row.v2 }}</span>
+            <span v-if="row.v1" class="m-row__val" :class="[row.v1Cls, 'sm']">{{ row.v1 }}</span>
+            <span v-if="row.v2" class="m-row__pct" :class="row.v2Cls">{{ row.v2 }}</span>
           </div>
           <div v-if="!activeRows.length" class="m-state">暂无数据</div>
         </div>
@@ -299,3 +426,25 @@ if (!standaloneRank.value) void loadRank('stock');
     </div>
   </div>
 </template>
+
+<style scoped>
+/* navbar 与榜单卡之间留空隙（独立页无 chips 缓冲，卡片曾直接顶到 navbar——王总 2026-10-12） */
+.m-sub-scroll { padding-top: 10px; }
+
+/* 表头行：与 .m-row 同 padding/gap，右两列 min-width 对齐 .m-row__pct(58px) */
+.m-rowhead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 16px 7px;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--color-text-3);
+}
+.m-rowhead__nm { flex: 1; min-width: 0; }
+.m-rowhead__v { flex-shrink: 0; min-width: 58px; text-align: right; }
+/* 可排序值列：可点 + 当前排序列主色高亮 */
+.m-rowhead__v--sort { cursor: pointer; user-select: none; }
+.m-rowhead__v--on { color: var(--color-primary); }
+</style>
