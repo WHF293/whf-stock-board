@@ -11,8 +11,9 @@
  *   涨停四池串行错峰→computeMarketSentiment；30s 前台轮询（useMobilePolling）
  * - 分区独立降级：指数/成交额/分布/情绪/热榜各自重试，互不阻塞
  */
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
+import { showFailToast } from 'vant';
 import { fetchFullQuotes, fetchAllMarketQuotes } from '../../common/api/quotes.api';
 import { fetchMarketTurnover } from '../../common/api/turnover.api';
 import { fetchZtPool } from '../../common/api/event.api';
@@ -32,7 +33,7 @@ import type { BoardSource } from '../../common/constants/hot-board.constants';
 import type { HotBoardItem } from '../../common/types/hot-board.types';
 import type { FullQuote } from '../../common/types/stock-quote.types';
 import { appStorage } from '../../common/utils/app-local-storage';
-import { STORAGE_NS_MOBILE_BOARD_SETTINGS } from '../../common/constants/storage-key.constants';
+import { STORAGE_NS_MOBILE_BOARD_SETTINGS, STORAGE_NS_MOBILE_KING_SETTINGS } from '../../common/constants/storage-key.constants';
 import { mobileCacheGet, mobileCacheSet } from '../cache';
 import { fetchIndustryBoards, fetchIndustryConstituents } from '../../common/api/board.api';
 import { HEATMAP_DRILL_STOCK_COUNT } from '../../common/constants/heatmap.constants';
@@ -49,10 +50,12 @@ const goTarget = (to: string): void => {
   void router.push(to);
 };
 
-/* === 金刚区（5×2：8 实位 + 2 预留，v3.1 稿；搜索入口在 navbar 不占格） ===
+/* === 金刚区（5×2：入口数动态，v3.1 稿；搜索入口在 navbar 不占格） ===
    v4.2.1：icon 换 Vant 线性图标（unicode 观感差）；移除自选 / 热点新闻（TabBar 已有入口）；
    连板 / 异动 / 龙虎榜独立榜页（/rank/:rank）与历史牛熊（/bull-review）为独立二级页。
-   2026-10-11：tile 底改浅灰（--m-king-ic-bg），icon 改每项固定彩色（color 字段，不随主题） */
+   2026-10-11：tile 底改浅灰（--m-king-ic-bg），icon 改每项固定彩色（color 字段，不随主题）；
+   2026-10-12：新股次新股自行情全景拆出独立页（/ipo）补位；「新股」更名「(次)新股」；
+   长按任意 tile 弹出入口设置（显隐 + 排序，参考热点新闻源设置，超 10 入口时用户自行取舍） */
 interface KingItem {
   icon: string;
   label: string;
@@ -60,6 +63,7 @@ interface KingItem {
   /** icon 固定彩色（2026-10-11 王总指定：彩色不随主题，亮暗同一套） */
   color: string;
 }
+/** 金刚区全部候选入口（key = to 路由路径，唯一）；显隐/顺序由用户设置持久化决定 */
 const KING_ITEMS: readonly KingItem[] = [
   { icon: 'fire-o', label: '今天炒什么', to: '/board', color: '#f97316' },
   { icon: 'eye-o', label: '行情全景', to: '/panorama', color: '#0ea5e9' },
@@ -69,9 +73,148 @@ const KING_ITEMS: readonly KingItem[] = [
   { icon: 'bell', label: '异动', to: '/rank/events', color: '#ef4444' },
   { icon: 'flag-o', label: '龙虎榜', to: '/rank/dragon-tiger', color: '#ec4899' },
   { icon: 'replay', label: '历史牛熊', to: '/bull-review', color: '#10b981' },
+  { icon: 'gem-o', label: '(次)新股', to: '/ipo', color: '#eab308' },
 ];
-/** 预留虚线位数量（后续新模块直接补位） */
-const KING_TODO_COUNT = 2;
+/** to → 定义（设置弹窗行渲染 / 持久化序回填用） */
+const KING_BY_TO = new Map(KING_ITEMS.map((item) => [item.to, item]));
+
+/** 金刚区入口设置持久化形态（order 全量序 / hidden 隐藏集合），与新闻源设置同构 */
+interface KingSettings {
+  order: string[];
+  hidden: string[];
+}
+
+const readKingSettings = (): KingSettings => {
+  const raw = appStorage.getItem(STORAGE_NS_MOBILE_KING_SETTINGS);
+  if (raw !== null) {
+    try {
+      const parsed = JSON.parse(raw) as Partial<KingSettings>;
+      if (Array.isArray(parsed.order) && Array.isArray(parsed.hidden)) {
+        // 未知 key 剔除、新入口按默认序补尾（版本升级后 defs 增删的兜底）
+        const known = parsed.order.filter((to) => KING_BY_TO.has(to));
+        for (const item of KING_ITEMS) {
+          if (!known.includes(item.to)) known.push(item.to);
+        }
+        return { order: known, hidden: parsed.hidden.filter((to) => KING_BY_TO.has(to)) };
+      }
+    } catch {
+      // 坏包回落默认
+    }
+  }
+  return { order: KING_ITEMS.map((item) => item.to), hidden: [] };
+};
+
+const kingSettings = reactive<KingSettings>(readKingSettings());
+
+const persistKingSettings = (): void => {
+  appStorage.setItem(
+    STORAGE_NS_MOBILE_KING_SETTINGS,
+    JSON.stringify({ order: kingSettings.order, hidden: kingSettings.hidden }),
+  );
+};
+
+/** 可见入口（隐藏项不渲染；顺序 = 设置调整后的持久化序） */
+const visibleKingItems = computed<KingItem[]>(() =>
+  kingSettings.order
+    .filter((to) => !kingSettings.hidden.includes(to))
+    .map((to) => KING_BY_TO.get(to))
+    .filter((item): item is KingItem => item !== undefined),
+);
+
+/** 预留虚线位：补齐 5×2 版面（入口满 10 个时为 0） */
+const kingTodoCount = computed(() => Math.max(0, 10 - visibleKingItems.value.length));
+
+/* --- 金刚区设置弹窗（长按 tile 打开；桌面浏览器右键同开，便于调试） --- */
+const kingSettingsOpen = ref(false);
+
+/**
+ * 入口显隐开关（至少保留一个入口）
+ * @param to 入口路由路径
+ * @param visible true 显示，false 隐藏
+ */
+const toggleKing = (to: string, visible: boolean): void => {
+  const nextHidden = new Set(kingSettings.hidden);
+  if (visible) {
+    nextHidden.delete(to);
+  } else {
+    if (kingSettings.order.length - nextHidden.size <= 1) {
+      showFailToast('至少保留一个入口');
+      return;
+    }
+    nextHidden.add(to);
+  }
+  kingSettings.hidden = [...nextHidden];
+  persistKingSettings();
+};
+
+/**
+ * 入口排序（上移 / 下移；持久化）
+ * @param index 当前序号（kingSettings.order 内）
+ * @param offset 移动偏移（-1 上移 / 1 下移）
+ */
+const moveKing = (index: number, offset: number): void => {
+  const target = index + offset;
+  if (target < 0 || target >= kingSettings.order.length) return;
+  const order = [...kingSettings.order];
+  const [moved] = order.splice(index, 1);
+  order.splice(target, 0, moved!);
+  kingSettings.order = order;
+  persistKingSettings();
+};
+
+/* --- 长按手势（pointer 事件统一覆盖触屏长按与桌面按住；阈值 500ms，位移 >10px 视为滚动取消） --- */
+const KING_LONG_PRESS_MS = 500;
+let kingPressTimer: number | null = null;
+let kingPressStart: { x: number; y: number } | null = null;
+/** 长按已触发标记：吞掉长按后 pointerup 派生的 click，避免弹窗打开同时跳页 */
+let kingLongPressFired = false;
+
+const clearKingPress = (): void => {
+  if (kingPressTimer !== null) {
+    clearTimeout(kingPressTimer);
+    kingPressTimer = null;
+  }
+  kingPressStart = null;
+};
+
+/** tile 按下：启动长按计时
+ * @param e 指针按下事件（记录起点坐标，供移动阈值判定） */
+const onKingPressStart = (e: PointerEvent): void => {
+  clearKingPress();
+  kingLongPressFired = false;
+  kingPressStart = { x: e.clientX, y: e.clientY };
+  kingPressTimer = window.setTimeout(() => {
+    kingPressTimer = null;
+    kingLongPressFired = true;
+    kingSettingsOpen.value = true;
+  }, KING_LONG_PRESS_MS);
+};
+
+/** tile 抬起 / 取消：停表（长按已触发的场景由 click 兜底吞掉跳页） */
+const onKingPressEnd = (): void => {
+  clearKingPress();
+};
+
+/** tile 移动：超过阈值判定为滚动/拖动，取消长按
+ * @param e 指针移动事件 */
+const onKingPressMove = (e: PointerEvent): void => {
+  if (!kingPressStart) return;
+  const dx = e.clientX - kingPressStart.x;
+  const dy = e.clientY - kingPressStart.y;
+  if (dx * dx + dy * dy > 100) clearKingPress();
+};
+
+/**
+ * tile 点击跳页（长按触发过的当次点击吞掉）
+ * @param to 入口路由路径
+ */
+const goTile = (to: string): void => {
+  if (kingLongPressFired) {
+    kingLongPressFired = false;
+    return;
+  }
+  goTarget(to);
+};
 
 /* === 指数情绪条（一期 4 项：进入首页刷新一次，30s TTL） === */
 const INDEX_LABELS: Record<string, string> = {
@@ -535,18 +678,23 @@ const pctClass = (v: number | null): string =>
 
     <!-- 整页下拉刷新（面板内滚动 + PullRefresh 宿主结构，与 news/board 同构） -->
     <van-pull-refresh v-model="refreshing" class="m-home-scroll" @refresh="onRefresh">
-      <!-- 1. 金刚区 5×2（通栏贴边，v3 稿） -->
+      <!-- 1. 金刚区 5×2（通栏贴边，v3 稿；长按任意 tile 弹出入口设置，桌面右键同开） -->
       <div class="m-home-king">
         <div
-          v-for="item in KING_ITEMS"
-          :key="item.label"
+          v-for="item in visibleKingItems"
+          :key="item.to"
           class="m-home-king__item"
-          @click="goTarget(item.to)"
+          @click="goTile(item.to)"
+          @pointerdown="onKingPressStart"
+          @pointerup="onKingPressEnd"
+          @pointercancel="onKingPressEnd"
+          @pointermove="onKingPressMove"
+          @contextmenu.prevent="kingSettingsOpen = true"
         >
           <span class="m-home-king__ic"><van-icon :name="item.icon" :style="{ color: item.color }" /></span>
           <span class="m-home-king__name">{{ item.label }}</span>
         </div>
-        <div v-for="n in KING_TODO_COUNT" :key="`todo-${n}`" class="m-home-king__item m-home-king__item--todo">
+        <div v-for="n in kingTodoCount" :key="`todo-${n}`" class="m-home-king__item m-home-king__item--todo">
           <span class="m-home-king__ic">＋</span>
           <span class="m-home-king__name">预留</span>
         </div>
@@ -830,6 +978,51 @@ const pctClass = (v: number | null): string =>
       <!-- 底部让位（悬浮 TabBar + 手势区，DESIGN-MOBILE.md §2.1） -->
       <div class="m-home-tail"></div>
     </van-pull-refresh>
+
+    <!-- 金刚区入口设置弹层（长按 tile 打开；显隐 + 排序，与热点新闻源设置同构） -->
+    <van-popup v-model:show="kingSettingsOpen" position="bottom" round>
+      <div style="padding: 14px 16px 18px">
+        <div class="m-board-head" style="padding-top: 0">
+          <div class="m-board-head__title">金刚区入口设置</div>
+          <div class="m-board-head__time">开关显隐 · ↑↓ 调整顺序</div>
+        </div>
+        <div
+          v-for="(to, index) in kingSettings.order"
+          :key="to"
+          class="m-sheet-row"
+        >
+          <div
+            class="m-sheet-row__name"
+            :class="{ 'm-sheet-row__name--off': kingSettings.hidden.includes(to) }"
+          >
+            {{ KING_BY_TO.get(to)?.label ?? to }}
+            <span v-if="kingSettings.hidden.includes(to)">已隐藏</span>
+          </div>
+          <van-switch
+            :model-value="!kingSettings.hidden.includes(to)"
+            size="20px"
+            @update:model-value="(value: boolean) => toggleKing(to, value)"
+          />
+          <button
+            class="m-order-btn"
+            :disabled="index === 0"
+            @click="moveKing(index, -1)"
+          >
+            ↑
+          </button>
+          <button
+            class="m-order-btn"
+            :disabled="index === kingSettings.order.length - 1"
+            @click="moveKing(index, 1)"
+          >
+            ↓
+          </button>
+        </div>
+        <van-button type="primary" block round style="margin-top: 14px" @click="kingSettingsOpen = false">
+          完成
+        </van-button>
+      </div>
+    </van-popup>
 
     <!-- 板块热力下钻：成分股弹窗（表格形式，王总 2026-10-12；PC 同口径 Top 30） -->
     <van-popup v-model:show="consOpen" position="bottom" round style="height: 75dvh">
