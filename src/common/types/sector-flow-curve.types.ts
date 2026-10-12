@@ -17,6 +17,8 @@ export interface SectorFlowCurvePoint {
 export interface SectorFlowCurve {
   /** 板块代码（东方财富 BK 编号） */
   code: string;
+  /** 板块名称（上游 kline 响应自带；缺失时由调用方按板块排名回填） */
+  name?: string;
   /** 曲线归属的交易日（YYYY-MM-DD） */
   tradeDate: string;
   /** 分时点序列（时间升序） */

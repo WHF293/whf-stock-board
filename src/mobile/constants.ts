@@ -33,6 +33,16 @@ export const MOBILE_POLLING_DEFAULT = 30_000;
 /** 新闻频道加载方式：page = 页码翻页 / cursor = 游标翻页 / single = 单页快照（无更多） */
 export type MobileNewsChannelType = 'page' | 'cursor' | 'single';
 
+/**
+ * 特殊渲染频道（模板分支渲染，不走 NewsRow 通用新闻列表）
+ *
+ * 对齐桌面 HotNewsView 的卡片分支：
+ * - clsHot / tpHot：名次榜（财联社热榜含阅读数 / 澎湃热榜含相对时间）
+ * - emHot：东财热搜热词榜；emConcept：东财领涨概念榜（板块 + 涨跌幅 + 领涨股）
+ * - theme：同花顺热点主题（主题 chips + 主题资讯流，资讯流走通用列表）
+ */
+export type MobileNewsSpecialKind = 'clsHot' | 'tpHot' | 'emHot' | 'emConcept' | 'theme';
+
 /** 移动端新闻子栏目 */
 export interface MobileNewsChannel {
   /** 频道 key（缓存键组成部分，如 `sina:caijing`） */
@@ -41,6 +51,8 @@ export interface MobileNewsChannel {
   label: string;
   /** 加载方式（决定翻页与「已经到底了」行为） */
   type: MobileNewsChannelType;
+  /** 特殊渲染分支（缺省走 NewsRow 通用新闻列表） */
+  special?: MobileNewsSpecialKind;
 }
 
 /** 移动端新闻源（与桌面 HotNewsView 六卡一一对应，首个为默认源） */
@@ -59,7 +71,11 @@ export const MOBILE_NEWS_SOURCES: readonly MobileNewsSource[] = [
   {
     key: 'cls',
     label: '财联社',
-    channels: [{ key: 'depth', label: '深度', type: 'single' }],
+    // 子视图序对齐桌面 CLS_SUB_VIEWS：深度 → 热榜
+    channels: [
+      { key: 'depth', label: '深度', type: 'single' },
+      { key: 'hot', label: '热榜', type: 'single', special: 'clsHot' },
+    ],
   },
   {
     key: 'tdx',
@@ -73,7 +89,9 @@ export const MOBILE_NEWS_SOURCES: readonly MobileNewsSource[] = [
   {
     key: 'ths',
     label: '同花顺',
+    // 子视图序对齐桌面 THS_SUB_VIEWS：热点主题 → 快讯 → 头条
     channels: [
+      { key: 'theme', label: '热点主题', type: 'page', special: 'theme' },
       { key: 'flash', label: '快讯', type: 'page' },
       { key: 'headline', label: '头条', type: 'single' },
     ],
@@ -81,9 +99,12 @@ export const MOBILE_NEWS_SOURCES: readonly MobileNewsSource[] = [
   {
     key: 'em',
     label: '东方财富',
+    // 子视图序对齐桌面 EM_SUB_VIEWS：快讯 → 推荐 → 热搜 → 领涨概念
     channels: [
       { key: 'flash', label: '快讯', type: 'cursor' },
       { key: 'rec', label: '推荐', type: 'single' },
+      { key: 'hot', label: '热搜', type: 'single', special: 'emHot' },
+      { key: 'concept', label: '领涨概念', type: 'single', special: 'emConcept' },
     ],
   },
   {
@@ -97,7 +118,11 @@ export const MOBILE_NEWS_SOURCES: readonly MobileNewsSource[] = [
   {
     key: 'tp',
     label: '澎湃新闻',
-    channels: [{ key: 'flash', label: '快讯', type: 'cursor' }],
+    // 子视图序对齐桌面 TP_SUB_VIEWS：快讯 → 热榜
+    channels: [
+      { key: 'flash', label: '快讯', type: 'cursor' },
+      { key: 'hot', label: '热榜', type: 'single', special: 'tpHot' },
+    ],
   },
 ];
 
@@ -114,9 +139,9 @@ export const MOBILE_NEWS_SOURCE_LOGOS: Record<string, string> = {
 /** 移动端底部 Tab（主 Tab 页路径 + 图标 + 文案；今天炒什么为首页模块跳转的二级页，不入 Tab） */
 export const MOBILE_TAB_ITEMS: readonly { path: string; label: string; icon: string }[] = [
   { path: '/', label: '首页', icon: '⌂' },
-  { path: '/watchlist', label: '自选', icon: '★' },
+  { path: '/fund-flow', label: '资金流向', icon: '¥' },
   { path: '/news', label: '热点新闻', icon: '✦' },
-  { path: '/mine', label: '我的', icon: '☻' },
+  { path: '/watchlist', label: '我的自选', icon: '★' },
 ];
 
 /** 移动端免责声明（「我的」页底部与设置页「免责声明」共用一份文案） */
@@ -163,7 +188,8 @@ export const MOBILE_BOOK_PAGE_HEIGHT = 440;
 export const MOBILE_BOOK_EDGE_WIDTH = 40;
 
 /** 底部滑块拖动位移小于多少 px 视为点选（按点位直接选页，不进入拖拽态） */
-export const MOBILE_BOOK_DRAG_SLOP_PX = 6;
+/** 手势条滑动切页阈值（|dx| 不小于此值且 |dx| > |dy| 才切页；与资金流向页翻页同值） */
+export const MOBILE_BOOK_SWIPE_PX = 48;
 
 /** TabBar 液态玻璃折射（SVG feDisplacementMap；移植自 shuding/liquid-glass）----
  * 中间区域零位移、仅边缘环带折射；仅 Chromium 系 WebView 生效（backdrop-filter: url(#滤镜)），
@@ -177,3 +203,34 @@ export const MOBILE_TAB_GLASS_STRENGTH = 1;
 
 /** resize 后防抖多少毫秒再重建置换图（旋转 / 分屏场景） */
 export const MOBILE_TAB_GLASS_RESIZE_DEBOUNCE_MS = 300;
+
+/* ---- 资金流向页（v4.3 主 Tab；数据模块与 PC 同源，参数口径对齐）---- */
+
+/** 主力净流入折线展示天数（与 PC 市场总览 MARKET_FLOW_DAYS 同口径） */
+export const FUND_FLOW_MARKET_DAYS = 10;
+
+/** 板块资金 / 历史净流入最多选中板块数（板块池与 PC 一致 26 个，单轮最多勾 8 个） */
+export const FUND_FLOW_SECTOR_MAX = 8;
+
+/** 默认勾选：按当日主力净流入流入 / 流出各取前 N（合计 2N ≤ 上限） */
+export const FUND_FLOW_SECTOR_DEFAULT_PER_SIDE = 4;
+
+/** 主力净流入折线图高度（像素） */
+export const FUND_FLOW_CHART_HEIGHT_MAIN = 230;
+
+/** 板块资金多曲线图高度（像素） */
+export const FUND_FLOW_CHART_HEIGHT_SECTOR = 270;
+
+/** 历史净流入翻页卡固定高度（像素；卡内逐日纵向滚动） */
+export const FUND_FLOW_HISTORY_CARD_HEIGHT = 380;
+
+/** 手势翻页：横滑判定阈值（|dx| 不小于此值且 |dx| > |dy| 才切页） */
+export const FUND_FLOW_PAGER_SWIPE_PX = 48;
+
+/* ---- 首页成交额曲线（移动端专属窗口；PC 市场总览为 30/60/180，共用 common 常量互不影响）---- */
+
+/** 可选交易日窗口（最近 N 个交易日） */
+export const MOBILE_TURNOVER_RANGES = [10, 30, 60] as const;
+
+/** 默认窗口（最近 10 个交易日） */
+export const MOBILE_TURNOVER_RANGE_DEFAULT: (typeof MOBILE_TURNOVER_RANGES)[number] = 10;
