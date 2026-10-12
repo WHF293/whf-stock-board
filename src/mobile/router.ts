@@ -3,6 +3,7 @@ import MobileArticle from './views/MobileArticle.vue';
 import MobileBoard from './views/MobileBoard.vue';
 import MobileBoardCalendar from './views/MobileBoardCalendar.vue';
 import MobileBullReview from './views/MobileBullReview.vue';
+import MobileFundFlow from './views/MobileFundFlow.vue';
 import MobileHome from './views/MobileHome.vue';
 import MobileHotNews from './views/MobileHotNews.vue';
 import MobileMarketRank from './views/MobileMarketRank.vue';
@@ -14,24 +15,29 @@ import MobileStockDetail from './views/MobileStockDetail.vue';
 import MobileTheme from './views/MobileTheme.vue';
 import MobileWatchlist from './views/MobileWatchlist.vue';
 
-/** 主 Tab 页路径（底部 TabBar 只在这些路由显示；二级页由页面 meta 控制） */
-export const MOBILE_TAB_PATHS: readonly string[] = ['/', '/watchlist', '/news', '/mine'];
+/** 主 Tab 页路径（底部 TabBar 只在这些路由显示，显隐由 MobileTabBar 按 MOBILE_TAB_ITEMS 判定；
+ * MobileApp 的页面切换动画也按此声明序判定前进/后退方向，二级页视为最末） */
+export const MOBILE_TAB_PATHS: readonly string[] = ['/', '/fund-flow', '/news', '/watchlist'];
 
 /**
  * 移动端路由（hash 模式：Tauri Android WebView 的 file/本地加载形态下无需服务端配合）
  *
- * meta.tab = true 的路由显示底部 TabBar（MobileApp 按 meta 判断）；
+ * meta.tab = true 的路由为底部 TabBar 主 Tab（TabBar 显隐由 MobileTabBar 按 MOBILE_TAB_ITEMS 判定）；
  * /board（今天炒什么）自 v1.2 起为首页模块跳转的二级页，不占 Tab；
+ * /mine 自 2026-10-12 起移出 TabBar，入口改为首页 navbar 左侧 app logo；
  * /panorama /market-rank /board-calendar /stock 为 v2 二期二级页（DESIGN-MOBILE.md §4）
  */
 export const mobileRouter = createRouter({
   history: createWebHashHistory(),
   routes: [
     { path: '/', name: 'home', component: MobileHome, meta: { tab: true } },
+    // 资金流向：v4.3 主 Tab 占位（功能未实现，仅保留页面）
+    { path: '/fund-flow', name: 'fund-flow', component: MobileFundFlow, meta: { tab: true } },
     { path: '/watchlist', name: 'watchlist', component: MobileWatchlist, meta: { tab: true } },
     { path: '/news', name: 'news', component: MobileHotNews, meta: { tab: true } },
     { path: '/board', name: 'board', component: MobileBoard },
-    { path: '/mine', name: 'mine', component: MobileMine, meta: { tab: true } },
+    // 我的：入口在首页 navbar 左侧 app logo（不再占 Tab）
+    { path: '/mine', name: 'mine', component: MobileMine },
     { path: '/settings', name: 'settings', component: MobileSettings },
     // 股票搜索：首页 navbar 搜索入口的落点（二级页，无 TabBar）
     { path: '/search', name: 'search', component: MobileSearch },

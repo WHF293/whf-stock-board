@@ -263,6 +263,27 @@ body {
   margin-right: 5px;
   vertical-align: -3.5px;
 }
+/* 王总 2026-10-12：navbar 标题两侧箭头（◀ 标题 ▶）循环切数据源（新闻源 / 平台）。
+   实心三角形用 Vant play（仅右向），左向由 __flip 旋转 180° 得到；
+   箭头色沿用 navbar icon 的固定色方案（亮色黑 / 暗色白，不随主题 token） */
+.m-nav-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+.m-nav-switch .van-icon {
+  color: var(--van-nav-bar-icon-color);
+  padding: 2px;
+}
+.m-nav-switch .m-nav-switch__flip { transform: rotate(180deg); }
+/* 首页 navbar 左侧 app logo（「我的」页入口；TabBar 移除我的后 2026-10-12） */
+.m-nav-app-logo {
+  display: block;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  cursor: pointer;
+}
 
 /* chips 横滚区（一级源 / 二级子栏目 / 平台 / 分组共用）；v3 起透明底浮于页面底色 */
 .m-chips {
@@ -291,6 +312,82 @@ body {
 .m-chip--active { background: var(--color-primary-weak); color: var(--color-primary); font-weight: 800; }
 .m-chip--sub { min-height: 26px; font-size: 11.5px; background: var(--m-page-bg); }
 .m-chip--sub.m-chip--active { background: var(--color-primary); color: #fff; }
+
+/* 特殊栏目榜单行（王总 2026-10-12：财联社热榜 / 澎湃热榜 / 东财热搜 / 领涨概念，
+   结构对齐 PC HotNewsView 名次榜分支：名次徽标 + 标题 + 次级 meta + 右侧附加位） */
+.m-rank-list {
+  background: var(--color-surface);
+  border-radius: 12px;
+  margin: 2px 12px 0;
+  overflow: hidden;
+}
+.m-rank-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.m-rank-row:last-child { border-bottom: 0; }
+.m-rank-row:active { background: var(--m-page-bg); }
+.m-rank-row__rank {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-tertiary, #999);
+  background: var(--m-page-bg);
+}
+.m-rank-row__rank--top { background: var(--color-up-weak); color: var(--color-up); }
+.m-rank-row__main { flex: 1; min-width: 0; }
+.m-rank-row__main .t {
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--color-text);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.m-rank-row__main .meta {
+  margin-top: 3px;
+  display: flex;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--color-text-tertiary, #999);
+}
+.m-rank-row__go { flex: none; color: var(--van-nav-bar-icon-color); font-size: 13px; }
+.m-rank-row__pct { flex: none; font-size: 14px; font-weight: 700; }
+/* 热搜「新」徽标（上游 HotKeywordStatus=3，与 PC 同款红底） */
+.m-kw-new {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 4px;
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 15px;
+  vertical-align: 1px;
+  background: var(--color-up-weak);
+  color: var(--color-up);
+  font-weight: 700;
+}
+/* 热点主题 chips 行（复用 .m-chips，横向滚动 + 上下留白） */
+.m-theme-chips {
+  padding: 10px 12px 4px;
+  margin: 0;
+  background: transparent;
+  border-radius: 0;
+}
 
 /* 新闻流（v3 清新版：白卡 + hairline，来源标注用次级灰——标识信息不占用主色） */
 .m-news-list {
@@ -618,6 +715,8 @@ body {
 
 /* 区块标题（入口卡 / 预告卡共用；左右 12px 与卡片边对齐） */
 .m-home-sec { display: flex; align-items: baseline; justify-content: space-between; padding: 14px 12px 10px; }
+/* 卡内标题行（书本翻页三模块 2026-10-12：标题移入卡片内部，视觉更整体） */
+.m-home-sec--in { padding: 12px 16px 0; }
 .m-home-sec__t { font-size: 15px; font-weight: 700; }
 .m-home-sec__s { font-size: 10.5px; font-weight: 600; color: var(--color-text-3); }
 
@@ -725,6 +824,13 @@ body {
 .m-home-dot.total { background: var(--color-primary); }
 .m-home-dot.sh { background: #f97316; }
 .m-home-dot.sz { background: #22d3ee; }
+/* 逐日常驻数据点（王总 2026-10-12：成交额曲线每天画点，与 PC showSymbol 同口径；
+   小号无边，避免 60 日窗口下密集糊线；crosshair 悬停点仍用 7px 白边大点覆盖强调） */
+.m-home-dot--sm {
+  width: 3.5px;
+  height: 3.5px;
+  border: none;
+}
 .m-home-tip {
   position: absolute; top: 8px; z-index: 2; pointer-events: none; white-space: nowrap;
   padding: 6px 10px; border-radius: 9px;
@@ -953,6 +1059,45 @@ body {
 /* 分组 chips 行（复用 .m-chips，仅调节奏） */
 .m-wl-chips { padding: 10px 16px 6px; }
 .m-wl-chip__n { font-family: var(--font-num); font-size: 9.5px; font-weight: 700; margin-left: 4px; opacity: 0.72; }
+/* 空分组引导空态（王总 2026-10-12：原一行小字悬在左上太空）：滚动区内垂直居中，图标 + 标题 + 说明 + 主按钮 */
+.m-wl-empty {
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 48px 32px;
+  text-align: center;
+}
+.m-wl-empty__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  margin-bottom: 2px;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+.m-wl-empty__title { font-size: 15px; font-weight: 700; }
+.m-wl-empty__sub { max-width: 250px; font-size: 12px; line-height: 1.7; color: var(--color-text-3); }
+.m-wl-empty__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 8px;
+  min-height: 36px;
+  padding: 0 22px;
+  border: none;
+  border-radius: 18px;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
 /* swipe-cell 包裹行：分隔线打在外层包裹上 */
 .m-wl-cell + .m-wl-cell { border-top: 1px solid var(--color-border); }
 .m-wl-row .m-row__nm .sub { font-family: var(--font-num); }
@@ -1149,3 +1294,14 @@ body {
 .m-br-rule b { color: var(--color-text); display: block; margin-bottom: 2px; font-size: 11.5px; }
 .m-up-t { color: var(--color-up-strong); }
 .m-down-t { color: var(--color-down-strong); }
+
+/* ============================================================
+   页面切换动画调速（仅移动构建）
+   .page-anim-forward/back 与 PC 共用 theme.css:414-444（0.25s）；
+   PC 未调整，移动端在手势语境下放慢一档。mobile.css 晚于 main.css
+   加载，同特异性下这里的 longhand 覆盖 shorthand 的时长分量
+   ============================================================ */
+.page-anim-forward,
+.page-anim-back {
+  animation-duration: 0.4s;
+}

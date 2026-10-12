@@ -6,16 +6,30 @@ import { showFailToast, showSuccessToast } from 'vant';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import {
   fetchClsDepth,
+  fetchClsHotList,
   fetchEastmoneyHotNews,
+  fetchEmHotKeywords,
+  fetchEmLeadingConcepts,
   fetchEmRecommendNews,
   fetchSinaHotNews,
   fetchThsHeadlineHotNews,
   fetchThsHotNews,
+  fetchThsHotThemes,
+  fetchThsThemeFeed,
+  fetchThepaperHotList,
   fetchThepaperHotNews,
   fetchTdxHotNews,
   TDX_NEWS_DETAIL_BASE,
 } from '../../common/api/news.api.ts';
-import type { HotNewsItem, TdxNewsChannel } from '../../common/api/news.api.ts';
+import type {
+  ClsHotItem,
+  EmConceptLeader,
+  EmHotKeyword,
+  HotNewsItem,
+  TdxNewsChannel,
+  ThsHotTheme,
+  ThepaperHotItem,
+} from '../../common/api/news.api.ts';
 import {
   MOBILE_CACHE_TTL_MS,
   MOBILE_NEWS_PAGE_SIZE,
@@ -24,8 +38,7 @@ import {
   SINA_LID_FINANCE,
   SINA_LID_STOCK,
 } from '../constants';
-import type { MobileNewsChannel, MobileNewsSource } from '../constants';
-import { STORAGE_NS_MOBILE_NEWS_SETTINGS } from '../../common/constants/storage-key.constants.ts';
+import type { MobileNewsChannel, MobileNewsSource } from '../constants';import { STORAGE_NS_MOBILE_NEWS_SETTINGS } from '../../common/constants/storage-key.constants.ts';
 import { appStorage } from '../../common/utils/app-local-storage';
 import {
   mobileCacheGet,
@@ -34,14 +47,15 @@ import {
   mobileCacheSet,
 } from '../cache';
 import { useMobilePolling } from '../composables/use-mobile-polling';
-import { formatSnapshotTime } from '../utils/format';
+import { formatNewsTime, formatPct, formatSnapshotTime, isTopRank, pctClass } from '../utils/format';
 import NewsRow from '../components/NewsRow.vue';
 
 /**
  * 热点新闻（移动端）
  *
- * 六源 Vant Tabs 切换（点 tab 切源）；与一级源 chips 双向联动；
- * 每源保留子栏目 chips；频道页状态（items/翻页游标）按「源:栏目」独立持久化缓存
+ * 新闻源切换在 navbar 标题两侧的箭头 icon（◀ logo 当前源名 ▶，点击循环切换可见源）；
+ * 各源子栏目（如同花顺的快讯/头条）升为 Vant Tabs（原源 tabs 的位置），一次只渲染当前源；
+ * 频道页状态（items/翻页游标）按「源:栏目」独立持久化缓存
  * （30 分钟 TTL），下拉 / 前台轮询为强制刷新，navbar 不设刷新按钮
  */
 
@@ -56,7 +70,20 @@ interface ChannelLoadResult {
   items: HotNewsItem[];
   nextCursor: string | null;
   finished: boolean;
+  /** 特殊渲染频道的载荷（通用新闻频道为 null） */
+  special?: SpecialChannelData | null;
 }
+
+/**
+ * 特殊渲染频道的载荷（可 JSON 序列化，随频道快照一起落 mobile.cache）
+ *
+ * kind 与 constants.ts 的 MobileNewsSpecialKind 一一对应
+ */
+type SpecialChannelData =
+  | { kind: 'clsHot'; ranks: ClsHotItem[] }
+  | { kind: 'tpHot'; ranks: ThepaperHotItem[] }
+  | { kind: 'emHot'; keywords: EmHotKeyword[] }
+  | { kind: 'emConcept'; concepts: EmConceptLeader[] };
 
 /** 持久化的频道页快照（落 mobile.cache） */
 interface CachedChannelPage {
@@ -64,6 +91,8 @@ interface CachedChannelPage {
   cursor: string;
   page: number;
   finished: boolean;
+  /** 特殊渲染载荷（通用新闻频道为 null） */
+  special?: SpecialChannelData | null;
 }
 
 /** 单频道运行期状态（持久化字段 + 运行期标记） */
@@ -80,6 +109,7 @@ const PAGE_STATE_DEFAULT = (): ChannelPageState => ({
   cursor: '',
   page: 1,
   finished: false,
+  special: null,
   loading: false,
   refreshing: false,
   error: false,
@@ -92,13 +122,68 @@ const buildCacheKey = (channelKey: string): string => `news:${channelKey}`;
 /** 触底哨兵的提前触发距离（IntersectionObserver rootMargin，距底 400px 内即开始追加） */
 const LOAD_MORE_ROOT_MARGIN = '400px';
 
+/* ---- 同花顺热点主题：主题列表（频道级独立小状态）+ 选中主题 ---- */
+
+/** 热点主题频道缓存键（主题列表独立于资讯流快照） */
+const THS_THEME_LIST_CACHE_KEY = 'news:ths:theme:themes';
+
+/** 主题列表运行期状态（资讯流走通用频道管线，此处只管主题选择条） */
+const thsThemes = reactive<{ loading: boolean; error: boolean; items: ThsHotTheme[] }>({
+  loading: false,
+  error: false,
+  items: [],
+});
+
+/** 当前选中的热点主题 id（空串 = 尚未选择，资讯流取数前会自动补首个） */
+const selectedThemeId = ref('');
+
+/**
+ * 拉取热点主题列表（30 分钟 TTL 缓存；列表到达且未选中时自动选首个）
+ * @returns 最终选中的主题 id（列表不可用返回空串）
+ */
+const ensureThsThemes = async (): Promise<string> => {
+  if (selectedThemeId.value) return selectedThemeId.value;
+  if (thsThemes.items.length > 0) return thsThemes.items[0]!.themeId;
+  if (thsThemes.loading) return '';
+  thsThemes.loading = true;
+  thsThemes.error = false;
+  try {
+    const cached = mobileCacheGet<{ themes: ThsHotTheme[] }>(THS_THEME_LIST_CACHE_KEY);
+    if (cached) {
+      thsThemes.items = cached.value.themes;
+    } else {
+      const themes = await fetchThsHotThemes();
+      thsThemes.items = themes;
+      mobileCacheSet(THS_THEME_LIST_CACHE_KEY, { themes });
+    }
+  } catch {
+    thsThemes.error = true;
+    return '';
+  } finally {
+    thsThemes.loading = false;
+  }
+  const first = thsThemes.items[0]?.themeId ?? '';
+  selectedThemeId.value = first;
+  return first;
+};
+
+/**
+ * 切换热点主题：重置资讯流频道状态后重拉（缓存一并清除）
+ * @param themeId 目标主题 id
+ */
+const selectTheme = (themeId: string): void => {
+  if (selectedThemeId.value === themeId) return;
+  selectedThemeId.value = themeId;
+  pages['ths:theme'] = PAGE_STATE_DEFAULT();
+  void ensureChannel('ths:theme', { force: true });
+};
+
 /**
  * 按频道 key 分发取数（page 型返回后页码 +1，cursor 型透传游标，single 型恒 finished）
  * @param channelKey 频道 key（`<sourceKey>:<channelKey>`）
  * @param ctx 翻页上下文
  * @returns 加载结果
- */
-const loadChannelPage = async (
+ */const loadChannelPage = async (
   channelKey: string,
   ctx: ChannelLoadContext,
 ): Promise<ChannelLoadResult> => {
@@ -140,6 +225,43 @@ const loadChannelPage = async (
         items: [...snapshot.topArticles, ...snapshot.items],
         nextCursor: null,
         finished: true,
+      };
+    }
+    case 'cls:hot': {
+      const ranks = await fetchClsHotList();
+      return { items: [], nextCursor: null, finished: true, special: { kind: 'clsHot', ranks } };
+    }
+    case 'tp:hot': {
+      const ranks = await fetchThepaperHotList();
+      return { items: [], nextCursor: null, finished: true, special: { kind: 'tpHot', ranks } };
+    }
+    case 'em:hot': {
+      const keywords = await fetchEmHotKeywords();
+      return {
+        items: [],
+        nextCursor: null,
+        finished: true,
+        special: { kind: 'emHot', keywords },
+      };
+    }
+    case 'em:concept': {
+      const concepts = await fetchEmLeadingConcepts();
+      return {
+        items: [],
+        nextCursor: null,
+        finished: true,
+        special: { kind: 'emConcept', concepts },
+      };
+    }
+    case 'ths:theme': {
+      // 热点主题资讯流（页码翻页）：主题未选中时先拉主题列表并选首个
+      const themeId = selectedThemeId.value || (await ensureThsThemes());
+      if (!themeId) throw new Error('热点主题列表不可用');
+      const feed = await fetchThsThemeFeed(themeId, ctx.page, MOBILE_NEWS_PAGE_SIZE);
+      return {
+        items: feed.items,
+        nextCursor: null,
+        finished: !feed.hasMore,
       };
     }
     case 'tdx:yw':
@@ -195,7 +317,7 @@ const sourceByKey = new Map(MOBILE_NEWS_SOURCES.map((source) => [source.key, sou
  */
 const sourceLabel = (sourceKey: string): string => sourceByKey.get(sourceKey)?.label ?? sourceKey;
 
-/** 可见源（隐藏源不渲染 tab；顺序 = 源设置调整后的持久化序） */
+/** 可见源（隐藏源不参与 navbar 箭头切换；顺序 = 源设置调整后的持久化序） */
 const visibleSources = computed<MobileNewsSource[]>(() =>
   newsSettings.order
     .filter((key) => !newsSettings.hidden.includes(key))
@@ -204,6 +326,8 @@ const visibleSources = computed<MobileNewsSource[]>(() =>
 );
 
 const activeIndex = ref(0);
+/** 当前源的子栏目 tab 序（子栏目升为 tabs 后的 v-model） */
+const activeChannelIndex = ref(0);
 const settingsOpen = ref(false);
 
 /** 安全取当前源（隐藏源后 activeIndex 越界时回落第一个可见源） */
@@ -237,22 +361,25 @@ const activeFetchedAt = computed<number | null>(
 );
 
 /**
- * 模板取状态（reactive 记录自动补默认值）
+ * 模板取状态（reactive 记录自动补默认值）；栏目 tab 面板各取各的频道数据，
+ * 避免横滑过渡期间面板串用当前记忆栏目的数据
  * @param source 新闻源
- * @returns 该源当前栏目的状态
+ * @param channel 栏目定义
+ * @returns 该「源 × 栏目」的状态
  */
-const pageOf = (source: MobileNewsSource): ChannelPageState => {
-  const key = `${source.key}:${channelBySource[source.key]}`;
+const pageOfChannel = (source: MobileNewsSource, channel: MobileNewsChannel): ChannelPageState => {
+  const key = `${source.key}:${channel.key}`;
   return (pages[key] ??= PAGE_STATE_DEFAULT());
 };
 
 /**
- * 当前源当前栏目的缓存键
+ * 「源 × 栏目」的缓存键
  * @param source 新闻源
+ * @param channel 栏目定义
  * @returns 缓存键（`<sourceKey>:<channelKey>`）
  */
-const channelKeyOf = (source: MobileNewsSource): string =>
-  `${source.key}:${channelBySource[source.key]}`;
+const channelKeyOf = (source: MobileNewsSource, channel: MobileNewsChannel): string =>
+  `${source.key}:${channel.key}`;
 
 /**
  * 查找频道定义（type 判定 footer 文案用）
@@ -290,6 +417,7 @@ const ensureChannel = async (
       st.cursor = fresh.value.cursor;
       st.page = fresh.value.page;
       st.finished = fresh.value.finished;
+      st.special = fresh.value.special ?? null;
       st.fetchedAt = fresh.at;
       // TTL 内的新鲜快照免请求；过期快照（mobileCacheGet 已滤掉）走网络
       if (Date.now() - fresh.at <= MOBILE_CACHE_TTL_MS) return;
@@ -302,6 +430,7 @@ const ensureChannel = async (
     st.page = 1;
     st.cursor = '';
     st.finished = false;
+    st.special = null;
   }
   if (st.finished) return;
 
@@ -318,12 +447,14 @@ const ensureChannel = async (
     st.page = requestPage + 1;
     st.cursor = result.nextCursor ?? st.cursor;
     st.finished = result.finished;
+    st.special = result.special ?? null;
     st.fetchedAt = Date.now();
     mobileCacheSet(cacheKey, {
       items: st.items,
       cursor: st.cursor,
       page: st.page,
       finished: st.finished,
+      special: st.special,
     });
   } catch {
     if (!opts.silent) {
@@ -345,11 +476,27 @@ const ensureChannel = async (
 };
 
 /**
- * Tabs 激活源变化（点击 tab 切换）：确保当前源当前栏目已加载
+ * navbar 标题箭头切换新闻源（循环：首个左切到末位，末位右切回首位）
+ * @param offset 切换偏移（-1 上一个 / 1 下一个）
+ */
+const switchSource = (offset: number): void => {
+  const list = visibleSources.value;
+  const len = list.length;
+  if (len === 0) return;
+  const idx = list.findIndex((source) => source.key === activeSource.value.key);
+  const base = idx >= 0 ? idx : 0;
+  activeIndex.value = (base + offset + len) % len;
+};
+
+/**
+ * 激活源变化（navbar 箭头 / 显隐校正 / 排序跟随）：
+ * 栏目 tab 高亮对齐该源记忆的栏目，并确保当前「源 × 栏目」已加载
  */
 watch(activeIndex, () => {
-  const source = visibleSources.value[activeIndex.value] ?? activeSource.value;
-  void ensureChannel(`${source.key}:${channelBySource[source.key]}`);
+  const source = activeSource.value;
+  const ci = source.channels.findIndex((channel) => channel.key === channelBySource[source.key]);
+  activeChannelIndex.value = Math.max(ci, 0);
+  void ensureChannel(activeChannelKey.value);
 });
 
 /**
@@ -403,12 +550,20 @@ const switchChannel = (sourceKey: string, channelKey: string): void => {
 };
 
 /**
- * 下拉刷新：清当前「源 × 栏目」缓存（内存 + 持久层）→ 强制重拉
- * @param source 新闻源
+ * 栏目 tab 切换（点 tab / 横滑经 v-model 回流）：记忆到该源并加载
  */
-const onPullRefresh = async (source: MobileNewsSource): Promise<void> => {
-  const channelKey = channelKeyOf(source);
-  const st = pageOf(source);
+watch(activeChannelIndex, () => {
+  const source = activeSource.value;
+  const channel = source.channels[activeChannelIndex.value];
+  if (channel) switchChannel(source.key, channel.key);
+});
+
+/**
+ * 下拉刷新：清当前「源 × 栏目」缓存（内存 + 持久层）→ 强制重拉
+ * @param channelKey 频道 key（`<sourceKey>:<channelKey>`）
+ */
+const onPullRefresh = async (channelKey: string): Promise<void> => {
+  const st = (pages[channelKey] ??= PAGE_STATE_DEFAULT());
   st.refreshing = true;
   await ensureChannel(channelKey, { force: true, silent: false });
   st.refreshing = false;
@@ -442,6 +597,60 @@ const openArticle = (item: HotNewsItem): void => {
 };
 
 /**
+ * 特殊榜单行（热榜 / 热词 / 领涨概念）的打开链路：
+ * 拼装最小 HotNewsItem 复用 openArticle（webview 容器 / TDX 系统浏览器判定）
+ * @param url 跳转地址
+ * @param title 标题（webview navbar 展示）
+ * @param media 来源媒体
+ */
+const openSpecialLink = (url: string, title: string, media: string): void => {
+  openArticle({ oid: `sp-${url}`, title, summary: '', url, ctime: '', media, img: '' });
+};
+
+/**
+ * 财联社热榜阅读数展示（≥1 万显示「x.x万」，与 PC formatReadNum 同口径）
+ * @param readNum 阅读数
+ * @returns 展示文案
+ */
+const formatReadNum = (readNum: number): string => {
+  if (readNum >= 10000) return `${(readNum / 10000).toFixed(1)}万`;
+  return String(readNum);
+};
+
+/**
+ * 东财领涨概念点击的站内搜索地址（与 PC 打开目标一致）
+ * @param name 概念板块名
+ * @returns 搜索页地址
+ */
+const emConceptSearchUrl = (name: string): string =>
+  `https://so.eastmoney.com/web/s?keyword=${encodeURIComponent(name)}`;
+
+/**
+ * 特殊频道的载荷取值（模板用；kind 不符时返回空数组兜底）
+ * @param st 频道状态
+ * @returns 对应载荷数组
+ */
+const clsRanksOf = (st: ChannelPageState): ClsHotItem[] =>
+  st.special?.kind === 'clsHot' ? st.special.ranks : [];
+
+const tpRanksOf = (st: ChannelPageState): ThepaperHotItem[] =>
+  st.special?.kind === 'tpHot' ? st.special.ranks : [];
+
+const emKeywordsOf = (st: ChannelPageState): EmHotKeyword[] =>
+  st.special?.kind === 'emHot' ? st.special.keywords : [];
+
+const emConceptsOf = (st: ChannelPageState): EmConceptLeader[] =>
+  st.special?.kind === 'emConcept' ? st.special.concepts : [];
+
+/**
+ * 切到热点主题栏目时预拉主题列表
+ * （资讯流快照缓存新鲜时 loadChannelPage 不会执行，主题 chips 需单独保障）
+ */
+watch(activeChannelKey, (key) => {
+  if (key === 'ths:theme') void ensureThsThemes();
+});
+
+/**
  * footer 文案：单页快照与翻页耗尽均显示「已经到底了~」；翻页中显示加载中
  * @param channelKey 频道 key
  * @returns footer 文案
@@ -458,36 +667,37 @@ const footerText = (channelKey: string): string => {
 /** 前台轮询：按设置间隔静默刷新当前「源 × 栏目」 */
 useMobilePolling(() => ensureChannel(activeChannelKey.value, { force: true, silent: true }));
 
-/** 触底哨兵元素登记表（key = 源 key，元素由各面板的函数 ref 提供） */
+/** 触底哨兵元素登记表（key = 频道 key `<sourceKey>:<channelKey>`，元素由各面板的函数 ref 提供） */
 const sentinelEls = reactive<Record<string, Element | null>>({});
 let sentinelObserver: IntersectionObserver | null = null;
 
 /**
- * 触底哨兵进入视口（距底 400px 内）→ 为当前激活源追加下一页；
- * 非激活源的哨兵虽然在横滑轨道上被平移出视口、不会相交，天然只加载当前源
+ * 触底哨兵进入视口（距底 400px 内）→ 为当前激活频道追加下一页；
+ * 非激活面板的哨兵虽然在横滑轨道上被平移出视口、不会相交，天然只加载当前面板
  * @param entries 观察条目
  */
 const onSentinelIntersect = (entries: IntersectionObserverEntry[]): void => {
   for (const entry of entries) {
     if (!entry.isIntersecting) continue;
-    const sourceKey = Object.keys(sentinelEls).find((key) => sentinelEls[key] === entry.target);
-    if (sourceKey === undefined) continue;
-    if (`${sourceKey}:${channelBySource[sourceKey]}` !== activeChannelKey.value) continue;
+    const channelKey = Object.keys(sentinelEls).find((key) => sentinelEls[key] === entry.target);
+    if (channelKey === undefined || channelKey !== activeChannelKey.value) continue;
     void ensureChannel(activeChannelKey.value);
   }
 };
 
 /**
  * 哨兵元素函数 ref：登记元素并交给 IntersectionObserver 观察
- * @param source 新闻源
+ * @param channelKey 频道 key（`<sourceKey>:<channelKey>`）
  * @param el 哨兵元素（Vue 函数 ref 回调形态，组件实例位置传 null 处理）
  */
 const observeSentinel = (
-  source: MobileNewsSource,
+  channelKey: string,
   el: Element | ComponentPublicInstance | null,
 ): void => {
   const element = el instanceof Element ? el : null;
-  sentinelEls[source.key] = element;
+  const prev = sentinelEls[channelKey];
+  if (prev && prev !== element) sentinelObserver?.unobserve(prev);
+  sentinelEls[channelKey] = element;
   if (element === null) return;
   sentinelObserver ??= new IntersectionObserver(onSentinelIntersect, {
     rootMargin: LOAD_MORE_ROOT_MARGIN,
@@ -507,11 +717,15 @@ onUnmounted(() => {
 
 <template>
   <div class="m-page-flex">
-    <!-- navbar 标题前带当前源 logo（王总 2026-10-11：选财联社则显示财联社 icon） -->
+    <!-- navbar 标题两侧箭头循环切新闻源，标题前带当前源 logo（王总 2026-10-11 / 2026-10-12） -->
     <van-nav-bar class="m-nav" safe-area-inset-top>
       <template #title>
-        <img class="m-nav-src-logo" :src="MOBILE_NEWS_SOURCE_LOGOS[activeSource.key]" alt="" />
-        热点新闻
+        <div class="m-nav-switch">
+          <van-icon name="play" class="m-nav-switch__flip" size="15" @click="switchSource(-1)" />
+          <img class="m-nav-src-logo" :src="MOBILE_NEWS_SOURCE_LOGOS[activeSource.key]" alt="" />
+          <span>{{ activeSource.label }}</span>
+          <van-icon name="play" size="15" @click="switchSource(1)" />
+        </div>
       </template>
       <template #right>
         <van-icon name="setting-o" size="18" @click="settingsOpen = true" />
@@ -528,51 +742,204 @@ onUnmounted(() => {
       快照生成于 {{ formatSnapshotTime(activeFetchedAt) }} · 缓存 30 分钟
     </van-notice-bar>
 
-    <!-- 一级源：Vant Tabs（animated 点击切换横滑过渡；不开 swipeable，触摸拦截为零，垂直滚动完全原生） -->
+    <!-- 子栏目 Tabs（原源 tabs 的位置，源切换改由 navbar 标题两侧箭头承担；
+         animated 点击切换横滑过渡；不开 swipeable，触摸拦截为零，垂直滚动完全原生） -->
     <van-tabs
-      v-model:active="activeIndex"
+      v-model:active="activeChannelIndex"
       class="m-tabs"
       animated
       :lazy-render="false"
       :ellipsis="false"
     >
-      <van-tab v-for="source in visibleSources" :key="source.key" :title="source.label">
-        <!-- 二级子栏目 chips -->
-        <div class="m-chips">
-          <button
-            v-for="channel in source.channels"
-            :key="channel.key"
-            class="m-chip m-chip--sub"
-            :class="{ 'm-chip--active': channelBySource[source.key] === channel.key }"
-            @click="switchChannel(source.key, channel.key)"
-          >
-            {{ channel.label }}
-          </button>
-        </div>
-
+      <van-tab v-for="channel in activeSource.channels" :key="channel.key" :title="channel.label">
         <van-pull-refresh
-          :model-value="pageOf(source).refreshing"
-          @refresh="onPullRefresh(source)"
+          :model-value="pageOfChannel(activeSource, channel).refreshing"
+          @refresh="onPullRefresh(channelKeyOf(activeSource, channel))"
         >
-          <div v-if="pageOf(source).error" class="m-error">
+          <div v-if="pageOfChannel(activeSource, channel).error" class="m-error">
             <div>内容加载失败，请检查网络后重试</div>
-            <button class="m-error__retry" @click="retry(channelKeyOf(source))">↻ 重新加载</button>
+            <button
+              class="m-error__retry"
+              @click="retry(channelKeyOf(activeSource, channel))"
+            >
+              ↻ 重新加载
+            </button>
           </div>
           <template v-else>
-            <div class="m-news-list">
+            <!-- 财联社热榜：名次榜（标题 + 时间 + 阅读数） -->
+            <div v-if="channel.special === 'clsHot'" class="m-rank-list">
+              <button
+                v-for="(hp, index) in clsRanksOf(pageOfChannel(activeSource, channel))"
+                :key="hp.id"
+                class="m-rank-row"
+                @click="openSpecialLink(hp.url, hp.title, '财联社')"
+              >
+                <span
+                  class="m-rank-row__rank"
+                  :class="{ 'm-rank-row__rank--top': isTopRank(index + 1) }"
+                >
+                  {{ index + 1 }}
+                </span>
+                <div class="m-rank-row__main">
+                  <div class="t">{{ hp.title }}</div>
+                  <div class="meta">
+                    <span>{{ formatNewsTime(hp.ctime) }}</span>
+                    <span>{{ formatReadNum(hp.readNum) }}阅读</span>
+                  </div>
+                </div>
+              </button>
+              <div
+                v-if="clsRanksOf(pageOfChannel(activeSource, channel)).length === 0 && !pageOfChannel(activeSource, channel).loading"
+                class="m-empty"
+              >
+                该栏目暂无内容，点顶部箭头切换其他源
+              </div>
+            </div>
+
+            <!-- 澎湃热榜：名次榜（标题 + 相对时间） -->
+            <div v-else-if="channel.special === 'tpHot'" class="m-rank-list">
+              <button
+                v-for="(hp, index) in tpRanksOf(pageOfChannel(activeSource, channel))"
+                :key="hp.contId"
+                class="m-rank-row"
+                @click="openSpecialLink(hp.url, hp.title, '澎湃新闻')"
+              >
+                <span
+                  class="m-rank-row__rank"
+                  :class="{ 'm-rank-row__rank--top': isTopRank(index + 1) }"
+                >
+                  {{ index + 1 }}
+                </span>
+                <div class="m-rank-row__main">
+                  <div class="t">{{ hp.title }}</div>
+                  <div class="meta"><span>{{ hp.timeText }}</span></div>
+                </div>
+              </button>
+              <div
+                v-if="tpRanksOf(pageOfChannel(activeSource, channel)).length === 0 && !pageOfChannel(activeSource, channel).loading"
+                class="m-empty"
+              >
+                该栏目暂无内容，点顶部箭头切换其他源
+              </div>
+            </div>
+
+            <!-- 东财热搜：热词榜 -->
+            <div v-else-if="channel.special === 'emHot'" class="m-rank-list">
+              <button
+                v-for="(kw, index) in emKeywordsOf(pageOfChannel(activeSource, channel))"
+                :key="kw.url"
+                class="m-rank-row"
+                @click="openSpecialLink(kw.url, kw.phrase, '东方财富')"
+              >
+                <span
+                  class="m-rank-row__rank"
+                  :class="{ 'm-rank-row__rank--top': isTopRank(index + 1) }"
+                >
+                  {{ index + 1 }}
+                </span>
+                <div class="m-rank-row__main">
+                  <div class="t">
+                    {{ kw.phrase }}
+                    <span v-if="kw.isNew" class="m-kw-new">新</span>
+                  </div>
+                </div>
+                <van-icon name="arrow" class="m-rank-row__go" />
+              </button>
+              <div
+                v-if="emKeywordsOf(pageOfChannel(activeSource, channel)).length === 0 && !pageOfChannel(activeSource, channel).loading"
+                class="m-empty"
+              >
+                该栏目暂无内容，点顶部箭头切换其他源
+              </div>
+            </div>
+
+            <!-- 东财领涨概念：板块 + 涨跌幅 + 领涨股 -->
+            <div v-else-if="channel.special === 'emConcept'" class="m-rank-list">
+              <button
+                v-for="(cp, index) in emConceptsOf(pageOfChannel(activeSource, channel))"
+                :key="cp.code"
+                class="m-rank-row"
+                @click="openSpecialLink(emConceptSearchUrl(cp.name), cp.name, '东方财富')"
+              >
+                <span
+                  class="m-rank-row__rank"
+                  :class="{ 'm-rank-row__rank--top': isTopRank(index + 1) }"
+                >
+                  {{ index + 1 }}
+                </span>
+                <div class="m-rank-row__main">
+                  <div class="t">{{ cp.name }}</div>
+                  <div class="meta"><span>领涨股 {{ cp.leaderStock }}</span></div>
+                </div>
+                <span class="m-rank-row__pct m-num" :class="pctClass(cp.chgPct)">
+                  {{ formatPct(cp.chgPct) }}
+                </span>
+              </button>
+              <div
+                v-if="emConceptsOf(pageOfChannel(activeSource, channel)).length === 0 && !pageOfChannel(activeSource, channel).loading"
+                class="m-empty"
+              >
+                该栏目暂无内容，点顶部箭头切换其他源
+              </div>
+            </div>
+
+            <!-- 同花顺热点主题：主题 chips + 该主题资讯流（通用新闻列表） -->
+            <template v-else-if="channel.special === 'theme'">
+              <div class="m-chips m-theme-chips">
+                <button
+                  v-for="theme in thsThemes.items"
+                  :key="theme.themeId"
+                  class="m-chip m-chip--sub"
+                  :class="{ 'm-chip--active': selectedThemeId === theme.themeId }"
+                  @click="selectTheme(theme.themeId)"
+                >
+                  {{ theme.themeName }}
+                </button>
+              </div>
+              <div v-if="thsThemes.loading && thsThemes.items.length === 0" class="m-empty">
+                主题加载中…
+              </div>
+              <div v-else-if="thsThemes.error && thsThemes.items.length === 0" class="m-error">
+                <div>主题列表加载失败</div>
+                <button class="m-error__retry" @click="void ensureThsThemes()">↻ 重新加载</button>
+              </div>
+              <div class="m-news-list">
+                <NewsRow
+                  v-for="item in pageOfChannel(activeSource, channel).items"
+                  :key="item.oid"
+                  :item="item"
+                  @open="openArticle"
+                />
+                <div
+                  v-if="pageOfChannel(activeSource, channel).items.length === 0 && !pageOfChannel(activeSource, channel).loading"
+                  class="m-empty"
+                >
+                  该主题暂无内容，切换其他主题试试
+                </div>
+              </div>
+            </template>
+
+            <!-- 通用新闻列表（NewsRow） -->
+            <div v-else class="m-news-list">
               <NewsRow
-                v-for="item in pageOf(source).items"
+                v-for="item in pageOfChannel(activeSource, channel).items"
                 :key="item.oid"
                 :item="item"
                 @open="openArticle"
               />
-              <div v-if="pageOf(source).items.length === 0 && !pageOf(source).loading" class="m-empty">
-                该栏目暂无内容，左右滑动切换其他源
+              <div
+                v-if="pageOfChannel(activeSource, channel).items.length === 0 && !pageOfChannel(activeSource, channel).loading"
+                class="m-empty"
+              >
+                该栏目暂无内容，点顶部箭头切换其他源
               </div>
             </div>
             <!-- 触底哨兵：进入视口自动追加下一页 -->
-            <div :ref="(el) => observeSentinel(source, el)" class="m-load-sentinel"></div>
-            <div class="m-footer">{{ footerText(channelKeyOf(source)) }}</div>
+            <div
+              :ref="(el) => observeSentinel(channelKeyOf(activeSource, channel), el)"
+              class="m-load-sentinel"
+            ></div>
+            <div class="m-footer">{{ footerText(channelKeyOf(activeSource, channel)) }}</div>
           </template>
         </van-pull-refresh>
       </van-tab>

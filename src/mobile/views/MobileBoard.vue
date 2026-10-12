@@ -28,8 +28,8 @@ import {
 /**
  * 今天炒什么（移动端）
  *
- * 五平台 Vant Tabs 切换（点 tab 切平台），一次只渲染一个平台；
- * 每平台保留自己的分组 chips（命名与桌面 hot-board.constants.ts 一致）；
+ * 平台切换在 navbar 标题两侧的箭头 icon（◀ logo 今天炒什么 ▶，点击循环切换可见平台）；
+ * 各平台的分组子分类升为 Vant Tabs（原平台 tabs 的位置），一次只渲染当前平台；
  * 榜单页状态按「平台 × 分组」独立持久化缓存（30 分钟 TTL）；
  * 榜单行点击进个股详情页 /stock/:symbol（与搜索页 / 市场榜单行同口径）；
  * ⚙ 平台设置弹层：开关显隐 + 上下移排序（拖拽排序为后续迭代），设置持久化
@@ -93,12 +93,14 @@ const persistSettings = (): void => {
   );
 };
 
-/** 平台 chip 顺序（隐藏平台不渲染；顺序 = 平台设置拖动后的持久化序） */
+/** 平台可见序（隐藏平台不参与 navbar 箭头切换；顺序 = 平台设置调整后的持久化序） */
 const visibleSources = computed<BoardSource[]>(() =>
   settings.order.filter((key) => !settings.hidden.includes(key)),
 );
 
 const activeIndex = ref(0);
+/** 当前平台的分组 tab 序（分组子分类升为 tabs 后的 v-model） */
+const activeGroupIndex = ref(0);
 const settingsOpen = ref(false);
 
 /** 安全取当前平台（设置变更后 activeIndex 越界时回落第一个可见平台） */
@@ -124,12 +126,14 @@ const groupBySource = reactive<Record<string, string>>(
 const pages = reactive<Record<string, BoardPageState>>({});
 
 /**
- * 模板取状态（reactive 记录自动补默认值）
+ * 模板取状态（reactive 记录自动补默认值）；分组 tab 面板各取各的分组数据，
+ * 避免横滑过渡期间面板串用当前记忆分组的数据
  * @param source 平台 key
- * @returns 该平台当前分组的状态
+ * @param group 分组 key
+ * @returns 该「平台 × 分组」的状态
  */
-const pageOf = (source: BoardSource): BoardPageState => {
-  const key = buildCacheKey(source, groupOf(source));
+const pageOfGroup = (source: BoardSource, group: string): BoardPageState => {
+  const key = buildCacheKey(source, group);
   return (pages[key] ??= BOARD_PAGE_DEFAULT());
 };
 
@@ -208,10 +212,26 @@ const ensureBoard = async (
 };
 
 /**
- * Tabs 激活平台变化（点击 tab 或手势横滑都会经 v-model 回流）：确保当前平台当前分组已加载
+ * navbar 标题箭头切换平台（循环：首个左切到末位，末位右切回首位）
+ * @param offset 切换偏移（-1 上一个 / 1 下一个）
+ */
+const switchSource = (offset: number): void => {
+  const list = visibleSources.value;
+  const len = list.length;
+  if (len === 0) return;
+  const idx = list.indexOf(activeSource.value);
+  const base = idx >= 0 ? idx : 0;
+  activeIndex.value = (base + offset + len) % len;
+};
+
+/**
+ * 激活平台变化（navbar 箭头 / 显隐校正 / 排序跟随）：
+ * 分组 tab 高亮对齐该平台记忆的分组，并确保当前「平台 × 分组」已加载
  */
 watch(activeIndex, () => {
-  const source = visibleSources.value[activeIndex.value] ?? activeSource.value;
+  const source = activeSource.value;
+  const gi = groupsOf(source).findIndex((group) => group.value === groupOf(source));
+  activeGroupIndex.value = Math.max(gi, 0);
   void ensureBoard(source, groupOf(source));
 });
 
@@ -227,11 +247,20 @@ const switchGroup = (source: BoardSource, group: string): void => {
 };
 
 /**
+ * 分组 tab 切换（点 tab / 横滑经 v-model 回流）：记忆到该平台并加载
+ */
+watch(activeGroupIndex, () => {
+  const source = activeSource.value;
+  const group = groupsOf(source)[activeGroupIndex.value];
+  if (group) switchGroup(source, group.value);
+});
+
+/**
  * 下拉刷新：清当前「平台 × 分组」缓存（内存 + 持久层）→ 强制重拉
  * @param source 平台 key
+ * @param group 分组 key
  */
-const onPullRefresh = (source: BoardSource): void => {
-  const group = groupOf(source);
+const onPullRefresh = (source: BoardSource, group: string): void => {
   const st = (pages[buildCacheKey(source, group)] ??= BOARD_PAGE_DEFAULT());
   st.refreshing = true;
   void ensureBoard(source, group, { force: true, silent: false }).finally(() => {
@@ -240,7 +269,7 @@ const onPullRefresh = (source: BoardSource): void => {
 };
 
 /**
- * 平台显隐开关（至少保留一个平台；隐藏只隐藏 chips，缓存保留）
+ * 平台显隐开关（至少保留一个平台；隐藏后不参与箭头切换，缓存保留）
  * @param source 平台 key
  * @param visible true 显示，false 隐藏
  */
@@ -289,7 +318,7 @@ onMounted(() => {
 <template>
   <div class="m-page-flex">
     <!-- v2 起为首页入口卡跳转的二级页（DESIGN-MOBILE.md §2.3）：navbar 带返回键 -->
-    <!-- navbar 标题前带当前平台 logo（王总 2026-10-11） -->
+    <!-- navbar 标题两侧箭头循环切平台，标题前带当前平台 logo（王总 2026-10-11 / 2026-10-12） -->
     <van-nav-bar
       class="m-nav"
       safe-area-inset-top
@@ -297,8 +326,12 @@ onMounted(() => {
       @click-left="router.back()"
     >
       <template #title>
-        <img class="m-nav-src-logo" :src="BOARD_SOURCE_LOGOS[activeSource]" alt="" />
-        今天炒什么
+        <div class="m-nav-switch">
+          <van-icon name="play" class="m-nav-switch__flip" size="15" @click="switchSource(-1)" />
+          <img class="m-nav-src-logo" :src="BOARD_SOURCE_LOGOS[activeSource]" alt="" />
+          <span>今天炒什么</span>
+          <van-icon name="play" size="15" @click="switchSource(1)" />
+        </div>
       </template>
       <template #right>
         <van-icon name="setting-o" size="18" @click="settingsOpen = true" />
@@ -315,34 +348,25 @@ onMounted(() => {
       快照生成于 {{ formatSnapshotTime(activeFetchedAt) }} · 缓存 30 分钟 · 下拉刷新
     </van-notice-bar>
 
-    <!-- 平台 Tabs（animated 点击切换横滑过渡；不开 swipeable，触摸拦截为零，垂直滚动完全原生） -->
+    <!-- 分组 Tabs（原平台 tabs 的位置，平台切换改由 navbar 标题两侧箭头承担；
+         animated 点击切换横滑过渡；不开 swipeable，触摸拦截为零，垂直滚动完全原生） -->
     <van-tabs
-      v-model:active="activeIndex"
+      v-model:active="activeGroupIndex"
       class="m-tabs"
       animated
       :lazy-render="false"
       :ellipsis="false"
     >
-      <van-tab v-for="source in visibleSources" :key="source" :title="BOARD_SOURCE_LABELS[source]">
-        <!-- 分组 chips（命名与桌面一致） -->
-        <div class="m-chips">
-          <button
-            v-for="group in groupsOf(source)"
-            :key="group.value"
-            class="m-chip m-chip--sub"
-            :class="{ 'm-chip--active': groupOf(source) === group.value }"
-            @click="switchGroup(source, group.value)"
-          >
-            {{ group.label }}
-          </button>
-        </div>
-
-        <van-pull-refresh :model-value="pageOf(source).refreshing" @refresh="onPullRefresh(source)">
-          <div v-if="pageOf(source).error" class="m-error">
+      <van-tab v-for="group in groupsOf(activeSource)" :key="group.value" :title="group.label">
+        <van-pull-refresh
+          :model-value="pageOfGroup(activeSource, group.value).refreshing"
+          @refresh="onPullRefresh(activeSource, group.value)"
+        >
+          <div v-if="pageOfGroup(activeSource, group.value).error" class="m-error">
             <div>榜单加载失败，请检查网络后重试</div>
             <button
               class="m-error__retry"
-              @click="ensureBoard(source, groupOf(source), { force: true })"
+              @click="ensureBoard(activeSource, group.value, { force: true })"
             >
               ↻ 重新加载
             </button>
@@ -350,15 +374,15 @@ onMounted(() => {
           <template v-else>
             <div class="m-board-card">
               <div class="m-board-head">
-                <div class="m-board-head__logo">{{ logoOf(source) }}</div>
-                <div class="m-board-head__title">{{ BOARD_SOURCE_LABELS[source] }}</div>
+                <div class="m-board-head__logo">{{ logoOf(activeSource) }}</div>
+                <div class="m-board-head__title">{{ BOARD_SOURCE_LABELS[activeSource] }}</div>
                 <div class="m-board-head__time">
-                  {{ formatSnapshotTime(pageOf(source).fetchedAt) }} 抓取
+                  {{ formatSnapshotTime(pageOfGroup(activeSource, group.value).fetchedAt) }} 抓取
                 </div>
               </div>
               <div class="m-board-list">
                 <div
-                  v-for="item in pageOf(source).items"
+                  v-for="item in pageOfGroup(activeSource, group.value).items"
                   :key="item.symbol"
                   class="m-board-row"
                   @click="goStock(item.symbol)"
@@ -390,12 +414,12 @@ onMounted(() => {
                   </div>
                 </div>
                 <div
-                  v-if="pageOf(source).items.length === 0 && !pageOf(source).loading"
+                  v-if="pageOfGroup(activeSource, group.value).items.length === 0 && !pageOfGroup(activeSource, group.value).loading"
                   class="m-empty"
                 >
-                  榜单暂无内容，左右滑动切换其他平台
+                  榜单暂无内容，点顶部箭头切换其他平台
                 </div>
-                <div v-if="pageOf(source).items.length > 0" class="m-footer">已经到底了~</div>
+                <div v-if="pageOfGroup(activeSource, group.value).items.length > 0" class="m-footer">已经到底了~</div>
               </div>
             </div>
           </template>
