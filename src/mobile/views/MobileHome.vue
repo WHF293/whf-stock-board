@@ -39,6 +39,7 @@ import { mobileCacheGet, mobileCacheSet } from '../cache';
 import { fetchIndustryBoards } from '../../common/api/board.api';
 import type { HeatmapBoard } from '../../common/types/board.types';
 import MobileHeatmap from '../components/MobileHeatmap.vue';
+import BookFlipBook from '../components/BookFlipBook.vue';
 import { useMobilePolling } from '../composables/use-mobile-polling';
 
 const router = useRouter();
@@ -489,197 +490,205 @@ const pctClass = (v: number | null): string =>
         </div>
       </div>
 
-      <!-- 3. 成交额曲线（240px，PC 市场总览口径） -->
-      <div class="m-home-sec">
-        <span class="m-home-sec__t">成交额</span>
-        <span class="m-home-sec__s">单位：亿元</span>
-      </div>
-      <div class="m-home-panel">
-        <div v-if="turnoverError" class="m-home-err-box m-home-err-box--turn">
-          <van-icon name="warning-o" />
-          成交额加载失败
-          <span class="retry" @click="loadTurnover(true)">重试</span>
-        </div>
-        <template v-else-if="turnPaths.length > 0">
-          <div class="m-home-panel__head">
-            <span class="m-home-panel__t">近 {{ turnoverRange }} 日成交额</span>
-            <div class="m-home-chips">
-              <button
-                v-for="(label, days) in { 30: '30日', 60: '60日', 180: '180日' }"
-                :key="days"
-                class="m-home-chip"
-                :class="{ on: turnoverRange === Number(days) }"
-                @click="onRangeChange(Number(days) as TurnoverRange)"
-              >
-                {{ label }}
-              </button>
-            </div>
+      <!-- 3~4.5 成交额 / 涨跌分布·情绪 / 板块热力：书本翻页容器（2026-10-11 王总指定，
+           参考掘金「实现一个书本翻页功能」；3 张纸各放一个模块，边缘热区 + 底部导航翻页，
+           数据加载逻辑不变） -->
+      <BookFlipBook>
+        <template #face0>
+          <div class="m-home-sec">
+            <span class="m-home-sec__t">成交额</span>
+            <span class="m-home-sec__s">单位：亿元</span>
           </div>
-          <div v-if="turnLegend" class="m-home-legend">
-            <span><i class="lg" style="background: var(--color-primary)"></i>两市 <b>{{ turnLegend.total }}</b></span>
-            <span><i class="lg" style="background: #f97316"></i>上证 <b>{{ turnLegend.sh }}</b></span>
-            <span><i class="lg" style="background: #22d3ee"></i>深证 <b>{{ turnLegend.sz }}</b></span>
-          </div>
-          <div class="m-home-chart">
-            <div class="m-home-chart__y">
-              <span v-for="tick in (turnAxis?.ticks ?? []).slice().reverse()" :key="tick">{{ fmtTickYi(tick) }}</span>
+          <div class="m-home-panel">
+            <div v-if="turnoverError" class="m-home-err-box m-home-err-box--turn">
+              <van-icon name="warning-o" />
+              成交额加载失败
+              <span class="retry" @click="loadTurnover(true)">重试</span>
             </div>
-            <div
-              ref="plotEl"
-              class="m-home-chart__plot"
-              @pointermove="onPlotMove"
-              @pointerdown="onPlotMove"
-              @pointerleave="onPlotLeave"
-              @pointercancel="onPlotLeave"
-            >
-              <svg viewBox="0 0 100 100" preserveAspectRatio="none">
-                <g stroke="rgba(140,152,155,.14)" stroke-width="1" vector-effect="non-scaling-stroke">
-                  <line x1="0" y1="0" x2="100" y2="0" vector-effect="non-scaling-stroke" />
-                  <line x1="0" y1="33.33" x2="100" y2="33.33" vector-effect="non-scaling-stroke" />
-                  <line x1="0" y1="66.66" x2="100" y2="66.66" vector-effect="non-scaling-stroke" />
-                  <line x1="0" y1="100" x2="100" y2="100" vector-effect="non-scaling-stroke" />
-                </g>
-                <path
-                  v-for="line in turnPaths.filter((l) => l.area)"
-                  :key="`${line.key}-area`"
-                  :d="`${line.d} L100,100 L0,100 Z`"
-                  fill="var(--color-primary)"
-                  opacity="0.06"
-                />
-                <path
-                  v-for="line in turnPaths"
-                  :key="line.key"
-                  :d="line.d"
-                  fill="none"
-                  :stroke="line.color"
-                  stroke-width="1.6"
-                  vector-effect="non-scaling-stroke"
-                  stroke-linejoin="round"
-                  :opacity="line.area ? 1 : 0.9"
-                />
-              </svg>
-              <!-- crosshair overlay：竖线 + 三线圆点 + 数值浮层 -->
-              <template v-if="hoverPoint">
-                <div class="m-home-cross" :style="{ left: `${hoverPoint.x}%` }"></div>
-                <span
-                  v-for="dot in hoverPoint.dots"
-                  :key="dot.k"
-                  class="m-home-dot"
-                  :class="dot.k"
-                  :style="{ left: `${dot.x}%`, top: `${dot.y}%` }"
-                ></span>
-                <div
-                  class="m-home-tip"
-                  :class="hoverPoint.x > 55 ? 'm-home-tip--r' : 'm-home-tip--l'"
-                  :style="{ left: `${hoverPoint.x}%` }"
-                >
-                  <div class="m-home-tip__d">{{ hoverPoint.date.slice(5) }}</div>
-                  <div class="m-home-tip__row"><i class="lg" style="background: var(--color-primary)"></i>两市<b>{{ hoverPoint.total }}亿</b></div>
-                  <div class="m-home-tip__row"><i class="lg" style="background: #f97316"></i>上证<b>{{ hoverPoint.sh }}亿</b></div>
-                  <div class="m-home-tip__row"><i class="lg" style="background: #22d3ee"></i>深证<b>{{ hoverPoint.sz }}亿</b></div>
-                  <div class="m-home-tip__row"><i class="lg" style="background: transparent"></i>较上日<b :class="hoverPoint.deltaCls">{{ hoverPoint.delta }}亿</b></div>
+            <template v-else-if="turnPaths.length > 0">
+              <div class="m-home-panel__head">
+                <span class="m-home-panel__t">近 {{ turnoverRange }} 日成交额</span>
+                <div class="m-home-chips">
+                  <button
+                    v-for="(label, days) in { 30: '30日', 60: '60日', 180: '180日' }"
+                    :key="days"
+                    class="m-home-chip"
+                    :class="{ on: turnoverRange === Number(days) }"
+                    @click="onRangeChange(Number(days) as TurnoverRange)"
+                  >
+                    {{ label }}
+                  </button>
                 </div>
-              </template>
+              </div>
+              <div v-if="turnLegend" class="m-home-legend">
+                <span><i class="lg" style="background: var(--color-primary)"></i>两市 <b>{{ turnLegend.total }}</b></span>
+                <span><i class="lg" style="background: #f97316"></i>上证 <b>{{ turnLegend.sh }}</b></span>
+                <span><i class="lg" style="background: #22d3ee"></i>深证 <b>{{ turnLegend.sz }}</b></span>
+              </div>
+              <div class="m-home-chart">
+                <div class="m-home-chart__y">
+                  <span v-for="tick in (turnAxis?.ticks ?? []).slice().reverse()" :key="tick">{{ fmtTickYi(tick) }}</span>
+                </div>
+                <div
+                  ref="plotEl"
+                  class="m-home-chart__plot"
+                  @pointermove="onPlotMove"
+                  @pointerdown="onPlotMove"
+                  @pointerleave="onPlotLeave"
+                  @pointercancel="onPlotLeave"
+                >
+                  <svg viewBox="0 0 100 100" preserveAspectRatio="none">
+                    <g stroke="rgba(140,152,155,.14)" stroke-width="1" vector-effect="non-scaling-stroke">
+                      <line x1="0" y1="0" x2="100" y2="0" vector-effect="non-scaling-stroke" />
+                      <line x1="0" y1="33.33" x2="100" y2="33.33" vector-effect="non-scaling-stroke" />
+                      <line x1="0" y1="66.66" x2="100" y2="66.66" vector-effect="non-scaling-stroke" />
+                      <line x1="0" y1="100" x2="100" y2="100" vector-effect="non-scaling-stroke" />
+                    </g>
+                    <path
+                      v-for="line in turnPaths.filter((l) => l.area)"
+                      :key="`${line.key}-area`"
+                      :d="`${line.d} L100,100 L0,100 Z`"
+                      fill="var(--color-primary)"
+                      opacity="0.06"
+                    />
+                    <path
+                      v-for="line in turnPaths"
+                      :key="line.key"
+                      :d="line.d"
+                      fill="none"
+                      :stroke="line.color"
+                      stroke-width="1.6"
+                      vector-effect="non-scaling-stroke"
+                      stroke-linejoin="round"
+                      :opacity="line.area ? 1 : 0.9"
+                    />
+                  </svg>
+                  <!-- crosshair overlay：竖线 + 三线圆点 + 数值浮层 -->
+                  <template v-if="hoverPoint">
+                    <div class="m-home-cross" :style="{ left: `${hoverPoint.x}%` }"></div>
+                    <span
+                      v-for="dot in hoverPoint.dots"
+                      :key="dot.k"
+                      class="m-home-dot"
+                      :class="dot.k"
+                      :style="{ left: `${dot.x}%`, top: `${dot.y}%` }"
+                    ></span>
+                    <div
+                      class="m-home-tip"
+                      :class="hoverPoint.x > 55 ? 'm-home-tip--r' : 'm-home-tip--l'"
+                      :style="{ left: `${hoverPoint.x}%` }"
+                    >
+                      <div class="m-home-tip__d">{{ hoverPoint.date.slice(5) }}</div>
+                      <div class="m-home-tip__row"><i class="lg" style="background: var(--color-primary)"></i>两市<b>{{ hoverPoint.total }}亿</b></div>
+                      <div class="m-home-tip__row"><i class="lg" style="background: #f97316"></i>上证<b>{{ hoverPoint.sh }}亿</b></div>
+                      <div class="m-home-tip__row"><i class="lg" style="background: #22d3ee"></i>深证<b>{{ hoverPoint.sz }}亿</b></div>
+                      <div class="m-home-tip__row"><i class="lg" style="background: transparent"></i>较上日<b :class="hoverPoint.deltaCls">{{ hoverPoint.delta }}亿</b></div>
+                    </div>
+                  </template>
+                </div>
+              </div>
+              <div v-if="turnAxis" class="m-home-chart__x">
+                <span>{{ turnAxis.days[0]!.date.slice(5) }}</span>
+                <span>{{ turnAxis.days.at(-1)!.date.slice(5) }}</span>
+              </div>
+            </template>
+            <div v-else class="m-home-panel__skel">
+              <van-skeleton title :row="4" :loading="true" />
             </div>
           </div>
-          <div v-if="turnAxis" class="m-home-chart__x">
-            <span>{{ turnAxis.days[0]!.date.slice(5) }}</span>
-            <span>{{ turnAxis.days.at(-1)!.date.slice(5) }}</span>
-          </div>
         </template>
-        <div v-else class="m-home-panel__skel">
-          <van-skeleton title :row="4" :loading="true" />
-        </div>
-      </div>
+        <template #face1>
+          <div class="m-home-sec">
+            <span class="m-home-sec__t">涨跌分布 · 市场情绪</span>
+            <span class="m-home-sec__s">全市场 A 股 · 30s 轮询</span>
+          </div>
+          <div class="m-home-panel">
+            <div v-if="distError" class="m-home-err-box m-home-err-box--dist">
+              <van-icon name="warning-o" />
+              涨跌分布加载失败
+              <span class="retry" @click="loadBreadth(true)">重试</span>
+            </div>
+            <template v-else-if="distBars.length > 0">
+              <div class="m-home-dist-head">
+                <span class="m-home-panel__t">今日涨跌分布</span>
+                <div class="m-home-dist-cnt">
+                  <span class="m-up">上涨 <b>{{ riseCount.toLocaleString() }}</b> 家</span>
+                  <span class="m-down">下跌 <b>{{ fallCount.toLocaleString() }}</b> 家</span>
+                </div>
+              </div>
+              <div class="m-home-dist">
+                <svg viewBox="0 0 100 100" preserveAspectRatio="none">
+                  <g stroke="rgba(140,152,155,.14)" stroke-width="1">
+                    <line x1="0" y1="0" x2="100" y2="0" vector-effect="non-scaling-stroke" />
+                    <line x1="0" y1="50" x2="100" y2="50" vector-effect="non-scaling-stroke" />
+                    <line x1="0" y1="100" x2="100" y2="100" vector-effect="non-scaling-stroke" />
+                  </g>
+                  <rect
+                    v-for="bar in distBars"
+                    :key="bar.key"
+                    :x="bar.x"
+                    :y="100 - bar.h"
+                    :width="bar.w"
+                    :height="bar.h"
+                    rx="1"
+                    :fill="bar.color"
+                    opacity="0.88"
+                  />
+                </svg>
+              </div>
+              <div class="m-home-dist__labels">
+                <span v-for="bar in distBars" :key="`lb-${bar.key}`">{{ bar.label }}</span>
+              </div>
+            </template>
+            <div v-else class="m-home-panel__skel">
+              <van-skeleton title :row="4" :loading="true" />
+            </div>
 
-      <!-- 4. 涨跌分布 · 市场情绪（合并卡，PC 市场总览口径） -->
-      <div class="m-home-sec">
-        <span class="m-home-sec__t">涨跌分布 · 市场情绪</span>
-        <span class="m-home-sec__s">全市场 A 股 · 30s 轮询</span>
-      </div>
-      <div class="m-home-panel">
-        <div v-if="distError" class="m-home-err-box m-home-err-box--dist">
-          <van-icon name="warning-o" />
-          涨跌分布加载失败
-          <span class="retry" @click="loadBreadth(true)">重试</span>
-        </div>
-        <template v-else-if="distBars.length > 0">
-          <div class="m-home-dist-head">
-            <span class="m-home-panel__t">今日涨跌分布</span>
-            <div class="m-home-dist-cnt">
-              <span class="m-up">上涨 <b>{{ riseCount.toLocaleString() }}</b> 家</span>
-              <span class="m-down">下跌 <b>{{ fallCount.toLocaleString() }}</b> 家</span>
+            <!-- 市场情绪：图下小字提示行 + 连板梯队药丸 -->
+            <div v-if="sentiError" class="m-home-err-box m-home-err-box--senti">
+              <van-icon name="warning-o" />
+              情绪数据加载失败
+              <span class="retry" @click="loadSenti(true)">重试</span>
+            </div>
+            <template v-else-if="senti">
+              <div class="m-home-senti-line">
+                <span>涨停 <b class="m-up">{{ senti.limitUpCount }}</b></span><i>/</i>
+                <span>跌停 <b class="m-down">{{ senti.limitDownCount }}</b></span><i>/</i>
+                <span>炸板 <b>{{ senti.brokenCount }}</b>{{ senti.brokenRate === null ? '' : `（${senti.brokenRate.toFixed(0)}%）` }}</span><i>/</i>
+                <span>最高连板 <b class="m-up">{{ senti.maxLadder }}</b> 板</span><i>/</i>
+                <span>昨涨停均涨 <b :class="pctClass(senti.yesterdayZtAvgPct)">{{ fmtPct(senti.yesterdayZtAvgPct) }}</b></span>
+              </div>
+              <div v-if="senti.ladder.length > 0" class="m-home-ladder">
+                <span
+                  v-for="step in senti.ladder"
+                  :key="step.board"
+                  class="m-home-lad"
+                  :class="{ hot: step.board >= 3 }"
+                >
+                  {{ step.board === 1 ? '首板' : `${step.board}板` }} · {{ step.count }} 家
+                </span>
+              </div>
+            </template>
+            <div v-else class="m-home-panel__skel">
+              <van-skeleton title :row="2" :loading="true" />
             </div>
           </div>
-          <div class="m-home-dist">
-            <svg viewBox="0 0 100 100" preserveAspectRatio="none">
-              <g stroke="rgba(140,152,155,.14)" stroke-width="1">
-                <line x1="0" y1="0" x2="100" y2="0" vector-effect="non-scaling-stroke" />
-                <line x1="0" y1="50" x2="100" y2="50" vector-effect="non-scaling-stroke" />
-                <line x1="0" y1="100" x2="100" y2="100" vector-effect="non-scaling-stroke" />
-              </g>
-              <rect
-                v-for="bar in distBars"
-                :key="bar.key"
-                :x="bar.x"
-                :y="100 - bar.h"
-                :width="bar.w"
-                :height="bar.h"
-                rx="1"
-                :fill="bar.color"
-                opacity="0.88"
-              />
-            </svg>
+        </template>
+        <template #face2>
+          <div class="m-home-sec">
+            <span class="m-home-sec__t">板块热力</span>
+            <span class="m-home-sec__s">Top 20 · 面积 = 总市值</span>
           </div>
-          <div class="m-home-dist__labels">
-            <span v-for="bar in distBars" :key="`lb-${bar.key}`">{{ bar.label }}</span>
+          <div class="m-card m-home-heat">
+            <MobileHeatmap v-if="!heatError" :boards="heatBoards" :loading="heatLoading" :error="false" />
+            <div v-else class="m-state m-heat-err">
+              <van-icon name="warning-o" size="32" />
+              <div>板块数据加载失败</div>
+              <span class="retry" @click="loadHeat(true)">重试</span>
+            </div>
           </div>
         </template>
-        <div v-else class="m-home-panel__skel">
-          <van-skeleton title :row="4" :loading="true" />
-        </div>
-
-        <!-- 市场情绪：图下小字提示行 + 连板梯队药丸 -->
-        <div v-if="sentiError" class="m-home-err-box m-home-err-box--senti">
-          <van-icon name="warning-o" />
-          情绪数据加载失败
-          <span class="retry" @click="loadSenti(true)">重试</span>
-        </div>
-        <template v-else-if="senti">
-          <div class="m-home-senti-line">
-            <span>涨停 <b class="m-up">{{ senti.limitUpCount }}</b></span><i>/</i>
-            <span>跌停 <b class="m-down">{{ senti.limitDownCount }}</b></span><i>/</i>
-            <span>炸板 <b>{{ senti.brokenCount }}</b>{{ senti.brokenRate === null ? '' : `（${senti.brokenRate.toFixed(0)}%）` }}</span><i>/</i>
-            <span>最高连板 <b class="m-up">{{ senti.maxLadder }}</b> 板</span><i>/</i>
-            <span>昨涨停均涨 <b :class="pctClass(senti.yesterdayZtAvgPct)">{{ fmtPct(senti.yesterdayZtAvgPct) }}</b></span>
-          </div>
-          <div v-if="senti.ladder.length > 0" class="m-home-ladder">
-            <span
-              v-for="step in senti.ladder"
-              :key="step.board"
-              class="m-home-lad"
-              :class="{ hot: step.board >= 3 }"
-            >
-              {{ step.board === 1 ? '首板' : `${step.board}板` }} · {{ step.count }} 家
-            </span>
-          </div>
-        </template>
-        <div v-else class="m-home-panel__skel">
-          <van-skeleton title :row="2" :loading="true" />
-        </div>
-      </div>
-
-      <!-- 4.5 板块热力图（PC 市场总览同款口径：面积 = 总市值，固定 Top 20，颜色随涨跌四档色阶） -->
-      <div class="m-home-sec">
-        <span class="m-home-sec__t">板块热力</span>
-        <span class="m-home-sec__s">Top 20 · 面积 = 总市值</span>
-      </div>
-      <div class="m-card m-home-heat">
-        <MobileHeatmap :boards="heatBoards" :loading="heatLoading" :error="heatError" />
-        <div v-if="heatError" class="m-state">
-          <span class="retry" @click="loadHeat(true)">重试</span>
-        </div>
-      </div>
+      </BookFlipBook>
 
       <!-- 5. 今天炒什么（保留现状，压轴） -->
       <div class="m-home-sec">
@@ -723,3 +732,18 @@ const pctClass = (v: number | null): string =>
     </van-pull-refresh>
   </div>
 </template>
+
+
+<style scoped>
+/* 热力卡：纵向 flex，让热力图 / 错误态撑满书页面板（2026-10-11 王总反馈错误态太空） */
+.m-home-heat { display: flex; flex-direction: column; }
+.m-heat-err {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--color-text-3);
+}
+</style>
