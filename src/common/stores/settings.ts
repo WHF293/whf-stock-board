@@ -19,6 +19,11 @@ import type { ThemeColor } from '../constants/theme-color.constants.ts';
 import { TREND_THEME_DEFAULT } from '../constants/trend-theme.constants.ts';
 import type { TrendTheme } from '../constants/trend-theme.constants.ts';
 import { WATERMARK_ENABLED_DEFAULT } from '../constants/watermark.constants.ts';
+import {
+  GLASS_HIGHLIGHT_DEFAULT,
+  GLASS_OPACITY_DEFAULT,
+  normalizeGlassOpacity,
+} from '../constants/glass-opacity.constants.ts';
 import { WATCH_WIDGET_SETTINGS_DEFAULT } from '../constants/watch-widget.constants.ts';
 import { CLOSE_TO_TRAY_DEFAULT } from '../constants/window-close.constants.ts';
 import { LAUNCH_AT_STARTUP_DEFAULT } from '../constants/autostart.constants.ts';
@@ -84,6 +89,10 @@ interface SettingsState {
   trendTheme: TrendTheme;
   /** 全局水印开关（默认开启） */
   watermarkEnabled: boolean;
+  /** 高亮玻璃底色透明度（0.06–0.6；经内联 CSS 变量下发给全站玻璃样式） */
+  glassOpacity: number;
+  /** 高亮玻璃斜向高光带开关（关闭后只留半透明底 + 描边 + 模糊） */
+  glassHighlight: boolean;
   /** 板块日历 · 热门口径（决定行的排序） */
   boardCalendarHeatBasis: BoardCalendarHeatBasis;
   /** 板块日历 · 展示范围（交易日列数） */
@@ -133,6 +142,8 @@ export const useSettingsStore = defineStore('settings', {
     customThemeColor: CUSTOM_THEME_COLOR_DEFAULT,
     trendTheme: TREND_THEME_DEFAULT,
     watermarkEnabled: WATERMARK_ENABLED_DEFAULT,
+    glassOpacity: GLASS_OPACITY_DEFAULT,
+    glassHighlight: GLASS_HIGHLIGHT_DEFAULT,
     boardCalendarHeatBasis: BOARD_CALENDAR_HEAT_BASIS_DEFAULT,
     boardCalendarRange: BOARD_CALENDAR_RANGE_DEFAULT,
     boardCalendarOrder: [...BOARD_DEFAULT_ORDER],
@@ -221,6 +232,22 @@ export const useSettingsStore = defineStore('settings', {
      */
     setWatermarkEnabled(enabled: boolean): void {
       this.watermarkEnabled = enabled;
+    },
+
+    /**
+     * 设置高亮玻璃底色透明度（越界值收敛到合法区间）
+     * @param opacity 透明度（0.06–0.6）
+     */
+    setGlassOpacity(opacity: number): void {
+      this.glassOpacity = normalizeGlassOpacity(opacity);
+    },
+
+    /**
+     * 设置高亮玻璃斜向高光带开关
+     * @param enabled true 显示光带，false 隐藏
+     */
+    setGlassHighlight(enabled: boolean): void {
+      this.glassHighlight = enabled;
     },
 
     /**
@@ -421,6 +448,8 @@ export const useSettingsStore = defineStore('settings', {
         !CUSTOM_THEME_COLOR_PATTERN.test(context.store.customThemeColor)) {
         context.store.customThemeColor = CUSTOM_THEME_COLOR_DEFAULT;
       }
+      // 玻璃透明度坏数据回落：非法值会让 rgba() alpha 失效、玻璃变实心
+      context.store.glassOpacity = normalizeGlassOpacity(context.store.glassOpacity);
     },
   },
 });

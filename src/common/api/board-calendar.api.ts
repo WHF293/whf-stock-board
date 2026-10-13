@@ -21,6 +21,7 @@ import type {
 } from '../types/board-calendar.types.ts';
 import { delay } from '../utils/delay';
 import { proxyFetch } from './proxy-fetch';
+import { push2Fetch } from './push2-fetch';
 
 /**
  * 板块日历上游取数
@@ -127,7 +128,7 @@ const fetchClistPage = async (
     fs,
     fields,
   });
-  const response = await proxyFetch(`${BOARD_CALENDAR_URL.BOARD_LIST}?${params.toString()}`, {
+  const response = await push2Fetch(`${BOARD_CALENDAR_URL.BOARD_LIST}?${params.toString()}`, {
     headers: { 'User-Agent': EASTMONEY_USER_AGENT },
   });
   if (!response.ok) {
@@ -177,7 +178,7 @@ export const fetchBoardSnapshot = async (): Promise<Map<string, BoardSnapshotIte
     fields: BOARD_SNAPSHOT_FIELDS,
     secids,
   });
-  const response = await proxyFetch(`${BOARD_CALENDAR_URL.BOARD_QUOTE}?${params.toString()}`, {
+  const response = await push2Fetch(`${BOARD_CALENDAR_URL.BOARD_QUOTE}?${params.toString()}`, {
     headers: { 'User-Agent': EASTMONEY_USER_AGENT },
   });
   if (!response.ok) {

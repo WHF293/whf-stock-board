@@ -18,7 +18,9 @@ import { fetchFullQuotes, fetchAllMarketQuotes } from '../../common/api/quotes.a
 import { fetchMarketTurnover } from '../../common/api/turnover.api';
 import { fetchZtPool } from '../../common/api/event.api';
 import { fetchHotBoard } from '../../common/api/hot-board.api';
+import { fetchGlobalIndexQuotes } from '../../common/api/panorama.api';
 import { INDEX_SYMBOLS } from '../../common/constants/index-symbols.constants';
+import type { GlobalIndexQuote } from '../../common/types/panorama.types';
 import type { TurnoverDayItem } from '../../common/types/turnover.types';
 import { countDistribution } from '../../common/utils/count-distribution';
 import type { DistributionCount } from '../../common/types/distribution.types';
@@ -224,13 +226,16 @@ const goTile = (to: string): void => {
   goTarget(to);
 };
 
-/* === 指数情绪条（一期 4 项：进入首页刷新一次，30s TTL） === */
+/* === 指数情绪条（一行 4 项；可展开全球指数 6 项，对齐 PC 市场总览展开区） === */
 const INDEX_LABELS: Record<string, string> = {
   sh000001: '上证指数',
   sz399001: '深证成指',
   sz399006: '创业板指',
-  sh000688: '科创50',
 };
+/**
+ * 移动端首页指数条列表（2026-10-13 王总：去掉科创50；PC 市场总览仍用全量 INDEX_SYMBOLS）
+ */
+const HOME_INDEX_SYMBOLS = INDEX_SYMBOLS.filter((code) => code !== 'sh000688');
 interface IndexPill {
   code: string;
   name: string;
@@ -242,10 +247,28 @@ const indicesError = ref(false);
 const INDEX_TTL_MS = 30_000;
 let indicesAt = 0;
 
+/* 全球指数（PC 同款 6 项：恒生/道琼斯/纳斯达克/标普500/日经225/KOSPI，东财 ulist 源） */
+const globalIndices = ref<GlobalIndexQuote[]>([]);
+const globalIndicesError = ref(false);
+/** 展开区显隐（会话内记忆即可，与 PC 展开开关一致不持久化） */
+const indexExpanded = ref(false);
+
+const loadGlobalIndices = async (force = false): Promise<void> => {
+  if (!force && globalIndices.value.length > 0) return;
+  try {
+    // 上游 200 ≠ 有数据（diff 缺失返回空数组），空数组也按错误态给重试入口
+    globalIndices.value = await fetchGlobalIndexQuotes();
+    globalIndicesError.value = globalIndices.value.length === 0;
+  } catch {
+    globalIndicesError.value = true;
+  }
+};
+
 const loadIndices = async (force = false): Promise<void> => {
   if (!force && Date.now() - indicesAt < INDEX_TTL_MS) return;
+  void loadGlobalIndices(force);
   try {
-    const quotes: FullQuote[] = await fetchFullQuotes(INDEX_SYMBOLS);
+    const quotes: FullQuote[] = await fetchFullQuotes(HOME_INDEX_SYMBOLS);
     indices.value = quotes.map((q) => ({
       code: q.code,
       name: q.name || INDEX_LABELS[q.code] || q.code,
@@ -791,7 +814,7 @@ const pctClass = (v: number | null): string =>
         </div>
       </div>
 
-      <!-- 2. 指数情绪条（沿用现样式） -->
+      <!-- 2. 指数条（4 列一行无需滑动；下方展开区显示全球指数 6 项，对齐 PC 市场总览） -->
       <div class="m-home-index-bar">
         <template v-if="indices.length > 0">
           <div v-for="item in indices" :key="item.code" class="m-home-index">
@@ -809,10 +832,48 @@ const pctClass = (v: number | null): string =>
           指数加载失败
           <span class="retry" @click="loadIndices(true)">重试</span>
         </div>
-        <div v-for="n in 4" v-else :key="n" class="m-home-index m-home-index--skeleton">
+        <div v-for="n in 3" v-else :key="n" class="m-home-index m-home-index--skeleton">
           <van-skeleton title :row="1" :loading="true" />
         </div>
       </div>
+      <!-- 全球指数展开区（PC 市场总览同款高度过渡：常驻容器 max-height + opacity） -->
+      <div class="m-home-index-expand" :class="{ 'm-home-index-expand--open': indexExpanded }">
+        <template v-if="indexExpanded">
+          <div v-if="globalIndicesError" class="m-home-err-box m-home-err-box--idx">
+            <van-icon name="warning-o" />
+            全球指数加载失败
+            <span class="retry" @click="loadGlobalIndices(true)">重试</span>
+          </div>
+          <div v-else-if="globalIndices.length > 0" class="m-home-index-grid">
+            <div v-for="g in globalIndices" :key="g.code" class="m-home-index">
+              <div class="m-home-index__name">{{ g.name }}</div>
+              <div class="m-home-index__px" :class="pctClass(g.changePercent)">
+                {{ g.price === null ? '--' : fmtPrice(g.price) }}
+              </div>
+              <div class="m-home-index__pct" :class="pctClass(g.changePercent)">
+                {{ fmtPct(g.changePercent) }}
+              </div>
+            </div>
+          </div>
+          <div v-else class="m-home-index-grid">
+            <div v-for="n in 6" :key="n" class="m-home-index m-home-index--skeleton">
+              <van-skeleton title :row="1" :loading="true" />
+            </div>
+          </div>
+        </template>
+      </div>
+      <!-- 全球指数展开开关（PC 市场总览同款：通栏居中幽灵圆钮，仅 chevron；
+           固定在指数内容之后——展开时 icon 落在全球指数下方，王总 2026-10-13） -->
+      <button
+        class="m-home-index-more"
+        :class="{ 'm-home-index-more--open': indexExpanded }"
+        data-track="HOME_INDEX_MORE"
+        :aria-expanded="indexExpanded"
+        :aria-label="indexExpanded ? '收起全球指数' : '展开全球指数'"
+        @click="indexExpanded = !indexExpanded"
+      >
+        <van-icon name="arrow-down" />
+      </button>
 
       <!-- 3~4.5 成交额 / 涨跌分布·情绪 / 板块热力：书本翻页容器（2026-10-11 王总指定，
            参考掘金「实现一个书本翻页功能」；3 张纸各放一个模块，边缘热区 + 底部导航翻页，
@@ -1043,7 +1104,7 @@ const pctClass = (v: number | null): string =>
         </template>
         <template #face3>
           <!-- 大盘评级（2026-10-13 新增纸；与 PC 同源同常量，环形 + 投资建议 + 近 5 日迷你柱） -->
-          <div class="m-card">
+          <div class="m-card m-home-rate-page">
             <div class="m-home-sec m-home-sec--in">
               <span class="m-home-sec__t">大盘评级</span>
               <span class="m-home-sec__s">同花顺评分 · 60s 刷新</span>
@@ -1278,5 +1339,13 @@ const pctClass = (v: number | null): string =>
   justify-content: center;
   gap: 12px;
   color: var(--color-text-3);
+}
+
+/* 大盘评级纸：卡内评分内容纵向铺满并均匀分布，消除底部大片留白
+   （2026-10-13 王总反馈底部空太多，内容下移撑开） */
+.m-home-rate-page { display: flex; flex-direction: column; }
+.m-home-rate-page :deep(.m-rate) {
+  flex: 1 1 auto;
+  justify-content: space-evenly;
 }
 </style>

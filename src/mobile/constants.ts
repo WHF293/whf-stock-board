@@ -181,8 +181,10 @@ export const MOBILE_TAB_DRAG_SLOP_PX = 8;
 /** 单次翻页动画时长（毫秒；翻页中互斥锁按此时长持有） */
 export const MOBILE_BOOK_FLIP_MS = 560;
 
-/** 书页统一高度（px）：三模块共用一张「纸」的定高，超出裁切（440：分布含连板梯队不裁切） */
-export const MOBILE_BOOK_PAGE_HEIGHT = 440;
+/** 书页统一高度（px）：三模块共用一张「纸」的定高，超出裁切
+ * （480：2026-10-13 成交额卡并入实时摘要两行（今日实时/预测全天 + 5/60日均）后，
+ *  440 已容不下 240px 图表下限，x 轴被内嵌手势条遮挡，故整体加高） */
+export const MOBILE_BOOK_PAGE_HEIGHT = 480;
 
 /** 左右翻页热区宽度（px；贴书本左右边缘的透明点击条，避免误触图区交互） */
 export const MOBILE_BOOK_EDGE_WIDTH = 40;
@@ -215,14 +217,17 @@ export { SECTOR_CURVE_MAX_COUNT as FUND_FLOW_SECTOR_MAX } from '../common/consta
 /** 默认勾选：按当日主力净流入流入 / 流出各取前 N（合计 2N ≤ 上限） */
 export const FUND_FLOW_SECTOR_DEFAULT_PER_SIDE = 4;
 
-/** 主力净流入折线图高度（像素） */
-export const FUND_FLOW_CHART_HEIGHT_MAIN = 230;
+/** 主力净流入折线图高度（像素；2026-10-13 王总：模块高度压到原来的 2/3，230 → 153） */
+export const FUND_FLOW_CHART_HEIGHT_MAIN = 153;
 
 /** 板块资金多曲线图高度（像素） */
 export const FUND_FLOW_CHART_HEIGHT_SECTOR = 270;
 
-/** 历史净流入翻页卡固定高度（像素；卡内逐日纵向滚动） */
-export const FUND_FLOW_HISTORY_CARD_HEIGHT = 380;
+/** 历史净流入展示天数（2026-10-13 王总：只显示最近 10 个交易日） */
+export const FUND_FLOW_HISTORY_DAYS = 10;
+
+/** 历史净流入翻页卡固定高度（像素；按 10 行逐日 + 头部定高，不再内部滚动） */
+export const FUND_FLOW_HISTORY_CARD_HEIGHT = 230;
 
 /** 手势翻页：横滑判定阈值（|dx| 不小于此值且 |dx| > |dy| 才切页） */
 export const FUND_FLOW_PAGER_SWIPE_PX = 48;

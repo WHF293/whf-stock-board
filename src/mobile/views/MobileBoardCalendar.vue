@@ -27,7 +27,7 @@ import {
   listBoardDailyByDates,
   listLimitStocks,
 } from '../../common/api/board-calendar-db.api';
-import { fetchTradingDates } from '../../common/api/board-calendar.api';
+import { getTradingDates, syncBoardCalendar } from '../../common/composables/use-board-calendar-sync';
 import { loadBoardDetailMatrix } from '../../common/api/board-detail.api';
 import type { BoardDailyRow } from '../../common/types/board-calendar.types';
 import type { BoardDetailRow } from '../../common/types/board-detail.types';
@@ -50,12 +50,18 @@ const dbAvailable = isBoardDbAvailable();
 const tradingDates = ref<string[]>([]);
 const datesLoading = ref(false);
 
-const loadTradingDates = async (): Promise<void> => {
-  if (tradingDates.value.length) return;
+const loadTradingDates = async (): Promise<boolean> => {
+  if (tradingDates.value.length) return true;
   datesLoading.value = true;
   try {
-    // 降序（最近日在前），与 PC selectedDates 口径一致
-    tradingDates.value = [...(await fetchTradingDates())].reverse();
+    // getTradingDates 与采集共用缓存（内存 → 库内 board_sync_state → 上游腾讯日K），
+    // 命中即 0 请求。此前直接 fetchTradingDates：既不落库缓存，失败还会以
+    // unhandled rejection 逃逸（watch 里 void 调用），页面静默空白——正是
+    // 「板块日历一直不生效」的表现之一（2026-10-13 修复）
+    tradingDates.value = [...(await getTradingDates())].reverse();
+    return true;
+  } catch {
+    return false;
   } finally {
     datesLoading.value = false;
   }
@@ -90,14 +96,33 @@ const cellByKey = computed(() => {
   return map;
 });
 
+/** 首次采集进行中（本地库无任何数据时自动触发，完成后自动刷新矩阵） */
+const collecting = ref(false);
+/** 每次会话只自动触发一次采集（失败也等下次进页再试，避免死循环刷请求） */
+let autoSyncAttempted = false;
+
 const loadMatrix = async (): Promise<void> => {
   if (!dbAvailable) return;
-  await loadTradingDates();
+  matrixError.value = false;
+  if (!(await loadTradingDates())) {
+    matrixError.value = true;
+    return;
+  }
   if (!selectedDates.value.length) return;
   matrixLoading.value = true;
-  matrixError.value = false;
   try {
     matrixRows.value = await listBoardDailyByDates(selectedDates.value);
+    // 本地库还没有任何板块日数据（首次安装 / v4.7.1 前移动端从不采集）→ 自动补一次采集；
+    // syncBoardCalendar 自带并发闸门，与 App 挂载钩子并发时复用同一次，不会重复请求
+    if (!matrixRows.value.length && !autoSyncAttempted) {
+      autoSyncAttempted = true;
+      collecting.value = true;
+      void syncBoardCalendar()
+        .then(() => loadMatrix())
+        .finally(() => {
+          collecting.value = false;
+        });
+    }
   } catch {
     matrixError.value = true;
   } finally {
@@ -199,7 +224,10 @@ const detailCellClass = (v: number | null): string => {
 
 const loadDetail = async (): Promise<void> => {
   if (!dbAvailable || !detailCode.value) return;
-  await loadTradingDates();
+  if (!(await loadTradingDates())) {
+    detailError.value = true;
+    return;
+  }
   if (!detailSelectedDates.value.length) return;
   detailLoading.value = true;
   detailError.value = false;
@@ -281,6 +309,10 @@ const fmtPct = (v: number | null): string => (v === null ? '--' : `${v > 0 ? '+'
 
       <!-- === 列表矩阵 === -->
       <template v-else-if="!isDetail">
+        <!-- 首次采集横幅（本地库无数据时自动触发，完成后自动刷新） -->
+        <div v-if="collecting" class="m-sec">
+          <span class="m-sec__s">本地暂无日历数据，正在首次采集（约需 1~2 分钟），完成后自动刷新…</span>
+        </div>
         <div class="m-cal-legend">
           <span>色阶</span>
           <i class="m-cal-l3"></i>强多
@@ -290,29 +322,34 @@ const fmtPct = (v: number | null): string => (v === null ? '--' : `${v > 0 ? '+'
           <i class="m-cal-l5"></i>偏空
           <i class="m-cal-l6"></i>强空
         </div>
-        <div
-          class="m-cal-scroll m-card"
-          :style="{ '--days': selectedDates.length }"
-        >
-          <div class="m-cal-head">
-            <div class="m-cal-cell">板块</div>
-            <div v-for="d in selectedDates" :key="d" class="m-cal-cell">{{ d.slice(5) }}</div>
-          </div>
-          <div v-for="row in boardRows" :key="row.code" class="m-cal-row">
-            <div class="m-cal-row__name">{{ row.name }}</div>
-            <div
-              v-for="(cell, idx) in row.cells"
-              :key="idx"
-              class="m-cal-day"
-              :class="toCellView(cell).level"
-              @click="cell && onCellClick(row.code, row.name, selectedDates[idx]!)"
-            >
-              <div class="m-cal-day__v" :class="toCellView(cell).strong ? '' : ''">
-                {{ cell ? (cell.limitUp || 0) : '·' }}
+        <template v-if="matrixRows.length">
+          <div
+            class="m-cal-scroll m-card"
+            :style="{ '--days': selectedDates.length }"
+          >
+            <div class="m-cal-head">
+              <div class="m-cal-cell">板块</div>
+              <div v-for="d in selectedDates" :key="d" class="m-cal-cell">{{ d.slice(5) }}</div>
+            </div>
+            <div v-for="row in boardRows" :key="row.code" class="m-cal-row">
+              <div class="m-cal-row__name">{{ row.name }}</div>
+              <div
+                v-for="(cell, idx) in row.cells"
+                :key="idx"
+                class="m-cal-day"
+                :class="toCellView(cell).level"
+                @click="cell && onCellClick(row.code, row.name, selectedDates[idx]!)"
+              >
+                <div class="m-cal-day__v" :class="toCellView(cell).strong ? '' : ''">
+                  {{ cell ? (cell.limitUp || 0) : '·' }}
+                </div>
+                <div class="m-cal-day__s">{{ cell ? (cell.limitDown || 0) : '' }}</div>
               </div>
-              <div class="m-cal-day__s">{{ cell ? (cell.limitDown || 0) : '' }}</div>
             </div>
           </div>
+        </template>
+        <div v-else class="m-state">
+          {{ collecting ? '采集完成后自动显示矩阵' : '暂无板块日历数据，可下拉重进本页重试' }}
         </div>
         <div class="m-sec">
           <span class="m-sec__s">格内数字：涨停家数 / 跌停家数 · 点格看明细</span>

@@ -296,7 +296,9 @@ const edgeStyle = { width: `${MOBILE_BOOK_EDGE_WIDTH}px` };
 .m-book__face--front :slotted(.m-home-chart) {
   flex: 1 1 auto;
   height: auto;
-  min-height: 240px;
+  /* 240 → 200（2026-10-13）：实时摘要并入后内容变高，允许图区收缩保住 x 轴不被手势条遮挡；
+     内容不满页时 flex 仍会拉伸图区占满剩余高度 */
+  min-height: 200px;
 }
 /* 左右翻页热区：透明贴边条 */
 .m-book__edge {

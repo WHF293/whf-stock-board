@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
+import { showToast } from 'vant';
 import { fetchMarketFundFlow, fetchSectorFundFlowRank } from '../../common/api/flow.api.ts';
 import {
   fetchSectorFlowCurves,
@@ -25,9 +27,11 @@ import { YUAN_PER_YI } from '../../common/constants/format.constants.ts';
 import { STORAGE_NS_MOBILE_FUND_FLOW_CURVE } from '../../common/constants/storage-key.constants.ts';
 import { useMarketStatusStore } from '../../common/stores/market-status';
 import { useSettingsStore } from '../../common/stores/settings';
+import { toFullSymbol } from '../../common/utils/to-full-symbol';
 import { readCssVar } from '../../common/utils/read-css-var';
 import { readTrendColors } from '../../common/utils/trend-colors';
 import { formatYuanWithSign } from '../../common/utils/format-yuan';
+import { formatPct, pctClass } from '../utils/format';
 import { appStorage } from '../../common/utils/app-local-storage';
 import type { EChartsCoreOption } from 'echarts/core';
 import MobileEChart from '../components/MobileEChart.vue';
@@ -36,6 +40,7 @@ import {
   FUND_FLOW_CHART_HEIGHT_MAIN,
   FUND_FLOW_CHART_HEIGHT_SECTOR,
   FUND_FLOW_HISTORY_CARD_HEIGHT,
+  FUND_FLOW_HISTORY_DAYS,
   FUND_FLOW_MARKET_DAYS,
   FUND_FLOW_SECTOR_DEFAULT_PER_SIDE,
   FUND_FLOW_SECTOR_MAX,
@@ -44,14 +49,18 @@ import {
 /**
  * 资金流向（移动端，v4.3 主 Tab）
  *
- * 三大模块，数据与 PC 同源（PC 端零改动）：
+ * 四大模块，数据与 PC 同源（PC 端零改动）：
  * 1. 主力净流入：大盘资金流近 10 日折线（PC 市场总览-主力净流入同口径），
  *    每个数据点标注数值（涨跌着色），tooltip + crosshair；
  * 2. 板块资金：多板块当日累计主力净流入分时叠加曲线（PC 行情全景-最新板块资金同口径），
  *    板块池与 PC 一致（行业榜单全量），每次最多选中 8 个，弹窗选择，
  *    appStorage 持久化（独立 key mobile.fundFlowCurve，不与 PC 互通）；
- * 3. 板块历史净流入：逐日双向条形卡（PC BoardFlowDailyCard 样式复刻），一次一页，
- *    MobileGesturePager 翻页（底部通栏手势条：条上滑动按方向切页 + 点按直达，边界 toast，2026-10-12 与首页统一）。
+ * 3. 板块历史净流入：逐日双向条形卡（PC BoardFlowDailyCard 样式复刻），一次一页，只显示最近 10 个交易日
+ *    （2026-10-13 王总；条形宽度与头部累计额均按展示行归一），
+ *    MobileGesturePager 翻页（底部通栏手势条：条上滑动按方向切页 + 点按直达，边界 toast，2026-10-12 与首页统一）；
+ * 4. 板块主力净流入榜：当日 top 30（2026-10-13 王总：自行情全景-资金模块迁入，
+ *    全景页「资金」chip 整体移除），行尾「＋/✓」一键切换曲线与历史已选集，
+ *    行点击进领涨股个股页（沿用原全景页行为）。
  *
  * 重接口不轮询：进入页面 / 手动刷新触发（东财系并发 3 红线由 api 层限流）
  */
@@ -529,25 +538,27 @@ const displayBoards = computed(() =>
 /** 当前页板块（模板消费；越界时为 undefined，模板侧已判空） */
 const currentBoard = computed(() => displayBoards.value[pagerCurrent.value]);
 
-/** 当前页板块的历史累计净额（元） */
+/** 当前页板块的展示期（最近 10 个交易日）累计净额（元），与卡内展示行口径一致 */
 const currentNetSum = computed(() =>
-  currentBoard.value?.points.reduce((sum, row) => sum + row.net, 0) ?? 0,
+  currentDescPoints.value.reduce((sum, row) => sum + row.net, 0),
 );
 
-/** 当前页板块的历史累计净额文案（亿，带符号） */
+/** 当前页板块的展示期累计净额文案（亿，带符号） */
 const currentNetSumText = computed(() => {
   const value = (currentNetSum.value / YUAN_PER_YI).toFixed(2);
   return currentNetSum.value >= 0 ? `+${value}` : value;
 });
 
-/** 当前页逐日行（倒序：最新交易日排最上） */
-const currentDescPoints = computed(() => [...(currentBoard.value?.points ?? [])].reverse());
+/** 当前页逐日行（倒序：最新交易日排最上；只显示最近 10 个交易日，王总 2026-10-13） */
+const currentDescPoints = computed(() =>
+  [...(currentBoard.value?.points ?? [])].reverse().slice(0, FUND_FLOW_HISTORY_DAYS),
+);
 
 /**
  * 条形行宽度（PC BoardFlowDailyCard.barWidthOf 同口径）：
- * 净流入 / 流出各占中线一侧，长度按卡内最大绝对值归一，区间 [2, 48]%
+ * 净流入 / 流出各占中线一侧，长度按卡内展示行最大绝对值归一，区间 [2, 48]%
  * @param net 当日净流入（元）
- * @param points 同卡全部逐日数据（归一基准）
+ * @param points 当前卡展示的逐日数据（归一基准）
  * @returns CSS width 值（零值返回 0%）
  */
 const barWidthOf = (net: number, points: readonly { net: number }[]): string => {
@@ -575,6 +586,46 @@ watch(
     }
   },
 );
+
+// ---------- 模块四：板块主力净流入榜（自行情全景-资金迁入，复用 sectorRank 数据） ----------
+
+const router = useRouter();
+
+/** 榜单展示：当日净流入降序前 30 */
+const rankTop30 = computed(() => rankSorted.value.slice(0, 30));
+
+/**
+ * 榜单行尾勾选态（已在曲线与历史已选集内）
+ * @param code 板块代码
+ * @returns 是否已勾选
+ */
+const isPicked = (code: string): boolean => selectedCodes.value.includes(code);
+
+/**
+ * 行尾「＋/✓」：切换该板块在曲线与历史已选集的勾选
+ * （复用 8 个上限与 appStorage 持久化，加入/移除由既有 watch 自动拉取/清理曲线与历史）
+ * @param code 板块代码
+ */
+const toggleRankCode = (code: string): void => {
+  if (selectedCodes.value.includes(code)) {
+    selectedCodes.value = selectedCodes.value.filter((item) => item !== code);
+    return;
+  }
+  if (selectedCodes.value.length >= FUND_FLOW_SECTOR_MAX) {
+    showToast(`最多选择 ${FUND_FLOW_SECTOR_MAX} 个板块`);
+    return;
+  }
+  selectedCodes.value = [...selectedCodes.value, code];
+};
+
+/**
+ * 行点击：进领涨股个股页（沿用原全景-资金行为；无领涨股不跳转）
+ * @param item 榜单行
+ */
+const goRankRow = (item: SectorFundFlowItem): void => {
+  if (!item.topStockCode) return;
+  void router.push(`/stock/${toFullSymbol(item.topStockCode)}`);
+};
 
 // ---------- 初始化：三模块并行就绪 ----------
 
@@ -714,12 +765,12 @@ onMounted(() => {
                   <div
                     v-if="row.net > 0"
                     class="m-ff-hcard__bar is-up"
-                    :style="{ width: barWidthOf(row.net, currentBoard.points) }"
+                    :style="{ width: barWidthOf(row.net, currentDescPoints) }"
                   ></div>
                   <div
                     v-else-if="row.net < 0"
                     class="m-ff-hcard__bar is-down"
-                    :style="{ width: barWidthOf(row.net, currentBoard.points) }"
+                    :style="{ width: barWidthOf(row.net, currentDescPoints) }"
                   ></div>
                 </div>
               </div>
@@ -732,6 +783,64 @@ onMounted(() => {
         <div v-else class="m-ff-empty">
           在「板块资金」的「选择板块」勾选后，这里展示逐日净流入历史
         </div>
+      </section>
+
+      <!-- 模块四：板块主力净流入榜（2026-10-13 自行情全景-资金迁入） -->
+      <section class="m-ff-card">
+        <header class="m-ff-head">
+          <h2 class="m-ff-head__title">板块主力净流入</h2>
+          <span class="m-ff-head__sub">当日 · 前 30</span>
+          <button
+            class="m-ff-head__btn"
+            :disabled="rankLoading"
+            @click="loadSectorRank"
+          >
+            ↻
+          </button>
+        </header>
+        <div v-if="rankLoading && sectorRank.length === 0" class="m-ff-skeleton">加载中…</div>
+        <div v-else-if="rankError && sectorRank.length === 0" class="m-ff-error">
+          <span>板块榜单加载失败</span>
+          <span v-if="rankErrorDetail" class="m-ff-error__detail">{{ rankErrorDetail }}</span>
+          <button class="m-ff-error__retry" :disabled="rankLoading" @click="loadSectorRank">
+            ↻ 重新加载
+          </button>
+        </div>
+        <div v-else-if="rankTop30.length > 0" class="m-ff-rank">
+          <div
+            v-for="(item, idx) in rankTop30"
+            :key="item.code"
+            class="m-ff-rank__row"
+            @click="goRankRow(item)"
+          >
+            <span class="m-ff-rank__idx" :class="{ 'is-top': idx < 3 }">{{ idx + 1 }}</span>
+            <div class="m-ff-rank__main">
+              <div class="m-ff-rank__name">{{ item.name }}</div>
+              <div v-if="item.topStockName" class="m-ff-rank__lead">
+                领涨 {{ item.topStockName }}
+              </div>
+            </div>
+            <span
+              class="m-ff-rank__val"
+              :class="(item.mainNetInflow ?? 0) >= 0 ? 'is-up' : 'is-down'"
+            >
+              {{ formatYuanWithSign(item.mainNetInflow) }}
+            </span>
+            <span class="m-row__pct pill" :class="pctClass(item.changePercent)">
+              {{ formatPct(item.changePercent) }}
+            </span>
+            <button
+              class="m-ff-rank__add"
+              :class="{ 'is-on': isPicked(item.code) }"
+              :title="isPicked(item.code) ? '已加入曲线与历史，点击移除' : '加入曲线与历史已选集'"
+              @click.stop="toggleRankCode(item.code)"
+            >
+              {{ isPicked(item.code) ? '✓' : '＋' }}
+            </button>
+          </div>
+          <div class="m-ff-rank__foot">行点击看领涨股 · 行尾「＋」加入上方曲线与历史已选集</div>
+        </div>
+        <div v-else class="m-ff-empty">暂无数据</div>
       </section>
     </div>
 
@@ -1010,6 +1119,91 @@ onMounted(() => {
   gap: 4px;
   font-size: 11px;
   color: var(--color-text-3);
+}
+
+/* 模块四：板块主力净流入榜（自全景-资金迁入；行样式对齐稿子 rank-row 体系） */
+.m-ff-rank {
+  display: flex;
+  flex-direction: column;
+}
+.m-ff-rank__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 2px;
+  border-bottom: 1px solid var(--color-border);
+  cursor: pointer;
+}
+.m-ff-rank__idx {
+  width: 18px;
+  flex-shrink: 0;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--color-text-3);
+  font-variant-numeric: tabular-nums;
+}
+.m-ff-rank__idx.is-top {
+  color: var(--color-up);
+}
+.m-ff-rank__main {
+  flex: 1;
+  min-width: 0;
+}
+.m-ff-rank__name {
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.m-ff-rank__lead {
+  font-size: 10px;
+  color: var(--color-text-3);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.m-ff-rank__val {
+  flex-shrink: 0;
+  font-size: 12.5px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.m-ff-rank__val.is-up {
+  color: var(--color-up);
+}
+.m-ff-rank__val.is-down {
+  color: var(--color-down);
+}
+.m-ff-rank__add {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  border: 1px dashed var(--color-border);
+  background: none;
+  color: var(--color-text-3);
+  font-size: 13px;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.m-ff-rank__add.is-on {
+  border-style: solid;
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: var(--color-primary-weak);
+}
+.m-ff-rank__foot {
+  padding: 8px 2px 2px;
+  font-size: 10.5px;
+  color: var(--color-text-3);
+  text-align: center;
 }
 
 /* 选择板块弹层 */
