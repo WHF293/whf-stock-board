@@ -515,7 +515,7 @@ void marketStatusStore.refresh();
             :class="[
               effectiveCollapsed ? 'justify-center px-2' : 'px-3',
               isActive(item.path)
-                ? 'bg-primary-weak font-medium text-primary'
+                ? 'pc-nav-bubble font-medium text-primary'
                 : 'text-text-secondary hover:bg-flat-weak',
             ]"
           >

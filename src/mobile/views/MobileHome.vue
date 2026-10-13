@@ -42,8 +42,14 @@ import type { HeatmapBoard } from '../../common/types/board.types';
 import type { IndustryBoardConstituent } from 'stock-sdk';
 import MobileHeatmap from '../components/MobileHeatmap.vue';
 import BookFlipBook from '../components/BookFlipBook.vue';
+import MobileRatingCard from '../components/MobileRatingCard.vue';
 import { MOBILE_TURNOVER_RANGE_DEFAULT, MOBILE_TURNOVER_RANGES } from '../constants';
 import { useMobilePolling } from '../composables/use-mobile-polling';
+import { fetchThsTurnoverDay, fetchThsTurnoverMinute } from '../../common/api/ths-market-analysis.api.ts';
+import { computeTurnoverAverage5 } from '../../common/utils/compute-turnover-averages';
+import { formatAmount } from '../../common/utils/format-amount';
+import { formatYuanWithSign } from '../../common/utils/format-yuan';
+import type { ThsTurnoverDay, ThsTurnoverMinute } from '../../common/types/ths-market.types.ts';
 
 const router = useRouter();
 const goTarget = (to: string): void => {
@@ -74,6 +80,8 @@ const KING_ITEMS: readonly KingItem[] = [
   { icon: 'flag-o', label: '龙虎榜', to: '/rank/dragon-tiger', color: '#ec4899' },
   { icon: 'replay', label: '历史牛熊', to: '/bull-review', color: '#10b981' },
   { icon: 'gem-o', label: '(次)新股', to: '/ipo', color: '#eab308' },
+  // 个股行情（2026-10-13 新增，第 10 格补位；icon 固定彩色不随主题）
+  { icon: 'bars', label: '个股行情', to: '/stock-market', color: '#14b8a6' },
 ];
 /** to → 定义（设置弹窗行渲染 / 持久化序回填用） */
 const KING_BY_TO = new Map(KING_ITEMS.map((item) => [item.to, item]));
@@ -417,6 +425,85 @@ const onRangeChange = (days: number): void => {
   turnoverRange.value = days;
 };
 
+/* === 实时成交额（同花顺 dq 域，同时刻环比后端直出；30s TTL + 随脉冲轮询） === */
+const rtMinute = ref<ThsTurnoverMinute | null>(null);
+const rtDay = ref<ThsTurnoverDay | null>(null);
+const rtError = ref(false);
+const RT_CACHE_KEY = 'home.thsRealtime';
+let rtLoading = false;
+
+/**
+ * 元 → 万（formatAmount 入参口径：万）
+ * @param v 金额原值（元；null 透传）
+ * @returns 万为单位的金额；null 透传
+ */
+const toWan = (v: number | null): number | null => (v === null ? null : v / 1e4);
+
+const loadRealtime = async (force = false): Promise<void> => {
+  if (rtLoading) return;
+  rtLoading = true;
+  try {
+    const cached = force ? null : mobileCacheGet<{ minute: ThsTurnoverMinute; day: ThsTurnoverDay }>(RT_CACHE_KEY, 30_000);
+    if (cached) {
+      rtMinute.value = cached.value.minute;
+      rtDay.value = cached.value.day;
+    } else {
+      const [minute, day] = await Promise.all([fetchThsTurnoverMinute(), fetchThsTurnoverDay()]);
+      rtMinute.value = minute;
+      rtDay.value = day;
+      mobileCacheSet(RT_CACHE_KEY, { minute, day });
+    }
+    rtError.value = false;
+  } catch {
+    rtError.value = true;
+  } finally {
+    rtLoading = false;
+  }
+};
+
+/** 今日实时成交额文案 */
+const rtRealtimeText = computed(() => {
+  const wan = toWan(rtMinute.value?.turnover ?? null);
+  return wan === null ? '--' : formatAmount(wan);
+});
+/** 较上一日（同时刻环比） */
+const rtChangeText = computed(() => formatYuanWithSign(rtMinute.value?.turnoverChange ?? null));
+const rtChangeCls = computed(() => {
+  const v = rtMinute.value?.turnoverChange;
+  if (v === null || v === undefined || v === 0) return 'm-flat';
+  return v > 0 ? 'm-up' : 'm-down';
+});
+/** 预测全天 */
+const rtPredictText = computed(() => {
+  const wan = toWan(rtMinute.value?.predictTurnover ?? null);
+  return wan === null ? '--' : formatAmount(wan);
+});
+/** 5 日均（本地近 5 条平均） */
+const rtAvg5Text = computed(() => {
+  const avg = rtDay.value ? computeTurnoverAverage5(rtDay.value.points) : null;
+  const wan = toWan(avg);
+  return wan === null ? '--' : formatAmount(wan);
+});
+/** 60 日均（后端直出） */
+const rtAvg60Text = computed(() => {
+  const wan = toWan(rtDay.value?.averageTurnover ?? null);
+  return wan === null ? '--' : formatAmount(wan);
+});
+/** 较 5 日均 */
+const rtVsAvg5 = computed(() => {
+  const realtime = rtMinute.value?.turnover ?? null;
+  const avg = rtDay.value ? computeTurnoverAverage5(rtDay.value.points) : null;
+  if (realtime === null || avg === null || avg === 0) return null;
+  const pct = ((realtime - avg) / avg) * 100;
+  return `${pct > 0 ? '+' : ''}${pct.toFixed(2)}%`;
+});
+const rtVsAvg5Cls = computed(() => {
+  const realtime = rtMinute.value?.turnover ?? null;
+  const avg = rtDay.value ? computeTurnoverAverage5(rtDay.value.points) : null;
+  if (realtime === null || avg === null) return 'm-flat';
+  return realtime >= avg ? 'm-up' : 'm-down';
+});
+
 /* === 涨跌分布（全市场快照 → 8 桶；30s TTL 缓存 + 轮询） === */
 const dist = ref<DistributionCount[]>([]);
 const riseCount = ref(0);
@@ -496,9 +583,9 @@ const loadSenti = async (force = false): Promise<void> => {
   }
 };
 
-/** 分布 + 情绪并行刷新（各自独立降级，useMobilePolling 30s 档） */
+/** 分布 + 情绪 + 实时成交额并行刷新（各自独立降级，useMobilePolling 30s 档） */
 const loadMarketPulse = async (): Promise<void> => {
-  await Promise.all([loadBreadth(), loadSenti()]);
+  await Promise.all([loadBreadth(), loadSenti(), loadRealtime()]);
 };
 useMobilePolling(loadMarketPulse);
 
@@ -551,6 +638,7 @@ const refreshing = ref(false);
 const onRefresh = async (): Promise<void> => {
   try {
     await Promise.all([loadIndices(true), loadTurnover(true), loadMarketPulse(), loadBoardCard(), loadHeat(true)]);
+    void ratingCardRef.value?.load(true);
   } finally {
     refreshing.value = false;
   }
@@ -563,6 +651,9 @@ onMounted(() => {
   void loadBoardCard();
   void loadHeat();
 });
+
+/* === 大盘评级卡（face3；自持 60s TTL 轮询，下拉刷新强制重拉） === */
+const ratingCardRef = ref<InstanceType<typeof MobileRatingCard> | null>(null);
 
 /* === 板块热力图（移动端口径：总市值 Top 10，面积 = 市值，色 = 涨跌四档；30s TTL） === */
 const heatBoards = ref<HeatmapBoard[]>([]);
@@ -740,6 +831,20 @@ const pctClass = (v: number | null): string =>
               <span class="retry" @click="loadTurnover(true)">重试</span>
             </div>
             <template v-else-if="turnPaths.length > 0">
+              <!-- 实时摘要（2026-10-13 并入：同花顺 dq 域，同时刻环比后端直出；失败静默隐藏） -->
+              <div v-if="!rtError && rtMinute" class="m-home-rt">
+                <div class="m-home-rt__main">
+                  <span class="m-home-rt__label">今日实时</span>
+                  <b class="m-home-rt__num">{{ rtRealtimeText }}</b>
+                </div>
+                <span class="m-home-rt__item">较上一日 <b :class="rtChangeCls">{{ rtChangeText }}</b></span>
+                <span class="m-home-rt__item">预测全天 <b>{{ rtPredictText }}</b></span>
+              </div>
+              <div v-if="!rtError && rtDay" class="m-home-rt-avg">
+                <span>5日均 <b>{{ rtAvg5Text }}</b></span>
+                <span>60日均 <b>{{ rtAvg60Text }}</b></span>
+                <span>较5日均 <b :class="rtVsAvg5Cls">{{ rtVsAvg5 ?? '--' }}</b></span>
+              </div>
               <div class="m-home-panel__head">
                 <span class="m-home-panel__t">近 {{ turnoverRange }} 日成交额</span>
                 <div class="m-home-chips">
@@ -936,6 +1041,16 @@ const pctClass = (v: number | null): string =>
             </div>
           </div>
         </template>
+        <template #face3>
+          <!-- 大盘评级（2026-10-13 新增纸；与 PC 同源同常量，环形 + 投资建议 + 近 5 日迷你柱） -->
+          <div class="m-card">
+            <div class="m-home-sec m-home-sec--in">
+              <span class="m-home-sec__t">大盘评级</span>
+              <span class="m-home-sec__s">同花顺评分 · 60s 刷新</span>
+            </div>
+            <MobileRatingCard ref="ratingCardRef" />
+          </div>
+        </template>
       </BookFlipBook>
 
       <!-- 5. 今天炒什么（保留现状，压轴） -->
@@ -1083,6 +1198,32 @@ const pctClass = (v: number | null): string =>
 
 
 <style scoped>
+/* === 实时成交额摘要行（2026-10-13 并入成交额卡） === */
+.m-home-rt {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 0 16px;
+  margin-bottom: 8px;
+}
+.m-home-rt__main { display: flex; align-items: baseline; gap: 6px; }
+.m-home-rt__label { font-size: 11px; color: var(--color-text-3); }
+.m-home-rt__num { font-size: 20px; font-weight: 700; color: var(--color-text-1); font-variant-numeric: tabular-nums; }
+.m-home-rt__item { font-size: 11.5px; color: var(--color-text-3); }
+.m-home-rt__item b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.m-home-rt-avg {
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--color-text-3);
+  padding: 0 16px 8px;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 8px;
+}
+.m-home-rt-avg b { font-weight: 500; color: var(--color-text-2); font-variant-numeric: tabular-nums; }
+
 /* === 板块热力下钻 · 成分股表格弹窗（王总 2026-10-12） === */
 .m-cons { height: 100%; display: flex; flex-direction: column; padding: 16px 16px calc(12px + env(safe-area-inset-bottom, 0px)); }
 .m-cons__head { display: flex; align-items: center; justify-content: space-between; padding-bottom: 10px; }

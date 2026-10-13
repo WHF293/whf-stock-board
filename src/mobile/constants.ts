@@ -229,11 +229,11 @@ export const FUND_FLOW_PAGER_SWIPE_PX = 48;
 
 /* ---- 首页成交额曲线（移动端专属窗口；PC 市场总览为 30/60/180，共用 common 常量互不影响）---- */
 
-/** 可选交易日窗口（最近 N 个交易日） */
-export const MOBILE_TURNOVER_RANGES = [10, 30, 60] as const;
-
-/** 默认窗口（最近 10 个交易日） */
-export const MOBILE_TURNOVER_RANGE_DEFAULT: (typeof MOBILE_TURNOVER_RANGES)[number] = 10;
+/** 可选交易日窗口（最近 N 个交易日；2026-10-13 起与 PC 共用 common 变量，10/30/60 同源） */
+export {
+  TURNOVER_RANGE_DAYS as MOBILE_TURNOVER_RANGES,
+  TURNOVER_RANGE_DEFAULT as MOBILE_TURNOVER_RANGE_DEFAULT,
+} from '../common/constants/turnover.constants.ts';
 
 /* ---- 调试模式（「我的」页应用信息卡连点开启；网络请求面板 + 悬浮球）---- */
 

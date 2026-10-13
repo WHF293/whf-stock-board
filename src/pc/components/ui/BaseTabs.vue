@@ -48,7 +48,8 @@ const tabClass = (active: boolean): string[] => {
   return [
     "pressable shrink-0 whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-medium active:scale-95",
     active
-      ? "bg-primary-weak text-primary"
+      ? // 选中态：高光玻璃气泡（theme.css .pc-nav-bubble，与侧栏选中项同源质感）
+        "pc-nav-bubble text-primary"
       : "text-text-secondary hover:text-text",
   ];
 };

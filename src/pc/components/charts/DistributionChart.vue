@@ -22,7 +22,7 @@ const props = defineProps<{
 const settingsStore = useSettingsStore();
 
 /** 图表容器高度（像素） */
-const CHART_HEIGHT_PX = 220;
+const CHART_HEIGHT_PX = 308; // 220 × 1.4（2026-10-13 涨跌分布/主力净流入并排增高，王总）
 
 /** 当前涨跌色阶（依赖 trendTheme） */
 const trendSet = computed(() => {
