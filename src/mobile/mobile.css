@@ -540,6 +540,15 @@ body {
   background: var(--color-surface);
 }
 
+/* 选择器式 Tabs（二级页顶部分组切换：个股行情 / 行情全景 / 市场榜单 / 板块日历）：
+   空 van-tab 只当分段选择器，内容面板不在此组件内——不吃主 Tab 版的 flex:1，
+   自身固定高度，内容滚动仍由下方 .m-sub-scroll 承担 */
+.m-page-flex .m-tabs--selector {
+  flex: none;
+  min-height: 0;
+}
+.m-tabs--selector .van-tabs__content { display: none; }
+
 /* 分段选择（轮询间隔等四档选项） */
 .m-seg { display: flex; background: var(--m-page-bg); border-radius: 8px; padding: 2px; }
 .m-seg__opt {
@@ -705,6 +714,8 @@ body {
 .m-error__retry {
   margin-top: 10px;
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 30px;
   padding: 0 14px;
   border: none;
@@ -715,6 +726,8 @@ body {
   font-weight: 700;
   cursor: pointer;
 }
+/* 错误态占位图（warning 图标，置于文案上方） */
+.m-error .van-icon { display: block; margin: 0 auto 8px; font-size: 26px; opacity: 0.5; }
 .m-footer { padding: 12px 0 14px; text-align: center; font-size: 11.5px; color: var(--color-text-3); background: transparent; }
 .m-load-sentinel { height: 1px; }
 .m-foot-note { padding: 14px 24px 4px; text-align: center; font-size: 10.5px; color: var(--color-text-3); line-height: 1.7; }
@@ -986,6 +999,22 @@ body {
 .m-home-err-box .retry {
   display: inline-flex; align-items: center; gap: 4px; margin-left: 8px;
   min-height: 26px; padding: 0 12px; border-radius: 13px;
+  background: var(--color-primary-soft); color: var(--color-primary);
+  font-size: 11px; font-weight: 700; cursor: pointer;
+}
+/* 指数条失败态：保留指数名占位（数值 --/--% 弱化显示），不整块报错（王总 2026-10-13） */
+.m-home-index--err .m-home-index__px,
+.m-home-index--err .m-home-index__pct { color: var(--color-text-3); }
+/* 指数条失败提示行：异常占位图 + 文案 + 重试（整体居中） */
+.m-home-err-strip {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 6px 0 2px; font-size: 11px; color: var(--color-text-3);
+}
+.m-home-err-strip .van-icon { font-size: 14px; opacity: 0.7; }
+/* 通用小重试按钮：显式双轴居中（原 inline-flex 缺对齐，文字偏移——王总 2026-10-13） */
+.m-err-retry {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 24px; padding: 0 12px; border: none; border-radius: 12px;
   background: var(--color-primary-soft); color: var(--color-primary);
   font-size: 11px; font-weight: 700; cursor: pointer;
 }

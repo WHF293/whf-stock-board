@@ -48,6 +48,15 @@ import type {
 import type { IndustryBoardConstituent } from '../../../common/types/board.types.ts';
 import type { TableColumn } from '../../../common/types/table.types.ts';
 import { useStockOpen } from '../../../common/composables/use-stock-open';
+import { usePageHeaderSlot, PAGE_HEADER_ACTIONS_TARGET } from '../../../common/composables/use-page-header-slot';
+import {
+  BOARD_CATEGORIES,
+  BOARD_CATEGORY_ALL,
+  BOARD_CATEGORY_FILTER_OPTIONS,
+  BOARD_CATEGORY_UNKNOWN_LABEL,
+  getBoardCategoryKey,
+  type BoardCategoryFilterValue,
+} from '../../../common/constants/board-taxonomy.constants.ts';
 
 /**
  * 行情全景 · 板块资金（原「市场榜单-板块净流入」模块迁入）：
@@ -57,7 +66,7 @@ import { useStockOpen } from '../../../common/composables/use-stock-open';
  * - 曲线视图：已选行业（≤26 个）的分时资金曲线叠加，进视图触发一次不轮询，
  *   曲线本体进 dataCache 内存快照，已选行业经 appStorage 跨会话持久化；
  * - 「查看历史净流入」跳独立子页（逐日历史渐进累积落本地，见 sector-flow-history.api）；
- * - 顶部工具条含 AI 分析 / 导出 Excel（榜单数据自包含）
+ * - 页级动作（AI 分析 / 导出 Excel，榜单数据自包含）上移所在页面的页头，经 Teleport 投射
  */
 
 const { openSidebar, openPage, toContextList } = useStockOpen();
@@ -272,6 +281,42 @@ const curveProgress = ref({ done: 0, total: 0 });
 const isCurvePickerOpen = ref(false);
 /** 弹窗内暂存勾选（确认时才生效） */
 const pendingCurveCodes = ref<string[]>([]);
+/**
+ * 选择行业弹窗的风格大类筛选（对齐行情全景-A股全景；王总 2026-10-13）：
+ * 「全部」= 按大类分区展示，具体大类 = 单组平铺，方便定位行业
+ */
+const curveCategoryFilter = ref<BoardCategoryFilterValue>(BOARD_CATEGORY_ALL);
+
+/**
+ * 行业榜单按风格大类分区（顺序 = BOARD_CATEGORIES；未归类沉末尾；空组剔除）
+ * @returns 分组列表（key / 展示名 / 组内榜单条目）
+ */
+const groupedSectorRank = computed(() => {
+  // key 含「未归类」兜底组，故用 string 而非 BoardCategoryKey
+  const groups: { key: string; label: string; items: SectorFundFlowItem[] }[] =
+    BOARD_CATEGORIES.map((category) => ({
+      key: category.key,
+      label: category.label,
+      items: sectorRank.value.filter((item) => getBoardCategoryKey(item.code) === category.key),
+    }));
+  const unknown = sectorRank.value.filter((item) => getBoardCategoryKey(item.code) === null);
+  if (unknown.length > 0) {
+    groups.push({ key: 'unknown', label: BOARD_CATEGORY_UNKNOWN_LABEL, items: unknown });
+  }
+  return groups.filter((group) => group.items.length > 0);
+});
+
+/**
+ * 当前大类筛选下的行业榜单（非「全部」时为单一大类的平铺列表）
+ * @returns 榜单条目列表
+ */
+const filteredSectorRank = computed(() =>
+  curveCategoryFilter.value === BOARD_CATEGORY_ALL
+    ? sectorRank.value
+    : sectorRank.value.filter(
+        (item) => getBoardCategoryKey(item.code) === curveCategoryFilter.value,
+      ),
+);
 
 /** 曲线视图是否激活 */
 const isCurveMode = computed(() => sectorViewMode.value === 'curve');
@@ -529,7 +574,7 @@ const goSectorFlowHistory = (): void => {
   );
 };
 
-// ---------- 工具条：AI 分析 + 导出 Excel（榜单数据自包含） ----------
+// ---------- 工具条：AI 分析 + 导出 Excel（榜单数据自包含；按钮上移页面页头） ----------
 
 const settingsStore = useSettingsStore();
 const notifications = useNotificationsStore();
@@ -538,6 +583,9 @@ const notifications = useNotificationsStore();
 const agentEntryVisible = computed(
   () => !settingsStore.hiddenHeaderItems.includes(HOST_HEADER_ITEM.AGENT),
 );
+
+/** 页头动作挂载守卫：宿主页激活时按钮才出现在页头（KeepAlive 的 activated 下发到子组件） */
+const { active: headerSlotActive } = usePageHeaderSlot();
 
 /** 榜单类型名（AI 分析提示词与导出文件名共用） */
 const RANK_LABEL = '板块净流入';
@@ -618,7 +666,21 @@ const onRankExport = async (): Promise<void> => {
 
 <template>
   <BaseCard fill class="min-h-0 flex-1">
-    <!-- 模块工具条：曲线 / 列表切换 + 曲线专属操作 + AI 分析 / 导出 -->
+    <!-- 页级动作上移页面页头：AI 分析 / 导出 Excel（Teleport 投射，宿主页激活时才挂载） -->
+    <Teleport v-if="headerSlotActive" :to="PAGE_HEADER_ACTIONS_TARGET">
+      <div class="flex items-center gap-2">
+        <BaseButton v-if="agentEntryVisible" variant="ghost" @click="onRankAiAnalysis">
+          <MenuIcon name="agent" :size="14" />
+          AI 分析
+        </BaseButton>
+        <BaseButton variant="ghost" @click="onRankExport">
+          <MenuIcon name="export" :size="14" />
+          导出 Excel
+        </BaseButton>
+      </div>
+    </Teleport>
+
+    <!-- 模块工具条：曲线 / 列表切换 + 曲线专属操作（截至时间 / 进度说明在左侧） -->
     <div class="mb-2 flex shrink-0 flex-wrap items-center justify-between gap-2">
       <div class="text-xs text-text-tertiary">
         <template v-if="sectorViewMode === 'curve'">
@@ -639,14 +701,6 @@ const onRankExport = async (): Promise<void> => {
             刷新
           </BaseButton>
         </template>
-        <BaseButton v-if="agentEntryVisible" variant="ghost" @click="onRankAiAnalysis">
-          <MenuIcon name="agent" :size="14" />
-          AI 分析
-        </BaseButton>
-        <BaseButton variant="ghost" @click="onRankExport">
-          <MenuIcon name="export" :size="14" />
-          导出 Excel
-        </BaseButton>
       </div>
     </div>
 
@@ -753,7 +807,7 @@ const onRankExport = async (): Promise<void> => {
     <BaseModal
       v-model:open="isCurvePickerOpen"
       title="选择行业"
-      max-width-class="max-w-2xl"
+      max-width-class="max-w-5xl"
       height-class="h-[70dvh]"
     >
       <template #filters>
@@ -768,6 +822,12 @@ const onRankExport = async (): Promise<void> => {
             清空
           </button>
         </div>
+        <!-- 风格大类筛选（对齐行情全景-A股全景；「全部」按大类分区展示，王总 2026-10-13） -->
+        <BaseTabs
+          v-model="curveCategoryFilter"
+          :options="BOARD_CATEGORY_FILTER_OPTIONS"
+          class="mt-2"
+        />
       </template>
       <!-- 榜单未就绪：加载中骨架 / 失败空态（附重试），避免弹窗静默空白 -->
       <div v-if="isFlowLoading && sectorRank.length === 0" class="py-6">
@@ -781,35 +841,81 @@ const onRankExport = async (): Promise<void> => {
           </BaseButton>
         </div>
       </div>
-      <div v-else class="grid grid-cols-2 gap-1">
-        <label
-          v-for="item in sectorRank"
-          :key="item.code"
-          class="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-flat-weak"
-          :class="{
-            'opacity-50':
-              !pendingCurveCodes.includes(item.code) &&
-              pendingCurveCodes.length >= SECTOR_CURVE_MAX_COUNT,
-          }"
-        >
-          <input
-            type="checkbox"
-            class="accent-primary"
-            :checked="pendingCurveCodes.includes(item.code)"
-            :disabled="
-              !pendingCurveCodes.includes(item.code) &&
-                pendingCurveCodes.length >= SECTOR_CURVE_MAX_COUNT
-            "
-            @change="togglePendingCurve(item.code)"
-          />
-          <span class="min-w-0 flex-1 truncate text-sm text-text">{{ item.name }}</span>
-          <span
-            class="shrink-0 text-xs tabular-nums"
-            :class="(item.mainNetInflow ?? 0) >= 0 ? 'text-up' : 'text-down'"
+      <div v-else class="max-h-[52dvh] overflow-y-auto">
+        <!-- 「全部」：按风格大类分区（顺序 = BOARD_CATEGORIES，未归类沉末尾） -->
+        <template v-if="curveCategoryFilter === BOARD_CATEGORY_ALL">
+          <section
+            v-for="group in groupedSectorRank"
+            :key="group.key"
+            class="mb-3 last:mb-0"
           >
-            {{ formatYuanWithSign(item.mainNetInflow) }}
-          </span>
-        </label>
+            <p class="mb-1.5 flex items-baseline gap-2">
+              <span class="text-sm font-medium text-text">{{ group.label }}</span>
+              <span class="text-xs text-text-tertiary">{{ group.items.length }} 个</span>
+            </p>
+            <div class="grid grid-cols-4 gap-1">
+              <label
+                v-for="item in group.items"
+                :key="item.code"
+                class="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-flat-weak"
+                :class="{
+                  'opacity-50':
+                    !pendingCurveCodes.includes(item.code) &&
+                    pendingCurveCodes.length >= SECTOR_CURVE_MAX_COUNT,
+                }"
+              >
+                <input
+                  type="checkbox"
+                  class="accent-primary"
+                  :checked="pendingCurveCodes.includes(item.code)"
+                  :disabled="
+                    !pendingCurveCodes.includes(item.code) &&
+                      pendingCurveCodes.length >= SECTOR_CURVE_MAX_COUNT
+                  "
+                  @change="togglePendingCurve(item.code)"
+                />
+                <span class="min-w-0 flex-1 truncate text-sm text-text">{{ item.name }}</span>
+                <span
+                  class="shrink-0 text-xs tabular-nums"
+                  :class="(item.mainNetInflow ?? 0) >= 0 ? 'text-up' : 'text-down'"
+                >
+                  {{ formatYuanWithSign(item.mainNetInflow) }}
+                </span>
+              </label>
+            </div>
+          </section>
+        </template>
+        <!-- 指定大类：单组平铺 -->
+        <div v-else class="grid grid-cols-4 gap-1">
+          <label
+            v-for="item in filteredSectorRank"
+            :key="item.code"
+            class="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-flat-weak"
+            :class="{
+              'opacity-50':
+                !pendingCurveCodes.includes(item.code) &&
+                pendingCurveCodes.length >= SECTOR_CURVE_MAX_COUNT,
+            }"
+          >
+            <input
+              type="checkbox"
+              class="accent-primary"
+              :checked="pendingCurveCodes.includes(item.code)"
+              :disabled="
+                !pendingCurveCodes.includes(item.code) &&
+                  pendingCurveCodes.length >= SECTOR_CURVE_MAX_COUNT
+              "
+              @change="togglePendingCurve(item.code)"
+            />
+            <span class="min-w-0 flex-1 truncate text-sm text-text">{{ item.name }}</span>
+            <span
+              class="shrink-0 text-xs tabular-nums"
+              :class="(item.mainNetInflow ?? 0) >= 0 ? 'text-up' : 'text-down'"
+            >
+              {{ formatYuanWithSign(item.mainNetInflow) }}
+            </span>
+          </label>
+        </div>
       </div>
       <template #footer>
         <BaseButton variant="ghost" @click="isCurvePickerOpen = false">取消</BaseButton>

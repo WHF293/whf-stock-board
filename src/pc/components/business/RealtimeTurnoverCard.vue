@@ -7,6 +7,7 @@ import { formatAmount } from '../../../common/utils/format-amount';
 import { formatYuanWithSign } from '../../../common/utils/format-yuan';
 import { computeTurnoverAverage5 } from '../../../common/utils/compute-turnover-averages';
 import { usePolling } from '../../../common/composables/use-polling';
+import { CHART_LINE_BLUE } from '../../../common/constants/chart.constants.ts';
 import type { ThsTurnoverDay, ThsTurnoverMinute } from '../../../common/types/ths-market.types.ts';
 
 /**
@@ -145,7 +146,7 @@ const spark = computed(() => {
     <!-- 分时双线：当日 vs 昨日同时刻 -->
     <div v-if="spark" class="mt-3 flex-1">
       <div class="flex items-center gap-3 text-[11px] text-text-tertiary">
-        <span><i class="mr-1 inline-block h-0.5 w-3 align-middle" style="background: var(--color-primary)" />今日累计</span>
+        <span><i class="mr-1 inline-block h-0.5 w-3 align-middle" :style="{ background: CHART_LINE_BLUE }" />今日累计</span>
         <span><i class="mr-1 inline-block h-0 w-3 align-middle border-t border-dashed border-text-tertiary" />昨日同时刻</span>
       </div>
       <svg
@@ -167,7 +168,7 @@ const spark = computed(() => {
         <path
           :d="spark.today"
           fill="none"
-          stroke="var(--color-primary)"
+          :stroke="CHART_LINE_BLUE"
           stroke-width="1.6"
           vector-effect="non-scaling-stroke"
           stroke-linejoin="round"

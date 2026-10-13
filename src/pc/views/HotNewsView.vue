@@ -56,6 +56,7 @@ import {
   type TpSubView,
 } from "../../common/constants/hot-news.constants.ts";
 import { STORAGE_NS_HOT_NEWS_FILTER } from "../../common/constants/storage-key.constants.ts";
+import { usePageHeaderSlot, PAGE_HEADER_ACTIONS_TARGET } from "../../common/composables/use-page-header-slot";
 import { appStorage } from "../../common/utils/app-local-storage";
 import { buildNewsAnalysisPrompt } from "../../common/utils/build-news-analysis-prompt";
 import { dedupeHotNews } from "../../common/utils/dedupe-hot-news";
@@ -264,6 +265,9 @@ const settingsStore = useSettingsStore();
 const agentEntryVisible = computed(() =>
   !settingsStore.hiddenHeaderItems.includes(HOST_HEADER_ITEM.AGENT),
 );
+
+/** 页头动作挂载守卫：只有本页激活时按钮才出现在页头（KeepAlive 缓存页切走不残留） */
+const { active: headerSlotActive } = usePageHeaderSlot();
 
 /**
  * 收集当前已加载展示的新闻条目（「AI 分析」全量口径）：六个通用通道 +
@@ -1425,12 +1429,13 @@ const loadMoreLabel = (state: SourceState): string => {
   <!-- 单根容器：MainLayout 通过 :class="pageAnim" 下发页面进入动画类名，
          而多根组件无法继承 attrs（会丢动画并刷 Vue warn），故统一包一层 -->
   <div>
-    <!-- 「新闻源设置」工具条：按钮打开弹窗（勾选 / 拖拽排序都在弹窗内，草稿模式） -->
-    <div class="flex shrink-0 items-center justify-between border-b border-flat-weak px-4 py-2">
-      <span class="text-xs text-text-tertiary">
-        已启用 {{ visibleCards.length }} / {{ sourceItems.length }} 个新闻源
-      </span>
-      <div class="flex items-center gap-2">
+    <!-- 页级动作上移 MainLayout 页头：启用计数 + AI 分析 + 新闻源设置
+         （Teleport 投射，本页激活时才挂载；「新闻源设置」弹窗仍留在页内） -->
+    <Teleport v-if="headerSlotActive" :to="PAGE_HEADER_ACTIONS_TARGET">
+      <div class="flex items-center gap-3">
+        <span class="text-xs text-text-tertiary">
+          已启用 {{ visibleCards.length }} / {{ sourceItems.length }} 个新闻源
+        </span>
         <BaseButton
           v-if="agentEntryVisible"
           variant="ghost"
@@ -1445,7 +1450,7 @@ const loadMoreLabel = (state: SourceState): string => {
           新闻源设置
         </BaseButton>
       </div>
-    </div>
+    </Teleport>
 
     <!-- 新闻源设置弹窗（草稿模式：确认才生效） -->
     <HotNewsSourceModal
@@ -1692,8 +1697,9 @@ const loadMoreLabel = (state: SourceState): string => {
     </BaseModal>
 
     <!-- 横向卡片流：每源一张 375px 卡片，超出页面横向滚动 -->
-    <!-- 高度用 100dvh - 7rem：扣除 MainLayout 头部 h-14(56px) + main 内部 div 的 p-6 上下(48px) + buffer -->
-    <div class="flex h-[calc(100dvh-9rem)] min-h-0 gap-4 overflow-x-auto p-4">
+    <!-- 高度用 100dvh - 6.5rem：扣除 MainLayout 头部 h-14(56px) + main 内部 div 的 p-6 上下(48px)
+         （页级动作工具条已上移页头，不再为其预留高度） -->
+    <div class="flex h-[calc(100dvh-6.5rem)] min-h-0 gap-4 overflow-x-auto p-4">
       <BaseCard
         v-for="card in cardViews"
         :key="card.value"
