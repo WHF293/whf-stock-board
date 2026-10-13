@@ -19,6 +19,7 @@ import { useSettingsStore } from '../../common/stores/settings';
 import { useNotificationsStore } from '../../common/stores/notifications';
 import { useTabConfigStore } from '../../common/stores/tab-config';
 import { useStockOpen } from '../../common/composables/use-stock-open';
+import { usePageHeaderSlot, PAGE_HEADER_ACTIONS_TARGET } from '../../common/composables/use-page-header-slot';
 import { requestAgentAnalysis } from '../agent/agent-bridge';
 import { buildRankAnalysisPrompt } from '../../common/utils/build-rank-analysis-prompt';
 import { exportSheetsToExcel } from '../../common/utils/export-excel';
@@ -335,9 +336,13 @@ const openDetail = (code: string): void => {
   openSidebar(code);
 };
 
-// ---------- 榜单工具条：AI 分析 + 导出 Excel（所有页签共用，数据取当前页签榜单） ----------
+// ---------- 榜单工具条：AI 分析 + 导出 Excel（所有页签共用，数据取当前页签榜单；
+// ---------- 按钮上移 MainLayout 页头，经 Teleport 投射） ----------
 const settingsStore = useSettingsStore();
 const notifications = useNotificationsStore();
+
+/** 页头动作挂载守卫：只有本页激活时按钮才出现在页头（KeepAlive 缓存页切走不残留） */
+const { active: headerSlotActive } = usePageHeaderSlot();
 
 /** 连板 / 异动子视图（数据在其组件内，按钮点击时经 expose 方法获取） */
 const eventViewRef = ref<InstanceType<typeof MarketEventView> | null>(null);
@@ -477,17 +482,19 @@ const onRankExport = async (): Promise<void> => {
       <TabConfigButton page-id="market-rank" :options="SORT_TAB_OPTIONS" />
     </div>
 
-    <!-- 榜单工具条：AI 分析 + 导出 Excel -->
-    <div class="flex shrink-0 items-center justify-end gap-2">
-      <BaseButton v-if="agentEntryVisible" variant="ghost" @click="onRankAiAnalysis">
-        <MenuIcon name="agent" :size="14" />
-        AI 分析
-      </BaseButton>
-      <BaseButton variant="ghost" @click="onRankExport">
-        <MenuIcon name="export" :size="14" />
-        导出 Excel
-      </BaseButton>
-    </div>
+    <!-- 榜单工具条上移页头：AI 分析 + 导出 Excel（Teleport 投射，本页激活时才挂载） -->
+    <Teleport v-if="headerSlotActive" :to="PAGE_HEADER_ACTIONS_TARGET">
+      <div class="flex items-center gap-2">
+        <BaseButton v-if="agentEntryVisible" variant="ghost" @click="onRankAiAnalysis">
+          <MenuIcon name="agent" :size="14" />
+          AI 分析
+        </BaseButton>
+        <BaseButton variant="ghost" @click="onRankExport">
+          <MenuIcon name="export" :size="14" />
+          导出 Excel
+        </BaseButton>
+      </div>
+    </Teleport>
 
     <!-- 原市场异动页签：连板 / 异动 / 龙虎榜 / 大宗交易（自管数据，重接口不轮询） -->
     <MarketEventView v-if="sortKey === 'event'" ref="eventViewRef" mode="zt" class="min-h-0 flex-1" />

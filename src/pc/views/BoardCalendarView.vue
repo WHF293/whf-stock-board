@@ -19,6 +19,7 @@ import {
   listBoardProfiles,
 } from '../../common/api/board-calendar-db.api.ts';
 import { usePolling } from '../../common/composables/use-polling';
+import { usePageHeaderSlot, PAGE_HEADER_ACTIONS_TARGET } from '../../common/composables/use-page-header-slot';
 import { getTradingDates, syncBoardCalendar } from '../../common/composables/use-board-calendar-sync';
 import {
   BOARD_CALENDAR_HEAT_BASIS,
@@ -102,6 +103,9 @@ const lastUpdatedAt = ref<number | null>(null);
 
 /** 板块过滤器弹窗开关 */
 const filterOpen = ref(false);
+
+/** 页头动作挂载守卫：只有本页激活时按钮才出现在页头（KeepAlive 缓存页切走不残留） */
+const { active: headerSlotActive } = usePageHeaderSlot();
 /** 主区视图：列表（涨跌停矩阵）/ 气泡图（赚钱效应） */
 const calendarView = ref<BoardCalendarViewMode>(BOARD_CALENDAR_VIEW_DEFAULT);
 /** 弹窗状态 */
@@ -514,6 +518,16 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
 
 <template>
   <div class="flex h-[calc(100dvh-6.5rem)] min-h-0 flex-col gap-4">
+    <!-- 板块过滤器上移 MainLayout 页头（Teleport 投射，本页激活时才挂载；弹窗仍留在页内） -->
+    <Teleport v-if="headerSlotActive" :to="PAGE_HEADER_ACTIONS_TARGET">
+      <BaseButton variant="ghost" @click="filterOpen = true">
+        <MenuIcon name="filter" :size="14" />
+        板块过滤器
+        <span class="tabular-nums text-text-tertiary">
+          {{ matrix.rows.length }}/{{ CALENDAR_BOARDS.length }}
+        </span>
+      </BaseButton>
+    </Teleport>
     <!-- 控制条：热门口径 / 范围 / 刷新（内容高固定，剩余高度全部留给矩阵） -->
     <div class="flex shrink-0 flex-wrap items-center justify-between gap-2">
       <div class="flex flex-wrap items-center gap-2">
@@ -527,13 +541,6 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
           :options="BOARD_CALENDAR_RANGE_OPTIONS"
           @update:model-value="settingsStore.setBoardCalendarRange($event as never)"
         />
-        <BaseButton variant="ghost" @click="filterOpen = true">
-          <MenuIcon name="filter" :size="14" />
-          板块过滤器
-          <span class="tabular-nums text-text-tertiary">
-            {{ matrix.rows.length }}/{{ CALENDAR_BOARDS.length }}
-          </span>
-        </BaseButton>
         <BaseTabs
           :model-value="calendarView"
           :options="BOARD_CALENDAR_VIEW_OPTIONS"

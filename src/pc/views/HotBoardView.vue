@@ -18,6 +18,7 @@ import { DATA_CACHE_KEY } from '../../common/constants/data-cache.constants.ts';
 import { HOST_HEADER_ITEM } from '../../common/constants/header.constants.ts';
 import { NOTIFY_TONE } from '../../common/constants/notify.constants.ts';
 import { STORAGE_NS_HOT_BOARD_FILTER } from '../../common/constants/storage-key.constants.ts';
+import { usePageHeaderSlot, PAGE_HEADER_ACTIONS_TARGET } from '../../common/composables/use-page-header-slot';
 import { ROUTE_PATH } from '../../common/constants/router-meta.constants.ts';
 import {
   BOARD_CACHE_TTL_MS,
@@ -387,6 +388,9 @@ const agentEntryVisible = computed(() =>
   !settingsStore.hiddenHeaderItems.includes(HOST_HEADER_ITEM.AGENT),
 );
 
+/** 页头动作挂载守卫：只有本页激活时按钮才出现在页头（KeepAlive 缓存页切走不残留） */
+const { active: headerSlotActive } = usePageHeaderSlot();
+
 /** 「AI 分析」运行态：防重入 */
 const aiRunning = ref(false);
 
@@ -437,12 +441,13 @@ const runBoardAnalysis = async (scope?: BoardSource): Promise<void> => {
   <!-- 单根容器：MainLayout 通过 :class="pageAnim" 下发页面进入动画类名，
          而多根组件无法继承 attrs（会丢动画并刷 Vue warn），故统一包一层 -->
   <div>
-    <!-- 顶部工具条：启用计数 + AI 分析 + 平台设置 -->
-    <div class="flex shrink-0 items-center justify-between border-b border-flat-weak px-4 py-2">
-      <span class="text-xs text-text-tertiary">
-        已启用 {{ visibleSources.length }} / {{ sourceItems.length }} 个平台
-      </span>
-      <div class="flex items-center gap-2">
+    <!-- 页级动作上移 MainLayout 页头：启用计数 + AI 分析 + 平台设置
+         （Teleport 投射，本页激活时才挂载；「平台设置」弹窗仍留在页内） -->
+    <Teleport v-if="headerSlotActive" :to="PAGE_HEADER_ACTIONS_TARGET">
+      <div class="flex items-center gap-3">
+        <span class="text-xs text-text-tertiary">
+          已启用 {{ visibleSources.length }} / {{ sourceItems.length }} 个平台
+        </span>
         <BaseButton v-if="agentEntryVisible" variant="ghost" :disabled="aiRunning" @click="runBoardAnalysis()">
           <MenuIcon name="agent" :size="14" />
           {{ aiRunning ? '分析中...' : 'AI 分析' }}
@@ -452,7 +457,7 @@ const runBoardAnalysis = async (scope?: BoardSource): Promise<void> => {
           平台设置
         </BaseButton>
       </div>
-    </div>
+    </Teleport>
 
     <!-- 平台设置弹窗（草稿模式：确认才生效） -->
     <HotBoardSourceModal v-model:open="sourceModalOpen" :items="sourceOptions" @confirm="onSourceConfirm" />
@@ -493,8 +498,9 @@ const runBoardAnalysis = async (scope?: BoardSource): Promise<void> => {
     </BaseModal>
 
     <!-- 横向卡片流：每平台一张 375px 卡片，超出页面横向滚动 -->
-    <!-- 高度用 100dvh - 9rem：扣除 MainLayout 头部与工具条的既有口径（与热点新闻页一致） -->
-    <div class="flex h-[calc(100dvh-9rem)] min-h-0 gap-4 overflow-x-auto p-4">
+    <!-- 高度用 100dvh - 6.5rem：扣除 MainLayout 头部 h-14(56px) + main 内部 div 的 p-6 上下(48px)
+         （页级动作工具条已上移页头，不再为其预留高度；与热点新闻页口径一致） -->
+    <div class="flex h-[calc(100dvh-6.5rem)] min-h-0 gap-4 overflow-x-auto p-4">
       <HotBoardCard
         v-for="card in cardViews"
         :key="card.source"

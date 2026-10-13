@@ -2,13 +2,15 @@
 import { useIntervalFn } from "@vueuse/core";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { isTauri } from "@tauri-apps/api/core";
+import { useDesktopChrome } from "../../common/composables/use-desktop-chrome";
+import { PAGE_HEADER_ACTIONS_ID } from "../../common/composables/use-page-header-slot";
 import TitleBar from "./TitleBar.vue";
 import HeaderTools from "./HeaderTools.vue";
 import PluginSettingsModal from "../components/plugin/PluginSettingsModal.vue";
 import StockSearchModal from "../components/business/StockSearchModal.vue";
 import FirstRunSetupModal from "../components/business/FirstRunSetupModal.vue";
 import BaseDrawer from "../components/ui/BaseDrawer.vue";
+import BaseButton from "../components/ui/BaseButton.vue";
 import SettingsView from "../views/SettingsView.vue";
 import DockPanel from "../components/dock/DockPanel.vue";
 import BaseTooltip from "../components/ui/BaseTooltip.vue";
@@ -77,8 +79,11 @@ const firstRunSetupOpen = computed({
   },
 });
 
-/** 是否 Tauri 桌面端（决定是否渲染自绘标题栏 + 侧栏品牌区是否上移；浏览器 false） */
-const isTauriDesktop = isTauri();
+/**
+ * 是否按桌面端外壳渲染（自绘标题栏 + 侧栏品牌区上移）：
+ * Tauri 恒真；浏览器可经 URL `?desktopTitlebar=1` 开启模拟以便与客户端比对样式
+ */
+const { desktopChrome } = useDesktopChrome();
 
 /**
  * 打开 Agent 分析：Tauri 开独立 WebviewWindow（已开则聚焦），
@@ -278,15 +283,12 @@ const headerItems = computed<HeaderRenderItem[]>(() => {
 const titleBarHeaderItems = computed<HeaderRenderItem[]>(() => headerItems.value);
 
 /**
- * 固定在 TitleBar 左侧（侧栏开关之后）的宿主条目，数组顺序即渲染顺序：
- * Agent 分析在前、交易状态徽标在后——王总指定的常驻左位，不随右侧工具编排移动
+ * 固定在 TitleBar 左侧（侧栏开关之后）的宿主条目：仅交易状态徽标
+ * （Agent 分析已移到右侧末位——白皮书之后，王总 2026-10-13）
  */
-const TITLE_BAR_LEADING_ORDER: readonly string[] = [
-  HOST_HEADER_ITEM.AGENT,
-  HOST_HEADER_ITEM.MARKET_STATUS,
-];
+const TITLE_BAR_LEADING_ORDER: readonly string[] = [HOST_HEADER_ITEM.MARKET_STATUS];
 
-/** TitleBar 左侧工具位（Agent 分析 + 交易状态），按上面的固定顺序 */
+/** TitleBar 左侧工具位（交易状态徽标），按上面的固定顺序 */
 const titleBarLeadingItems = computed<HeaderRenderItem[]>(() => {
   const rank = new Map(TITLE_BAR_LEADING_ORDER.map((id, index) => [id, index]));
   return titleBarHeaderItems.value
@@ -294,10 +296,18 @@ const titleBarLeadingItems = computed<HeaderRenderItem[]>(() => {
     .sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0));
 });
 
-/** TitleBar 右侧工具条（明暗 / 搜索 / 软件文档，窗口控制按钮左侧） */
-const titleBarTrailingItems = computed<HeaderRenderItem[]>(() =>
-  titleBarHeaderItems.value.filter((item) => !TITLE_BAR_LEADING_ORDER.includes(item.id)),
-);
+/**
+ * TitleBar 右侧工具条（明暗 / 搜索 / 软件文档 / Agent 分析，窗口控制按钮左侧）。
+ * Agent 分析恒置末位（白皮书之后）：用户已持久化的编排顺序可能还是旧默认
+ * （Agent 在白皮书之前），这里显式兜底，不随编排移动
+ */
+const titleBarTrailingItems = computed<HeaderRenderItem[]>(() => {
+  const rest = titleBarHeaderItems.value.filter(
+    (item) => !TITLE_BAR_LEADING_ORDER.includes(item.id),
+  );
+  const agent = rest.filter((item) => item.id === HOST_HEADER_ITEM.AGENT);
+  return [...rest.filter((item) => item.id !== HOST_HEADER_ITEM.AGENT), ...agent];
+});
 
 /**
  * 页面 header 渲染的条目：浏览器 = 全部（无标题栏，宿主项留在页内）；
@@ -308,7 +318,7 @@ const titleBarTrailingItems = computed<HeaderRenderItem[]>(() =>
  * 内容上方——「下拉要留在页内层级」的旧顾虑不成立。
  */
 const inPageHeaderItems = computed<HeaderRenderItem[]>(() =>
-  isTauriDesktop ? [] : headerItems.value,
+  desktopChrome.value ? [] : headerItems.value,
 );
 
 /**
@@ -458,7 +468,7 @@ void marketStatusStore.refresh();
   <div class="flex h-screen flex-col overflow-hidden">
     <!-- 自绘标题栏（仅 Tauri 桌面端）：品牌区 + 侧栏开关 + 左侧工具（交易状态/Agent）
          + 右侧工具（明暗/搜索/软件文档）+ 窗口控制 -->
-    <TitleBar v-if="isTauriDesktop">
+    <TitleBar v-if="desktopChrome">
       <template #leading-tools>
         <HeaderTools
           :items="titleBarLeadingItems"
@@ -490,7 +500,7 @@ void marketStatusStore.refresh();
       >
         <!-- 浏览器模式头部：品牌 + 收起/展开开关（Tauri 桌面端整块移入 TitleBar，不渲染） -->
         <div
-          v-if="!isTauriDesktop"
+          v-if="!desktopChrome"
           class="flex items-center py-4"
           :class="effectiveCollapsed ? 'justify-center px-2' : 'justify-between px-4'"
         >
@@ -516,12 +526,13 @@ void marketStatusStore.refresh();
             <BaseTooltip v-if="effectiveCollapsed" :text="effectiveCollapsed ? '展开侧栏' : '收起侧栏'" />
           </button>
         </div>
-        <!-- overflow-x-clip：收起态图标的 BaseTooltip（left-full）会横向溢出 nav，
-             而 overflow-y:auto 会把 overflow-x 计算成 auto → 底部出现横向滚动条；clip 掐掉 -->
+        <!-- overflow-x-clip：兜底掐掉意外横向溢出产生的横向滚动条（overflow-y:auto 会把
+             overflow-x 计算成 auto）。收起态图标的 BaseTooltip 已 Teleport 到 body
+             （fixed 定位），不受此裁剪影响 -->
         <nav
           ref="navRef"
           class="relative flex-1 space-y-1 overflow-x-clip overflow-y-auto px-2"
-          :class="isTauriDesktop ? 'pt-3' : ''"
+          :class="desktopChrome ? 'pt-3' : ''"
         >
           <!-- 滑动玻璃气泡：菜单选中态底座，切换路由时按移动端同款动画滑到新项 -->
           <span
@@ -622,16 +633,20 @@ void marketStatusStore.refresh();
               @open-agent="openAgentAnalysis"
               @open-site-docs="openSiteDocs"
             />
-            <button
-              type="button"
-              class="pressable rounded-lg p-1.5 text-text-tertiary hover:bg-flat-weak hover:text-text active:scale-90"
+            <!-- 页级动作挂载点：当前激活页面经 Teleport 投射自己的动作按钮
+                 （AI 分析 / 导出 Excel / 新闻源设置等，守卫见 use-page-header-slot） -->
+            <div :id="PAGE_HEADER_ACTIONS_ID" class="flex items-center gap-2" />
+            <!-- 插件设置：与页级动作按钮同款 ghost 样式（原裸齿轮图标与按钮群不搭，用户指定） -->
+            <BaseButton
+              variant="ghost"
               aria-label="插件设置"
               title="插件设置"
               data-track="PLUGIN_SETTINGS_OPEN"
               @click="pluginSettingsOpen = true"
             >
-              <MenuIcon name="settings" :size="15" />
-            </button>
+              <MenuIcon name="settings" :size="14" />
+              插件设置
+            </BaseButton>
           </div>
         </header>
         <main class="flex-1 overflow-y-auto">

@@ -761,6 +761,7 @@ onUnmounted(() => {
           @refresh="onPullRefresh(channelKeyOf(activeSource, channel))"
         >
           <div v-if="pageOfChannel(activeSource, channel).error" class="m-error">
+            <van-icon name="warning-o" />
             <div>内容加载失败，请检查网络后重试</div>
             <button
               class="m-error__retry"
@@ -904,6 +905,7 @@ onUnmounted(() => {
                 主题加载中…
               </div>
               <div v-else-if="thsThemes.error && thsThemes.items.length === 0" class="m-error">
+                <van-icon name="warning-o" />
                 <div>主题列表加载失败</div>
                 <button class="m-error__retry" @click="void ensureThsThemes()">↻ 重新加载</button>
               </div>

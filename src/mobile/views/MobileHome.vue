@@ -252,6 +252,24 @@ const indicesError = ref(false);
 const INDEX_TTL_MS = 30_000;
 let indicesAt = 0;
 
+/* 失败态占位（王总 2026-10-13）：保留指数名，数值显示 --/--%，不再整块报错盖掉指数条 */
+
+/** A 股指数条占位（名称取 INDEX_LABELS，顺序与 HOME_INDEX_SYMBOLS 一致） */
+const indexPlaceholders = HOME_INDEX_SYMBOLS.map((code) => ({
+  code,
+  name: INDEX_LABELS[code] ?? code,
+}));
+
+/** 全球指数占位名（顺序与 PANORAMA_GLOBAL_INDEX_SECIDS 对齐） */
+const GLOBAL_INDEX_PLACEHOLDERS = [
+  '恒生指数',
+  '道琼斯',
+  '纳斯达克',
+  '标普500',
+  '日经225',
+  '韩国KOSPI',
+];
+
 /* 全球指数（PC 同款 6 项：恒生/道琼斯/纳斯达克/标普500/日经225/KOSPI，东财 ulist 源） */
 const globalIndices = ref<GlobalIndexQuote[]>([]);
 const globalIndicesError = ref(false);
@@ -822,7 +840,19 @@ const pctClass = (v: number | null): string =>
 
       <!-- 2. 指数条（4 列一行无需滑动；下方展开区显示全球指数 6 项，对齐 PC 市场总览） -->
       <div class="m-home-index-bar">
-        <template v-if="indices.length > 0">
+        <!-- 失败态：保留指数名，数值显示 --/--%（弱化展示），不整块报错（王总 2026-10-13） -->
+        <template v-if="indicesError">
+          <div
+            v-for="item in indexPlaceholders"
+            :key="item.code"
+            class="m-home-index m-home-index--err"
+          >
+            <div class="m-home-index__name">{{ item.name }}</div>
+            <div class="m-home-index__px">--</div>
+            <div class="m-home-index__pct">--%</div>
+          </div>
+        </template>
+        <template v-else-if="indices.length > 0">
           <div v-for="item in indices" :key="item.code" class="m-home-index">
             <div class="m-home-index__name">{{ item.name }}</div>
             <div class="m-home-index__px" :class="pctClass(item.changePct)">
@@ -833,23 +863,38 @@ const pctClass = (v: number | null): string =>
             </div>
           </div>
         </template>
-        <div v-else-if="indicesError" class="m-home-err-box m-home-err-box--idx">
-          <van-icon name="warning-o" />
-          指数加载失败
-          <span class="retry" @click="loadIndices(true)">重试</span>
-        </div>
         <div v-for="n in 3" v-else :key="n" class="m-home-index m-home-index--skeleton">
           <van-skeleton title :row="1" :loading="true" />
         </div>
       </div>
+      <!-- 指数条失败提示：异常占位图 + 重试（居中；仅在失败态出现） -->
+      <div v-if="indicesError" class="m-home-err-strip">
+        <van-icon name="warning-o" />
+        指数加载失败
+        <button class="m-err-retry" @click="loadIndices(true)">重试</button>
+      </div>
       <!-- 全球指数展开区（PC 市场总览同款高度过渡：常驻容器 max-height + opacity） -->
       <div class="m-home-index-expand" :class="{ 'm-home-index-expand--open': indexExpanded }">
         <template v-if="indexExpanded">
-          <div v-if="globalIndicesError" class="m-home-err-box m-home-err-box--idx">
-            <van-icon name="warning-o" />
-            全球指数加载失败
-            <span class="retry" @click="loadGlobalIndices(true)">重试</span>
-          </div>
+          <!-- 失败态：保留指数名 + --/--% 占位（与 A 股指数条同口径） -->
+          <template v-if="globalIndicesError">
+            <div class="m-home-index-grid">
+              <div
+                v-for="name in GLOBAL_INDEX_PLACEHOLDERS"
+                :key="name"
+                class="m-home-index m-home-index--err"
+              >
+                <div class="m-home-index__name">{{ name }}</div>
+                <div class="m-home-index__px">--</div>
+                <div class="m-home-index__pct">--%</div>
+              </div>
+            </div>
+            <div class="m-home-err-strip">
+              <van-icon name="warning-o" />
+              全球指数加载失败
+              <button class="m-err-retry" @click="loadGlobalIndices(true)">重试</button>
+            </div>
+          </template>
           <div v-else-if="globalIndices.length > 0" class="m-home-index-grid">
             <div v-for="g in globalIndices" :key="g.code" class="m-home-index">
               <div class="m-home-index__name">{{ g.name }}</div>

@@ -24,11 +24,9 @@ export interface BoardGroupOption {
  * 口径均为 A 股（雪球榜单天然含港美股，由取数层按代码过滤）
  */
 export const BOARD_GROUPS: Record<BoardSource, readonly BoardGroupOption[]> = {
-  // 同花顺：dq.10jqka 热榜接口的 list_type + 新股独立接口
+  // 同花顺：dq.10jqka 热榜接口的 list_type（快速飙升中 / 新股热度榜已移除，王总 2026-10-13）
   ths: [
     { value: 'normal', label: '大家都在看' },
-    { value: 'skyrocket', label: '快速飙升中' },
-    { value: 'new', label: '新股热度榜' },
     { value: 'tech', label: '技术交易派' },
     { value: 'value', label: '价值投资派' },
     { value: 'trend', label: '趋势投资派' },

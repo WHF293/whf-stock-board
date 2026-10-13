@@ -31,8 +31,9 @@ export const HOST_HEADER_ITEMS = [
   { id: HOST_HEADER_ITEM.MARKET_STATUS, title: '交易时段', icon: 'info' },
   { id: HOST_HEADER_ITEM.THEME, title: '明暗切换', icon: 'sun' },
   { id: HOST_HEADER_ITEM.SEARCH, title: '搜索个股', icon: 'search' },
-  { id: HOST_HEADER_ITEM.AGENT, title: 'Agent 分析', icon: 'agent' },
   { id: HOST_HEADER_ITEM.WHITEPAPER, title: '软件文档', icon: 'whitepaper' },
+  // Agent 分析默认排在软件文档之后（王总 2026-10-13；桌面端 TitleBar 另有恒置末位逻辑）
+  { id: HOST_HEADER_ITEM.AGENT, title: 'Agent 分析', icon: 'agent' },
 ] as const;
 
 /** 宿主自带顶栏条目的默认顺序（设置页编排弹窗的「恢复默认」与合并顺序用） */

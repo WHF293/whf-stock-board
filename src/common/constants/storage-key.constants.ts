@@ -89,5 +89,8 @@ export const STORAGE_NS_MOBILE_DEBUG = 'mobile.debug';
 /** 移动端 · 调试悬浮球位置（JSON：{ x, y }，视口 px 坐标，球心左上角） */
 export const STORAGE_NS_MOBILE_DEBUG_BALL = 'mobile.debugBall';
 
+/** PC · 浏览器模拟客户端标题栏开关（'1'/'0'；URL `?desktopTitlebar=` 优先写入，样式比对用） */
+export const STORAGE_NS_DEBUG_DESKTOP_CHROME = 'pc.debugDesktopChrome';
+
 /** 大盘评分历史（按本地日积累，近 5 日评分柱消费；值 = RatingHistoryEntry[]） */
 export const STORAGE_NS_THS_RATING_HISTORY = 'ths.ratingHistory';

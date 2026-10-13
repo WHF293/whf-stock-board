@@ -248,7 +248,10 @@ usePolling({
     await delay(EVENT_REQUEST_GAP_MS);
     await fetchEvents();
   },
-  intervalMs: POLLING_INTERVAL.MARKET_BREADTH,
+  // 异动维度（events）间隔完全跟随设置页刷新间隔（王总 2026-10-13）：
+  // 传 0 = 无下限，scheduler 取 max(设置值, 0) = 设置值；
+  // 涨停维度（zt）保持市场宽度类 30s 下限不变（股池为重接口）
+  intervalMs: props.mode === 'events' ? 0 : POLLING_INTERVAL.MARKET_BREADTH,
   tradingAware: true,
 });
 

@@ -304,7 +304,7 @@ const onSheetRemove = (): void => {
         </div>
         <button class="m-wl-empty__btn" @click="openSearch">
           <van-icon name="plus" size="14" />
-          添加自选股
+          自选
         </button>
       </div>
       <div v-else class="m-card">

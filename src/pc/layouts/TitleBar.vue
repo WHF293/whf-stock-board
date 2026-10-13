@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
+import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import MenuIcon from "../components/ui/MenuIcon.vue";
 import UpdateBadge from "../components/business/UpdateBadge.vue";
@@ -9,14 +10,19 @@ import { syncCloseToTray } from "../../common/api/tray.api.ts";
 import { ROUTE_PATH } from "../../common/constants/router-meta.constants.ts";
 
 /**
- * 自定义标题栏（仅 Tauri 桌面端由 MainLayout 渲染；浏览器无窗口概念，不渲染）
+ * 自定义标题栏（Tauri 桌面端渲染；浏览器默认模拟渲染（见 use-desktop-chrome），
+ * `?desktopTitlebar=0` 可关闭）
  *
  * 替代系统原生标题栏：左侧品牌区（logo + 名称，自侧栏顶部上移，点击回市场总览）+
  * 侧栏收起/展开开关（自侧栏顶部移此，panelLeft 形状）+ 左侧工具位
- * （`#leading-tools` slot：Agent 分析 / 交易状态徽标），右侧经 `#tools` slot 渲染
+ * （`#leading-tools` slot：交易状态徽标），右侧经 `#tools` slot 渲染
  * 其余顶栏工具（明暗切换 / 搜索 / 软件文档，由 MainLayout 传入），最右是自绘
  * 最小化 / 最大化 / 关闭按钮；颜色走应用主题 token（bg-surface 等），
  * 跟随应用内明暗模式，与系统主题解耦。
+ *
+ * 浏览器模拟（use-desktop-chrome 调试开关）：布局照常渲染以便与客户端比对样式，
+ * 但窗口控制按钮禁用（无窗口可控制，disabled 占位保持宽度一致）；窗口 IPC
+ * （isMaximized / onResized / 拖拽）全部短路，data-tauri-drag-region 无副作用。
  *
  * 拖拽与双击最大化由 Tauri 注入脚本处理（元素须带 data-tauri-drag-region，
  * 且事件 target 是带属性的元素才生效——按钮与图标不带，不会误触发）：
@@ -28,7 +34,9 @@ import { ROUTE_PATH } from "../../common/constants/router-meta.constants.ts";
  * flyout）需要原生 HTMAXBUTTON 命中测试，自绘按钮给不了，双击最大化是替代。
  */
 
-const appWindow = getCurrentWindow();
+// getCurrentWindow 在非 Tauri 环境会抛错（读不到 __TAURI_INTERNALS__），先判 isTauri
+const canControlWindow = isTauri();
+const appWindow = canControlWindow ? getCurrentWindow() : null;
 const settingsStore = useSettingsStore();
 
 /** 切换侧栏收起 / 展开（持久化在 settings；原侧栏顶部按钮移入本栏） */
@@ -49,8 +57,9 @@ const isMaximized = ref(false);
 /** resize 事件解除监听句柄（onResized 返回 Promise<UnlistenFn>） */
 let unlistenResized: (() => void) | null = null;
 
-/** 同步最大化状态（查询型 IPC，仅在挂载与 resize 回调里调用） */
+/** 同步最大化状态（查询型 IPC，仅在挂载与 resize 回调里调用；浏览器模拟时短路） */
 const syncMaximized = (): void => {
+  if (!appWindow) return;
   void appWindow
     .isMaximized()
     .then((value) => {
@@ -62,6 +71,8 @@ const syncMaximized = (): void => {
 };
 
 onMounted(() => {
+  // 浏览器模拟：无窗口 IPC，跳过最大化同步 / resize 监听（托盘同步内部自带 isTauri 守卫）
+  if (!appWindow) return;
   syncMaximized();
   // 把持久化的「关闭按钮最小化到托盘」设置同步给 Rust（启动时一次；此后设置页改动即时同步）
   void syncCloseToTray(settingsStore.closeToTray);
@@ -79,19 +90,19 @@ onBeforeUnmount(() => {
   unlistenResized?.();
 });
 
-/** 最小化窗口 */
+/** 最小化窗口（浏览器模拟时按钮禁用，此分支不可达，守卫仅为类型完备） */
 const minimizeWindow = (): void => {
-  void appWindow.minimize();
+  void appWindow?.minimize();
 };
 
 /** 最大化 / 还原窗口 */
 const toggleMaximizeWindow = (): void => {
-  void appWindow.toggleMaximize();
+  void appWindow?.toggleMaximize();
 };
 
 /** 关闭窗口（与系统关闭按钮同生命周期） */
 const closeWindow = (): void => {
-  void appWindow.close();
+  void appWindow?.close();
 };
 </script>
 
@@ -131,7 +142,8 @@ const closeWindow = (): void => {
       >
         <MenuIcon name="panelLeft" :size="14" />
       </button>
-      <!-- 开关后沿的左侧工具位：交易状态徽标 + Agent 分析（MainLayout 经 #leading-tools 传入） -->
+      <!-- 开关后沿的左侧工具位：交易状态徽标（MainLayout 经 #leading-tools 传入；
+           Agent 分析已移至右侧末位——软件文档之后，王总 2026-10-13） -->
       <slot name="leading-tools" />
     </div>
 
@@ -147,13 +159,16 @@ const closeWindow = (): void => {
         <UpdateBadge />
       </div>
 
-      <!-- 窗口控制按钮：不带 drag-region 属性，点击/双击不会误触发拖拽或最大化 -->
+      <!-- 窗口控制按钮：不带 drag-region 属性，点击/双击不会误触发拖拽或最大化。
+           浏览器模拟时禁用渲染（占位宽度一致便于样式比对），悬停态一并掐掉 -->
       <div class="flex h-full items-stretch">
         <button
           type="button"
           aria-label="最小化"
+          title="仅客户端可操作"
           data-track="WINDOW_MINIMIZE"
-          class="pressable flex w-11 items-center justify-center text-text-secondary hover:bg-flat-weak hover:text-text"
+          :disabled="!canControlWindow"
+          class="pressable flex w-11 items-center justify-center text-text-secondary hover:bg-flat-weak hover:text-text disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent"
           @click="minimizeWindow"
         >
           <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
@@ -163,8 +178,10 @@ const closeWindow = (): void => {
         <button
           type="button"
           :aria-label="isMaximized ? '还原' : '最大化'"
+          :title="canControlWindow ? undefined : '仅客户端可操作'"
           data-track="WINDOW_TOGGLE_MAXIMIZE"
-          class="pressable flex w-11 items-center justify-center text-text-secondary hover:bg-flat-weak hover:text-text"
+          :disabled="!canControlWindow"
+          class="pressable flex w-11 items-center justify-center text-text-secondary hover:bg-flat-weak hover:text-text disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent"
           @click="toggleMaximizeWindow"
         >
           <!-- 最大化：单框；还原：两错位框（右上前、左下后） -->
@@ -179,8 +196,10 @@ const closeWindow = (): void => {
         <button
           type="button"
           aria-label="关闭"
+          title="仅客户端可操作"
           data-track="WINDOW_CLOSE"
-          class="pressable flex w-11 items-center justify-center text-text-secondary hover:bg-[#e81123] hover:text-white"
+          :disabled="!canControlWindow"
+          class="pressable flex w-11 items-center justify-center text-text-secondary hover:bg-[#e81123] hover:text-white disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent"
           @click="closeWindow"
         >
           <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">

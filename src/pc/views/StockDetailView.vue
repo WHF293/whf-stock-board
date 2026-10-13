@@ -467,7 +467,8 @@ const pctClass = (value: number | null): string =>
             >
               <path d="M12 5v14M5 12h14" />
             </svg>
-            {{ isInWatchlist ? '删自选' : '加自选' }}
+            <!-- 文案统一为「自选」（点击都弹自选编辑弹窗，王总 2026-10-13），颜色区分加/删 -->
+            自选
           </button>
         </div>
         <!-- 周期按钮组（胶囊高亮当前周期）+ 指标配置按钮 -->
