@@ -2,6 +2,13 @@
  * 行情全景页常量集中管理
  */
 
+/** 大盘云图嵌入页 URL（dapanyuntu.com，A 股板块/个股树图；iframe 直嵌，
+ * 2026-10-13 实测响应头无 X-Frame-Options / CSP frame-ancestors，可被嵌入） */
+export const DAPANYUNTU_EMBED_URL = 'https://dapanyuntu.com/';
+
+/** 大盘云图原站地址（云图页提示条「访问原站」跳转用；当前与嵌入页同源） */
+export const DAPANYUNTU_SITE_URL = 'https://dapanyuntu.com/';
+
 /** 东财 clist 单次拉取条数（上游单页上限 100，全球指数 63 条一页拿尽） */
 export const PANORAMA_CLIST_PAGE_SIZE = 100;
 

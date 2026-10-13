@@ -19,16 +19,15 @@ import type {
 } from '../../common/types/sector-flow-curve.types.ts';
 import {
   CHART_AXIS_LINE_COLOR,
+  CHART_LINE_BLUE,
   CHART_SPLIT_LINE_COLOR,
   CHART_TEXT_COLOR,
 } from '../../common/constants/chart.constants.ts';
-import { CSS_VAR_PRIMARY } from '../../common/constants/theme-color.constants.ts';
 import { YUAN_PER_YI } from '../../common/constants/format.constants.ts';
 import { STORAGE_NS_MOBILE_FUND_FLOW_CURVE } from '../../common/constants/storage-key.constants.ts';
 import { useMarketStatusStore } from '../../common/stores/market-status';
 import { useSettingsStore } from '../../common/stores/settings';
 import { toFullSymbol } from '../../common/utils/to-full-symbol';
-import { readCssVar } from '../../common/utils/read-css-var';
 import { readTrendColors } from '../../common/utils/trend-colors';
 import { formatYuanWithSign } from '../../common/utils/format-yuan';
 import { formatPct, pctClass } from '../utils/format';
@@ -93,9 +92,6 @@ const loadMarketFlow = async (): Promise<void> => {
 
 /** 主力净流入折线 option：每点标注数值（正涨色 / 负跌色）+ tooltip + crosshair + 零线 */
 const marketOption = computed<EChartsCoreOption>(() => {
-  // 依赖主题色：切换后本 computed 重新求值
-  void settingsStore.themeColor;
-  const primary = readCssVar(CSS_VAR_PRIMARY);
   const colors = readTrendColors();
   return {
     animation: false,
@@ -136,8 +132,9 @@ const marketOption = computed<EChartsCoreOption>(() => {
         name: '主力净流入',
         type: 'line',
         smooth: true,
-        lineStyle: { width: 2, color: primary },
-        areaStyle: { opacity: 0.08, color: primary },
+        // 曲线固定蓝色（2026-10-13 王总：主力净流入折线不随主题变化；逐点标注仍按正负涨跌色）
+        lineStyle: { width: 2, color: CHART_LINE_BLUE },
+        areaStyle: { opacity: 0.08, color: CHART_LINE_BLUE },
         markLine: {
           silent: true,
           symbol: 'none',

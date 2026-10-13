@@ -22,6 +22,7 @@ import PluginPanelDrawer from "../components/plugin/PluginPanelDrawer.vue";
 import { pluginKernel } from "../plugin/index";
 import { matchesCommandKeys, parseCommandKeys } from "../plugin/command-keys";
 import { useTheme } from "../../common/composables/use-theme";
+import { useSlidingThumb } from "../../common/composables/use-sliding-thumb";
 import { MARKET_STATUS_REFRESH_INTERVAL_MS } from "../../common/constants/polling.constants.ts";
 import { HOST_HEADER_ITEM, HOST_HEADER_ITEMS } from "../../common/constants/header.constants.ts";
 import { MENU_ITEMS, ROUTE_PATH } from "../../common/constants/router-meta.constants.ts";
@@ -424,6 +425,22 @@ const toggleSidebar = (): void => {
   settingsStore.toggleSidebarCollapsed();
 };
 
+// ---------- 侧栏滑动玻璃气泡（与 BaseTabs/移动端 TabBar 同款动画，垂直方向） ----------
+
+/** 侧栏 nav 容器（滑动气泡定位父级；收起/展开宽度动画由其 ResizeObserver 兜底重测） */
+const navRef = ref<HTMLElement | null>(null);
+
+/** 激活菜单序号（驱动气泡位移；当前路由不在菜单内 = -1 气泡隐藏） */
+const activeNavIndex = computed(() =>
+  menuItems.value.findIndex((item) => isActive(item.path)),
+);
+
+const { thumbStyle: navThumbStyle } = useSlidingThumb({
+  container: navRef,
+  activeIndex: activeNavIndex,
+  itemSelector: ":scope > a",
+});
+
 useIntervalFn(
   () => marketStatusStore.refresh(),
   MARKET_STATUS_REFRESH_INTERVAL_MS,
@@ -502,9 +519,16 @@ void marketStatusStore.refresh();
         <!-- overflow-x-clip：收起态图标的 BaseTooltip（left-full）会横向溢出 nav，
              而 overflow-y:auto 会把 overflow-x 计算成 auto → 底部出现横向滚动条；clip 掐掉 -->
         <nav
-          class="flex-1 space-y-1 overflow-x-clip overflow-y-auto px-2"
+          ref="navRef"
+          class="relative flex-1 space-y-1 overflow-x-clip overflow-y-auto px-2"
           :class="isTauriDesktop ? 'pt-3' : ''"
         >
+          <!-- 滑动玻璃气泡：菜单选中态底座，切换路由时按移动端同款动画滑到新项 -->
+          <span
+            v-if="navThumbStyle"
+            class="pc-nav-bubble pointer-events-none z-0 rounded-lg"
+            :style="navThumbStyle"
+          ></span>
           <RouterLink
             v-for="item in menuItems"
             :key="item.path"
@@ -515,7 +539,7 @@ void marketStatusStore.refresh();
             :class="[
               effectiveCollapsed ? 'justify-center px-2' : 'px-3',
               isActive(item.path)
-                ? 'pc-nav-bubble font-medium text-primary'
+                ? 'font-medium text-primary'
                 : 'text-text-secondary hover:bg-flat-weak',
             ]"
           >

@@ -3,23 +3,23 @@ import { computed } from 'vue';
 import type { EChartsCoreOption } from 'echarts/core';
 import {
   CHART_AXIS_LINE_COLOR,
+  CHART_LINE_BLUE,
+  CHART_LINE_GREEN,
+  CHART_LINE_PURPLE,
   CHART_SPLIT_LINE_COLOR,
   CHART_TEXT_COLOR,
 } from '../../../common/constants/chart.constants.ts';
-import { CSS_VAR_PRIMARY } from '../../../common/constants/theme-color.constants.ts';
 import { YUAN_PER_YI } from '../../../common/constants/format.constants.ts';
 import {
   TURNOVER_CHART_METRIC,
   type TurnoverChartMetric,
 } from '../../../common/constants/turnover.constants.ts';
-import { readCssVar } from '../../../common/utils/read-css-var';
-import { useSettingsStore } from '../../../common/stores/settings';
 import type { TurnoverDayItem } from '../../../common/types/turnover.types.ts';
 import BaseChart from './BaseChart.vue';
 
 /**
  * 沪深两市成交额趋势折线图：逐日 总 / 上证 / 深证 三条曲线，近 N 个交易日走势；
- * 折线用主题色（运行时读 CSS 变量，切主题即时跟随），上证 / 深证用固定区分色；
+ * 曲线固定配色（蓝/绿/紫，不随主题与主题色变化，2026-10-13 王总指定）；
  * 曲线逐日带数据点标记（成交额按亿计量，折线量级差异大，无点则看不清单日突变）
  *
  * 量纲口径（`metric`）：
@@ -35,8 +35,6 @@ const { days, height = 260, metric = TURNOVER_CHART_METRIC.AMOUNT } = defineProp
   /** 量纲口径：成交量（绝对额）/ 相对成交量（较上一日差额） */
   metric?: TurnoverChartMetric;
 }>();
-
-const settingsStore = useSettingsStore();
 
 /** 图表容器高度（像素） */
 const CHART_HEIGHT_PX = height;
@@ -55,10 +53,6 @@ const RELATIVE_AXIS_STEP_YI = 3000;
 
 /** 相对成交量口径 Y 轴固定步长（元，与序列同单位） */
 const RELATIVE_AXIS_STEP = RELATIVE_AXIS_STEP_YI * YUAN_PER_YI;
-
-/** 副系列固定配色（保证深色 / 浅色主题下均可读） */
-const SH_COLOR = '#f97316'; // 上证：橙
-const SZ_COLOR = '#22d3ee'; // 深证：青
 
 /** 相对成交量 0 轴基准（放量 / 缩量分界），raw min/max 恒含 0 保证基准线落在刻度上 */
 const RELATIVE_ZERO = 0;
@@ -98,9 +92,6 @@ interface SeriesDef {
 }
 
 const option = computed<EChartsCoreOption>(() => {
-  // 依赖 themeColor：切换主题色后本 computed 重新求值
-  void settingsStore.themeColor;
-  const primary = readCssVar(CSS_VAR_PRIMARY);
   const isRelative = metric === TURNOVER_CHART_METRIC.RELATIVE;
 
   /* 相对口径：入参第 0 天是基准日（调用方在窗口前多切一天），出图从第 1 天起；
@@ -118,7 +109,7 @@ const option = computed<EChartsCoreOption>(() => {
   const seriesDefs: SeriesDef[] = [
     {
       name: isRelative ? '总成交额较上日' : '两市总成交额',
-      color: primary,
+      color: CHART_LINE_BLUE,
       width: 2,
       symbolSize: 6,
       area: true,
@@ -126,7 +117,7 @@ const option = computed<EChartsCoreOption>(() => {
     },
     {
       name: isRelative ? '上证较上日' : '上证成交额',
-      color: SH_COLOR,
+      color: CHART_LINE_GREEN,
       width: 1.5,
       symbolSize: 4,
       area: false,
@@ -134,7 +125,7 @@ const option = computed<EChartsCoreOption>(() => {
     },
     {
       name: isRelative ? '深证较上日' : '深证成交额',
-      color: SZ_COLOR,
+      color: CHART_LINE_PURPLE,
       width: 1.5,
       symbolSize: 4,
       area: false,

@@ -364,18 +364,6 @@ body {
   z-index: 2;
 }
 
-/* NProgress 顶部进度条：跟随主色，压过一切内容 */
-#nprogress .bar {
-  background: var(--color-primary) !important;
-  height: 3px !important;
-  z-index: 1031;
-}
-
-#nprogress .peg {
-  box-shadow: 0 0 10px var(--color-primary), 0 0 5px var(--color-primary) !important;
-}
-
-
 /*
  * 全局点击光标：所有可点击模块（按钮 / 链接 / tab / 下拉 / 标签 / 行点击等）
  * hover 时统一显示小手；输入框（input / textarea）保持文本光标不受影响

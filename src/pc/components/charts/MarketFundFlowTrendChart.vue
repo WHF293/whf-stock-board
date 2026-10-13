@@ -3,20 +3,18 @@ import { computed } from 'vue';
 import type { EChartsCoreOption } from 'echarts/core';
 import {
   CHART_AXIS_LINE_COLOR,
+  CHART_LINE_BLUE,
   CHART_SPLIT_LINE_COLOR,
   CHART_TEXT_COLOR,
 } from '../../../common/constants/chart.constants.ts';
-import { CSS_VAR_PRIMARY } from '../../../common/constants/theme-color.constants.ts';
 import { YUAN_PER_YI } from '../../../common/constants/format.constants.ts';
 import { formatYuanWithSign } from '../../../common/utils/format-yuan';
-import { readCssVar } from '../../../common/utils/read-css-var';
-import { useSettingsStore } from '../../../common/stores/settings';
 import type { MarketFundFlow } from '../../../common/types/flow.types.ts';
 import BaseChart from './BaseChart.vue';
 
 /**
  * 大盘资金流趋势折线图：主力净流入（亿）近 N 日走势，零线基准；
- * 折线用主题色（运行时读 CSS 变量，切主题即时跟随）
+ * 曲线固定蓝色（不随主题与主题色变化，2026-10-13 王总指定）
  */
 const { days, height = 260 } = defineProps<{
   /** 大盘资金流序列（日期升序，近 N 日） */
@@ -25,8 +23,6 @@ const { days, height = 260 } = defineProps<{
   height?: number;
 }>();
 
-const settingsStore = useSettingsStore();
-
 /** 图表容器高度（像素） */
 const CHART_HEIGHT_PX = height;
 
@@ -34,9 +30,6 @@ const CHART_HEIGHT_PX = height;
 const ZERO_BASELINE = 0;
 
 const option = computed<EChartsCoreOption>(() => {
-  // 依赖 themeColor：切换主题色后本 computed 重新求值
-  void settingsStore.themeColor;
-  const primary = readCssVar(CSS_VAR_PRIMARY);
   return {
     animation: false,
     tooltip: {
@@ -76,9 +69,9 @@ const option = computed<EChartsCoreOption>(() => {
         smooth: true,
         showSymbol: true,
         symbolSize: 6,
-        lineStyle: { width: 2, color: primary },
-        itemStyle: { color: primary },
-        areaStyle: { opacity: 0.08, color: primary },
+        lineStyle: { width: 2, color: CHART_LINE_BLUE },
+        itemStyle: { color: CHART_LINE_BLUE },
+        areaStyle: { opacity: 0.08, color: CHART_LINE_BLUE },
         markLine: {
           silent: true,
           symbol: 'none',

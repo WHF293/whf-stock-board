@@ -18,6 +18,7 @@ export const ROUTE_PATH = {
   MARKET_RANK: "/market-rank",
   STOCK_MARKET: "/stock-market", // 个股行情（全市场列表，同花顺行情中心同源）
   BOARD_FLOW: "/board-flow", // 板块资金流向（原「行情全景-最新板块资金」独立成页，2026-10-13）
+  HEATMAP: "/heatmap", // 大盘云图（原「行情全景-大盘云图」tab 独立成页，dapanyuntu.com iframe 直嵌，2026-10-13）
   SECTOR_FLOW_HISTORY: "/sector-flow-history", // 板块历史净流入（行情全景-板块资金 → 「查看历史净流入」，不入菜单）
   STOCK_ACCOUNT: "/stock-account",
   PLUGIN_LAB: "/plugin-lab", // 插件工坊（宿主自带功能：插件体系的自省与管理页）
@@ -37,6 +38,7 @@ export const MENU_ICON = {
   CALENDAR: "calendar",
   FUNDS: "funds",
   FLAME: "flame",
+  HEATMAP: "cloud",
   TROPHY: "trophy",
   FILTER: "filter",
   NEWS: "news",
@@ -72,6 +74,8 @@ export const MENU_ITEMS: readonly SidebarMenuEntry[] = [
   // 个股行情紧跟市场榜单：同为「全市场个股维度」的行情视角
   { path: ROUTE_PATH.STOCK_MARKET, title: "个股行情", icon: MENU_ICON.FUNDS },
   { path: ROUTE_PATH.PANORAMA, title: "行情全景", icon: MENU_ICON.PANORAMA },
+  // 大盘云图紧跟行情全景：原其页内 tab，独立成页（2026-10-13），同为「市场全景视角」
+  { path: ROUTE_PATH.HEATMAP, title: "大盘云图", icon: MENU_ICON.HEATMAP },
   // 板块日历紧跟行情全景：同为「板块维度的行情视角」
   { path: ROUTE_PATH.BOARD_CALENDAR, title: "板块日历", icon: MENU_ICON.CALENDAR },
   { path: ROUTE_PATH.WATCHLIST, title: "自选股", icon: MENU_ICON.STAR },

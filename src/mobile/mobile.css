@@ -909,9 +909,11 @@ body {
   position: absolute; width: 7px; height: 7px; border-radius: 50%;
   transform: translate(-50%, -50%); border: 1.5px solid #fff; pointer-events: none;
 }
-.m-home-dot.total { background: var(--color-primary); }
-.m-home-dot.sh { background: #f97316; }
-.m-home-dot.sz { background: #22d3ee; }
+/* 成交额曲线数据点：固定配色 蓝/绿/紫（与 common/constants/chart.constants.ts
+   CHART_LINE_BLUE/GREEN/PURPLE 同源，2026-10-13 王总：曲线不随主题变化） */
+.m-home-dot.total { background: #3b82f6; }
+.m-home-dot.sh { background: #22c55e; }
+.m-home-dot.sz { background: #a855f7; }
 /* 逐日常驻数据点（王总 2026-10-12：成交额曲线每天画点，与 PC showSymbol 同口径；
    小号无边，避免 60 日窗口下密集糊线；crosshair 悬停点仍用 7px 白边大点覆盖强调） */
 .m-home-dot--sm {

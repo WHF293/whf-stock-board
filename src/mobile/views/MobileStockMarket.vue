@@ -8,7 +8,7 @@
  * - 行点击 → /stock/:code 个股详情（全站统一落点）
  * - 30s 前台轮询首页替换（useMobilePolling，页面隐藏即停）；下拉刷新重置回第 1 页
  */
-import { ref } from 'vue';
+import { nextTick, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { fetchThsStockBoardPage } from '../../common/api/ths-stock-board.api.ts';
 import {
@@ -68,8 +68,12 @@ const loadPage = async (mode: 'reset' | 'more'): Promise<void> => {
   }
 };
 
+/** 板块 chips 容器（切换后把选中 chip 滚入可视区） */
+const chipsRef = ref<HTMLElement | null>(null);
+
 /**
- * 切换板块：清空重置回第 1 页
+ * 切换板块：清空重置回第 1 页，并把选中 chip 平滑滚到可视区中央
+ * （block: nearest 避免纵向牵动外层 pull-refresh；等效 better-scroll 的 scrollToElement）
  * @param next 目标板块
  */
 const onBoardChange = (next: ThsStockBoard): void => {
@@ -80,6 +84,11 @@ const onBoardChange = (next: ThsStockBoard): void => {
   finished.value = false;
   error.value = false;
   void loadPage('reset');
+  void nextTick(() => {
+    chipsRef.value
+      ?.querySelector('.m-sm-chip.on')
+      ?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+  });
 };
 
 // 首屏
@@ -129,7 +138,7 @@ const fmtPct = (v: number | null): string => (v === null ? '--' : `${v > 0 ? '+'
     <div class="m-sub-scroll">
       <van-pull-refresh v-model="refreshing" @refresh="onRefresh">
         <!-- 板块 chips 横滚 -->
-        <div class="m-sm-chips">
+        <div ref="chipsRef" class="m-sm-chips">
           <button
             v-for="item in boards"
             :key="item.board"
@@ -196,13 +205,19 @@ const fmtPct = (v: number | null): string => (v === null ? '--' : `${v > 0 ? '+'
 </template>
 
 <style scoped>
-/* 板块 chips 横滚（通栏贴边，与首页金刚区同口径不留左右白） */
+/* 板块 chips 横滚（通栏贴边，与首页金刚区同口径不留左右白）；
+   2026-10-13 王总真机反馈见横向滚动条：scrollbar-width 仅新 Chromium 支持，
+   补 ::-webkit-scrollbar 兜底（与 mobile.css .m-chips/.m-br-chips 同口径）+ 触摸惯性 */
 .m-sm-chips {
   display: flex;
   gap: 8px;
   overflow-x: auto;
   padding: 10px 12px 2px;
   scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.m-sm-chips::-webkit-scrollbar {
+  display: none;
 }
 .m-sm-chip {
   flex-shrink: 0;

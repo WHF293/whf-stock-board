@@ -1,11 +1,10 @@
 import { createRouter, createWebHistory } from 'vue-router';
-import NProgress from 'nprogress';
-import 'nprogress/nprogress.css';
 import MainLayout from '../layouts/MainLayout.vue';
 import { LAYOUT_ROUTE_NAME, NOT_FOUND_ROUTE_NAME, ROUTE_PATH, MENU_ITEMS } from '../../common/constants/router-meta.constants.ts';
 import DashboardView from '../views/DashboardView.vue';
 import WatchlistView from '../views/WatchlistView.vue';
 import PanoramaView from '../views/PanoramaView.vue';
+import HeatmapView from '../views/HeatmapView.vue';
 import BoardFlowView from '../views/BoardFlowView.vue';
 import BoardCalendarView from '../views/BoardCalendarView.vue';
 import BoardCalendarDetailView from '../views/BoardCalendarDetailView.vue';
@@ -20,9 +19,6 @@ import StockDetailView from '../views/StockDetailView.vue';
 import SystemLogView from '../views/SystemLogView.vue';
 import NotFoundView from '../views/NotFoundView.vue';
 import PluginLabView from '../views/PluginLabView.vue';
-
-/** 路由切换顶部进度条：钩子在路由表定义后立即挂载 */
-NProgress.configure({ showSpinner: false, speed: 300, minimum: 0.2 });
 
 /**
  * 路由标题表（菜单项），避免魔法字符串散落
@@ -59,6 +55,12 @@ const routes = [
         path: ROUTE_PATH.PANORAMA,
         component: PanoramaView,
         meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.PANORAMA] },
+      },
+      // 大盘云图：原「行情全景-大盘云图」tab 独立成页（2026-10-13），dapanyuntu.com iframe 直嵌
+      {
+        path: ROUTE_PATH.HEATMAP,
+        component: HeatmapView,
+        meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.HEATMAP] },
       },
       // 板块资金流向：原「行情全景-最新板块资金」独立成页（2026-10-13）
       {
@@ -163,15 +165,4 @@ if (bootPage && bootPage.startsWith('/') && !bootPage.startsWith('//')) {
 export const router = createRouter({
   history: createWebHistory(),
   routes,
-});
-
-// 路由切换进度条：静态组件渲染很快，进度条仅作极短过渡反馈
-router.beforeEach(() => {
-  NProgress.start();
-});
-router.afterEach(() => {
-  NProgress.done();
-});
-router.onError(() => {
-  NProgress.done();
 });

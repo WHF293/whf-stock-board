@@ -20,6 +20,11 @@ import { fetchZtPool } from '../../common/api/event.api';
 import { fetchHotBoard } from '../../common/api/hot-board.api';
 import { fetchGlobalIndexQuotes } from '../../common/api/panorama.api';
 import { INDEX_SYMBOLS } from '../../common/constants/index-symbols.constants';
+import {
+  CHART_LINE_BLUE,
+  CHART_LINE_GREEN,
+  CHART_LINE_PURPLE,
+} from '../../common/constants/chart.constants';
 import type { GlobalIndexQuote } from '../../common/types/panorama.types';
 import type { TurnoverDayItem } from '../../common/types/turnover.types';
 import { countDistribution } from '../../common/utils/count-distribution';
@@ -341,9 +346,10 @@ const turnPaths = computed(() => {
       })
       .join(' ');
   return [
-    { key: 'total', color: 'var(--color-primary)', d: toPath((d) => d.totalAmount), area: true },
-    { key: 'sh', color: '#f97316', d: toPath((d) => d.shanghaiAmount), area: false },
-    { key: 'sz', color: '#22d3ee', d: toPath((d) => d.shenzhenAmount), area: false },
+    // 固定配色 蓝/绿/紫（2026-10-13 王总：成交额曲线不随主题变化，常量同 PC TurnoverTrendChart）
+    { key: 'total', color: CHART_LINE_BLUE, d: toPath((d) => d.totalAmount), area: true },
+    { key: 'sh', color: CHART_LINE_GREEN, d: toPath((d) => d.shanghaiAmount), area: false },
+    { key: 'sz', color: CHART_LINE_PURPLE, d: toPath((d) => d.shenzhenAmount), area: false },
   ];
 });
 
@@ -921,9 +927,9 @@ const pctClass = (v: number | null): string =>
                 </div>
               </div>
               <div v-if="turnLegend" class="m-home-legend">
-                <span><i class="lg" style="background: var(--color-primary)"></i>两市 <b>{{ turnLegend.total }}</b></span>
-                <span><i class="lg" style="background: #f97316"></i>上证 <b>{{ turnLegend.sh }}</b></span>
-                <span><i class="lg" style="background: #22d3ee"></i>深证 <b>{{ turnLegend.sz }}</b></span>
+                <span><i class="lg" :style="{ background: CHART_LINE_BLUE }"></i>两市 <b>{{ turnLegend.total }}</b></span>
+                <span><i class="lg" :style="{ background: CHART_LINE_GREEN }"></i>上证 <b>{{ turnLegend.sh }}</b></span>
+                <span><i class="lg" :style="{ background: CHART_LINE_PURPLE }"></i>深证 <b>{{ turnLegend.sz }}</b></span>
               </div>
               <div class="m-home-chart">
                 <div class="m-home-chart__y">
@@ -948,7 +954,7 @@ const pctClass = (v: number | null): string =>
                       v-for="line in turnPaths.filter((l) => l.area)"
                       :key="`${line.key}-area`"
                       :d="`${line.d} L100,100 L0,100 Z`"
-                      fill="var(--color-primary)"
+                      :fill="CHART_LINE_BLUE"
                       opacity="0.06"
                     />
                     <path
@@ -987,9 +993,9 @@ const pctClass = (v: number | null): string =>
                       :style="{ left: `${hoverPoint.x}%` }"
                     >
                       <div class="m-home-tip__d">{{ hoverPoint.date.slice(5) }}</div>
-                      <div class="m-home-tip__row"><i class="lg" style="background: var(--color-primary)"></i>两市<b>{{ hoverPoint.total }}亿</b></div>
-                      <div class="m-home-tip__row"><i class="lg" style="background: #f97316"></i>上证<b>{{ hoverPoint.sh }}亿</b></div>
-                      <div class="m-home-tip__row"><i class="lg" style="background: #22d3ee"></i>深证<b>{{ hoverPoint.sz }}亿</b></div>
+                      <div class="m-home-tip__row"><i class="lg" :style="{ background: CHART_LINE_BLUE }"></i>两市<b>{{ hoverPoint.total }}亿</b></div>
+                      <div class="m-home-tip__row"><i class="lg" :style="{ background: CHART_LINE_GREEN }"></i>上证<b>{{ hoverPoint.sh }}亿</b></div>
+                      <div class="m-home-tip__row"><i class="lg" :style="{ background: CHART_LINE_PURPLE }"></i>深证<b>{{ hoverPoint.sz }}亿</b></div>
                       <div class="m-home-tip__row"><i class="lg" style="background: transparent"></i>较上日<b :class="hoverPoint.deltaCls">{{ hoverPoint.delta }}亿</b></div>
                     </div>
                   </template>
