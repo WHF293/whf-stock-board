@@ -1,4 +1,4 @@
-import { proxyFetch } from './proxy-fetch';
+import { push2Fetch } from './push2-fetch';
 import { sdk } from './sdk';
 import { fetchFullQuotes } from './quotes.api.ts';
 import { INDEX_SYMBOLS } from '../constants/index-symbols.constants.ts';
@@ -91,7 +91,7 @@ const fetchClist = async (fs: string): Promise<PanoramaItem[]> => {
     `fs=${fs}`,
     `fields=${QUOTE_FIELDS}`,
   ].join('&');
-  const response = await proxyFetch(`${CLIST_URL_BASE}?${query}`);
+  const response = await push2Fetch(`${CLIST_URL_BASE}?${query}`);
   if (!response.ok) {
     throw new Error(`clist 请求失败：HTTP ${response.status}`);
   }
@@ -109,7 +109,7 @@ export const fetchUsSectorPanorama = async (): Promise<PanoramaItem[]> => {
     `fields=${QUOTE_FIELDS}`,
     `secids=${PANORAMA_US_SECIDS.join(',')}`,
   ].join('&');
-  const response = await proxyFetch(`${ULIST_URL_BASE}?${query}`);
+  const response = await push2Fetch(`${ULIST_URL_BASE}?${query}`);
   if (!response.ok) {
     throw new Error(`ulist 请求失败：HTTP ${response.status}`);
   }
@@ -137,7 +137,7 @@ const fetchUlistQuotes = async (secids: readonly string[]): Promise<GlobalIndexQ
     `fields=${GLOBAL_INDEX_FIELDS}`,
     `secids=${secids.join(',')}`,
   ].join('&');
-  const response = await proxyFetch(`${ULIST_URL_BASE}?${query}`);
+  const response = await push2Fetch(`${ULIST_URL_BASE}?${query}`);
   if (!response.ok) {
     throw new Error(`ulist 请求失败：HTTP ${response.status}`);
   }

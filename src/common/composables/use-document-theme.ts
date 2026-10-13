@@ -9,6 +9,11 @@ import {
   CUSTOM_THEME_WEAK_TINT,
   CSS_VAR_PRIMARY,
 } from '../constants/theme-color.constants.ts';
+import {
+  GLASS_HIGHLIGHT_DATA_ATTR,
+  GLASS_OPACITY_CSS_VAR,
+  normalizeGlassOpacity,
+} from '../constants/glass-opacity.constants.ts';
 import { parseColorScheme, useTheme } from './use-theme';
 import { useSettingsStore } from '../stores/settings';
 import { pickContrastText } from '../utils/pick-contrast-text';
@@ -92,6 +97,30 @@ export const useDocumentThemeSync = (): void => {
     },
   );
 
+  // 高亮玻璃透明度：内联 CSS 变量下发（特异性高于一切规则），theme.css 玻璃样式读变量；
+  // 暗色档由 CSS 侧 calc(+0.2) 自动补偿，这里只管亮色基准值
+  watchImmediate(
+    () => settingsStore.glassOpacity,
+    (opacity) => {
+      document.documentElement.style.setProperty(
+        GLASS_OPACITY_CSS_VAR,
+        String(normalizeGlassOpacity(opacity)),
+      );
+    },
+  );
+
+  // 高亮玻璃斜向高光带开关：data 属性下发，theme.css 据此隐藏 ::after 光带
+  watchImmediate(
+    () => settingsStore.glassHighlight,
+    (enabled) => {
+      if (enabled) {
+        document.documentElement.removeAttribute(GLASS_HIGHLIGHT_DATA_ATTR);
+      } else {
+        document.documentElement.setAttribute(GLASS_HIGHLIGHT_DATA_ATTR, 'off');
+      }
+    },
+  );
+
   useEventListener(
     window,
     'storage',
@@ -116,6 +145,8 @@ export const useDocumentThemeSync = (): void => {
           themeColor?: ThemeColor;
           trendTheme?: TrendTheme;
           customThemeColor?: string;
+          glassOpacity?: number;
+          glassHighlight?: boolean;
         };
         if (
           typeof settings.themeColor === 'string' &&
@@ -134,6 +165,20 @@ export const useDocumentThemeSync = (): void => {
           settings.trendTheme !== settingsStore.trendTheme
         ) {
           settingsStore.trendTheme = settings.trendTheme;
+        }
+        // 玻璃透明度跟随（归一化后写 store，watchImmediate 负责落 CSS 变量）
+        if (
+          typeof settings.glassOpacity === 'number' &&
+          settings.glassOpacity !== settingsStore.glassOpacity
+        ) {
+          settingsStore.glassOpacity = normalizeGlassOpacity(settings.glassOpacity);
+        }
+        // 玻璃高光带跟随
+        if (
+          typeof settings.glassHighlight === 'boolean' &&
+          settings.glassHighlight !== settingsStore.glassHighlight
+        ) {
+          settingsStore.glassHighlight = settings.glassHighlight;
         }
       } catch {
         // settings 坏包忽略

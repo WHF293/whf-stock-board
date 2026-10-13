@@ -27,6 +27,12 @@ import {
 } from "../../common/constants/polling.constants.ts";
 import type { TableColumn } from "../../common/types/table.types.ts";
 import { WEBLOG_RETENTION_DAYS } from "../../common/constants/weblog.constants.ts";
+import {
+  GLASS_OPACITY_DEFAULT,
+  GLASS_OPACITY_MAX,
+  GLASS_OPACITY_MIN,
+  GLASS_OPACITY_STEP,
+} from "../../common/constants/glass-opacity.constants.ts";
 import { APP_VERSION, PLUGIN_REPO_URL, REPO_URL, SITE_URL } from "../../common/constants/app-info.constants.ts";
 import { getCurrentAppVersion } from "../../common/api/app-update.api.ts";
 import { useAppUpdate } from "../../common/composables/use-app-update";
@@ -87,6 +93,24 @@ const onClearCaches = (): void => {
 
 /** 主题设置弹窗显隐（复用首次启动引导版式；mode=settings 只换文案，不写「引导已完成」标记） */
 const themeSetupOpen = ref(false);
+
+// ---------- 高亮玻璃透明度 ----------
+
+/** 玻璃透明度滑杆的双向绑定（range 值为字符串，转数字经 store 归一化落盘） */
+const glassOpacityModel = computed<string>({
+  get: () => String(settingsStore.glassOpacity),
+  set: (value) => settingsStore.setGlassOpacity(Number(value)),
+});
+
+/** 玻璃透明度展示文案（百分比） */
+const glassOpacityLabel = computed(
+  () => `${Math.round(settingsStore.glassOpacity * 100)}%`,
+);
+
+/** 恢复默认玻璃透明度 */
+const onResetGlassOpacity = (): void => {
+  settingsStore.setGlassOpacity(GLASS_OPACITY_DEFAULT);
+};
 
 // ---------- 侧栏导航顺序编排 ----------
 
@@ -739,6 +763,50 @@ const onProbeProxy = async (): Promise<void> => {
         >
           主题设置
         </BaseButton>
+      </div>
+      <!-- 高亮玻璃透明度：全站玻璃按钮 / 侧栏选中 / 页签共用（内联 CSS 变量实时生效） -->
+      <div class="mt-4 flex items-center justify-between gap-4 border-t border-flat-weak pt-4">
+        <div class="min-w-0">
+          <p class="text-sm text-text">玻璃透明度</p>
+          <p class="mt-0.5 text-xs leading-relaxed text-text-tertiary">
+            调整全站高亮玻璃（按钮、侧栏选中项、页签）的底色透明度，越低越能透出背后元素
+          </p>
+        </div>
+        <div class="flex shrink-0 items-center gap-2">
+          <input
+            v-model="glassOpacityModel"
+            type="range"
+            :min="GLASS_OPACITY_MIN"
+            :max="GLASS_OPACITY_MAX"
+            :step="GLASS_OPACITY_STEP"
+            class="w-36 cursor-pointer accent-primary"
+            aria-label="玻璃透明度"
+            data-track="GLASS_OPACITY_CHANGE"
+          >
+          <BaseTag tone="primary" class="tabular-nums">{{ glassOpacityLabel }}</BaseTag>
+          <BaseButton
+            variant="ghost"
+            :disabled="settingsStore.glassOpacity === GLASS_OPACITY_DEFAULT"
+            data-track="GLASS_OPACITY_RESET"
+            @click="onResetGlassOpacity"
+          >
+            默认
+          </BaseButton>
+        </div>
+      </div>
+      <!-- 玻璃高光带开关：斜向「光线照在玻璃上」渐变，关闭后更素（半透明底 + 描边 + 模糊） -->
+      <div class="mt-4 flex items-center justify-between gap-4 border-t border-flat-weak pt-4">
+        <div class="min-w-0">
+          <p class="text-sm text-text">玻璃高光带</p>
+          <p class="mt-0.5 text-xs leading-relaxed text-text-tertiary">
+            玻璃表面左上→右下的斜向高光渐变，模拟光线照在玻璃上；关闭后只留半透明底与模糊，观感更素
+          </p>
+        </div>
+        <BaseSwitch
+          :model-value="settingsStore.glassHighlight"
+          data-track="GLASS_HIGHLIGHT_TOGGLE"
+          @update:model-value="settingsStore.setGlassHighlight"
+        />
       </div>
     </BaseCard>
 

@@ -443,20 +443,29 @@ textarea {
   }
 }
 
-/* === PC 侧栏选中项玻璃气泡（2026-10-13 王总：对齐移动端 TabBar 选中胶囊质感） === */
-/* 低透明底 + 斜向「光线照在玻璃上」高光带（::after 左上→右下渐隐）+ 边缘描边；
+/* === 高亮玻璃（2026-10-13 王总 UI 稿定稿：半透明玻璃，透出背后元素） === */
+/* 底色透明度参数化：--glass-alpha 由设置页「玻璃透明度」滑杆下发（内联到 <html>），
+   暗色在同值基础上 +0.2（暗色底色 rgb 更深，同值会显得过透，稿子定档 亮.24 / 暗.44）。
+   默认值 = 方案A 推荐档；改这里即可调全站默认 */
+:root {
+  --glass-alpha: 0.24;
+  --glass-alpha-dark: calc(var(--glass-alpha) + 0.2);
+}
+
+/* PC 侧栏选中项玻璃气泡（对齐移动端 TabBar 选中胶囊质感）：
+   低透明底 + 斜向「光线照在玻璃上」高光带（::after 左上→右下渐隐）+ 边缘描边；
    亮色投影加深一层（双层投影），暗色用弱化高光带保持通透 */
 .pc-nav-bubble {
   position: relative;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.42);
-  border: 1px solid rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, var(--glass-alpha));
+  border: 1px solid rgba(255, 255, 255, 0.55);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
     0 3px 14px rgba(0, 0, 0, 0.14),
     0 1px 3px rgba(0, 0, 0, 0.07);
-  -webkit-backdrop-filter: blur(18px) saturate(1.8);
-  backdrop-filter: blur(18px) saturate(1.8);
+  -webkit-backdrop-filter: blur(16px) saturate(1.9);
+  backdrop-filter: blur(16px) saturate(1.9);
 }
 .pc-nav-bubble::after {
   content: '';
@@ -465,26 +474,30 @@ textarea {
   border-radius: inherit;
   background: linear-gradient(
     115deg,
-    rgba(255, 255, 255, 0.6) 0%,
-    rgba(255, 255, 255, 0.18) 26%,
+    rgba(255, 255, 255, 0.45) 0%,
+    rgba(255, 255, 255, 0.12) 26%,
     rgba(255, 255, 255, 0) 46%
   );
   pointer-events: none;
 }
+/* 高光带开关（设置页「玻璃高光带」，<html data-glass-band='off'> 时整体隐藏） */
+[data-glass-band='off'] .pc-nav-bubble::after {
+  display: none;
+}
 .dark .pc-nav-bubble {
-  /* 暗色玻璃：抬亮的深灰低透明（禁止深黑），高光带弱化为一道斜向微光 */
-  background: rgba(70, 80, 92, 0.48);
-  border-color: rgba(255, 255, 255, 0.16);
+  /* 暗色玻璃：更深的灰蓝低透明（亮暗共用用户透明度 + 0.2 补偿），高光带弱化为一道斜向微光 */
+  background: rgba(34, 42, 54, var(--glass-alpha-dark));
+  border-color: rgba(255, 255, 255, 0.13);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
     inset 0 -1px 0 rgba(0, 0, 0, 0.25),
-    0 3px 12px rgba(0, 0, 0, 0.25);
+    0 3px 12px rgba(0, 0, 0, 0.3);
 }
 .dark .pc-nav-bubble::after {
   background: linear-gradient(
     115deg,
-    rgba(255, 255, 255, 0.22) 0%,
-    rgba(255, 255, 255, 0.06) 26%,
+    rgba(255, 255, 255, 0.14) 0%,
+    rgba(255, 255, 255, 0.04) 26%,
     rgba(255, 255, 255, 0) 46%
   );
 }

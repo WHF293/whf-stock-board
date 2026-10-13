@@ -2,6 +2,7 @@
 import { nextTick, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useDocumentThemeSync } from '../common/composables/use-document-theme';
+import { initBoardCalendarSync } from '../common/composables/use-board-calendar-sync';
 import MobileTabBar from './components/MobileTabBar.vue';
 import DebugOverlay from './debug/DebugOverlay.vue';
 import { isDebugMode } from './debug/debug-mode';
@@ -10,6 +11,11 @@ import { MOBILE_TAB_PATHS } from './router';
 // 主题三轴落 <html>（明暗 class / data-theme / data-trend），与桌面共用同一持久化；
 // 设置 store 经 localStorage 整包共享，跨端切换后水合正确
 useDocumentThemeSync();
+
+// 板块日历采集钩子（2026-10-13 修复：此前只在 PC App.vue 挂载，移动端 APK 的本地库
+// 永远没有数据 → 板块日历页一直空矩阵。内部自带 isBoardDbAvailable 守卫，
+// H5 无 Tauri 时 no-op；延迟启动 + 并发闸门与 PC 同一套）
+initBoardCalendarSync();
 
 // ---------- 页面切换（对齐 PC MainLayout 的 KeepAlive + 方向进入动画） ----------
 

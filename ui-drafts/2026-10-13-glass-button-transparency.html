@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UI 稿 · 高亮玻璃按钮半透明化（白天 / 黑暗）</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --font: "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  }
+
+  body {
+    font-family: var(--font);
+    background: #eef1f5;
+    color: #1f2937;
+    padding: 24px 0 64px;
+  }
+
+  .page-head { max-width: 1080px; margin: 0 auto 20px; padding: 0 24px; }
+  .page-head h1 { font-size: 20px; margin-bottom: 6px; }
+  .page-head p { font-size: 13px; color: #6b7280; line-height: 1.7; }
+
+  /* 高光带开关：去掉斜向渐变高光带，只留半透明底 + 描边 + 模糊 */
+  body.no-band .gbtn::after,
+  body.no-band .nav-pill::after,
+  body.no-band .tab-pill::after { display: none; }
+
+  .band-toggle {
+    display: inline-flex; align-items: center; gap: 8px;
+    margin-top: 10px; padding: 6px 14px;
+    font-size: 13px; font-family: var(--font);
+    border: 1px solid #cbd5e1; border-radius: 8px;
+    background: #fff; color: #334155; cursor: pointer;
+  }
+  .band-toggle:hover { border-color: #10b981; }
+
+  /* ============ 面板（白天 / 黑暗两块并排滚动） ============ */
+  .panels { display: flex; flex-direction: column; gap: 28px; align-items: center; }
+
+  .panel {
+    width: 1040px;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 8px 30px rgba(0,0,0,.1);
+  }
+
+  .panel-head {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 20px; font-size: 14px; font-weight: 600;
+  }
+  .panel-head .tag {
+    font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 999px;
+  }
+
+  /* ---- 白天主题上下文 ---- */
+  .light-theme { background: #f6f7f9; }
+  .light-theme .panel-head { background: #e9eef3; color: #334155; }
+  .light-theme .panel-head .tag { background: #d7f5e9; color: #0f8a5f; }
+
+  /* ---- 黑暗主题上下文 ---- */
+  .dark-theme { background: #14181f; }
+  .dark-theme .panel-head { background: #1c222c; color: #cbd5e1; }
+  .dark-theme .panel-head .tag { background: #143328; color: #4ade80; }
+
+  /* ============ 变体行 ============ */
+  .variant { padding: 14px 20px 18px; }
+  .variant + .variant { border-top: 1px dashed rgba(128,128,128,.25); }
+
+  .variant-title {
+    display: flex; align-items: baseline; gap: 8px;
+    font-size: 13px; font-weight: 600; margin-bottom: 4px;
+  }
+  .light-theme .variant-title { color: #334155; }
+  .dark-theme  .variant-title { color: #cbd5e1; }
+
+  .variant-title .badge {
+    font-size: 10px; font-weight: 600; padding: 1px 7px; border-radius: 999px;
+  }
+  .badge--cur  { background: rgba(128,128,128,.18); color: inherit; }
+  .badge--rec  { background: rgba(16,185,129,.16); color: #0f8a5f; }
+  .dark-theme  .badge--rec { background: rgba(16,185,129,.22); color: #4ade80; }
+
+  .variant-desc { font-size: 12px; margin-bottom: 12px; opacity: .62; line-height: 1.6; }
+
+  /* ============ 模拟工具条场景：按钮叠在热力格上 ============ */
+  .scene {
+    position: relative;
+    border-radius: 10px;
+    overflow: hidden;
+    padding: 34px 14px 14px;   /* 顶部留出按钮压在格子上的空间 */
+  }
+  .light-theme .scene { background: #f6f7f9; }
+  .dark-theme  .scene { background: #14181f; }
+
+  /* 背景热力格条（模拟板块日历矩阵滚到按钮底下） */
+  .heat-strip {
+    display: flex; gap: 6px; margin-bottom: 8px;
+  }
+  .heat-cell {
+    flex: 1; height: 52px; border-radius: 6px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 600; gap: 2px;
+  }
+  .heat-cell small { font-size: 9px; font-weight: 400; opacity: .75; }
+  .up    { background: #ef5350; color: #fff; }
+  .up-soft { background: #f7b2ae; color: #7f1d1d; }
+  .down  { background: #1fa97c; color: #fff; }
+  .down-soft { background: #a7dcc9; color: #14532d; }
+
+  .light-theme .scene-text { font-size: 12px; color: #475569; padding: 4px 2px 0; }
+  .dark-theme  .scene-text { font-size: 12px; color: #94a3b8; padding: 4px 2px 0; }
+
+  /* 按钮排：绝对定位压在格子上面，透明显得直观 */
+  .btn-row {
+    position: absolute; top: 10px; left: 14px; right: 14px;
+    display: flex; align-items: center; gap: 8px;
+  }
+
+  /* ============ 高亮玻璃按钮 ============ */
+  .gbtn {
+    -webkit-backdrop-filter: blur(var(--g-blur)) saturate(var(--g-sat));
+    backdrop-filter: blur(var(--g-blur)) saturate(var(--g-sat));
+    position: relative; overflow: hidden;
+    border-radius: 8px;
+    padding: 6px 14px;
+    font-size: 12.5px; font-weight: 500;
+    white-space: nowrap;
+    cursor: default;
+    /* JS 滑杆可覆写的变量 */
+    --g-bg: var(--glass-bg);
+    --g-border: var(--glass-border);
+    --g-inner: var(--glass-inner);
+    --g-band-a: var(--glass-band-a);
+    --g-band-b: var(--glass-band-b);
+    background: var(--g-bg);
+    border: 1px solid var(--g-border);
+    box-shadow: inset 0 1px 0 var(--g-inner), 0 3px 14px rgba(0,0,0,.12), 0 1px 3px rgba(0,0,0,.06);
+  }
+  .gbtn::after {
+    content: ''; position: absolute; inset: 0; border-radius: inherit;
+    background: linear-gradient(115deg, var(--g-band-a) 0%, var(--g-band-b) 26%, rgba(255,255,255,0) 46%);
+    pointer-events: none;
+  }
+  .gbtn--primary { color: #0f9d70; }
+  .gbtn--plain   { color: #475569; }
+  .dark-theme .gbtn--primary { color: #34d399; }
+  .dark-theme .gbtn--plain   { color: #cbd5e1; }
+
+  /* ---------- 白天三档 ---------- */
+  .light-theme { --glass-blur: 18px; --glass-sat: 1.8; }
+  .light-theme.v-current {
+    --glass-bg: rgba(255,255,255,.42);
+    --glass-border: rgba(255,255,255,.6);
+    --glass-inner: rgba(255,255,255,.95);
+    --glass-band-a: rgba(255,255,255,.6);
+    --glass-band-b: rgba(255,255,255,.18);
+  }
+  .light-theme.v-a {
+    --glass-blur: 16px; --glass-sat: 1.9;
+    --glass-bg: rgba(255,255,255,.24);
+    --glass-border: rgba(255,255,255,.55);
+    --glass-inner: rgba(255,255,255,.85);
+    --glass-band-a: rgba(255,255,255,.45);
+    --glass-band-b: rgba(255,255,255,.12);
+  }
+  .light-theme.v-b {
+    --glass-blur: 14px; --glass-sat: 2;
+    --glass-bg: rgba(255,255,255,.12);
+    --glass-border: rgba(255,255,255,.45);
+    --glass-inner: rgba(255,255,255,.7);
+    --glass-band-a: rgba(255,255,255,.35);
+    --glass-band-b: rgba(255,255,255,.08);
+  }
+
+  /* ---------- 黑暗三档（整体降亮度） ---------- */
+  .dark-theme { --glass-blur: 18px; --glass-sat: 1.6; }
+  .dark-theme.v-current {
+    --glass-bg: rgba(70,80,92,.48);
+    --glass-border: rgba(255,255,255,.16);
+    --glass-inner: rgba(255,255,255,.28);
+    --glass-band-a: rgba(255,255,255,.22);
+    --glass-band-b: rgba(255,255,255,.06);
+  }
+  .dark-theme.v-a {
+    --glass-blur: 16px; --glass-sat: 1.6;
+    --glass-bg: rgba(34,42,54,.44);
+    --glass-border: rgba(255,255,255,.13);
+    --glass-inner: rgba(255,255,255,.2);
+    --glass-band-a: rgba(255,255,255,.14);
+    --glass-band-b: rgba(255,255,255,.04);
+  }
+  .dark-theme.v-b {
+    --glass-blur: 14px; --glass-sat: 1.7;
+    --glass-bg: rgba(20,26,34,.34);
+    --glass-border: rgba(255,255,255,.1);
+    --glass-inner: rgba(255,255,255,.16);
+    --glass-band-a: rgba(255,255,255,.1);
+    --glass-band-b: rgba(255,255,255,.03);
+  }
+
+  /* ============ 微调滑杆 ============ */
+  .tuner {
+    display: flex; align-items: center; gap: 10px;
+    margin-top: 12px; font-size: 12px;
+  }
+  .light-theme .tuner { color: #64748b; }
+  .dark-theme  .tuner { color: #94a3b8; }
+  .tuner input[type="range"] { flex: 1; accent-color: #10b981; }
+  .tuner code {
+    font-size: 11px; padding: 2px 8px; border-radius: 6px;
+    background: rgba(128,128,128,.14); white-space: nowrap;
+  }
+
+  /* ============ 其它受影响场景小样 ============ */
+  .extra { display: flex; gap: 20px; margin-top: 14px; align-items: center; flex-wrap: wrap; }
+  .extra-item { font-size: 12px; display: flex; align-items: center; gap: 8px; }
+  .light-theme .extra-item { color: #64748b; }
+  .dark-theme  .extra-item { color: #94a3b8; }
+
+  /* 侧栏选中胶囊小样 */
+  .nav-pill {
+    width: 120px; padding: 7px 12px; border-radius: 10px; font-size: 12.5px; font-weight: 500;
+  }
+  .light-theme .nav-pill { color: #0f9d70; }
+  .dark-theme  .nav-pill { color: #34d399; }
+  .nav-pill { background: var(--glass-bg); border: 1px solid var(--glass-border);
+    box-shadow: inset 0 1px 0 var(--glass-inner), 0 3px 14px rgba(0,0,0,.12);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+    position: relative; overflow: hidden; }
+  .nav-pill::after { content:''; position:absolute; inset:0; border-radius:inherit;
+    background: linear-gradient(115deg, var(--glass-band-a) 0%, var(--glass-band-b) 26%, rgba(255,255,255,0) 46%);
+    pointer-events:none; }
+
+  /* tabs 小样：放在渐变色块上验证透出效果 */
+  .tabs-on-color {
+    display: flex; gap: 6px; padding: 8px 10px; border-radius: 10px;
+    background: linear-gradient(100deg, #ef5350 0%, #f7b2ae 34%, #a7dcc9 66%, #1fa97c 100%);
+  }
+  .tab-pill {
+    padding: 5px 12px; border-radius: 8px; font-size: 12px; font-weight: 500;
+    background: var(--glass-bg); border: 1px solid var(--glass-border);
+    box-shadow: inset 0 1px 0 var(--glass-inner);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+    position: relative; overflow: hidden;
+  }
+  .tab-pill::after { content:''; position:absolute; inset:0; border-radius:inherit;
+    background: linear-gradient(115deg, var(--glass-band-a) 0%, var(--glass-band-b) 26%, rgba(255,255,255,0) 46%);
+    pointer-events:none; }
+  .light-theme .tab-pill.active { color: #0b7a56; }
+  .light-theme .tab-pill.plain  { color: #475569; }
+  .dark-theme  .tab-pill.active { color: #34d399; }
+  .dark-theme  .tab-pill.plain  { color: #e2e8f0; }
+
+  .footnote { max-width: 1040px; margin: 26px auto 0; padding: 0 24px; font-size: 12px; color: #8a94a3; line-height: 1.8; }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>高亮玻璃按钮 · 半透明化 UI 稿</h1>
+  <p>对应 theme.css 的 <code>.pc-nav-bubble</code>（全站共用：侧栏选中、BaseButton、BaseTabs、频道条）。
+     每个主题给三档：现状 / 方案A 推荐 / 方案B 更透。按钮直接压在板块热力格上，透出效果一目了然；
+     底部滑杆可实时微调方案A 的底色透明度，选好后告诉我数值，开发按该值落地。</p>
+  <button class="band-toggle" id="bandToggle" type="button">◐ 高光带：<strong id="bandState">已去掉</strong>（点击切换）</button>
+</div>
+
+<div class="panels" id="panels">
+
+  <!-- ======================= 白天模式 ======================= -->
+  <section class="panel light-theme v-a" id="panel-light">
+    <div class="panel-head">☀️ 白天模式 <span class="tag">底色 0.42 → 0.24（推荐档）</span></div>
+
+    <div class="variant v-current">
+      <div class="variant-title">① 现状 <span class="badge badge--cur">rgba(255,255,255,.42)</span></div>
+      <div class="variant-desc">白色底透明度 42%，落在白底页面上接近实心白，看不出「玻璃」。</div>
+      <div class="scene">
+        <div class="btn-row">
+          <span class="gbtn gbtn--plain">近期涨停</span>
+          <span class="gbtn gbtn--primary">当日成交额</span>
+          <span class="gbtn gbtn--plain">▽ 板块过滤 36/36</span>
+          <span class="gbtn gbtn--primary">列表</span>
+          <span class="gbtn gbtn--plain">气泡图</span>
+        </div>
+        <div class="heat-strip">
+          <div class="heat-cell up">涨停 3<small>跌停 0</small></div>
+          <div class="heat-cell down-soft">涨停 0<small>跌停 0</small></div>
+          <div class="heat-cell up-soft">涨停 1<small>跌停 0</small></div>
+          <div class="heat-cell down">涨停 2<small>跌停 3</small></div>
+          <div class="heat-cell up">涨停 5<small>跌停 0</small></div>
+          <div class="heat-cell down-soft">涨停 0<small>跌停 1</small></div>
+        </div>
+        <div class="scene-text">板块日历矩阵内容滚动到工具条底下时，现状档几乎把格子完全盖白。</div>
+      </div>
+    </div>
+
+    <div class="variant v-a">
+      <div class="variant-title">② 方案A · 推荐 <span class="badge badge--rec">rgba(255,255,255,.24)</span></div>
+      <div class="variant-desc">白色底降到 24%，热力格颜色可透出，模糊 + 饱和度保证文字可读；光带与内高光同步减弱。</div>
+      <div class="scene">
+        <div class="btn-row">
+          <span class="gbtn gbtn--plain">近期涨停</span>
+          <span class="gbtn gbtn--primary">当日成交额</span>
+          <span class="gbtn gbtn--plain">▽ 板块过滤 36/36</span>
+          <span class="gbtn gbtn--primary">列表</span>
+          <span class="gbtn gbtn--plain">气泡图</span>
+        </div>
+        <div class="heat-strip">
+          <div class="heat-cell up">涨停 3<small>跌停 0</small></div>
+          <div class="heat-cell down-soft">涨停 0<small>跌停 0</small></div>
+          <div class="heat-cell up-soft">涨停 1<small>跌停 0</small></div>
+          <div class="heat-cell down">涨停 2<small>跌停 3</small></div>
+          <div class="heat-cell up">涨停 5<small>跌停 0</small></div>
+          <div class="heat-cell down-soft">涨停 0<small>跌停 1</small></div>
+        </div>
+        <div class="scene-text">红绿格透出但被柔化，按钮仍有轮廓和立体感 —— 日常使用的平衡档。</div>
+      </div>
+      <div class="tuner">
+        <span>微调透明度</span>
+        <input type="range" min="6" max="42" value="24" data-target="a">
+        <code class="code-a">rgba(255,255,255,.24)</code>
+      </div>
+    </div>
+
+    <div class="variant v-b">
+      <div class="variant-title">③ 方案B · 更透 <span class="badge badge--cur">rgba(255,255,255,.12)</span></div>
+      <div class="variant-desc">白色底降到 12%，接近纯折射玻璃，格子颜色透出最明显，但按钮存在感最弱。</div>
+      <div class="scene">
+        <div class="btn-row">
+          <span class="gbtn gbtn--plain">近期涨停</span>
+          <span class="gbtn gbtn--primary">当日成交额</span>
+          <span class="gbtn gbtn--plain">▽ 板块过滤 36/36</span>
+          <span class="gbtn gbtn--primary">列表</span>
+          <span class="gbtn gbtn--plain">气泡图</span>
+        </div>
+        <div class="heat-strip">
+          <div class="heat-cell up">涨停 3<small>跌停 0</small></div>
+          <div class="heat-cell down-soft">涨停 0<small>跌停 0</small></div>
+          <div class="heat-cell up-soft">涨停 1<small>跌停 0</small></div>
+          <div class="heat-cell down">涨停 2<small>跌停 3</small></div>
+          <div class="heat-cell up">涨停 5<small>跌停 0</small></div>
+          <div class="heat-cell down-soft">涨停 0<small>跌停 1</small></div>
+        </div>
+        <div class="scene-text">几乎只靠描边、光带和模糊撑起形状，风格最「玻璃」。</div>
+      </div>
+    </div>
+
+    <div class="variant">
+      <div class="variant-title">同方案A 在其它场景的小样</div>
+      <div class="extra">
+        <div class="extra-item">
+          <span>侧栏选中</span>
+          <div class="nav-pill" style="background:linear-gradient(100deg,#ef5350,#a7dcc9);padding:0;">
+            <div style="padding:7px 12px;">板块日历</div>
+          </div>
+        </div>
+        <div class="extra-item">
+          <span>页签选中（叠在热力色上）</span>
+          <div class="tabs-on-color">
+            <span class="tab-pill active">20天</span>
+            <span class="tab-pill plain">30天</span>
+            <span class="tab-pill plain">60天</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= 黑暗模式 ======================= -->
+  <section class="panel dark-theme v-a" id="panel-dark">
+    <div class="panel-head">🌙 黑暗模式 <span class="tag">底色提亮灰 → 更暗的低透明深灰</span></div>
+
+    <div class="variant v-current">
+      <div class="variant-title">① 现状 <span class="badge badge--cur">rgba(70,80,92,.48)</span></div>
+      <div class="variant-desc">抬亮的深灰 48%，在暗色页面上偏亮、偏「雾」，玻璃感发闷。</div>
+      <div class="scene">
+        <div class="btn-row">
+          <span class="gbtn gbtn--plain">近期涨停</span>
+          <span class="gbtn gbtn--primary">当日成交额</span>
+          <span class="gbtn gbtn--plain">▽ 板块过滤 36/36</span>
+          <span class="gbtn gbtn--primary">列表</span>
+          <span class="gbtn gbtn--plain">气泡图</span>
+        </div>
+        <div class="heat-strip">
+          <div class="heat-cell up">涨停 3<small>跌停 0</small></div>
+          <div class="heat-cell down-soft">涨停 0<small>跌停 0</small></div>
+          <div class="heat-cell up-soft">涨停 1<small>跌停 0</small></div>
+          <div class="heat-cell down">涨停 2<small>跌停 3</small></div>
+          <div class="heat-cell up">涨停 5<small>跌停 0</small></div>
+          <div class="heat-cell down-soft">涨停 0<small>跌停 1</small></div>
+        </div>
+        <div class="scene-text">格子被灰底罩住，颜色发灰；按钮自身亮度高于页面，显得「浮」。</div>
+      </div>
+    </div>
+
+    <div class="variant v-a">
+      <div class="variant-title">② 方案A · 推荐 <span class="badge badge--rec">rgba(34,42,54,.44)</span></div>
+      <div class="variant-desc">底色换成更暗的深灰蓝且透明度略降，融入页面背景；光带、内高光减半，保持暗色克制。</div>
+      <div class="scene">
+        <div class="btn-row">
+          <span class="gbtn gbtn--plain">近期涨停</span>
+          <span class="gbtn gbtn--primary">当日成交额</span>
+          <span class="gbtn gbtn--plain">▽ 板块过滤 36/36</span>
+          <span class="gbtn gbtn--primary">列表</span>
+          <span class="gbtn gbtn--plain">气泡图</span>
+        </div>
+        <div class="heat-strip">
+          <div class="heat-cell up">涨停 3<small>跌停 0</small></div>
+          <div class="heat-cell down-soft">涨停 0<small>跌停 0</small></div>
+          <div class="heat-cell up-soft">涨停 1<small>跌停 0</small></div>
+          <div class="heat-cell down">涨停 2<small>跌停 3</small></div>
+          <div class="heat-cell up">涨停 5<small>跌停 0</small></div>
+          <div class="heat-cell down-soft">涨停 0<small>跌停 1</small></div>
+        </div>
+        <div class="scene-text">按钮比页面略亮一档以维持可点暗示，但不再发灰发闷。</div>
+      </div>
+      <div class="tuner">
+        <span>微调透明度</span>
+        <input type="range" min="20" max="70" value="44" data-target="a">
+        <code class="code-a">rgba(34,42,54,.44)</code>
+      </div>
+    </div>
+
+    <div class="variant v-b">
+      <div class="variant-title">③ 方案B · 更暗更透 <span class="badge badge--cur">rgba(20,26,34,.34)</span></div>
+      <div class="variant-desc">接近页面背景色的低透明深灰，只靠描边与微光带区分，最沉浸但按钮感最弱。</div>
+      <div class="scene">
+        <div class="btn-row">
+          <span class="gbtn gbtn--plain">近期涨停</span>
+          <span class="gbtn gbtn--primary">当日成交额</span>
+          <span class="gbtn gbtn--plain">▽ 板块过滤 36/36</span>
+          <span class="gbtn gbtn--primary">列表</span>
+          <span class="gbtn gbtn--plain">气泡图</span>
+        </div>
+        <div class="heat-strip">
+          <div class="heat-cell up">涨停 3<small>跌停 0</small></div>
+          <div class="heat-cell down-soft">涨停 0<small>跌停 0</small></div>
+          <div class="heat-cell up-soft">涨停 1<small>跌停 0</small></div>
+          <div class="heat-cell down">涨停 2<small>跌停 3</small></div>
+          <div class="heat-cell up">涨停 5<small>跌停 0</small></div>
+          <div class="heat-cell down-soft">涨停 0<small>跌停 1</small></div>
+        </div>
+        <div class="scene-text">热力格颜色透出最清楚，适合追求整页一体感的方向。</div>
+      </div>
+    </div>
+
+    <div class="variant">
+      <div class="variant-title">同方案A 在其它场景的小样</div>
+      <div class="extra">
+        <div class="extra-item">
+          <span>侧栏选中</span>
+          <div class="nav-pill" style="background:linear-gradient(100deg,#ef5350,#1fa97c);padding:0;">
+            <div style="padding:7px 12px;">板块日历</div>
+          </div>
+        </div>
+        <div class="extra-item">
+          <span>页签选中（叠在热力色上）</span>
+          <div class="tabs-on-color" style="filter:brightness(.55);">
+            <span class="tab-pill active">20天</span>
+            <span class="tab-pill plain">30天</span>
+            <span class="tab-pill plain">60天</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<div class="footnote">
+  落地方式（确认后统一开发）：只改 <code>theme.css</code> 中 <code>.pc-nav-bubble</code> / <code>.dark .pc-nav-bubble</code>
+  及其 <code>::after</code> 光带与 <code>--primary/--danger</code> 变体，一处修改全站生效；
+  移动端 TabBar 选中胶囊同源参数（mobile.css 高光带）同步对齐。
+</div>
+
+<script>
+  // 高光带开关：默认去掉（王总 2026-10-13 要求先看无高光效果），点按钮可切回对比
+  document.body.classList.add('no-band');
+  const bandToggle = document.getElementById('bandToggle');
+  const bandState = document.getElementById('bandState');
+  bandToggle.addEventListener('click', () => {
+    const off = document.body.classList.toggle('no-band');
+    bandState.textContent = off ? '已去掉' : '保留';
+  });
+
+  // 微调滑杆：实时改方案A 的底色透明度并回显 rgba 值
+  document.querySelectorAll('.tuner input[type="range"]').forEach((slider) => {
+    const panel = slider.closest('.panel');
+    const code = slider.parentElement.querySelector('.code-a');
+    const isDark = panel.classList.contains('dark-theme');
+    const rgb = isDark ? '34,42,54' : '255,255,255';
+    slider.addEventListener('input', () => {
+      const a = (slider.value / 100).toFixed(2);
+      panel.style.setProperty('--glass-bg', `rgba(${rgb},${a})`);
+      code.textContent = `rgba(${rgb},${a})`;
+    });
+  });
+</script>
+
+</body>
+</html>
