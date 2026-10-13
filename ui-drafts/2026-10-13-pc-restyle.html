@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UI 稿 · PC 端去 AI 味视觉优化（工业实用方向）</title>
+<style>
+/* ============================================================
+   股票看板 · PC 端视觉去 AI 味优化稿（2026-10-13）
+   方向：工业实用 Industrial —— 彭博终端 / Level-2 气质
+   约束：系统字体零依赖（Tauri 离线）· 不动功能结构 · 保留玻璃按钮
+   记忆点：等宽数字 + 墨青氛围 + 发丝线分区
+   ============================================================ */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --font-body: "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  --font-num: ui-monospace, "Cascadia Code", "SF Mono", Consolas, "Courier New", monospace;
+
+  /* ---- 新 token（对齐现有 --color-* 命名，落地直接替换 theme.css 值） ---- */
+  --color-bg: #f3f5f4;              /* 底色：灰青压暗半档，给氛围层让位 */
+  --color-surface: #ffffff;
+  --color-surface-2: #f8faf9;       /* 次级面：表头 / 次级区块 */
+  --color-ink: #17242a;             /* 主文字：青墨近黑（替代纯灰 #1f2733） */
+  --color-ink-2: #51636b;
+  --color-ink-3: #8a9aa1;
+  --color-primary: #0e9488;         /* 湖青主色保留 */
+  --color-up: #c53030;
+  --color-down: #0f8a5f;
+  --hairline: rgba(23, 36, 42, 0.10);   /* 发丝线（替代均匀阴影的主手段） */
+  --hairline-strong: rgba(23, 36, 42, 0.18);
+  --radius-card: 6px;               /* 圆角收小：12 → 6，终端感 */
+  --amber: #b45309;                 /* 琥珀强调：仅关键动作 / 警示，单屏 ≤1 处 */
+
+  --dur-base: 320ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.dark-demo {
+  --color-bg: #0b0f10;
+  --color-surface: #131a1c;
+  --color-surface-2: #0f1517;
+  --color-ink: #dfe8e6;
+  --color-ink-2: #93a5a3;
+  --color-ink-3: #64757a;
+  --color-up: #ef5350;
+  --color-down: #26a684;
+  --hairline: rgba(223, 232, 230, 0.09);
+  --hairline-strong: rgba(223, 232, 230, 0.16);
+  --amber: #e8930c;
+}
+
+body {
+  font-family: var(--font-body);
+  background: #e8ecec;
+  color: #1f2937;
+  padding: 28px 0 72px;
+  line-height: 1.6;
+}
+
+/* ============ 文档骨架（需求稿外壳，非被评审界面） ============ */
+.page { max-width: 1180px; margin: 0 auto; padding: 0 24px; }
+.doc-head h1 { font-size: 22px; letter-spacing: -0.02em; }
+.doc-head p { font-size: 13px; color: #5f6f77; margin-top: 6px; line-height: 1.75; }
+.doc-head code { font-family: var(--font-num); font-size: 12px; background: #dde5e4; padding: 1px 6px; border-radius: 4px; }
+
+.brief {
+  margin: 18px 0 30px; padding: 16px 20px;
+  border-left: 3px solid #0e9488;
+  background: #fff; border-radius: 0 8px 8px 0;
+  font-size: 13px; color: #37474f; line-height: 1.8;
+}
+.brief b { color: #0e6e65; }
+
+/* 诊断区 */
+.diag { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 34px; }
+.diag-item {
+  background: #fff; border: 1px solid rgba(23,36,42,.08); border-radius: 8px;
+  padding: 12px 14px; font-size: 12px; color: #4b5a61; line-height: 1.65;
+}
+.diag-item b { display: block; color: #b45309; font-size: 12px; margin-bottom: 3px; }
+.diag-item b::before { content: "✕ "; opacity: .7; }
+
+/* ============ 浏览器壳 ============ */
+.browser {
+  border-radius: 12px; overflow: hidden;
+  box-shadow: 0 24px 64px rgba(23, 36, 42, .18);
+  margin-bottom: 40px;
+  border: 1px solid rgba(23,36,42,.12);
+}
+.browser-chrome {
+  height: 36px; display: flex; align-items: center; gap: 6px; padding: 0 14px;
+  background: #dfe5e4; border-bottom: 1px solid rgba(23,36,42,.08);
+}
+.dark-demo .browser-chrome { background: #1a2224; border-color: var(--hairline); }
+.browser-chrome i { width: 10px; height: 10px; border-radius: 50%; background: rgba(23,36,42,.18); }
+.dark-demo .browser-chrome i { background: rgba(255,255,255,.16); }
+.browser-url {
+  margin-left: 10px; flex: 1; height: 22px; border-radius: 6px;
+  background: rgba(255,255,255,.75); font-family: var(--font-num); font-size: 11px;
+  color: #7a8a90; display: flex; align-items: center; padding: 0 10px;
+}
+.dark-demo .browser-url { background: rgba(255,255,255,.06); color: #64757a; }
+
+/* ============ 应用界面（被评审的部分） ============ */
+.app {
+  display: grid; grid-template-columns: 200px 1fr;
+  min-height: 640px; position: relative;
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-size: 13px;
+}
+/* 氛围层：青墨径向渐变 + 噪点（落地为 theme.css body::before/::after） */
+.app::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(52rem 30rem at 8% -6%, rgba(14, 148, 136, .075), transparent 58%),
+    radial-gradient(40rem 26rem at 104% 4%, rgba(14, 148, 136, .05), transparent 55%);
+}
+.dark-demo .app::before {
+  background:
+    radial-gradient(52rem 30rem at 8% -6%, rgba(14, 148, 136, .12), transparent 58%),
+    radial-gradient(40rem 26rem at 104% 4%, rgba(120, 180, 255, .045), transparent 55%);
+}
+.app::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 0; opacity: .035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ---- 侧栏 ---- */
+.side {
+  position: relative; z-index: 2;
+  background: var(--color-surface-2);
+  border-right: 1px solid var(--hairline);
+  padding: 14px 10px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.side-group {
+  font-size: 10px; letter-spacing: 0.14em; color: var(--color-ink-3);
+  padding: 14px 10px 5px; font-weight: 600;
+}
+.side-item {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 10px; border-radius: 8px;
+  color: var(--color-ink-2); font-size: 12.5px; font-weight: 500;
+  position: relative;
+}
+.side-item .ico { font-style: normal; font-size: 13px; width: 16px; text-align: center; opacity: .8; }
+/* 选中：玻璃胶囊（保留现有 .pc-nav-bubble 视觉，稿中复刻） */
+.side-item.on {
+  color: var(--color-primary); font-weight: 600;
+  background: rgba(14, 148, 136, .10);
+  border: 1px solid rgba(14, 148, 136, .28);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.6), 0 2px 8px rgba(14,148,136,.10);
+}
+.dark-demo .side-item.on {
+  background: rgba(14, 148, 136, .16);
+  border-color: rgba(14, 148, 136, .38);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.10);
+}
+.side-item:not(.on):hover { background: rgba(23, 36, 42, .045); }
+.side-foot {
+  margin-top: auto; padding: 10px 10px 2px; border-top: 1px solid var(--hairline);
+  font-family: var(--font-num); font-size: 10px; color: var(--color-ink-3);
+  display: flex; justify-content: space-between;
+}
+
+/* ---- 主区 ---- */
+.main { position: relative; z-index: 1; display: flex; flex-direction: column; }
+
+/* 顶栏：发丝线压底，去掉浮肿阴影 */
+.topbar {
+  height: 46px; display: flex; align-items: center; gap: 14px;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--hairline);
+  background: color-mix(in srgb, var(--color-bg) 72%, transparent);
+  backdrop-filter: blur(10px);
+}
+.topbar .crumb { font-size: 14px; font-weight: 700; letter-spacing: -0.01em; }
+.topbar .spacer { flex: 1; }
+.top-clock { font-family: var(--font-num); font-size: 11.5px; color: var(--color-ink-3); }
+.top-clock b { color: var(--color-up); font-weight: 600; }
+
+/* 玻璃按钮（保留现有质感；稿中复刻 .pc-nav-bubble） */
+.gbtn {
+  position: relative; overflow: hidden;
+  padding: 5px 12px; border-radius: 8px; font-size: 12px; font-weight: 500;
+  background: rgba(255, 255, 255, .24);
+  border: 1px solid rgba(255, 255, 255, .55);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.85), 0 2px 10px rgba(23,36,42,.10);
+  backdrop-filter: blur(16px) saturate(1.9);
+  color: var(--color-ink-2);
+  white-space: nowrap;
+}
+.gbtn::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit;
+  background: linear-gradient(115deg, rgba(255,255,255,.45) 0%, rgba(255,255,255,.12) 26%, transparent 46%);
+  pointer-events: none;
+}
+.gbtn.pri { color: var(--color-primary); border-color: rgba(14,148,136,.35); }
+.dark-demo .gbtn { background: rgba(34, 42, 54, .44); border-color: rgba(255,255,255,.13); box-shadow: inset 0 1px 0 rgba(255,255,255,.2), 0 2px 10px rgba(0,0,0,.3); color: var(--color-ink-2); }
+.dark-demo .gbtn.pri { color: #2dd4b0; }
+
+/* ---- Ticker 行情带（记忆点） ---- */
+.ticker {
+  display: flex; align-items: stretch;
+  border-bottom: 1px solid var(--hairline);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+.tk {
+  flex: 1; min-width: 0; padding: 10px 14px 9px;
+  border-right: 1px solid var(--hairline);
+  display: flex; flex-direction: column; gap: 1px;
+  cursor: default; position: relative;
+}
+.tk:last-child { border-right: none; }
+.tk:hover { background: color-mix(in srgb, var(--color-primary) 4%, transparent); }
+.tk .name { font-size: 11px; color: var(--color-ink-3); display: flex; justify-content: space-between; }
+.tk .val {
+  font-family: var(--font-num); font-variant-numeric: tabular-nums;
+  font-size: 20px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.25;
+}
+.tk .chg { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-size: 11.5px; font-weight: 600; }
+.up { color: var(--color-up); }
+.down { color: var(--color-down); }
+.tk.flat .val, .tk.flat .chg { color: var(--color-ink-2); }
+
+/* ---- 内容网格：去均质卡片 ---- */
+.grid { display: grid; grid-template-columns: 1.25fr 1fr 1fr; gap: 0; flex: 1; }
+.cell { padding: 14px 18px; border-right: 1px solid var(--hairline); min-width: 0; }
+.cell:last-child { border-right: none; }
+
+/* 区块标题：小标签 + 规则线，替代卡片标题 */
+.sec {
+  display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px;
+}
+.sec h3 { font-size: 12px; font-weight: 700; letter-spacing: 0.02em; }
+.sec .en { font-family: var(--font-num); font-size: 9.5px; letter-spacing: 0.12em; color: var(--color-ink-3); text-transform: uppercase; }
+.sec .more { margin-left: auto; font-size: 11px; color: var(--color-ink-3); }
+
+/* 大数字块（成交额）：去卡片，靠字阶分层 */
+.bignum {
+  font-family: var(--font-num); font-variant-numeric: tabular-nums;
+  font-size: 30px; font-weight: 650; letter-spacing: -0.02em; line-height: 1.1;
+}
+.bignum small { font-size: 13px; font-weight: 500; color: var(--color-ink-3); margin-left: 4px; }
+.subrow { display: flex; gap: 18px; margin-top: 8px; font-size: 11.5px; color: var(--color-ink-2); }
+.subrow .k { color: var(--color-ink-3); margin-right: 5px; }
+.subrow b { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-weight: 600; }
+
+/* 迷你柱状（相对量）：发丝线 + 主色 */
+.bars { display: flex; align-items: flex-end; gap: 3px; height: 46px; margin-top: 12px; }
+.bars i {
+  flex: 1; border-radius: 2px 2px 0 0;
+  background: linear-gradient(to top, rgba(14,148,136,.85), rgba(14,148,136,.35));
+}
+.bars i.hot { background: linear-gradient(to top, #c53030, rgba(197,48,48,.4)); }
+.bars-axis {
+  display: flex; justify-content: space-between; margin-top: 5px;
+  font-family: var(--font-num); font-size: 9.5px; color: var(--color-ink-3);
+}
+
+/* 板块榜：表格化列表（5+ 行），行 hover 主色指示条 */
+.rows { font-size: 12px; }
+.rrow {
+  display: grid; grid-template-columns: 18px 1fr auto auto; gap: 8px;
+  align-items: center; padding: 5.5px 6px;
+  border-radius: 4px; border-bottom: 1px solid var(--hairline);
+  position: relative;
+}
+.rrow:last-child { border-bottom: none; }
+.rrow:hover { background: color-mix(in srgb, var(--color-primary) 5%, transparent); }
+.rrow:hover::before {
+  content: ""; position: absolute; left: 0; top: 6px; bottom: 6px; width: 2px;
+  border-radius: 2px; background: var(--color-primary);
+}
+.rrow .idx { font-family: var(--font-num); font-size: 10.5px; color: var(--color-ink-3); }
+.rrow .nm { font-weight: 600; }
+.rrow .tag { font-size: 10px; color: var(--color-ink-3); font-weight: 400; margin-left: 6px; }
+.rrow .num { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; min-width: 56px; }
+.rrow .pct { font-family: var(--font-num); font-variant-numeric: tabular-nums; text-align: right; min-width: 52px; }
+
+/* 涨跌分布条 */
+.dist { display: flex; height: 8px; border-radius: 4px; overflow: hidden; margin: 10px 0 6px; }
+.dist i { height: 100%; }
+.dist-labels { display: flex; justify-content: space-between; font-family: var(--font-num); font-size: 10px; color: var(--color-ink-3); }
+.dist-labels b { font-weight: 600; }
+
+/* 工具条（板块日历玻璃按钮组示例） */
+.toolbar-row { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+
+/* ============ 文档级区块 ============ */
+.token-card {
+  background: #fff; border: 1px solid rgba(23,36,42,.1); border-radius: 10px;
+  overflow: hidden; margin-bottom: 40px;
+}
+.token-card h2 { font-size: 15px; padding: 14px 20px 10px; letter-spacing: -0.01em; }
+.token-card .hint { padding: 0 20px 12px; font-size: 12px; color: #6b7c83; }
+table.tok { width: 100%; border-collapse: collapse; font-size: 12px; }
+table.tok th {
+  text-align: left; padding: 8px 20px; background: #f0f4f3;
+  font-size: 11px; color: #5f6f77; font-weight: 600;
+  border-top: 1px solid rgba(23,36,42,.08); border-bottom: 1px solid rgba(23,36,42,.08);
+}
+table.tok td { padding: 7px 20px; border-bottom: 1px solid rgba(23,36,42,.06); color: #37474f; }
+table.tok td:first-child { font-family: var(--font-num); font-size: 11.5px; color: #0e6e65; }
+table.tok .old { color: #b45309; font-family: var(--font-num); font-size: 11.5px; }
+
+.notes { margin-bottom: 40px; }
+.notes h2 { font-size: 15px; margin-bottom: 12px; letter-spacing: -0.01em; }
+.note-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.note {
+  background: #fff; border: 1px solid rgba(23,36,42,.1); border-radius: 8px;
+  padding: 12px 14px; font-size: 12px; color: #4b5a61; line-height: 1.7;
+}
+.note b { color: #0e6e65; }
+.note .drop {
+  display: inline-flex; width: 16px; height: 16px; border-radius: 50% 50% 50% 0;
+  background: #e11d48; color: #fff; font-size: 9.5px; font-weight: 700;
+  align-items: center; justify-content: center; transform: rotate(-45deg);
+  margin-right: 6px; font-family: var(--font-num);
+}
+
+@media (max-width: 960px) {
+  .grid { grid-template-columns: 1fr; }
+  .cell { border-right: none; border-bottom: 1px solid var(--hairline); }
+  .diag, .note-grid { grid-template-columns: 1fr; }
+  .app { grid-template-columns: 64px 1fr; }
+  .side-item span.lbl, .side-group, .side-foot { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+</style>
+</head>
+<body>
+
+<div class="page">
+  <header class="doc-head">
+    <h1>PC 端去 AI 味 · 视觉优化稿</h1>
+    <p>方向 <code>工业实用 Industrial</code>（彭博终端 / Level-2 气质）· 功能与布局结构不动 · 玻璃按钮保留 ·
+       全部系统字体零依赖（Tauri 离线可跑）。落地只改 <code>theme.css</code> token 与组件 class，不动逻辑。</p>
+  </header>
+
+  <div class="brief">
+    <b>定调：</b>现在的界面是「通用 SaaS 后台」——均匀白卡片、统一圆角、统一浅阴影、纯平底色、默认字体。
+    新方向往<b>行情终端</b>走：数字一律等宽（tabular-nums）、卡片去均质化（发丝线分区替代一堆同款卡）、
+    底色铺青墨渐变 + 噪点氛围、主色收拢到「选中 + 关键动作」。记忆点是<b>顶部横贯的等宽行情 Ticker 带</b>——
+    王总打开软件第一眼看到的就是它。
+  </div>
+
+  <!-- ================= 诊断 ================= -->
+  <section class="diag">
+    <div class="diag-item"><b>AI 味 01 · 均质卡片</b>所有模块同一张白卡、同一个圆角 12、同一层浅阴影，视线找不到重点。</div>
+    <div class="diag-item"><b>AI 味 02 · 纯平底色</b>页面背景 #f7f9fa 无任何氛围，白卡浮在上面像贴纸。</div>
+    <div class="diag-item"><b>AI 味 03 · 数字无性格</b>行情数字用默认比例字体，同一列数字宽度参差，没有终端感。</div>
+    <div class="diag-item"><b>AI 味 04 · 主色平均撒</b>湖青到处都是（按钮/标签/图标），没有 60/30/10 的纪律。</div>
+    <div class="diag-item"><b>AI 味 05 · 层级靠阴影</b>全靠投影分层，缺规则线与字阶对比，放大投影只会更糊。</div>
+    <div class="diag-item"><b>AI 味 06 · 圆角过大</b>12px 圆角 + 大间距偏「消费级 App」，与盯盘工具的高密度气质不符。</div>
+  </section>
+
+  <!-- ================= 新稿 · 亮色 ================= -->
+  <div class="browser">
+    <div class="browser-chrome"><i></i><i></i><i></i>
+      <div class="browser-url">whf-stock-board · 市场总览（新稿 · 亮色）</div>
+    </div>
+    <div class="app">
+      <!-- 侧栏 -->
+      <nav class="side">
+        <div class="side-item on"><i class="ico">▦</i><span class="lbl">市场总览</span></div>
+        <div class="side-item"><i class="ico">✦</i><span class="lbl">今天炒什么</span></div>
+        <div class="side-item"><i class="ico">◈</i><span class="lbl">热点新闻</span></div>
+        <div class="side-group">行情</div>
+        <div class="side-item"><i class="ico">▤</i><span class="lbl">板块日历</span></div>
+        <div class="side-item"><i class="ico">◎</i><span class="lbl">行情全景</span></div>
+        <div class="side-item"><i class="ico">▥</i><span class="lbl">市场榜单</span></div>
+        <div class="side-group">我的</div>
+        <div class="side-item"><i class="ico">★</i><span class="lbl">自选股</span></div>
+        <div class="side-item"><i class="ico">◷</i><span class="lbl">账户管理</span></div>
+        <div class="side-foot"><span>A股 · 交易中</span><span>15:00</span></div>
+      </nav>
+
+      <!-- 主区 -->
+      <div class="main">
+        <!-- 顶栏 -->
+        <div class="topbar">
+          <span class="crumb">市场总览</span>
+          <span class="spacer"></span>
+          <span class="top-clock">2026-10-13 周二 · <b>交易中</b> · 14:57:03</span>
+          <span class="gbtn pri">刷新</span>
+          <span class="gbtn">⚙</span>
+        </div>
+
+        <!-- Ticker 行情带（记忆点） -->
+        <div class="ticker">
+          <div class="tk">
+            <span class="name"><span>上证指数</span><span>SH</span></span>
+            <span class="val up">3,894.27</span>
+            <span class="chg up">+28.33&nbsp;&nbsp;+0.73%</span>
+          </div>
+          <div class="tk">
+            <span class="name"><span>深证成指</span><span>SZ</span></span>
+            <span class="val down">11,206.54</span>
+            <span class="chg down">−64.12&nbsp;&nbsp;−0.57%</span>
+          </div>
+          <div class="tk">
+            <span class="name"><span>创业板指</span><span>SZ</span></span>
+            <span class="val down">2,541.08</span>
+            <span class="chg down">−17.49&nbsp;&nbsp;−0.68%</span>
+          </div>
+          <div class="tk">
+            <span class="name"><span>科创 50</span><span>SH</span></span>
+            <span class="val up">1,086.42</span>
+            <span class="chg up">+9.87&nbsp;&nbsp;+0.92%</span>
+          </div>
+          <div class="tk flat">
+            <span class="name"><span>恒生指数</span><span>HK</span></span>
+            <span class="val">24,331.90</span>
+            <span class="chg">+12.40&nbsp;&nbsp;+0.05%</span>
+          </div>
+        </div>
+
+        <!-- 内容三栏：发丝线分区，不再是一堆同款卡 -->
+        <div class="grid">
+          <!-- 成交额 -->
+          <div class="cell">
+            <div class="sec"><h3>两市成交额</h3><span class="en">TURNOVER</span><span class="more">详情 ›</span></div>
+            <div class="bignum">1.86<small>万亿</small></div>
+            <div class="subrow">
+              <span><span class="k">较上日</span><b class="up">+742 亿</b></span>
+              <span><span class="k">上证</span><b>7,914 亿</b></span>
+              <span><span class="k">深证</span><b>10,686 亿</b></span>
+            </div>
+            <div class="bars">
+              <i style="height:38%"></i><i style="height:52%"></i><i style="height:44%"></i>
+              <i style="height:66%"></i><i style="height:58%"></i><i style="height:74%"></i>
+              <i style="height:62%"></i><i style="height:80%"></i><i style="height:56%"></i>
+              <i class="hot" style="height:96%"></i>
+            </div>
+            <div class="bars-axis"><span>09-29</span><span>09-30</span><span>10-08</span><span>10-09</span><span>10-12</span><span>今日</span></div>
+          </div>
+
+          <!-- 涨跌分布 -->
+          <div class="cell">
+            <div class="sec"><h3>涨跌分布</h3><span class="en">BREADTH</span></div>
+            <div class="subrow" style="margin:0 0 4px">
+              <span><span class="k">上涨</span><b class="up">3,412</b></span>
+              <span><span class="k">下跌</span><b class="down">1,886</b></span>
+              <span><span class="k">平盘</span><b>214</b></span>
+            </div>
+            <div class="dist">
+              <i style="flex:3412;background:var(--color-up)"></i>
+              <i style="flex:214;background:#9aa7ad"></i>
+              <i style="flex:1886;background:var(--color-down)"></i>
+            </div>
+            <div class="dist-labels"><b class="up">涨停 68</b><span>跌停 9</span></div>
+            <div class="rows" style="margin-top:10px">
+              <div class="rrow"><span class="idx">01</span><span class="nm">涨停<span class="tag">近5日强势</span></span><span class="num up">68 家</span><span class="pct up">+2.1%</span></div>
+              <div class="rrow"><span class="idx">02</span><span class="nm">连板<span class="tag">高度 5 板</span></span><span class="num up">14 家</span><span class="pct up">+4.6%</span></div>
+              <div class="rrow"><span class="idx">03</span><span class="nm">炸板率</span><span class="num">22%</span><span class="pct down">−3%</span></div>
+              <div class="rrow"><span class="idx">04</span><span class="nm">昨涨停今表现</span><span class="num up">+1.87%</span><span class="pct up">+0.4%</span></div>
+              <div class="rrow"><span class="idx">05</span><span class="nm">跌停<span class="tag">含 ST</span></span><span class="num down">9 家</span><span class="pct">—</span></div>
+            </div>
+          </div>
+
+          <!-- 板块榜 -->
+          <div class="cell">
+            <div class="sec"><h3>板块涨幅榜</h3><span class="en">SECTORS</span><span class="more">全景 ›</span></div>
+            <div class="rows">
+              <div class="rrow"><span class="idx">01</span><span class="nm">有色金属</span><span class="num up">+3.42%</span><span class="pct up">主力 +18.4 亿</span></div>
+              <div class="rrow"><span class="idx">02</span><span class="nm">半导体</span><span class="num up">+2.87%</span><span class="pct up">主力 +12.1 亿</span></div>
+              <div class="rrow"><span class="idx">03</span><span class="nm">基础化工</span><span class="num up">+2.31%</span><span class="pct up">主力 +8.7 亿</span></div>
+              <div class="rrow"><span class="idx">04</span><span class="nm">通信</span><span class="num up">+1.95%</span><span class="pct down">主力 −3.2 亿</span></div>
+              <div class="rrow"><span class="idx">05</span><span class="nm">新能源</span><span class="num up">+1.62%</span><span class="pct up">主力 +5.9 亿</span></div>
+              <div class="rrow"><span class="idx">06</span><span class="nm">钢铁</span><span class="num up">+1.28%</span><span class="pct up">主力 +2.3 亿</span></div>
+              <div class="rrow"><span class="idx">07</span><span class="nm">电子</span><span class="num down">−0.84%</span><span class="pct down">主力 −9.6 亿</span></div>
+              <div class="rrow"><span class="idx">08</span><span class="nm">煤炭</span><span class="num down">−1.35%</span><span class="pct down">主力 −6.1 亿</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 新稿 · 暗色 + 玻璃工具条 ================= -->
+  <div class="browser dark-demo">
+    <div class="browser-chrome"><i></i><i></i><i></i>
+      <div class="browser-url">whf-stock-board · 板块日历（新稿 · 暗色 · 玻璃按钮保留）</div>
+    </div>
+    <div class="app">
+      <nav class="side">
+        <div class="side-item"><i class="ico">▦</i><span class="lbl">市场总览</span></div>
+        <div class="side-item"><i class="ico">✦</i><span class="lbl">今天炒什么</span></div>
+        <div class="side-item"><i class="ico">◈</i><span class="lbl">热点新闻</span></div>
+        <div class="side-group">行情</div>
+        <div class="side-item on"><i class="ico">▤</i><span class="lbl">板块日历</span></div>
+        <div class="side-item"><i class="ico">◎</i><span class="lbl">行情全景</span></div>
+        <div class="side-item"><i class="ico">▥</i><span class="lbl">市场榜单</span></div>
+        <div class="side-group">我的</div>
+        <div class="side-item"><i class="ico">★</i><span class="lbl">自选股</span></div>
+        <div class="side-item"><i class="ico">◷</i><span class="lbl">账户管理</span></div>
+        <div class="side-foot"><span>A股 · 收盘</span><span>15:00</span></div>
+      </nav>
+
+      <div class="main">
+        <div class="topbar">
+          <span class="crumb">板块日历</span>
+          <span class="spacer"></span>
+          <span class="top-clock">覆盖 36 / 36 板块 · 最近 20 个交易日</span>
+          <span class="gbtn">⟳ 刷新</span>
+        </div>
+
+        <!-- 玻璃工具条（保留） -->
+        <div class="cell" style="border-right:none">
+          <div class="toolbar-row">
+            <span class="gbtn pri">近 5 日涨停</span>
+            <span class="gbtn">当日成交额</span>
+            <span class="gbtn">10 天</span>
+            <span class="gbtn pri">20 天</span>
+            <span class="gbtn">30 天</span>
+            <span class="gbtn">60 天</span>
+            <span class="gbtn">▽ 板块过滤 36/36</span>
+            <span class="gbtn">列表</span>
+            <span class="gbtn">气泡图</span>
+          </div>
+          <p style="margin-top:10px;font-size:11.5px;color:var(--color-ink-3);line-height:1.7">
+            工具条玻璃质感原样保留（半透明底 + 内高光 + 模糊）。变化在「周边」：页面底色换成带青墨氛围的深色，
+            日期列头改等宽数字，热力格圆角收小到 4px、去掉外发光，靠色阶本身表达强度。
+          </p>
+
+          <!-- 表头 -->
+          <div class="rrow" style="grid-template-columns: 1.4fr repeat(5, 1fr); margin-top:14px; color:var(--color-ink-3); font-family:var(--font-num); font-size:10.5px;">
+            <span>板块</span><span style="text-align:center">10-13 周二</span><span style="text-align:center">10-12 周一</span><span style="text-align:center">10-09 周五</span><span style="text-align:center">10-08 周四</span><span style="text-align:center">09-30 周三</span>
+          </div>
+          <div class="rrow" style="grid-template-columns: 1.4fr repeat(5, 1fr);">
+            <span class="nm">有色金属<span class="tag">BK0478</span></span>
+            <span class="num up">涨停 1</span><span class="num">涨停 0</span><span class="num down">跌停 0</span><span class="num up">涨停 2</span><span class="num">涨停 0</span>
+          </div>
+          <div class="rrow" style="grid-template-columns: 1.4fr repeat(5, 1fr);">
+            <span class="nm">半导体<span class="tag">BK1036</span></span>
+            <span class="num">涨停 0</span><span class="num down">跌停 1</span><span class="num up">涨停 3</span><span class="num up">涨停 2</span><span class="num">涨停 0</span>
+          </div>
+          <div class="rrow" style="grid-template-columns: 1.4fr repeat(5, 1fr);">
+            <span class="nm">基础化工<span class="tag">BK0538</span></span>
+            <span class="num up">涨停 4</span><span class="num up">涨停 1</span><span class="num">涨停 0</span><span class="num down">跌停 2</span><span class="num up">涨停 1</span>
+          </div>
+          <div class="rrow" style="grid-template-columns: 1.4fr repeat(5, 1fr);">
+            <span class="nm">通信<span class="tag">BK1215</span></span>
+            <span class="num up">涨停 2</span><span class="num">涨停 0</span><span class="num up">涨停 1</span><span class="num">涨停 0</span><span class="num up">涨停 3</span>
+          </div>
+          <div class="rrow" style="grid-template-columns: 1.4fr repeat(5, 1fr);">
+            <span class="nm">新能源<span class="tag">BK0493</span></span>
+            <span class="num">涨停 0</span><span class="num up">涨停 2</span><span class="num">涨停 0</span><span class="num up">涨停 1</span><span class="num down">跌停 1</span>
+          </div>
+          <div class="rrow" style="grid-template-columns: 1.4fr repeat(5, 1fr);">
+            <span class="nm">钢铁<span class="tag">BK0479</span></span>
+            <span class="num up">涨停 1</span><span class="num">涨停 0</span><span class="num">涨停 0</span><span class="num">涨停 0</span><span class="num up">涨停 2</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= Token 对照 ================= -->
+  <section class="token-card">
+    <h2>Design Token 对照（落地 = 改 theme.css 的值，组件代码基本不动）</h2>
+    <p class="hint">列出的均为 <code>--color-*</code> / <code>--radius-*</code> / <code>--shadow-*</code> 现有变量名，只换值；新增项单独标注。</p>
+    <table class="tok">
+      <tr><th>变量</th><th>现状</th><th>新稿</th><th>说明</th></tr>
+      <tr><td>--color-bg</td><td class="old">#f7f9fa</td><td>#f3f5f4 + 氛围层</td><td>压暗半档；body 加 4% 青墨径向渐变 + 3% 噪点（新增 body::before/::after）</td></tr>
+      <tr><td>--color-text</td><td class="old">#1f2733</td><td>#17242a（青墨）</td><td>文字整体带一点青，与主色同族</td></tr>
+      <tr><td>--radius-card</td><td class="old">12px</td><td>6px</td><td>圆角收小，终端感；玻璃按钮胶囊圆角不变</td></tr>
+      <tr><td>--shadow-card</td><td class="old">双层浅投影</td><td>0 1px 2px rgba(23,36,42,.05)</td><td>阴影大幅减负，分层主要靠发丝线 var(--hairline)（新增）</td></tr>
+      <tr><td>--font-num（新增）</td><td class="old">—</td><td>ui-monospace, Consolas…</td><td>全部行情数字 + 日期 + 时间戳用等宽 tabular-nums</td></tr>
+      <tr><td>--color-primary</td><td class="old">#0e9488</td><td>#0e9488（不变）</td><td>收拢使用：选中态 / 关键动作 / hover 指示条，不再平均撒</td></tr>
+      <tr><td>Ticker 带（新增）</td><td class="old">—</td><td>页面顶栏下</td><td>指数等宽数字横贯带，替代现在散在总览页里的指数卡</td></tr>
+      <tr><td>.dark 全套</td><td class="old">#09090b / #15161a</td><td>#0b0f10 / #131a1c</td><td>底色带一点青（冷黑），与亮色同一氛围逻辑</td></tr>
+    </table>
+  </section>
+
+  <!-- ================= 标注 ================= -->
+  <section class="notes">
+    <h2>改动标注（全部为视觉层，功能零改动）</h2>
+    <div class="note-grid">
+      <div class="note"><span class="drop">1</span><b>Ticker 行情带</b>：新增于顶栏下方，等宽数字 20px。原「市场总览」里的指数卡整体上移到这里，5 个指数一屏全见，多出的 6 个仍走现有下拉展开交互。</div>
+      <div class="note"><span class="drop">2</span><b>卡片 → 发丝线分区</b>：总览页三栏内容去掉三张同款白卡，改为一条横贯内容区的面板 + 竖向发丝线分隔；只有真正独立的功能块保留卡片。</div>
+      <div class="note"><span class="drop">3</span><b>列表行 hover</b>：悬停时左侧 2px 主色指示条 + 5% 主色底，替代现在单纯变灰；序号与数字全部等宽对齐。</div>
+      <div class="note"><span class="drop">4</span><b>侧栏</b>：加「行情 / 我的」分组小标题（10px 大字距），底部加交易状态行；选中玻璃胶囊原样保留。</div>
+      <div class="note"><span class="drop">5</span><b>氛围层</b>：body 两层青墨径向渐变（4%）+ SVG 噪点（3.5%），亮暗同逻辑不同强度；这是去「纯平底色」的关键一步，成本为零。</div>
+      <div class="note"><span class="drop">6</span><b>玻璃按钮</b>：完全保留现有 .pc-nav-bubble + 透明度/高光带设置项；只在暗色下把投影加深一档使其更立。</div>
+    </div>
+  </section>
+</div>
+
+</body>
+</html>

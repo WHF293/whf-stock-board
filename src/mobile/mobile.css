@@ -251,6 +251,29 @@ body {
   box-shadow: inset 0 1px 0 var(--glass-highlight);
 }
 
+/* 2026-10-13 王总：选中胶囊补「光线照在玻璃上」高光带（与 PC .pc-nav-bubble::after 同源参数） */
+.m-tabbar__thumb::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    115deg,
+    rgba(255, 255, 255, 0.6) 0%,
+    rgba(255, 255, 255, 0.18) 26%,
+    rgba(255, 255, 255, 0) 46%
+  );
+  pointer-events: none;
+}
+.dark .m-tabbar__thumb::after {
+  background: linear-gradient(
+    115deg,
+    rgba(255, 255, 255, 0.22) 0%,
+    rgba(255, 255, 255, 0.06) 26%,
+    rgba(255, 255, 255, 0) 46%
+  );
+}
+
 /* 顶部导航（van-nav-bar 之上补来源标注位） */
 .m-nav {
   background: var(--color-surface);
@@ -703,27 +726,80 @@ body {
 
 /* 指数情绪条：白底迷你卡横滚（v3 清新版：去玻璃，靠极浅影托起） */
 .m-home-index-bar {
-  display: flex;
-  gap: 8px;
-  padding: 10px 12px;
-  overflow-x: auto;
-  scrollbar-width: none;
+  /* 2026-10-13 王总：科创50 移除后一行 3 个指数（上证/深证/创业板），通栏不滑动；
+     下 padding 归零——与展开网格的间距由 .m-home-index-grid 的上 padding 6px 提供，
+     与网格行 gap 6px 一致（王总：间距调整一样） */
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding: 10px 12px 0;
 }
 /* 指数条后首个区块标题压掉上距 */
 .m-home-index-bar + .m-home-sec { padding-top: 0; }
-.m-home-index-bar::-webkit-scrollbar { display: none; }
 .m-home-index {
-  flex-shrink: 0;
-  min-width: 104px;
-  padding: 8px 12px;
-  border-radius: 12px;
+  min-width: 0;
+  padding: 7px 8px;
+  border-radius: 10px;
   background: var(--color-surface);
   box-shadow: var(--m-card-shadow);
 }
-.m-home-index__name { font-size: 10.5px; font-weight: 700; color: var(--color-text-2); }
-.m-home-index__px { font-family: var(--font-num); font-size: 15px; font-weight: 800; line-height: 1.3; }
-.m-home-index__pct { font-family: var(--font-num); font-size: 10.5px; font-weight: 800; }
-.m-home-index--skeleton { height: 66px; }
+.m-home-index__name {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--color-text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.m-home-index__px { font-family: var(--font-num); font-size: 13px; font-weight: 800; line-height: 1.3; }
+.m-home-index__pct { font-family: var(--font-num); font-size: 10px; font-weight: 800; }
+.m-home-index--skeleton { height: 62px; }
+/* 全球指数展开开关（对齐 PC 市场总览：通栏居中幽灵圆钮，仅 chevron 无底卡；
+   固定在指数内容之后——收起时贴 4 指数条，展开时落全球指数下方（王总 2026-10-13），
+   下方 margin 与后续模块拉开） */
+.m-home-index-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(100% - 24px);
+  margin: -2px 12px 6px;
+  padding: 0;
+  border: none;
+  background: none;
+}
+.m-home-index-more--open {
+  /* 展开态：紧跟全球指数网格（grid 无下 padding），不再负 margin 上顶 */
+  margin-top: 2px;
+}
+.m-home-index-more:active { opacity: 0.6; }
+.m-home-index-more .van-icon {
+  font-size: 14px;
+  color: var(--color-text-3);
+  padding: 7px 18px;
+  border-radius: 999px;
+  transition: transform 0.25s;
+}
+.m-home-index-more--open .van-icon { transform: rotate(180deg); }
+/* 全球指数展开区容器（PC 市场总览同款高度过渡：max-height + opacity，
+   收起时整体高度归零、内容被裁剪，展开平滑下推后续模块） */
+.m-home-index-expand {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transition: max-height 0.3s ease, opacity 0.22s ease;
+}
+.m-home-index-expand--open {
+  /* 2 行卡（约 62px × 2 + gap 6）+ grid 上 padding，上限留足余量 */
+  max-height: 180px;
+  opacity: 1;
+}
+/* 全球指数展开区：3 列 × 2 行（名称较长：道琼斯/纳斯达克/标普500） */
+.m-home-index-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding: 6px 12px 0;
+}
 
 /* 区块标题（入口卡 / 预告卡共用；左右 12px 与卡片边对齐） */
 .m-home-sec { display: flex; align-items: baseline; justify-content: space-between; padding: 14px 12px 10px; }
@@ -1006,8 +1082,6 @@ body {
 .m-pan-const-row + .m-pan-const-row { border-top: 1px solid var(--color-border); }
 .m-pan-const-row__nm { flex: 1; min-width: 0; font-weight: 700; }
 .m-pan-const-row__nm .code { font-family: var(--font-num); font-size: 9.5px; color: var(--color-text-3); margin-left: 5px; font-weight: 600; }
-.m-pan-curve { padding: 10px 16px 4px; }
-.m-pan-curve svg { display: block; width: 100%; height: auto; }
 
 /* === 板块日历矩阵 === */
 .m-cal-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }

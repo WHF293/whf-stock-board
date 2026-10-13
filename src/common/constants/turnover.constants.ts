@@ -12,32 +12,24 @@ export const TURNOVER_INDEX_SYMBOLS = {
   SZ: 'sz399001',
 } as const;
 
-/** 可选交易日窗口 */
-export const TURNOVER_RANGE = {
-  /** 近 30 个交易日 */
-  D30: 30,
-  /** 近 60 个交易日 */
-  D60: 60,
-  /** 近 180 个交易日 */
-  D180: 180,
-} as const;
+/** 可选交易日窗口（升序；2026-10-13 起两端共用：PC BaseTabs 与移动端 chips 消费同一变量） */
+export const TURNOVER_RANGE_DAYS = [10, 30, 60] as const;
 
 /** 交易日窗口类型 */
-export type TurnoverRange = (typeof TURNOVER_RANGE)[keyof typeof TURNOVER_RANGE];
+export type TurnoverRange = (typeof TURNOVER_RANGE_DAYS)[number];
 
 /** 交易日窗口切换选项（BaseTabs 要求字符串 value，展示时经 v-model 适配层转换） */
-export const TURNOVER_RANGE_TAB_OPTIONS: readonly { label: string; value: string }[] = [
-  { label: '近30日', value: String(TURNOVER_RANGE.D30) },
-  { label: '近60日', value: String(TURNOVER_RANGE.D60) },
-  { label: '近180日', value: String(TURNOVER_RANGE.D180) },
-];
+export const TURNOVER_RANGE_TAB_OPTIONS: readonly { label: string; value: string }[] =
+  TURNOVER_RANGE_DAYS.map((days) => ({ label: `近${days}日`, value: String(days) }));
 
-/** 默认交易日窗口（近 30 日） */
-export const TURNOVER_RANGE_DEFAULT: TurnoverRange = TURNOVER_RANGE.D30;
+/** 默认交易日窗口（近 10 日，与移动端口径一致） */
+export const TURNOVER_RANGE_DEFAULT: TurnoverRange = TURNOVER_RANGE_DAYS[0];
 
 /** 成交额图表的量纲口径（仅图表视图可切） */
 export const TURNOVER_CHART_METRIC = {
-  /** 成交量：各市场当日成交额（亿元） */
+  /** 实时成交额：当日 vs 昨日同时刻分时累计（同花顺 dq 域，2026-10-13 并入成交额卡作子功能） */
+  REALTIME: 'realtime',
+  /** 历史成交量：各市场当日成交额（亿元） */
   AMOUNT: 'amount',
   /** 相对成交量：当日成交额 − 上一交易日成交额（差额，放量正 / 缩量负） */
   RELATIVE: 'relative',
@@ -52,12 +44,13 @@ export const TURNOVER_CHART_METRIC_OPTIONS: readonly {
   label: string;
   value: TurnoverChartMetric;
 }[] = [
-  { label: '成交量', value: TURNOVER_CHART_METRIC.AMOUNT },
+  { label: '实时成交额', value: TURNOVER_CHART_METRIC.REALTIME },
+  { label: '历史成交量', value: TURNOVER_CHART_METRIC.AMOUNT },
   { label: '相对成交量', value: TURNOVER_CHART_METRIC.RELATIVE },
 ];
 
-/** 量纲口径默认值（成交量） */
-export const TURNOVER_CHART_METRIC_DEFAULT: TurnoverChartMetric = TURNOVER_CHART_METRIC.AMOUNT;
+/** 量纲口径默认值（实时成交额，2026-10-13 王总指定） */
+export const TURNOVER_CHART_METRIC_DEFAULT: TurnoverChartMetric = TURNOVER_CHART_METRIC.REALTIME;
 
 /** 成交额表格行（派生展示字段；供 BaseTable 渲染） */
 export interface TurnoverTableRow extends TurnoverDayItem {

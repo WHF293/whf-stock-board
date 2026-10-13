@@ -9,6 +9,8 @@ import HeatmapChart from '../components/charts/HeatmapChart.vue';
 import HeatmapBoardList from '../components/business/HeatmapBoardList.vue';
 import MarketFundFlowTrendChart from '../components/charts/MarketFundFlowTrendChart.vue';
 import TurnoverTrendChart from '../components/charts/TurnoverTrendChart.vue';
+import RealtimeTurnoverCard from '../components/business/RealtimeTurnoverCard.vue';
+import MarketRatingCard from '../components/business/MarketRatingCard.vue';
 import BaseTabs from '../components/ui/BaseTabs.vue';
 import MenuIcon from '../components/ui/MenuIcon.vue';
 import StockQuoteCard from '../components/business/StockQuoteCard.vue';
@@ -77,8 +79,8 @@ const BREADTH_REQUEST_GAP_MS = 500;
 /** 大盘资金流保留的交易日数（近 10 日） */
 const MARKET_FLOW_DAYS = 10;
 
-/** 大盘资金流视图高度（像素）：与涨跌分布图表等高，保证同排两卡视觉一致 */
-const MARKET_FLOW_VIEW_HEIGHT_PX = 220;
+/** 大盘资金流视图高度（像素）：与涨跌分布图表等高（220 × 1.4），保证同排两卡视觉一致 */
+const MARKET_FLOW_VIEW_HEIGHT_PX = 308;
 
 /** 展示形式：图表（默认） / 列表（涨跌分布与大盘资金流共用同一组值） */
 const VIEW_MODE = {
@@ -117,6 +119,11 @@ const router = useRouter();
 /** 跳市场榜单（成交额 / 主力净流入卡片标题入口） */
 const goMarketRank = (): void => {
   void router.push(ROUTE_PATH.MARKET_RANK);
+};
+
+/** 跳板块资金流向页（主力净流入卡标题落点，2026-10-13 起独立成页） */
+const goBoardFlow = (): void => {
+  void router.push(ROUTE_PATH.BOARD_FLOW);
 };
 
 /** 跳行情全景（涨跌分布 / 板块热力卡片标题入口；默认即 A 股全景模块） */
@@ -606,7 +613,95 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
       </button>
     </div>
 
-    <!-- 成交额（资金速览 + 成交额变化合并为一张卡：两者本质同属市场成交维度；标题跳市场榜单） -->
+    <!--
+      市场情绪 + 大盘评级（等宽 flex 左右分布，gap 20px；2026-10-13 实时成交额并入下方成交额卡后，
+      本行左侧由市场情绪补位）：四池数据与市场宽度同上游（东财），每轮串行错峰 4 请求；
+      梯队口径与市场榜单-连板页签一致；大盘评级数据源同花顺 q 域 indexflash
+    -->
+    <div class="flex flex-wrap gap-5">
+      <BaseCard
+        title="市场情绪"
+        clickable-title
+        class="min-w-[320px] flex-1"
+        @title-click="goMarketRank"
+      >
+        <div v-if="isSentimentError" class="py-8">
+          <BaseEmpty text="情绪数据加载失败，请稍后重试" />
+        </div>
+        <BaseSkeleton v-else-if="!sentiment" />
+        <template v-else>
+          <!-- 速览六格：窄容器 3×2，宽容器 6×1（主区已开 @container） -->
+          <div class="grid grid-cols-3 gap-4 @2xl:grid-cols-6">
+            <div>
+              <p class="text-xs text-text-tertiary">涨停</p>
+              <p class="mt-1 text-xl font-semibold tabular-nums text-up">
+                {{ sentiment.limitUpCount }}
+              </p>
+            </div>
+            <div>
+              <p class="text-xs text-text-tertiary">跌停</p>
+              <p class="mt-1 text-xl font-semibold tabular-nums text-down">
+                {{ sentiment.limitDownCount }}
+              </p>
+            </div>
+            <div>
+              <p class="text-xs text-text-tertiary">炸板</p>
+              <p class="mt-1 text-xl font-semibold tabular-nums text-text">
+                {{ sentiment.brokenCount }}
+              </p>
+            </div>
+            <div>
+              <p class="text-xs text-text-tertiary">炸板率</p>
+              <p class="mt-1 text-xl font-semibold tabular-nums text-text">
+                {{ sentiment.brokenRate === null ? '--' : formatPercentUnsigned(sentiment.brokenRate) }}
+              </p>
+            </div>
+            <div>
+              <p class="text-xs text-text-tertiary">连板高度</p>
+              <p
+                class="mt-1 text-xl font-semibold tabular-nums"
+                :class="sentiment.maxLadder >= 3 ? 'text-up' : 'text-text'"
+              >
+                {{ sentiment.maxLadder > 0 ? `${sentiment.maxLadder} 板` : '--' }}
+              </p>
+            </div>
+            <div>
+              <p class="text-xs text-text-tertiary">昨日涨停均涨</p>
+              <p
+                class="mt-1 text-xl font-semibold tabular-nums"
+                :class="
+                  sentiment.yesterdayZtAvgPct === null
+                    ? 'text-text'
+                    : sentiment.yesterdayZtAvgPct >= 0
+                      ? 'text-up'
+                      : 'text-down'
+                "
+              >
+                {{ sentiment.yesterdayZtAvgPct === null ? '--' : formatPercent(sentiment.yesterdayZtAvgPct) }}
+              </p>
+            </div>
+          </div>
+          <!-- 连板梯队药丸：与市场榜单-连板页签同款样式（≥3 板红色高亮） -->
+          <div v-if="sentiment.ladder.length > 0" class="mt-4 flex flex-wrap items-center gap-2">
+            <span
+              v-for="tier in sentiment.ladder"
+              :key="tier.board"
+              class="rounded-full px-3 py-1 text-xs font-medium"
+              :class="tier.board >= 3 ? 'bg-up-weak text-up' : 'bg-flat-weak text-text-secondary'"
+            >
+              {{ tier.board >= 2 ? `${tier.board}板` : '首板' }} · {{ tier.count }} 家
+            </span>
+          </div>
+          <p v-else class="mt-4 text-xs text-text-tertiary">今日暂无涨停个股</p>
+        </template>
+      </BaseCard>
+      <BaseCard title="大盘评级" class="min-w-[320px] flex-1">
+        <MarketRatingCard />
+      </BaseCard>
+    </div>
+
+    <!-- 成交额（资金速览 + 成交额变化合并为一张卡：两者本质同属市场成交维度；标题跳市场榜单）。
+         2026-10-13 实时成交额由独立卡并入本卡，成为图表视图第一个量纲子项（实时成交额/历史成交量/相对成交量） -->
     <BaseCard
       title="成交额"
       clickable-title
@@ -614,14 +709,24 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
     >
       <template #extra>
         <div class="flex items-center gap-2">
-          <!-- 量纲口径：仅图表视图展示（表格本身已含绝对额与较上日两列） -->
+          <!-- 量纲口径：仅图表视图展示（实时成交额 / 历史成交量 / 相对成交量，2026-10-13 并入实时成交额子功能） -->
           <BaseTabs
             v-if="turnoverViewMode === VIEW_MODE.CHART"
             v-model="turnoverChartMetric"
             :options="TURNOVER_CHART_METRIC_OPTIONS"
           />
-          <BaseTabs v-model="turnoverRangeModel" :options="TURNOVER_RANGE_TAB_OPTIONS" />
-          <BaseTabs v-model="turnoverViewMode" :options="VIEW_MODE_OPTIONS" />
+          <!-- 交易日窗口：仅历史口径（历史/相对成交量）有意义，实时成交额视图下隐藏 -->
+          <BaseTabs
+            v-if="turnoverViewMode === VIEW_MODE.CHART && turnoverChartMetric !== TURNOVER_CHART_METRIC.REALTIME"
+            v-model="turnoverRangeModel"
+            :options="TURNOVER_RANGE_TAB_OPTIONS"
+          />
+          <!-- 图表/列表切换：实时成交额只有图表形态，视图切换一并隐藏 -->
+          <BaseTabs
+            v-if="turnoverChartMetric !== TURNOVER_CHART_METRIC.REALTIME"
+            v-model="turnoverViewMode"
+            :options="VIEW_MODE_OPTIONS"
+          />
         </div>
       </template>
 
@@ -650,7 +755,8 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
 
       <BaseEmpty v-if="isTurnoverError" text="成交额数据加载失败，请稍后重试" />
       <div v-else-if="turnoverHistory.length === 0"><BaseSkeleton /></div>
-      <!-- 图表视图 -->
+      <!-- 图表视图：实时成交额（分时累计双线） / 历史成交量 / 相对成交量 -->
+      <RealtimeTurnoverCard v-else-if="turnoverChartMetric === TURNOVER_CHART_METRIC.REALTIME" />
       <TurnoverTrendChart
         v-else-if="turnoverViewMode === VIEW_MODE.CHART"
         :days="turnoverChartDays"
@@ -674,12 +780,12 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
       </BaseTable>
     </BaseCard>
 
-    <!-- 涨跌分布 + 大盘资金流：各占 50%，容器不足（每项最小 500px）时换行为全宽 -->
-    <div class="flex flex-wrap gap-4">
+    <!-- 涨跌分布 + 大盘资金流：等宽 flex 左右分布（gap 20px，与上方新行同口径），窄窗 320px 以下换行 -->
+    <div class="flex flex-wrap gap-5">
       <BaseCard
         title="涨跌分布"
         clickable-title
-        class="min-w-[500px] flex-1 basis-[calc(50%-0.5rem)]"
+        class="min-w-[320px] flex-1"
         @title-click="goPanorama"
       >
         <template #extra>
@@ -713,12 +819,12 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
         </BaseTable>
       </BaseCard>
 
-      <!-- 大盘资金流（近10日）：曲线 / 列表；标题跳市场榜单 -->
+      <!-- 大盘资金流（近10日）：曲线 / 列表；标题跳板块资金流向页（2026-10-13 起独立成页） -->
       <BaseCard
         title="主力净流入（近10日）"
         clickable-title
-        class="min-w-[500px] flex-1 basis-[calc(50%-0.5rem)]"
-        @title-click="goMarketRank"
+        class="min-w-[320px] flex-1"
+        @title-click="goBoardFlow"
       >
         <template #extra>
           <BaseTabs v-model="marketViewMode" :options="VIEW_MODE_OPTIONS" />
@@ -773,86 +879,6 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
         </template>
       </BaseCard>
     </div>
-
-    <!--
-      市场情绪：涨停 / 跌停 / 炸板 / 炸板率 / 连板高度 / 打板溢价（标题跳市场榜单）。
-      四池数据与市场宽度同上游（东财），每轮串行错峰 4 请求；梯队口径与市场榜单-连板页签一致
-    -->
-    <BaseCard
-      title="市场情绪"
-      clickable-title
-      @title-click="goMarketRank"
-    >
-      <div v-if="isSentimentError" class="py-8">
-        <BaseEmpty text="情绪数据加载失败，请稍后重试" />
-      </div>
-      <BaseSkeleton v-else-if="!sentiment" />
-      <template v-else>
-        <!-- 速览六格：窄容器 3×2，宽容器 6×1（主区已开 @container） -->
-        <div class="grid grid-cols-3 gap-4 @2xl:grid-cols-6">
-          <div>
-            <p class="text-xs text-text-tertiary">涨停</p>
-            <p class="mt-1 text-xl font-semibold tabular-nums text-up">
-              {{ sentiment.limitUpCount }}
-            </p>
-          </div>
-          <div>
-            <p class="text-xs text-text-tertiary">跌停</p>
-            <p class="mt-1 text-xl font-semibold tabular-nums text-down">
-              {{ sentiment.limitDownCount }}
-            </p>
-          </div>
-          <div>
-            <p class="text-xs text-text-tertiary">炸板</p>
-            <p class="mt-1 text-xl font-semibold tabular-nums text-text">
-              {{ sentiment.brokenCount }}
-            </p>
-          </div>
-          <div>
-            <p class="text-xs text-text-tertiary">炸板率</p>
-            <p class="mt-1 text-xl font-semibold tabular-nums text-text">
-              {{ sentiment.brokenRate === null ? '--' : formatPercentUnsigned(sentiment.brokenRate) }}
-            </p>
-          </div>
-          <div>
-            <p class="text-xs text-text-tertiary">连板高度</p>
-            <p
-              class="mt-1 text-xl font-semibold tabular-nums"
-              :class="sentiment.maxLadder >= 3 ? 'text-up' : 'text-text'"
-            >
-              {{ sentiment.maxLadder > 0 ? `${sentiment.maxLadder} 板` : '--' }}
-            </p>
-          </div>
-          <div>
-            <p class="text-xs text-text-tertiary">昨日涨停均涨</p>
-            <p
-              class="mt-1 text-xl font-semibold tabular-nums"
-              :class="
-                sentiment.yesterdayZtAvgPct === null
-                  ? 'text-text'
-                  : sentiment.yesterdayZtAvgPct >= 0
-                    ? 'text-up'
-                    : 'text-down'
-              "
-            >
-              {{ sentiment.yesterdayZtAvgPct === null ? '--' : formatPercent(sentiment.yesterdayZtAvgPct) }}
-            </p>
-          </div>
-        </div>
-        <!-- 连板梯队药丸：与市场榜单-连板页签同款样式（≥3 板红色高亮） -->
-        <div v-if="sentiment.ladder.length > 0" class="mt-4 flex flex-wrap items-center gap-2">
-          <span
-            v-for="tier in sentiment.ladder"
-            :key="tier.board"
-            class="rounded-full px-3 py-1 text-xs font-medium"
-            :class="tier.board >= 3 ? 'bg-up-weak text-up' : 'bg-flat-weak text-text-secondary'"
-          >
-            {{ tier.board >= 2 ? `${tier.board}板` : '首板' }} · {{ tier.count }} 家
-          </span>
-        </div>
-        <p v-else class="mt-4 text-xs text-text-tertiary">今日暂无涨停个股</p>
-      </template>
-    </BaseCard>
 
     <!-- 板块热力（标题跳行情全景 A 股全景模块） -->
     <BaseCard

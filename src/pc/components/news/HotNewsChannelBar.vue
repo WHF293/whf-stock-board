@@ -60,7 +60,8 @@ const emit = defineEmits<{
         class="pressable flex-1 rounded-md px-2 py-1 text-xs"
         :class="
           active === view.value
-            ? 'bg-primary-weak font-medium text-primary'
+            ? // 选中态：高光玻璃气泡（theme.css .pc-nav-bubble，与 BaseTabs/侧栏同源）
+              'pc-nav-bubble font-medium text-primary'
             : 'text-text-secondary hover:text-text'
         "
         @click="emit('selectView', view.value)"
@@ -83,7 +84,8 @@ const emit = defineEmits<{
           class="pressable shrink-0 rounded-full px-2.5 py-1 text-xs"
           :class="
             selectedThemeId === theme.themeId
-              ? 'bg-primary-weak font-medium text-primary'
+              ? // 选中态：高光玻璃气泡（同上）
+                'pc-nav-bubble font-medium text-primary'
               : 'bg-flat-weak text-text-secondary hover:text-text'
           "
           @click="emit('selectTheme', theme.themeId)"

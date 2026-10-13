@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>移动端 · 行情全景-资金 合并进 tabbar 资金流向页 · UI 稿</title>
+<style>
+  :root {
+    --bg: #f3f5f7;
+    --page-bg: #f6f7f9;
+    --surface: #ffffff;
+    --surface-2: #f4f6f8;
+    --text-1: #1c2229;
+    --text-2: #4a5560;
+    --text-3: #97a1ab;
+    --border: #e6e9ed;
+    --up: #e02020;
+    --up-weak: rgba(224, 32, 32, 0.09);
+    --down: #00a870;
+    --down-weak: rgba(0, 168, 112, 0.09);
+    --primary: #0e7490;
+    --primary-weak: rgba(14, 116, 144, 0.1);
+    --shadow: 0 1px 3px rgba(16, 24, 32, 0.06);
+    --chart-grid: #eceff2;
+  }
+  .dark {
+    --bg: #10151a;
+    --page-bg: #0d1116;
+    --surface: #171d24;
+    --surface-2: #1e262f;
+    --text-1: #e8ecf0;
+    --text-2: #aeb8c2;
+    --text-3: #6d7883;
+    --border: #262f3a;
+    --up: #ff5c5c;
+    --up-weak: rgba(255, 92, 92, 0.14);
+    --down: #26bf8c;
+    --down-weak: rgba(38, 191, 140, 0.14);
+    --primary: #38bdf8;
+    --primary-weak: rgba(56, 189, 248, 0.14);
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+    --chart-grid: #242d38;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text-1);
+    transition: background 0.25s, color 0.25s;
+  }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* ===== 顶部说明区 ===== */
+  .page-head { max-width: 1120px; margin: 0 auto; padding: 26px 24px 8px; }
+  .page-head h1 { font-size: 20px; margin-bottom: 8px; }
+  .page-head p { font-size: 13px; color: var(--text-2); line-height: 1.8; }
+  .theme-toggle {
+    position: fixed; top: 14px; right: 16px; z-index: 50;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text-1);
+    border-radius: 999px; padding: 7px 14px; font-size: 12.5px; font-weight: 600;
+    cursor: pointer; box-shadow: var(--shadow);
+  }
+
+  /* ===== 展示布局 ===== */
+  .stage { max-width: 1120px; margin: 0 auto; padding: 20px 24px 60px; display: flex; gap: 36px; flex-wrap: wrap; justify-content: center; }
+  .phone-wrap { flex: 0 0 auto; }
+  .phone-label { text-align: center; font-size: 13px; font-weight: 700; margin: 0 0 10px; color: var(--text-2); }
+  .phone-label small { display: block; font-weight: 500; font-size: 11px; color: var(--text-3); margin-top: 3px; }
+  .phone {
+    width: 375px; height: 760px; border-radius: 34px; overflow: hidden;
+    border: 1px solid var(--border); box-shadow: 0 18px 48px rgba(10, 18, 26, 0.18);
+    background: var(--page-bg); display: flex; flex-direction: column; position: relative;
+  }
+  .statusbar { height: 30px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 18px; font-size: 11px; font-weight: 700; color: var(--text-2); }
+  .navbar {
+    height: 42px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 15.5px; font-weight: 700; border-bottom: 1px solid var(--border); background: var(--surface);
+    position: relative;
+  }
+  .navbar .back { position: absolute; left: 12px; font-size: 16px; color: var(--text-2); }
+
+  .screen { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 0 calc(64px + 14px); scrollbar-width: none; }
+  .screen::-webkit-scrollbar { display: none; }
+  /* 王总 UI 约定：主体卡片通栏贴边，不留左右白边 */
+  .card {
+    background: var(--surface); border-radius: 12px; padding: 12px 12px 8px;
+    box-shadow: var(--shadow); margin: 0 0 10px;
+  }
+  .card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .card-title { font-size: 14px; font-weight: 700; }
+  .card-sub { flex: 1; min-width: 0; font-size: 10.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chip-btn {
+    flex-shrink: 0; border: none; background: var(--surface-2); color: var(--text-2);
+    border-radius: 999px; min-height: 24px; padding: 0 10px; font-size: 11px; font-weight: 600; cursor: pointer;
+  }
+  .chip-btn--primary { background: var(--primary-weak); color: var(--primary); }
+
+  .up { color: var(--up); }
+  .down { color: var(--down); }
+  .pill { font-size: 10.5px; font-weight: 800; border-radius: 999px; padding: 2px 7px; }
+  .pill.is-up { background: var(--up-weak); color: var(--up); }
+  .pill.is-down { background: var(--down-weak); color: var(--down); }
+
+  /* ===== 模块一：主力净流入折线（示意） ===== */
+  .line-chart { height: 150px; position: relative; }
+  .line-chart svg { width: 100%; height: 100%; }
+
+  /* ===== 模块三：历史双向条形（示意） ===== */
+  .hrow { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
+  .hdate { width: 36px; text-align: right; font-size: 10px; color: var(--text-3); }
+  .htrack { position: relative; height: 10px; flex: 1; }
+  .hzero { position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; transform: translateX(-50%); background: var(--border); }
+  .hbar { position: absolute; top: 0; bottom: 0; border-radius: 2px; }
+  .hbar.is-up { right: 50%; background: var(--up); }
+  .hbar.is-down { left: 50%; background: var(--down); }
+
+  /* ===== 新增模块：板块主力净流入榜（合并自行情全景-资金） ===== */
+  .badge-new {
+    flex-shrink: 0; font-size: 9.5px; font-weight: 800; color: var(--primary);
+    background: var(--primary-weak); border-radius: 4px; padding: 2px 6px; letter-spacing: 0.5px;
+  }
+  .rank-row {
+    display: flex; align-items: center; gap: 8px; padding: 9px 2px;
+    border-bottom: 1px solid var(--border);
+  }
+  .rank-row:last-child { border-bottom: none; }
+  .rank-idx { width: 18px; flex-shrink: 0; text-align: center; font-size: 11px; font-weight: 800; color: var(--text-3); }
+  .rank-idx.top { color: var(--up); }
+  .rank-main { flex: 1; min-width: 0; }
+  .rank-name { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rank-lead { font-size: 10px; color: var(--text-3); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rank-val { flex-shrink: 0; font-size: 12.5px; font-weight: 800; }
+  .rank-add {
+    flex-shrink: 0; width: 24px; height: 24px; border-radius: 999px; border: 1px dashed var(--border);
+    background: none; color: var(--text-3); font-size: 13px; line-height: 1; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .rank-add.is-on { border-style: solid; border-color: var(--primary); color: var(--primary); background: var(--primary-weak); }
+
+  /* ===== 行情全景页（合并后 chips） ===== */
+  .chips { display: flex; gap: 8px; padding: 10px 12px; }
+  .chip {
+    border: none; border-radius: 999px; padding: 6px 16px; font-size: 12.5px; font-weight: 700;
+    background: var(--surface); color: var(--text-2); box-shadow: var(--shadow); cursor: pointer;
+  }
+  .chip.is-active { background: var(--primary); color: #fff; }
+
+  /* ===== tabbar ===== */
+  .tabbar {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 62px;
+    background: var(--surface); border-top: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-around; padding-bottom: 8px;
+  }
+  .tab { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 10px; color: var(--text-3); }
+  .tab .ic { font-size: 19px; }
+  .tab.is-active { color: var(--primary); font-weight: 700; }
+
+  /* ===== 注释面板 ===== */
+  .notes { max-width: 1120px; margin: 0 auto; padding: 0 24px 60px; }
+  .notes h2 { font-size: 16px; margin-bottom: 12px; }
+  .note-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+  .note {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px;
+    font-size: 12.5px; line-height: 1.8; color: var(--text-2);
+  }
+  .note b { color: var(--text-1); }
+  .note .tag { display: inline-block; font-size: 10px; font-weight: 800; color: var(--primary); background: var(--primary-weak); border-radius: 4px; padding: 1px 6px; margin-right: 6px; }
+</style>
+</head>
+<body>
+<button class="theme-toggle" onclick="document.body.classList.toggle('dark')">◐ 明暗切换</button>
+
+<div class="page-head">
+  <h1>移动端 ·【行情全景-资金】合并进 tabbar 资金流向页</h1>
+  <p>合并口径（王总 2026-10-13 修正）：行情全景页<b>彻底移除「资金」chip</b>（chips 只剩 A股 / 美球 / 宏观，无任何残留提示）；
+     资金模块的内容改为渲染到 tabbar 资金流向页——「<b>板块主力净流入榜</b>」新增为第 4 模块（行尾「＋」一键把板块加入曲线与历史的已选集）；
+     原资金模块的 4 条 mini 曲线由资金流向页「板块资金」ECharts 版覆盖（同源数据，属重复模块故下线）。右上角可切明暗。</p>
+</div>
+
+<div class="stage">
+  <!-- ============ 屏 1：合并后的资金流向页 ============ -->
+  <div class="phone-wrap">
+    <div class="phone-label">合并后的「资金流向」页（tabbar）<small>新增模块④：板块主力净流入榜 · 来自行情全景-资金</small></div>
+    <div class="phone">
+      <div class="statusbar"><span>9:41</span><span>5G ▮▮▮</span></div>
+      <div class="navbar">资金流向</div>
+      <div class="screen">
+
+        <!-- 模块一：主力净流入 -->
+        <section class="card">
+          <div class="card-head">
+            <span class="card-title">主力净流入</span>
+            <span class="card-sub">近 10 日 · 单位亿</span>
+            <button class="chip-btn">↻</button>
+          </div>
+          <div class="line-chart">
+            <svg viewBox="0 0 340 150" preserveAspectRatio="none">
+              <g stroke="var(--chart-grid)" stroke-width="1">
+                <line x1="0" y1="30" x2="340" y2="30"/><line x1="0" y1="65" x2="340" y2="65"/>
+                <line x1="0" y1="100" x2="340" y2="100"/><line x1="0" y1="135" x2="340" y2="135"/>
+              </g>
+              <line x1="0" y1="86" x2="340" y2="86" stroke="var(--text-3)" stroke-dasharray="4 4" opacity="0.5"/>
+              <path d="M10,58 C40,50 60,72 90,66 C120,60 140,92 170,88 C200,84 215,100 245,96 C275,92 295,64 330,70"
+                    fill="none" stroke="var(--primary)" stroke-width="2"/>
+              <path d="M10,58 C40,50 60,72 90,66 C120,60 140,92 170,88 C200,84 215,100 245,96 C275,92 295,64 330,70 L330,150 L10,150 Z"
+                    fill="var(--primary)" opacity="0.07"/>
+              <g font-size="9" fill="var(--text-3)">
+                <text x="8" y="52" class="up">+86.2亿</text><text x="88" y="60" class="up">+42.5亿</text>
+                <text x="168" y="82" class="down">-12.3亿</text><text x="243" y="90" class="down">-38.7亿</text>
+                <text x="300" y="64" class="up">+51.9亿</text>
+              </g>
+              <g font-size="9" fill="var(--text-3)">
+                <text x="6" y="146">10-09</text><text x="90" y="146">10-10</text>
+                <text x="170" y="146">10-11</text><text x="250" y="146">10-12</text><text x="312" y="146">10-13</text>
+              </g>
+            </svg>
+          </div>
+        </section>
+
+        <!-- 模块二：板块资金 -->
+        <section class="card">
+          <div class="card-head">
+            <span class="card-title">板块资金</span>
+            <span class="card-sub">截至 2026-10-13 14:56 · 加载 6/6</span>
+            <button class="chip-btn">↻</button>
+            <button class="chip-btn chip-btn--primary">选择板块 6/8</button>
+          </div>
+          <div class="line-chart" style="height: 130px">
+            <svg viewBox="0 0 340 130" preserveAspectRatio="none">
+              <g stroke="var(--chart-grid)" stroke-width="1">
+                <line x1="0" y1="28" x2="340" y2="28"/><line x1="0" y1="62" x2="340" y2="62"/>
+                <line x1="0" y1="96" x2="340" y2="96"/>
+              </g>
+              <line x1="0" y1="72" x2="340" y2="72" stroke="var(--text-3)" stroke-dasharray="4 4" opacity="0.5"/>
+              <path d="M6,70 C50,62 90,54 140,50 C190,46 240,40 334,34" fill="none" stroke="var(--up)" stroke-width="1.6"/>
+              <path d="M6,74 C60,70 120,64 180,58 C240,52 290,50 334,46" fill="none" stroke="#f1998e" stroke-width="1.6"/>
+              <path d="M6,74 C50,80 100,88 160,92 C220,96 280,98 334,100" fill="none" stroke="var(--down)" stroke-width="1.6"/>
+              <path d="M6,73 C60,78 130,84 200,86 C260,88 300,90 334,92" fill="none" stroke="#7fd3b3" stroke-width="1.6"/>
+              <g font-size="9" fill="var(--text-3)">
+                <text x="6" y="124">09:30</text><text x="160" y="124">11:30/13:00</text><text x="306" y="124">15:00</text>
+              </g>
+            </svg>
+          </div>
+          <div class="card-head" style="margin: 2px 0 0">
+            <span class="card-sub">半导体 · 通信设备 · 电源设备 · 贵金属 · 银行 · 证券</span>
+          </div>
+        </section>
+
+        <!-- 模块三：板块历史净流入 -->
+        <section class="card">
+          <div class="card-head">
+            <span class="card-title">板块历史净流入</span>
+            <span class="card-sub">6 个板块 · 第 1/6 页</span>
+            <button class="chip-btn">↻</button>
+          </div>
+          <div style="background: var(--surface-2); border-radius: 10px; padding: 10px 12px">
+            <div class="card-head" style="margin-bottom: 8px">
+              <span class="card-title" style="font-size: 13px">半导体（BK1036）</span>
+              <span class="rank-val up num">+182.46亿</span>
+            </div>
+            <div class="hrow"><span class="hdate num">10-13</span><div class="htrack"><div class="hzero"></div><div class="hbar is-up" style="width: 46%"></div></div></div>
+            <div class="hrow"><span class="hdate num">10-12</span><div class="htrack"><div class="hzero"></div><div class="hbar is-up" style="width: 30%"></div></div></div>
+            <div class="hrow"><span class="hdate num">10-11</span><div class="htrack"><div class="hzero"></div><div class="hbar is-down" style="width: 14%"></div></div></div>
+            <div class="hrow"><span class="hdate num">10-10</span><div class="htrack"><div class="hzero"></div><div class="hbar is-up" style="width: 22%"></div></div></div>
+            <div class="hrow"><span class="hdate num">10-09</span><div class="htrack"><div class="hzero"></div><div class="hbar is-down" style="width: 8%"></div></div></div>
+          </div>
+        </section>
+
+        <!-- ★ 模块四（新增）：板块主力净流入榜 —— 合并自行情全景-资金 -->
+        <section class="card">
+          <div class="card-head">
+            <span class="card-title">板块主力净流入</span>
+            <span class="badge-new">合并自全景-资金</span>
+            <span class="card-sub">当日 · 前 30</span>
+            <button class="chip-btn">↻</button>
+          </div>
+          <div class="rank-row">
+            <span class="rank-idx top num">1</span>
+            <div class="rank-main">
+              <div class="rank-name">半导体</div>
+              <div class="rank-lead">领涨 卓胜微 <span class="up num">+6.82%</span></div>
+            </div>
+            <span class="rank-val up num">+48.6亿</span>
+            <span class="pill is-up num">+3.21%</span>
+            <button class="rank-add is-on" title="已加入板块资金曲线">✓</button>
+          </div>
+          <div class="rank-row">
+            <span class="rank-idx top num">2</span>
+            <div class="rank-main">
+              <div class="rank-name">通信设备</div>
+              <div class="rank-lead">领涨 中际旭创 <span class="up num">+5.40%</span></div>
+            </div>
+            <span class="rank-val up num">+31.2亿</span>
+            <span class="pill is-up num">+2.65%</span>
+            <button class="rank-add is-on" title="已加入板块资金曲线">✓</button>
+          </div>
+          <div class="rank-row">
+            <span class="rank-idx top num">3</span>
+            <div class="rank-main">
+              <div class="rank-name">电源设备</div>
+              <div class="rank-lead">领涨 阳光电源 <span class="up num">+4.11%</span></div>
+            </div>
+            <span class="rank-val up num">+22.8亿</span>
+            <span class="pill is-up num">+1.98%</span>
+            <button class="rank-add" title="点击加入板块资金曲线与历史">＋</button>
+          </div>
+          <div class="rank-row">
+            <span class="rank-idx num">4</span>
+            <div class="rank-main">
+              <div class="rank-name">贵金属</div>
+              <div class="rank-lead">领涨 赤峰黄金 <span class="up num">+3.36%</span></div>
+            </div>
+            <span class="rank-val up num">+15.4亿</span>
+            <span class="pill is-up num">+1.72%</span>
+            <button class="rank-add" title="点击加入板块资金曲线与历史">＋</button>
+          </div>
+          <div class="rank-row">
+            <span class="rank-idx num">5</span>
+            <div class="rank-main">
+              <div class="rank-name">证券</div>
+              <div class="rank-lead">领涨 东方财富 <span class="down num">-1.05%</span></div>
+            </div>
+            <span class="rank-val down num">-9.7亿</span>
+            <span class="pill is-down num">-0.84%</span>
+            <button class="rank-add" title="点击加入板块资金曲线与历史">＋</button>
+          </div>
+          <div class="rank-row">
+            <span class="rank-idx num">6</span>
+            <div class="rank-main">
+              <div class="rank-name">银行</div>
+              <div class="rank-lead">领涨 招商银行 <span class="down num">-0.62%</span></div>
+            </div>
+            <span class="rank-val down num">-18.3亿</span>
+            <span class="pill is-down num">-1.16%</span>
+            <button class="rank-add" title="点击加入板块资金曲线与历史">＋</button>
+          </div>
+          <div class="card-sub" style="padding: 6px 2px 2px">行点击进板块成分股 · 行尾「＋」加入上方曲线与历史 · 全景页原 mini 曲线由「板块资金」覆盖</div>
+        </section>
+      </div>
+
+      <div class="tabbar">
+        <div class="tab"><span class="ic">🏠</span>首页</div>
+        <div class="tab"><span class="ic">📈</span>行情</div>
+        <div class="tab is-active"><span class="ic">💰</span>资金流向</div>
+        <div class="tab"><span class="ic">⭐</span>自选</div>
+        <div class="tab"><span class="ic">👤</span>我的</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 屏 2：合并后的行情全景页 ============ -->
+  <div class="phone-wrap">
+    <div class="phone-label">合并后的「行情全景」页（金刚区入口）<small>「资金」chip 彻底移除 · chips 只剩 A股 / 美球 / 宏观（宏观为另一任务已开发）</small></div>
+    <div class="phone">
+      <div class="statusbar"><span>9:41</span><span>5G ▮▮▮</span></div>
+      <div class="navbar"><span class="back">‹</span>行情全景</div>
+      <div class="screen">
+        <div class="chips">
+          <button class="chip is-active">A股</button>
+          <button class="chip">美球</button>
+          <button class="chip">宏观</button>
+        </div>
+
+        <!-- A股模块保留现状 -->
+        <section class="card">
+          <div class="card-head">
+            <span class="card-title">板块表现</span>
+            <span class="card-sub">行业板块 · 领涨股口径同 PC</span>
+          </div>
+          <div class="rank-row">
+            <div class="rank-main">
+              <div class="rank-name">半导体</div>
+              <div class="rank-lead">领涨 卓胜微 +6.82%</div>
+            </div>
+            <span class="pill is-up num">+3.21%</span>
+          </div>
+          <div class="rank-row">
+            <div class="rank-main">
+              <div class="rank-name">通信设备</div>
+              <div class="rank-lead">领涨 中际旭创 +5.40%</div>
+            </div>
+            <span class="pill is-up num">+2.65%</span>
+          </div>
+          <div class="rank-row" style="border-bottom: none">
+            <div class="rank-main">
+              <div class="rank-name">银行</div>
+              <div class="rank-lead">领涨 招商银行 -0.62%</div>
+            </div>
+            <span class="pill is-down num">-1.16%</span>
+          </div>
+        </section>
+        <section class="card">
+          <div class="card-head">
+            <span class="card-title">涨跌统计</span>
+            <span class="card-sub">按当前页签板块集现算</span>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding-bottom: 4px">
+            <div style="text-align:center; background: var(--surface-2); border-radius: 8px; padding: 8px 0">
+              <div class="up num" style="font-size:15px;font-weight:800">12</div>
+              <div style="font-size:9.5px;color:var(--text-3)">强涨板块</div>
+            </div>
+            <div style="text-align:center; background: var(--surface-2); border-radius: 8px; padding: 8px 0">
+              <div class="up num" style="font-size:15px;font-weight:800">41</div>
+              <div style="font-size:9.5px;color:var(--text-3)">红盘板块</div>
+            </div>
+            <div style="text-align:center; background: var(--surface-2); border-radius: 8px; padding: 8px 0">
+              <div class="down num" style="font-size:15px;font-weight:800">18</div>
+              <div style="font-size:9.5px;color:var(--text-3)">绿盘板块</div>
+            </div>
+            <div style="text-align:center; background: var(--surface-2); border-radius: 8px; padding: 8px 0">
+              <div class="down num" style="font-size:15px;font-weight:800">3</div>
+              <div style="font-size:9.5px;color:var(--text-3)">强跌板块</div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="tabbar">
+        <div class="tab"><span class="ic">🏠</span>首页</div>
+        <div class="tab"><span class="ic">📈</span>行情</div>
+        <div class="tab is-active"><span class="ic">💰</span>资金流向</div>
+        <div class="tab"><span class="ic">⭐</span>自选</div>
+        <div class="tab"><span class="ic">👤</span>我的</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="notes">
+  <h2>合并逻辑与交互说明</h2>
+  <div class="note-grid">
+    <div class="note"><span class="tag">搬什么</span><b>板块主力净流入榜（当日 top 30）</b>整体搬迁：板块名 + 领涨股 + 主力净额 + 涨跌幅药丸，作为资金流向页第 4 个模块放在「板块历史净流入」之后——先看曲线/历史，再看全市场榜单，阅读动线自上而下。</div>
+    <div class="note"><span class="tag">不搬什么</span>全景-资金的 4 条 mini SVG 曲线（流入/流出各前 2）<b>不搬迁、直接下线</b>：资金流向页「板块资金」是同源数据的完整版（自选 8 板块 + ECharts tooltip + 图例滚动），保留 mini 版属重复维护。</div>
+    <div class="note"><span class="tag">新交互</span>榜单行尾「＋」：<b>一键把该板块加入「板块资金」曲线与「板块历史净流入」的已选集</b>（复用现有 8 个上限与持久化），加过变「✓」；点行进板块成分股列表（沿用全景页手风琴或跳转，开发时定）。</div>
+    <div class="note"><span class="tag">全景页</span>「资金」chip 及其全部内容<b>彻底移除</b>，不留占位、不留提示，chips 只剩 <b>A股 / 美球 / 宏观</b>（宏观为本轮已开发完成的新模块）。金刚区【行情全景】入口不变；下拉刷新、分区独立降级逻辑不变，flow 相关取数代码一并清理。</div>
+    <div class="note"><span class="tag">数据</span>榜单接口 <b>fetchSectorFundFlowRank 复用</b>（资金流向页已在拉，同一份数据零新增请求）；榜单与曲线/历史共用已选集合与 appStorage 持久化 key。</div>
+    <div class="note"><span class="tag">样式</span>卡片通栏贴边（王总 2026-10-10 约定）；模块④沿用资金流向页 .m-ff-card 体系；榜单行高、药丸、领涨股小字与全景页现状一致。</div>
+  </div>
+</div>
+
+<script>
+  // 明暗切换持久化（稿内本地）
+  if (localStorage.getItem('draft-theme') === 'dark') document.body.classList.add('dark');
+  const toggleBtn = document.querySelector('.theme-toggle');
+  toggleBtn.addEventListener('click', () => {
+    localStorage.setItem('draft-theme', document.body.classList.contains('dark') ? 'dark' : 'light');
+  });
+</script>
+</body>
+</html>

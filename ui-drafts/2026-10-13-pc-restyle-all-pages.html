@@ -1,0 +1,1067 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UI 稿 · PC 端去 AI 味 · 全页面视觉稿（工业实用方向）</title>
+<style>
+/* ============================================================
+   股票看板 · PC 端全页面视觉稿（2026-10-13）
+   方向：工业实用 Industrial · 玻璃按钮保留 · 系统字体零依赖
+   落地 = 改 theme.css token + 组件 class，功能零改动
+   ============================================================ */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --font-body: "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  --font-num: ui-monospace, "Cascadia Code", "SF Mono", Consolas, "Courier New", monospace;
+
+  --color-bg: #f3f5f4;
+  --color-surface: #ffffff;
+  --color-surface-2: #f8faf9;
+  --color-ink: #17242a;
+  --color-ink-2: #51636b;
+  --color-ink-3: #8a9aa1;
+  --color-primary: #0e9488;
+  --color-up: #c53030;
+  --color-down: #0f8a5f;
+  --hairline: rgba(23, 36, 42, 0.10);
+  --hairline-strong: rgba(23, 36, 42, 0.18);
+  --radius-card: 6px;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.dark-demo {
+  --color-bg: #0b0f10;
+  --color-surface: #131a1c;
+  --color-surface-2: #0f1517;
+  --color-ink: #dfe8e6;
+  --color-ink-2: #93a5a3;
+  --color-ink-3: #64757a;
+  --color-up: #ef5350;
+  --color-down: #26a684;
+  --hairline: rgba(223, 232, 230, 0.09);
+  --hairline-strong: rgba(223, 232, 230, 0.16);
+}
+
+body {
+  font-family: var(--font-body);
+  background: #e8ecec;
+  color: #1f2937;
+  padding: 0 0 80px;
+  line-height: 1.6;
+}
+
+/* ============ 文档外壳 ============ */
+.doc-head {
+  padding: 26px 0 14px;
+}
+.doc-head h1 { font-size: 22px; letter-spacing: -0.02em; }
+.doc-head p { font-size: 13px; color: #5f6f77; margin-top: 6px; line-height: 1.75; }
+.doc-head code { font-family: var(--font-num); font-size: 12px; background: #dde5e4; padding: 1px 6px; border-radius: 4px; }
+
+.brief {
+  padding: 14px 18px; border-left: 3px solid #0e9488;
+  background: #fff; border-radius: 0 8px 8px 0;
+  font-size: 13px; color: #37474f; line-height: 1.8; margin-bottom: 16px;
+}
+.brief b { color: #0e6e65; }
+
+/* 锚点目录 */
+.anchor-bar {
+  position: sticky; top: 0; z-index: 50;
+  display: flex; flex-wrap: wrap; gap: 6px;
+  padding: 10px 2px; margin-bottom: 26px;
+  background: rgba(232,236,236,.92); backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(23,36,42,.1);
+}
+.anchor-bar a {
+  font-size: 11.5px; color: #4b5a61; text-decoration: none;
+  padding: 3px 10px; border-radius: 999px; border: 1px solid rgba(23,36,42,.14);
+  background: #fff;
+}
+.anchor-bar a:hover { border-color: #0e9488; color: #0e6e65; }
+
+.page-title {
+  display: flex; align-items: baseline; gap: 10px;
+  margin: 34px 0 12px; scroll-margin-top: 64px;
+}
+.page-title .no { font-family: var(--font-num); font-size: 12px; color: #0e6e65; font-weight: 700; }
+.page-title h2 { font-size: 16px; letter-spacing: -0.01em; }
+.page-title .desc { font-size: 12px; color: #6b7c83; }
+
+/* ============ 浏览器壳 ============ */
+.browser {
+  border-radius: 12px; overflow: hidden;
+  box-shadow: 0 24px 64px rgba(23, 36, 42, .18);
+  margin-bottom: 8px;
+  border: 1px solid rgba(23,36,42,.12);
+}
+.browser-chrome {
+  height: 34px; display: flex; align-items: center; gap: 6px; padding: 0 14px;
+  background: #dfe5e4; border-bottom: 1px solid rgba(23,36,42,.08);
+}
+.dark-demo .browser-chrome { background: #1a2224; border-color: var(--hairline); }
+.browser-chrome i { width: 9px; height: 9px; border-radius: 50%; background: rgba(23,36,42,.18); }
+.dark-demo .browser-chrome i { background: rgba(255,255,255,.16); }
+.browser-url {
+  margin-left: 10px; flex: 1; height: 21px; border-radius: 6px;
+  background: rgba(255,255,255,.75); font-family: var(--font-num); font-size: 11px;
+  color: #7a8a90; display: flex; align-items: center; padding: 0 10px;
+}
+.dark-demo .browser-url { background: rgba(255,255,255,.06); color: #64757a; }
+
+/* ============ 应用骨架（复用组件） ============ */
+.app {
+  display: grid; grid-template-columns: 196px 1fr;
+  min-height: 600px; position: relative;
+  background: var(--color-bg); color: var(--color-ink); font-size: 13px;
+}
+.app::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(52rem 30rem at 8% -6%, rgba(14, 148, 136, .075), transparent 58%),
+    radial-gradient(40rem 26rem at 104% 4%, rgba(14, 148, 136, .05), transparent 55%);
+}
+.dark-demo .app::before {
+  background:
+    radial-gradient(52rem 30rem at 8% -6%, rgba(14, 148, 136, .12), transparent 58%),
+    radial-gradient(40rem 26rem at 104% 4%, rgba(120, 180, 255, .045), transparent 55%);
+}
+.app::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 0; opacity: .035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* 侧栏（JS 注入） */
+.side {
+  position: relative; z-index: 2;
+  background: var(--color-surface-2);
+  border-right: 1px solid var(--hairline);
+  padding: 14px 10px; display: flex; flex-direction: column; gap: 2px;
+}
+.side-group { font-size: 10px; letter-spacing: .14em; color: var(--color-ink-3); padding: 13px 10px 5px; font-weight: 600; }
+.side-item {
+  display: flex; align-items: center; gap: 9px; padding: 7px 10px; border-radius: 8px;
+  color: var(--color-ink-2); font-size: 12.5px; font-weight: 500; position: relative;
+}
+.side-item .ico { font-style: normal; font-size: 13px; width: 16px; text-align: center; opacity: .8; }
+.side-item.on {
+  color: var(--color-primary); font-weight: 600;
+  background: rgba(14,148,136,.10); border: 1px solid rgba(14,148,136,.28);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.6), 0 2px 8px rgba(14,148,136,.10);
+}
+.dark-demo .side-item.on {
+  background: rgba(14,148,136,.16); border-color: rgba(14,148,136,.38);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.10);
+}
+.side-foot {
+  margin-top: auto; padding: 9px 10px 2px; border-top: 1px solid var(--hairline);
+  font-family: var(--font-num); font-size: 10px; color: var(--color-ink-3);
+  display: flex; justify-content: space-between;
+}
+
+.main { position: relative; z-index: 1; display: flex; flex-direction: column; }
+
+/* 顶栏 */
+.topbar {
+  height: 44px; display: flex; align-items: center; gap: 12px; padding: 0 18px;
+  border-bottom: 1px solid var(--hairline);
+  background: color-mix(in srgb, var(--color-bg) 72%, transparent);
+  backdrop-filter: blur(10px);
+}
+.topbar .crumb { font-size: 14px; font-weight: 700; letter-spacing: -0.01em; }
+.topbar .spacer { flex: 1; }
+.top-clock { font-family: var(--font-num); font-size: 11.5px; color: var(--color-ink-3); }
+.top-clock b { color: var(--color-up); font-weight: 600; }
+
+/* 玻璃按钮（保留） */
+.gbtn {
+  position: relative; overflow: hidden;
+  padding: 5px 12px; border-radius: 8px; font-size: 12px; font-weight: 500;
+  background: rgba(255,255,255,.24); border: 1px solid rgba(255,255,255,.55);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.85), 0 2px 10px rgba(23,36,42,.10);
+  backdrop-filter: blur(16px) saturate(1.9);
+  color: var(--color-ink-2); white-space: nowrap; cursor: default;
+}
+.gbtn::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit;
+  background: linear-gradient(115deg, rgba(255,255,255,.45) 0%, rgba(255,255,255,.12) 26%, transparent 46%);
+  pointer-events: none;
+}
+.gbtn.pri { color: var(--color-primary); border-color: rgba(14,148,136,.35); }
+.dark-demo .gbtn {
+  background: rgba(34,42,54,.44); border-color: rgba(255,255,255,.13);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.2), 0 2px 10px rgba(0,0,0,.3);
+}
+.dark-demo .gbtn.pri { color: #2dd4b0; }
+
+/* underline 页签（市场榜单 / 行情全景 / 自选分组 / 账户） */
+.tabs-u {
+  display: flex; gap: 2px; padding: 0 18px; overflow-x: auto;
+  border-bottom: 1px solid var(--hairline); background: var(--color-surface);
+}
+.tabs-u .tu {
+  padding: 10px 12px; font-size: 12.5px; font-weight: 500; color: var(--color-ink-2);
+  border-bottom: 2px solid transparent; white-space: nowrap; position: relative;
+}
+.tabs-u .tu.on { color: var(--color-primary); font-weight: 700; border-bottom-color: var(--color-primary); }
+.tabs-u .tu:hover:not(.on) { color: var(--color-ink); }
+.tabs-u .tu .n { font-family: var(--font-num); font-size: 10px; color: var(--color-ink-3); margin-left: 3px; }
+
+/* 卡片内小 Tab（chips） */
+.chips { display: inline-flex; gap: 4px; padding: 3px; background: rgba(23,36,42,.05); border-radius: 8px; }
+.dark-demo .chips { background: rgba(255,255,255,.06); }
+.chip { padding: 3px 10px; border-radius: 6px; font-size: 11.5px; color: var(--color-ink-2); }
+.chip.on { background: var(--color-surface); color: var(--color-primary); font-weight: 600; box-shadow: 0 1px 3px rgba(23,36,42,.12); }
+
+/* 内容区与面板（发丝线分区替代均质卡） */
+.panel { background: var(--color-surface); border-bottom: 1px solid var(--hairline); position: relative; }
+.cell-pad { padding: 14px 18px; }
+.sec { display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+.sec h3 { font-size: 12px; font-weight: 700; letter-spacing: .02em; }
+.sec .en { font-family: var(--font-num); font-size: 9.5px; letter-spacing: .12em; color: var(--color-ink-3); text-transform: uppercase; }
+.sec .more { margin-left: auto; font-size: 11px; color: var(--color-ink-3); }
+
+/* 数据表（真实表格形态） */
+.tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+.tbl th {
+  text-align: left; font-size: 10.5px; color: var(--color-ink-3); font-weight: 600;
+  padding: 7px 10px; background: var(--color-surface-2);
+  border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline);
+  white-space: nowrap; font-family: var(--font-body);
+}
+.tbl th.num, .tbl td.num { text-align: right; }
+.tbl td { padding: 6.5px 10px; border-bottom: 1px solid var(--hairline); white-space: nowrap; }
+.tbl tbody tr { position: relative; }
+.tbl tbody tr:hover { background: color-mix(in srgb, var(--color-primary) 5%, transparent); box-shadow: inset 2px 0 0 var(--color-primary); }
+.tbl .num, .tbl td.mono { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.up { color: var(--color-up); }
+.down { color: var(--color-down); }
+.muted { color: var(--color-ink-3); }
+
+/* 红绿药丸 */
+.pill {
+  display: inline-block; min-width: 52px; text-align: center;
+  font-family: var(--font-num); font-variant-numeric: tabular-nums;
+  font-size: 11px; font-weight: 600; padding: 1.5px 7px; border-radius: 999px;
+}
+.pill.up { background: color-mix(in srgb, var(--color-up) 12%, transparent); }
+.pill.down { background: color-mix(in srgb, var(--color-down) 12%, transparent); }
+
+/* ticker 行情带 */
+.ticker { display: flex; align-items: stretch; border-bottom: 1px solid var(--hairline); background: var(--color-surface); }
+.tk { flex: 1; min-width: 0; padding: 10px 14px 9px; border-right: 1px solid var(--hairline); display: flex; flex-direction: column; gap: 1px; position: relative; }
+.tk:last-child { border-right: none; }
+.tk:hover { background: color-mix(in srgb, var(--color-primary) 4%, transparent); }
+.tk .name { font-size: 11px; color: var(--color-ink-3); display: flex; justify-content: space-between; }
+.tk .val { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-size: 20px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.25; }
+.tk .chg { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-size: 11.5px; font-weight: 600; }
+.tk.flat .val, .tk.flat .chg { color: var(--color-ink-2); }
+
+/* 大数字 / subrow / 迷你柱 */
+.bignum { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-size: 30px; font-weight: 650; letter-spacing: -0.02em; line-height: 1.1; }
+.bignum small { font-size: 13px; font-weight: 500; color: var(--color-ink-3); margin-left: 4px; }
+.subrow { display: flex; gap: 18px; margin-top: 8px; font-size: 11.5px; color: var(--color-ink-2); }
+.subrow .k { color: var(--color-ink-3); margin-right: 5px; }
+.subrow b { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-weight: 600; }
+.bars { display: flex; align-items: flex-end; gap: 3px; height: 44px; margin-top: 12px; }
+.bars i { flex: 1; border-radius: 2px 2px 0 0; background: linear-gradient(to top, rgba(14,148,136,.85), rgba(14,148,136,.35)); }
+.bars i.hot { background: linear-gradient(to top, #c53030, rgba(197,48,48,.4)); }
+.bars-axis { display: flex; justify-content: space-between; margin-top: 5px; font-family: var(--font-num); font-size: 9.5px; color: var(--color-ink-3); }
+
+/* 情绪六格 */
+.mood-grid { display: grid; grid-template-columns: repeat(6, 1fr); border: 1px solid var(--hairline); border-radius: 6px; overflow: hidden; }
+.mood-cell { padding: 10px 12px; border-right: 1px solid var(--hairline); }
+.mood-cell:last-child { border-right: none; }
+.mood-cell .k { font-size: 10.5px; color: var(--color-ink-3); }
+.mood-cell .v { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-size: 19px; font-weight: 650; margin-top: 2px; }
+.ladder { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+.ladder span {
+  font-size: 11px; padding: 2.5px 10px; border-radius: 999px;
+  border: 1px solid var(--hairline); color: var(--color-ink-2); font-family: var(--font-num);
+}
+.ladder span.hot { color: var(--color-up); border-color: color-mix(in srgb, var(--color-up) 40%, transparent); background: color-mix(in srgb, var(--color-up) 8%, transparent); font-weight: 700; }
+
+/* 热力格 */
+.heat-grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; }
+.heat-cell {
+  height: 44px; border-radius: 4px; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 1px;
+  font-size: 10.5px; font-weight: 600;
+}
+.heat-cell small { font-size: 8.5px; font-weight: 400; opacity: .8; }
+.h-up4 { background: #b91c1c; color: #fff; }
+.h-up3 { background: #d64545; color: #fff; }
+.h-up2 { background: #ef8a81; color: #7f1d1d; }
+.h-up1 { background: #f6c8c3; color: #7f1d1d; }
+.h-mid { background: color-mix(in srgb, var(--color-ink) 6%, var(--color-surface)); color: var(--color-ink-3); }
+.h-dn1 { background: #bfe3d4; color: #14532d; }
+.h-dn2 { background: #7cc7ab; color: #0f3d2b; }
+.h-dn3 { background: #2f9d78; color: #fff; }
+.legend { display: flex; gap: 10px; align-items: center; font-size: 10px; color: var(--color-ink-3); }
+.legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-right: 3px; vertical-align: -1px; }
+
+/* 横向卡片流（热点新闻 / 今天炒什么） */
+.flow { display: flex; gap: 10px; padding: 14px 18px; overflow-x: auto; align-items: stretch; }
+.src-card {
+  width: 300px; flex-shrink: 0; display: flex; flex-direction: column;
+  background: var(--color-surface); border: 1px solid var(--hairline); border-radius: 6px; overflow: hidden;
+}
+.src-head { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-bottom: 1px solid var(--hairline); }
+.src-head .logo {
+  width: 20px; height: 20px; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 700; color: #fff;
+}
+.src-head b { font-size: 12px; }
+.src-head .cnt { margin-left: auto; font-family: var(--font-num); font-size: 10px; color: var(--color-ink-3); }
+.news-list { flex: 1; overflow: hidden; }
+.news-item { padding: 8px 12px; border-bottom: 1px solid var(--hairline); }
+.news-item:hover { background: color-mix(in srgb, var(--color-primary) 5%, transparent); }
+.news-item .t { font-size: 12px; font-weight: 600; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.news-item .m { font-size: 10px; color: var(--color-ink-3); margin-top: 3px; display: flex; gap: 8px; font-family: var(--font-num); }
+.rank-badge {
+  display: inline-flex; width: 16px; height: 16px; border-radius: 50%;
+  background: rgba(23,36,42,.08); color: var(--color-ink-2);
+  font-family: var(--font-num); font-size: 9.5px; font-weight: 700;
+  align-items: center; justify-content: center; margin-right: 6px; flex-shrink: 0;
+}
+.rank-badge.top { background: var(--color-up); color: #fff; }
+
+/* 折线图（SVG） */
+.chart-wrap { padding: 8px 6px 0; }
+.chart-wrap svg { display: block; width: 100%; }
+.fl-legend { display: flex; gap: 16px; font-size: 11px; color: var(--color-ink-2); padding: 8px 18px 12px; }
+.fl-legend i { display: inline-block; width: 14px; height: 2.5px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
+
+/* 指标网格（插件工坊内核概览） */
+.metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; border: 1px solid var(--hairline); border-radius: 6px; overflow: hidden; }
+.metric { padding: 13px 16px; border-right: 1px solid var(--hairline); }
+.metric:last-child { border-right: none; }
+.metric .k { font-size: 10.5px; color: var(--color-ink-3); }
+.metric .v { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-size: 22px; font-weight: 650; margin-top: 2px; }
+
+/* 插件卡 */
+.plug-card {
+  display: flex; align-items: center; gap: 12px;
+  padding: 11px 14px; border: 1px solid var(--hairline); border-radius: 6px;
+  background: var(--color-surface); margin-bottom: 8px;
+}
+.plug-card .info { min-width: 0; }
+.plug-card .nm { font-size: 12.5px; font-weight: 700; }
+.plug-card .nm .ver { font-family: var(--font-num); font-size: 10px; color: var(--color-ink-3); font-weight: 400; margin-left: 6px; }
+.plug-card .ds { font-size: 11px; color: var(--color-ink-3); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tagc { font-size: 10px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--hairline); color: var(--color-ink-3); flex-shrink: 0; }
+.tagc.ok { color: var(--color-primary); border-color: color-mix(in srgb, var(--color-primary) 35%, transparent); background: color-mix(in srgb, var(--color-primary) 8%, transparent); }
+.tagc.err { color: var(--color-up); border-color: color-mix(in srgb, var(--color-up) 35%, transparent); }
+.tagc.upd { color: var(--color-ink-2); border-color: var(--hairline-strong); }
+
+/* switch */
+.sw { width: 30px; height: 17px; border-radius: 999px; background: rgba(23,36,42,.18); position: relative; flex-shrink: 0; }
+.sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.25); }
+.sw.on { background: var(--color-primary); }
+.sw.on::after { left: auto; right: 2px; }
+
+/* 分页器 */
+.pager { display: flex; align-items: center; gap: 8px; justify-content: flex-end; padding: 10px 18px; font-size: 11.5px; color: var(--color-ink-3); }
+.pager .pg { font-family: var(--font-num); padding: 3px 9px; border: 1px solid var(--hairline); border-radius: 5px; background: var(--color-surface); }
+.pager .pg.on { color: var(--color-primary); border-color: color-mix(in srgb, var(--color-primary) 40%, transparent); font-weight: 700; }
+
+/* 停靠面板（DockPanel 个股详情） */
+.dock {
+  border-left: 1px solid var(--hairline); background: var(--color-surface);
+  width: 268px; flex-shrink: 0; display: flex; flex-direction: column; position: relative; z-index: 2;
+}
+.dock-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--hairline); }
+.dock-head .nm { font-size: 14px; font-weight: 700; }
+.dock-head .cd { font-family: var(--font-num); font-size: 11px; color: var(--color-ink-3); }
+.dock-price { padding: 12px 14px; border-bottom: 1px solid var(--hairline); }
+.dock-price .px { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-size: 26px; font-weight: 650; }
+.dock-grid { display: grid; grid-template-columns: 1fr 1fr; }
+.dock-grid .dg { padding: 8px 14px; border-bottom: 1px solid var(--hairline); }
+.dock-grid .dg .k { font-size: 10px; color: var(--color-ink-3); }
+.dock-grid .dg .v { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-size: 12.5px; font-weight: 600; margin-top: 1px; }
+
+/* 空态 */
+.empty { padding: 34px 20px; text-align: center; color: var(--color-ink-3); font-size: 12px; }
+.empty .ico2 { font-size: 26px; display: block; margin-bottom: 8px; opacity: .5; }
+.empty .gbtn { margin-top: 12px; display: inline-block; }
+
+/* 工具条行 */
+.toolbar { display: flex; align-items: center; gap: 8px; padding: 10px 18px; border-bottom: 1px solid var(--hairline); background: var(--color-surface); }
+.toolbar .spacer { flex: 1; }
+
+/* notice 横幅 */
+.notice {
+  margin: 12px 18px 0; padding: 8px 12px; border-radius: 6px;
+  font-size: 11.5px; line-height: 1.7; color: #8a5a12;
+  background: #fdf3e1; border: 1px solid #f0ddb5;
+}
+.dark-demo .notice { background: rgba(232,147,12,.09); border-color: rgba(232,147,12,.25); color: #d9b06c; }
+
+@media (max-width: 1020px) {
+  .app { grid-template-columns: 60px 1fr; }
+  .side-item span, .side-group, .side-foot { display: none; }
+  .metric-grid, .mood-grid { grid-template-columns: repeat(2, 1fr); }
+  .dock { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+
+<div class="doc-head" style="max-width:1280px;margin:0 auto;padding-left:24px;padding-right:24px">
+  <h1>PC 端去 AI 味 · 全页面视觉稿</h1>
+  <p>方向 <code>工业实用 Industrial</code> · 11 个主菜单页面全部按新视觉体系重画 ·
+     玻璃按钮与透明度/高光带设置保留 · 功能与信息结构不动，只换视觉。
+     落地 = 改 <code>theme.css</code> token + 组件 class（对照见各页底部说明与此前 token 表）。</p>
+</div>
+<div class="brief" style="max-width:1280px;margin:0 auto 14px;padding-left:24px;padding-right:24px">
+  <b>共用体系：</b>等宽数字（所有行情数值）· 发丝线分区替代均质卡 · 青墨渐变 + 噪点氛围 · 圆角 6px ·
+  主色收拢（选中/hover 指示条/关键动作）· underline 页签承载多视图切换 · 全部系统字体。
+  <b>暗色逻辑同源</b>，稿中 02 市场总览为亮色、其余各页代表页给暗色演示，落地时亮暗同套 token。
+</div>
+
+<div class="anchor-bar" style="max-width:1280px;margin-left:auto;margin-right:auto;padding-left:24px;padding-right:24px">
+  <a href="#p01">01 市场总览</a><a href="#p02">02 市场榜单</a><a href="#p03">03 个股行情</a>
+  <a href="#p04">04 行情全景</a><a href="#p05">05 板块日历</a><a href="#p06">06 自选股</a>
+  <a href="#p07">07 热点新闻</a><a href="#p08">08 今天炒什么</a><a href="#p09">09 板块资金流向</a>
+  <a href="#p10">10 账户管理</a><a href="#p11">11 插件工坊</a>
+</div>
+
+<div class="page" style="max-width:1280px;margin:0 auto;padding:0 24px">
+
+<!-- ================= 01 市场总览 ================= -->
+<div class="page-title" id="p01"><span class="no">01</span><h2>市场总览</h2><span class="desc">Ticker 带 + 指数展开 + 情绪六格 + 成交额 + 涨跌分布 + 板块热力</span></div>
+<div class="browser" data-url="whf-stock-board · /dashboard">
+  <div class="app">
+    <nav class="side" data-side="/dashboard"></nav>
+    <div class="main">
+      <div class="topbar">
+        <span class="crumb">市场总览</span><span class="spacer"></span>
+        <span class="top-clock">2026-10-13 周二 · <b>交易中</b> · 14:57:03</span>
+        <span class="gbtn pri">⟳ 刷新</span><span class="gbtn">⚙</span>
+      </div>
+      <div class="ticker">
+        <div class="tk"><span class="name"><span>上证指数</span><span>SH</span></span><span class="val up">3,894.27</span><span class="chg up">+28.33&nbsp;&nbsp;+0.73%</span></div>
+        <div class="tk"><span class="name"><span>深证成指</span><span>SZ</span></span><span class="val down">11,206.54</span><span class="chg down">−64.12&nbsp;&nbsp;−0.57%</span></div>
+        <div class="tk"><span class="name"><span>创业板指</span><span>SZ</span></span><span class="val down">2,541.08</span><span class="chg down">−17.49&nbsp;&nbsp;−0.68%</span></div>
+        <div class="tk"><span class="name"><span>科创 50</span><span>SH</span></span><span class="val up">1,086.42</span><span class="chg up">+9.87&nbsp;&nbsp;+0.92%</span></div>
+        <div class="tk flat"><span class="name"><span>恒生指数</span><span>HK</span></span><span class="val">24,331.90</span><span class="chg">+12.40&nbsp;&nbsp;+0.05%</span></div>
+      </div>
+      <div class="panel" style="display:flex;justify-content:center;gap:8px;padding:6px">
+        <span class="gbtn" style="padding:2px 10px;font-size:11px">展开另外 6 个指数 ▾</span>
+      </div>
+      <div class="panel" style="display:grid;grid-template-columns:1.4fr 1fr">
+        <div class="cell-pad" style="border-right:1px solid var(--hairline)">
+          <div class="sec"><h3>市场情绪</h3><span class="en">MOOD</span><span class="more">涨停与异动 ›</span></div>
+          <div class="mood-grid">
+            <div class="mood-cell"><div class="k">涨停</div><div class="v up">68</div></div>
+            <div class="mood-cell"><div class="k">跌停</div><div class="v down">9</div></div>
+            <div class="mood-cell"><div class="k">炸板</div><div class="v">19</div></div>
+            <div class="mood-cell"><div class="k">炸板率</div><div class="v">22%</div></div>
+            <div class="mood-cell"><div class="k">连板高度</div><div class="v up">5</div></div>
+            <div class="mood-cell"><div class="k">昨涨停均涨</div><div class="v up">+1.87%</div></div>
+          </div>
+          <div class="ladder">
+            <span>2板 × 11</span><span class="hot">3板 × 4</span><span class="hot">4板 × 2</span><span class="hot">5板 × 1</span>
+          </div>
+        </div>
+        <div class="cell-pad">
+          <div class="sec"><h3>两市成交额</h3><span class="en">TURNOVER</span><span class="more">资金流向 ›</span></div>
+          <div class="bignum">1.86<small>万亿</small></div>
+          <div class="subrow">
+            <span><span class="k">较上日</span><b class="up">+742 亿</b></span>
+            <span><span class="k">主力净流入</span><b class="up">+186 亿</b></span>
+          </div>
+          <div class="bars">
+            <i style="height:38%"></i><i style="height:52%"></i><i style="height:44%"></i><i style="height:66%"></i>
+            <i style="height:58%"></i><i style="height:74%"></i><i style="height:62%"></i><i style="height:80%"></i>
+            <i style="height:56%"></i><i class="hot" style="height:96%"></i>
+          </div>
+          <div class="bars-axis"><span>09-29</span><span>09-30</span><span>10-08</span><span>10-09</span><span>10-12</span><span>今日</span></div>
+          <div class="toolbar-row" style="margin-top:10px">
+            <span class="chips"><span class="chip on">实时</span><span class="chip">历史</span><span class="chip">相对量</span></span>
+            <span class="chips"><span class="chip on">图表</span><span class="chip">列表</span></span>
+          </div>
+        </div>
+      </div>
+      <div class="panel" style="display:grid;grid-template-columns:1fr 1.4fr">
+        <div class="cell-pad" style="border-right:1px solid var(--hairline)">
+          <div class="sec"><h3>涨跌分布</h3><span class="en">BREADTH</span></div>
+          <div class="subrow" style="margin:0 0 6px">
+            <span><span class="k">上涨</span><b class="up">3,412</b></span>
+            <span><span class="k">平盘</span><b>214</b></span>
+            <span><span class="k">下跌</span><b class="down">1,886</b></span>
+          </div>
+          <div class="legend" style="justify-content:space-between;border:1px solid var(--hairline);border-radius:6px;padding:8px 10px">
+            <span><i style="background:#b91c1c"></i>涨≥5</span><span><i style="background:#ef8a81"></i>涨0~5</span>
+            <span><i style="background:#f6c8c3"></i>微涨</span><span><i style="background:#bfe3d4"></i>微跌</span>
+            <span><i style="background:#2f9d78"></i>跌≥5</span>
+          </div>
+        </div>
+        <div class="cell-pad">
+          <div class="sec"><h3>板块热力</h3><span class="en">HEATMAP</span>
+            <span class="chips" style="margin-left:auto"><span class="chip on">Top 20</span><span class="chip">Top 36</span><span class="chip">列表</span></span>
+          </div>
+          <div class="heat-grid">
+            <div class="heat-cell h-up4">有色<small>+3.4%</small></div><div class="heat-cell h-up3">半导体<small>+2.9%</small></div>
+            <div class="heat-cell h-up3">化工<small>+2.3%</small></div><div class="heat-cell h-up2">通信<small>+2.0%</small></div>
+            <div class="heat-cell h-up2">新能源<small>+1.6%</small></div><div class="heat-cell h-up1">钢铁<small>+1.3%</small></div>
+            <div class="heat-cell h-up1">机械<small>+0.9%</small></div><div class="heat-cell h-mid">交运<small>+0.2%</small></div>
+            <div class="heat-cell h-dn1">电力<small>−0.5%</small></div><div class="heat-cell h-dn1">地产<small>−0.8%</small></div>
+            <div class="heat-cell h-dn2">电子<small>−1.1%</small></div><div class="heat-cell h-dn2">食品<small>−1.4%</small></div>
+            <div class="heat-cell h-dn2">医药<small>−1.7%</small></div><div class="heat-cell h-dn3">煤炭<small>−2.3%</small></div>
+            <div class="heat-cell h-dn3">传媒<small>−2.8%</small></div><div class="heat-cell h-mid">银行<small>+0.1%</small></div>
+            <div class="heat-cell h-up1">汽车<small>+1.1%</small></div><div class="heat-cell h-up2">军工<small>+1.8%</small></div>
+            <div class="heat-cell h-dn1">建筑<small>−0.6%</small></div><div class="heat-cell h-mid">纺服<small>−0.1%</small></div>
+          </div>
+          <p class="muted" style="font-size:10.5px;margin-top:8px">点击板块追加成分股热力（返回可退回）· 按总市值加权</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= 02 市场榜单 ================= -->
+<div class="page-title" id="p02"><span class="no">02</span><h2>市场榜单</h2><span class="desc">9 个 underline 页签 + 满高表格 + 红绿药丸</span></div>
+<div class="browser dark-demo" data-url="whf-stock-board · /market-rank?tab=main-force">
+  <div class="app">
+    <nav class="side" data-side="/market-rank"></nav>
+    <div class="main">
+      <div class="topbar"><span class="crumb">市场榜单</span><span class="spacer"></span>
+        <span class="top-clock">A 股交易时段 · 30s 轮询</span><span class="gbtn">⟳</span></div>
+      <div class="tabs-u">
+        <span class="tu on">个股主力<span class="n">15</span></span><span class="tu">连板</span><span class="tu">异动</span>
+        <span class="tu">龙虎榜</span><span class="tu">大宗交易</span><span class="tu">涨幅榜<span class="n">100</span></span>
+        <span class="tu">跌幅榜</span><span class="tu">成交额榜</span><span class="tu">换手率榜</span>
+      </div>
+      <div class="toolbar">
+        <span class="muted" style="font-size:11.5px">主力净流入 Top 15 · 全市场</span>
+        <span class="spacer"></span>
+        <span class="gbtn pri">✦ AI 分析</span><span class="gbtn">导出 Excel</span>
+      </div>
+      <div style="background:var(--color-surface)">
+        <table class="tbl">
+          <thead><tr><th style="width:36px">#</th><th>个股</th><th class="num">现价</th><th class="num">涨跌幅</th><th class="num">主力净流入</th><th class="num">主力占比</th><th class="num">成交额</th><th class="num">换手率</th></tr></thead>
+          <tbody>
+            <tr><td class="mono muted">01</td><td><b>中际旭创</b> <span class="muted mono">300308</span></td><td class="num">182.60</td><td class="num"><span class="pill up">+6.42%</span></td><td class="num up">+12.84 亿</td><td class="num">18.6%</td><td class="num">69.1 亿</td><td class="num">7.42%</td></tr>
+            <tr><td class="mono muted">02</td><td><b>宁德时代</b> <span class="muted mono">300750</span></td><td class="num">412.30</td><td class="num"><span class="pill up">+2.15%</span></td><td class="num up">+9.62 亿</td><td class="num">11.2%</td><td class="num">85.7 亿</td><td class="num">1.86%</td></tr>
+            <tr><td class="mono muted">03</td><td><b>紫金矿业</b> <span class="muted mono">601899</span></td><td class="num">27.94</td><td class="num"><span class="pill up">+3.88%</span></td><td class="num up">+8.15 亿</td><td class="num">14.3%</td><td class="num">57.0 亿</td><td class="num">3.11%</td></tr>
+            <tr><td class="mono muted">04</td><td><b>东方财富</b> <span class="muted mono">300059</span></td><td class="num">31.28</td><td class="num"><span class="pill down">−1.26%</span></td><td class="num down">−4.47 亿</td><td class="num">8.9%</td><td class="num">50.2 亿</td><td class="num">2.94%</td></tr>
+            <tr><td class="mono muted">05</td><td><b>贵州茅台</b> <span class="muted mono">600519</span></td><td class="num">1,412.00</td><td class="num"><span class="pill up">+0.87%</span></td><td class="num up">+3.21 亿</td><td class="num">9.4%</td><td class="num">34.2 亿</td><td class="num">0.61%</td></tr>
+            <tr><td class="mono muted">06</td><td><b>隆基绿能</b> <span class="muted mono">601012</span></td><td class="num">18.66</td><td class="num"><span class="pill down">−2.31%</span></td><td class="num down">−3.88 亿</td><td class="num">10.7%</td><td class="num">36.3 亿</td><td class="num">2.18%</td></tr>
+            <tr><td class="mono muted">07</td><td><b>北方稀土</b> <span class="muted mono">600111</span></td><td class="num">44.87</td><td class="num"><span class="pill up">+9.98%</span></td><td class="num up">+3.54 亿</td><td class="num">16.8%</td><td class="num">21.1 亿</td><td class="num">5.06%</td></tr>
+          </tbody>
+        </table>
+        <div class="pager"><span>列头点击排序 · 行单击开详情 / 双击进整页</span><span class="pg">‹</span><span class="pg on">1</span><span class="pg">›</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= 03 个股行情 ================= -->
+<div class="page-title" id="p03"><span class="no">03</span><h2>个股行情</h2><span class="desc">板块 Tab + 14 列宽表 + 服务端排序 + 分页 + 全局 DockPanel 停靠详情</span></div>
+<div class="browser" data-url="whf-stock-board · /stock-market">
+  <div class="app" style="grid-template-columns:196px 1fr 268px">
+    <nav class="side" data-side="/stock-market"></nav>
+    <div class="main">
+      <div class="topbar"><span class="crumb">个股行情</span><span class="spacer"></span>
+        <span class="top-clock">共 20 条 / 页 · 30s 轮询</span><span class="gbtn">⟳</span></div>
+      <div class="toolbar">
+        <span class="chips">
+          <span class="chip on">全部</span><span class="chip">沪市A股</span><span class="chip">深市A股</span>
+          <span class="chip">北交所</span><span class="chip">创业板</span><span class="chip">科创板</span>
+        </span>
+        <span class="spacer"></span>
+        <span class="muted" style="font-size:11px">点表头按列排序（默认降序，同列翻转）</span>
+      </div>
+      <div style="background:var(--color-surface);overflow-x:auto">
+        <table class="tbl" style="min-width:880px">
+          <thead><tr>
+            <th style="width:32px">#</th><th>代码</th><th>名称</th>
+            <th class="num">现价 ↓</th><th class="num">涨跌幅%</th><th class="num">涨跌</th><th class="num">涨速%</th>
+            <th class="num">换手%</th><th class="num">量比</th><th class="num">振幅%</th><th class="num">成交额</th><th class="num">流通市值</th><th class="num">市盈率</th>
+          </tr></thead>
+          <tbody>
+            <tr><td class="mono muted">1</td><td class="mono">601899</td><td><b>紫金矿业</b></td><td class="num">27.94</td><td class="num up">+3.88</td><td class="num up">+1.04</td><td class="num up">0.42</td><td class="num">3.11</td><td class="num">1.86</td><td class="num">4.62</td><td class="num">57.0 亿</td><td class="num">4,872 亿</td><td class="num">21.4</td></tr>
+            <tr><td class="mono muted">2</td><td class="mono">600111</td><td><b>北方稀土</b></td><td class="num">44.87</td><td class="num up">+9.98</td><td class="num up">+4.07</td><td class="num up">1.85</td><td class="num">5.06</td><td class="num">2.73</td><td class="num">6.41</td><td class="num">21.1 亿</td><td class="num">1,634 亿</td><td class="num">48.7</td></tr>
+            <tr><td class="mono muted">3</td><td class="mono">300308</td><td><b>中际旭创</b></td><td class="num">182.60</td><td class="num up">+6.42</td><td class="num up">+11.02</td><td class="num up">0.96</td><td class="num">7.42</td><td class="num">3.28</td><td class="num">5.17</td><td class="num">69.1 亿</td><td class="num">2,021 亿</td><td class="num">35.2</td></tr>
+            <tr><td class="mono muted">4</td><td class="mono">600519</td><td><b>贵州茅台</b></td><td class="num">1,412.00</td><td class="num up">+0.87</td><td class="num up">+12.16</td><td class="num">0.11</td><td class="num">0.61</td><td class="num">0.94</td><td class="num">1.23</td><td class="num">34.2 亿</td><td class="num">1.77 万亿</td><td class="num">22.8</td></tr>
+            <tr><td class="mono muted">5</td><td class="mono">300059</td><td><b>东方财富</b></td><td class="num">31.28</td><td class="num down">−1.26</td><td class="num down">−0.40</td><td class="num down">−0.23</td><td class="num">2.94</td><td class="num">1.12</td><td class="num">2.86</td><td class="num">50.2 亿</td><td class="num">3,947 亿</td><td class="num">28.4</td></tr>
+            <tr><td class="mono muted">6</td><td class="mono">601012</td><td><b>隆基绿能</b></td><td class="num">18.66</td><td class="num down">−2.31</td><td class="num down">−0.44</td><td class="num down">−0.51</td><td class="num">2.18</td><td class="num">0.87</td><td class="num">3.42</td><td class="num">36.3 亿</td><td class="num">1,415 亿</td><td class="num">—</td></tr>
+          </tbody>
+        </table>
+        <div class="pager"><span>第 1 / 286 页</span><span class="pg">‹ 上一页</span><span class="pg on">1</span><span class="pg">2</span><span class="pg">3</span><span class="pg">下一页 ›</span></div>
+      </div>
+    </div>
+    <!-- 全局停靠面板 -->
+    <aside class="dock">
+      <div class="dock-head"><span class="nm">紫金矿业</span><span class="cd">601899.SH</span><span class="spacer" style="flex:1"></span><span class="muted" style="font-size:11px">✕</span></div>
+      <div class="dock-price"><span class="px up">27.94</span>&nbsp;&nbsp;<span class="up" style="font-family:var(--font-num);font-size:12px;font-weight:600">+1.04&nbsp;&nbsp;+3.88%</span></div>
+      <div class="dock-grid">
+        <div class="dg"><div class="k">今开</div><div class="v">26.95</div></div>
+        <div class="dg"><div class="k">最高</div><div class="v up">28.15</div></div>
+        <div class="dg"><div class="k">昨收</div><div class="v">26.90</div></div>
+        <div class="dg"><div class="k">最低</div><div class="v down">26.82</div></div>
+        <div class="dg"><div class="k">成交额</div><div class="v">57.0 亿</div></div>
+        <div class="dg"><div class="k">换手率</div><div class="v">3.11%</div></div>
+      </div>
+      <div class="cell-pad"><div class="sec"><h3>分时</h3><span class="en">MIN</span></div>
+        <div class="bars" style="height:60px"><i style="height:30%"></i><i style="height:44%"></i><i style="height:52%"></i><i style="height:48%"></i><i class="hot" style="height:88%"></i><i style="height:70%"></i><i style="height:76%"></i><i style="height:64%"></i><i style="height:80%"></i></div>
+      </div>
+      <div class="empty" style="padding-top:18px"><span class="ico2">✦</span>双击行进入整页详情<br>来源列表随双击带入</div>
+    </aside>
+  </div>
+</div>
+
+<!-- ================= 04 行情全景 ================= -->
+<div class="page-title" id="p04"><span class="no">04</span><h2>行情全景</h2><span class="desc">5 个 underline 页签 · A股全景（行业/概念下钻）· 美股 / 全球宏观网格</span></div>
+<div class="browser dark-demo" data-url="whf-stock-board · /panorama?tab=cn">
+  <div class="app">
+    <nav class="side" data-side="/panorama"></nav>
+    <div class="main">
+      <div class="topbar"><span class="crumb">行情全景</span><span class="spacer"></span>
+        <span class="top-clock">未开盘时展示最近交易日收盘数据</span></div>
+      <div class="tabs-u">
+        <span class="tu on">A股全景</span><span class="tu">新股次新股</span><span class="tu">美股全景</span>
+        <span class="tu">全球宏观</span><span class="tu">历史牛熊复盘</span>
+      </div>
+      <div class="toolbar">
+        <span class="chips"><span class="chip on">行业板块</span><span class="chip">概念板块</span></span>
+        <span class="chips"><span class="chip on">按涨跌幅</span><span class="chip">按主力净流入</span></span>
+        <span class="spacer"></span><span class="gbtn pri">✦ AI 分析</span>
+      </div>
+      <div style="background:var(--color-surface)">
+        <table class="tbl">
+          <thead><tr><th style="width:36px">#</th><th>板块</th><th class="num">涨跌幅</th><th class="num">主力净流入</th><th class="num">领涨股</th><th class="num">领涨股涨幅</th><th>成分股下钻</th></tr></thead>
+          <tbody>
+            <tr><td class="mono muted">01</td><td><b>有色金属</b> <span class="muted mono">12 只</span></td><td class="num"><span class="pill up">+3.42%</span></td><td class="num up">+18.4 亿</td><td class="num">北方稀土</td><td class="num up">+9.98%</td><td class="muted">› 展开 12 只</td></tr>
+            <tr><td class="mono muted">02</td><td><b>半导体</b> <span class="muted mono">26 只</span></td><td class="num"><span class="pill up">+2.87%</span></td><td class="num up">+12.1 亿</td><td class="num">中际旭创</td><td class="num up">+6.42%</td><td class="muted">› 展开 26 只</td></tr>
+            <tr><td class="mono muted">03</td><td><b>基础化工</b> <span class="muted mono">18 只</span></td><td class="num"><span class="pill up">+2.31%</span></td><td class="num up">+8.7 亿</td><td class="num">万华化学</td><td class="num up">+4.15%</td><td class="muted">› 展开 18 只</td></tr>
+            <tr><td class="mono muted">04</td><td><b>通信</b> <span class="muted mono">14 只</span></td><td class="num"><span class="pill up">+1.95%</span></td><td class="num down">−3.2 亿</td><td class="num">中兴通讯</td><td class="num up">+3.02%</td><td class="muted">› 展开 14 只</td></tr>
+            <tr><td class="mono muted">05</td><td><b>新能源</b> <span class="muted mono">21 只</span></td><td class="num"><span class="pill up">+1.62%</span></td><td class="num up">+5.9 亿</td><td class="num">阳光电源</td><td class="num up">+5.28%</td><td class="muted">› 展开 21 只</td></tr>
+            <tr><td class="mono muted">06</td><td><b>煤炭</b> <span class="muted mono">9 只</span></td><td class="num"><span class="pill down">−2.35%</span></td><td class="num down">−6.1 亿</td><td class="num">中国神华</td><td class="num down">−1.02%</td><td class="muted">› 展开 9 只</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;border-top:1px solid var(--hairline)">
+        <div class="cell-pad" style="border-right:1px solid var(--hairline)">
+          <div class="sec"><h3>美股全景</h3><span class="en">US</span></div>
+          <div class="subrow" style="gap:10px;flex-wrap:wrap">
+            <span class="pill up">道指 +0.42%</span><span class="pill down">纳指 −0.68%</span><span class="pill up">标普 +0.15%</span>
+            <span class="pill down">英伟达 −1.42%</span><span class="pill up">特斯拉 +2.31%</span><span class="pill down">苹果 −0.54%</span>
+          </div>
+        </div>
+        <div class="cell-pad">
+          <div class="sec"><h3>全球宏观</h3><span class="en">MACRO</span></div>
+          <div class="subrow" style="gap:10px;flex-wrap:wrap">
+            <span class="pill down">美元指数 102.4 −0.12%</span><span class="pill up">离岸人民币 +0.08%</span>
+            <span class="pill up">黄金 +0.86%</span><span class="pill down">原油 −1.24%</span><span class="pill up">富时A50期货 +0.35%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= 05 板块日历 ================= -->
+<div class="page-title" id="p05"><span class="no">05</span><h2>板块日历</h2><span class="desc">控制条（玻璃按钮）+ 规则横幅 + 7 档色阶矩阵 + 图例</span></div>
+<div class="browser" data-url="whf-stock-board · /board-calendar">
+  <div class="app">
+    <nav class="side" data-side="/board-calendar"></nav>
+    <div class="main">
+      <div class="topbar"><span class="crumb">板块日历</span><span class="spacer"></span>
+        <span class="top-clock">更新于 刚刚 · <b>今日为交易日</b> · 20 天</span><span class="gbtn">⟳ 刷新</span></div>
+      <div class="toolbar">
+        <span class="gbtn pri">近 5 日涨停</span><span class="gbtn">当日成交额</span>
+        <span style="width:1px;height:18px;background:var(--hairline-strong)"></span>
+        <span class="gbtn">10 天</span><span class="gbtn pri">20 天</span><span class="gbtn">30 天</span><span class="gbtn">全部</span>
+        <span class="gbtn">▽ 板块过滤 36/36</span>
+        <span class="spacer"></span>
+        <span class="chips"><span class="chip on">矩阵</span><span class="chip">主线分析</span><span class="chip">气泡图</span></span>
+        <span class="muted" style="font-size:11px">恢复热门排序</span>
+      </div>
+      <div class="notice">
+        单元格得分 = 涨停×10 + 跌停×−10 + 涨上涨×5 + 涨下跌×−5（净额口径；涨停/跌停不重复计入上涨/下跌）。
+        背景色按 7 档逐步演变；本版本起每个交易日以完整快照入库，可见范围内的历史列只会随时间自然补齐。
+      </div>
+      <div style="background:var(--color-surface);flex:1">
+        <div class="cell-pad" style="display:flex;align-items:center;gap:12px;padding-bottom:8px">
+          <div class="sec" style="margin:0"><h3>板块日历 · 板块 36/36</h3><span class="en">MATRIX</span></div>
+          <span class="spacer" style="flex:1"></span>
+          <span class="legend">
+            <span><i style="background:#b91c1c"></i>强≥3</span><span><i style="background:#d64545"></i>涨 1~3</span>
+            <span><i style="background:#ef8a81"></i>涨 0~1.5</span><span><i style="background:#f3f4f6;border:1px solid var(--hairline)"></i>中性</span>
+            <span><i style="background:#bfe3d4"></i>跌 0~1.5</span><span><i style="background:#7cc7ab"></i>跌 1.5~3</span>
+            <span><i style="background:#2f9d78"></i>强≤−3</span>
+          </span>
+        </div>
+        <table class="tbl" style="min-width:760px">
+          <thead><tr><th>板块（36）</th><th class="num">10-13 周二</th><th class="num">10-12 周一</th><th class="num">10-09 周五</th><th class="num">10-08 周四</th><th class="num">09-30 周三</th><th class="num">09-29 周二</th></tr></thead>
+          <tbody>
+            <tr><td><b>有色金属</b><br><span class="muted mono" style="font-size:10px">BK0478 · 近5日涨停 2</span></td>
+              <td class="num"><span class="pill up" style="background:#ef8a81">涨停1</span></td><td class="num"><span class="pill" style="background:#f3f4f6">涨停0</span></td><td class="num"><span class="pill down" style="background:#bfe3d4">涨停0</span></td><td class="num"><span class="pill up" style="background:#d64545;color:#fff">涨停2</span></td><td class="num"><span class="pill" style="background:#f3f4f6">涨停0</span></td><td class="num"><span class="pill down" style="background:#bfe3d4">跌停0</span></td></tr>
+            <tr><td><b>半导体</b><br><span class="muted mono" style="font-size:10px">BK1036 · 近5日涨停 0</span></td>
+              <td class="num"><span class="pill down" style="background:#bfe3d4">涨停0</span></td><td class="num"><span class="pill" style="background:#f3f4f6">涨停0</span></td><td class="num"><span class="pill up" style="background:#d64545;color:#fff">涨停3</span></td><td class="num"><span class="pill up" style="background:#ef8a81">涨停1</span></td><td class="num"><span class="pill down" style="background:#7cc7ab;color:#fff">跌停1</span></td><td class="num"><span class="pill" style="background:#f3f4f6">涨停0</span></td></tr>
+            <tr><td><b>基础化工</b><br><span class="muted mono" style="font-size:10px">BK0538 · 近5日涨停 28</span></td>
+              <td class="num"><span class="pill up" style="background:#b91c1c;color:#fff">涨停4</span></td><td class="num"><span class="pill up" style="background:#ef8a81">涨停1</span></td><td class="num"><span class="pill" style="background:#f3f4f6">涨停0</span></td><td class="num"><span class="pill down" style="background:#7cc7ab;color:#fff">跌停2</span></td><td class="num"><span class="pill up" style="background:#ef8a81">涨停1</span></td><td class="num"><span class="pill up" style="background:#d64545;color:#fff">涨停2</span></td></tr>
+            <tr><td><b>通信</b><br><span class="muted mono" style="font-size:10px">BK1215 · 近5日涨停 2</span></td>
+              <td class="num"><span class="pill up" style="background:#d64545;color:#fff">涨停2</span></td><td class="num"><span class="pill" style="background:#f3f4f6">涨停0</span></td><td class="num"><span class="pill up" style="background:#ef8a81">涨停1</span></td><td class="num"><span class="pill" style="background:#f3f4f6">涨停0</span></td><td class="num"><span class="pill up" style="background:#d64545;color:#fff">涨停3</span></td><td class="num"><span class="pill down" style="background:#bfe3d4">涨停0</span></td></tr>
+            <tr><td><b>钢铁</b><br><span class="muted mono" style="font-size:10px">BK0479 · 近5日涨停 0</span></td>
+              <td class="num"><span class="pill up" style="background:#ef8a81">涨停1</span></td><td class="num"><span class="pill" style="background:#f3f4f6">涨停0</span></td><td class="num"><span class="pill" style="background:#f3f4f6">涨停0</span></td><td class="num"><span class="pill" style="background:#f3f4f6">涨停0</span></td><td class="num"><span class="pill up" style="background:#d64545;color:#fff">涨停2</span></td><td class="num"><span class="pill down" style="background:#bfe3d4">跌停0</span></td></tr>
+          </tbody>
+        </table>
+        <div class="pager"><span>点板块名进板块详情 · 点单元格开当日明细弹窗</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= 06 自选股 ================= -->
+<div class="page-title" id="p06"><span class="no">06</span><h2>自选股</h2><span class="desc">分组页签 + 添加工具条 + 满高行情表 + 拖拽重排</span></div>
+<div class="browser" data-url="whf-stock-board · /watchlist">
+  <div class="app">
+    <nav class="side" data-side="/watchlist"></nav>
+    <div class="main">
+      <div class="topbar"><span class="crumb">自选股</span><span class="spacer"></span>
+        <span class="top-clock">A 股交易时段轮询</span><span class="gbtn">⟳</span></div>
+      <div class="tabs-u">
+        <span class="tu on">默认组<span class="n">12</span></span><span class="tu">科技<span class="n">8</span></span>
+        <span class="tu">消费<span class="n">5</span></span><span class="tu">周期<span class="n">6</span></span>
+      </div>
+      <div class="toolbar">
+        <span class="gbtn pri">＋ 添加股票</span><span class="gbtn">批量添加</span>
+        <span class="spacer"></span>
+        <span class="gbtn" style="border-style:dashed">新分组名称…　＋ 新建</span>
+        <span class="muted" style="font-size:11px">拖拽行重排 · 移除需二次确认</span>
+      </div>
+      <div style="background:var(--color-surface)">
+        <table class="tbl">
+          <thead><tr><th style="width:26px">⠿</th><th>名称</th><th class="num">现价</th><th class="num">涨跌幅</th><th class="num">涨跌</th><th class="num">成交额</th><th class="num">换手%</th><th class="num">市盈率</th><th>操作</th></tr></thead>
+          <tbody>
+            <tr><td class="muted" style="cursor:grab">⠿</td><td><b>贵州茅台</b> <span class="muted mono">600519</span></td><td class="num">1,412.00</td><td class="num"><span class="pill up">+0.87%</span></td><td class="num up">+12.16</td><td class="num">34.2 亿</td><td class="num">0.61</td><td class="num">22.8</td><td class="muted">详情 · 移除</td></tr>
+            <tr><td class="muted" style="cursor:grab">⠿</td><td><b>宁德时代</b> <span class="muted mono">300750</span></td><td class="num">412.30</td><td class="num"><span class="pill up">+2.15%</span></td><td class="num up">+8.68</td><td class="num">85.7 亿</td><td class="num">1.86</td><td class="num">31.2</td><td class="muted">详情 · 移除</td></tr>
+            <tr><td class="muted" style="cursor:grab">⠿</td><td><b>中际旭创</b> <span class="muted mono">300308</span></td><td class="num">182.60</td><td class="num"><span class="pill up">+6.42%</span></td><td class="num up">+11.02</td><td class="num">69.1 亿</td><td class="num">7.42</td><td class="num">35.2</td><td class="muted">详情 · 移除</td></tr>
+            <tr><td class="muted" style="cursor:grab">⠿</td><td><b>东方财富</b> <span class="muted mono">300059</span></td><td class="num">31.28</td><td class="num"><span class="pill down">−1.26%</span></td><td class="num down">−0.40</td><td class="num">50.2 亿</td><td class="num">2.94</td><td class="num">28.4</td><td class="muted">详情 · 移除</td></tr>
+            <tr><td class="muted" style="cursor:grab">⠿</td><td><b>隆基绿能</b> <span class="muted mono">601012</span></td><td class="num">18.66</td><td class="num"><span class="pill down">−2.31%</span></td><td class="num down">−0.44</td><td class="num">36.3 亿</td><td class="num">2.18</td><td class="num">—</td><td class="muted">详情 · 移除</td></tr>
+            <tr><td class="muted" style="cursor:grab">⠿</td><td><b>北方稀土</b> <span class="muted mono">600111</span></td><td class="num">44.87</td><td class="num"><span class="pill up">+9.98%</span></td><td class="num up">+4.07</td><td class="num">21.1 亿</td><td class="num">5.06</td><td class="num">48.7</td><td class="muted">详情 · 移除</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= 07 热点新闻 ================= -->
+<div class="page-title" id="p07"><span class="no">07</span><h2>热点新闻</h2><span class="desc">新闻源横向卡片流 · 每源 chips 子视图 · 放大弹窗 · 触底加载</span></div>
+<div class="browser" data-url="whf-stock-board · /hot-news">
+  <div class="app">
+    <nav class="side" data-side="/hot-news"></nav>
+    <div class="main">
+      <div class="topbar"><span class="crumb">热点新闻</span><span class="spacer"></span>
+        <span class="top-clock">已启用 6 / 8 个新闻源</span>
+        <span class="gbtn pri">✦ AI 分析</span><span class="gbtn">新闻源设置</span></div>
+      <div class="flow">
+        <div class="src-card">
+          <div class="src-head"><span class="logo" style="background:#c53030">财</span><b>财联社</b><span class="cnt">深度 / 热榜 · 32 条</span></div>
+          <div style="padding:8px 12px 0"><span class="chips"><span class="chip on">深度</span><span class="chip">热榜</span></span></div>
+          <div class="news-list">
+            <div class="news-item"><div class="t">央行开展 4200 亿元逆回购操作，净投放 1800 亿元</div><div class="m"><span>财联社</span><span>14:52</span></div></div>
+            <div class="news-item"><div class="t">六部门：加快推进新能源材料标准体系建设</div><div class="m"><span>财联社</span><span>14:31</span></div></div>
+            <div class="news-item"><div class="t">有色金属板块午后走强，稀土价格指数创年内新高</div><div class="m"><span>财联社</span><span>14:05</span></div></div>
+            <div class="news-item"><div class="t">多家存储芯片厂商宣布调涨合约价 10%~15%</div><div class="m"><span>财联社</span><span>13:47</span></div></div>
+            <div class="news-item"><div class="t">三季报预告披露过半：预喜率 63%，集中在资源与设备</div><div class="m"><span>财联社</span><span>13:20</span></div></div>
+          </div>
+          <div class="cell-pad" style="padding-top:8px;text-align:center"><span class="muted" style="font-size:11px">加载更多 ▾（触底自动）</span></div>
+        </div>
+        <div class="src-card">
+          <div class="src-head"><span class="logo" style="background:#0e9488">同</span><b>同花顺</b><span class="cnt">热点主题 · 18 条</span></div>
+          <div style="padding:8px 12px 0"><span class="chips"><span class="chip on">热点主题</span><span class="chip">快讯</span><span class="chip">头条</span></span></div>
+          <div class="news-list">
+            <div class="news-item"><div class="t"><span class="rank-badge top">1</span>稀土永磁 · 板块指数 +3.42%</div><div class="m"><span>相关股 26 只</span><span>热度 92</span></div></div>
+            <div class="news-item"><div class="t"><span class="rank-badge top">2</span>存储芯片 · 涨价潮蔓延至模组厂</div><div class="m"><span>相关股 41 只</span><span>热度 87</span></div></div>
+            <div class="news-item"><div class="t"><span class="rank-badge top">3</span>低空经济 · 产业规划征求意见</div><div class="m"><span>相关股 33 只</span><span>热度 81</span></div></div>
+            <div class="news-item"><div class="t"><span class="rank-badge">4</span>固态电池 · 中试线密集落地</div><div class="m"><span>相关股 19 只</span><span>热度 74</span></div></div>
+            <div class="news-item"><div class="t"><span class="rank-badge">5</span>算力租赁 · 价格指数环比 +6.8%</div><div class="m"><span>相关股 22 只</span><span>热度 70</span></div></div>
+          </div>
+        </div>
+        <div class="src-card">
+          <div class="src-head"><span class="logo" style="background:#b45309">东</span><b>东方财富</b><span class="cnt">热搜 / 领涨概念</span></div>
+          <div style="padding:8px 12px 0"><span class="chips"><span class="chip on">热搜</span><span class="chip">领涨概念</span><span class="chip">快讯</span></span></div>
+          <div class="news-list">
+            <div class="news-item"><div class="t"><span class="rank-badge top">1</span>稀土出口管制 <span class="tagc" style="margin-left:4px">新</span></div><div class="m"><span>热度 96</span></div></div>
+            <div class="news-item"><div class="t"><span class="rank-badge top">2</span>存储涨价</div><div class="m"><span>热度 88</span></div></div>
+            <div class="news-item"><div class="t"><span class="rank-badge top">3</span>三季报预增</div><div class="m"><span>热度 79</span></div></div>
+            <div class="news-item"><div class="t"><span class="rank-badge">4</span>算力</div><div class="m"><span>热度 71</span></div></div>
+            <div class="news-item"><div class="t"><span class="rank-badge">5</span>跨境支付</div><div class="m"><span>热度 65</span></div></div>
+          </div>
+        </div>
+        <div class="src-card">
+          <div class="src-head"><span class="logo" style="background:#51636b">澎</span><b>澎湃新闻</b><span class="cnt">热榜 · 20 条</span></div>
+          <div style="padding:8px 12px 0"><span class="chips"><span class="chip on">热榜</span><span class="chip">快讯</span></span></div>
+          <div class="news-list">
+            <div class="news-item"><div class="t"><span class="rank-badge top">1</span>多地出台楼市新政：公积金额度上调</div><div class="m"><span>澎湃</span><span>14:40</span></div></div>
+            <div class="news-item"><div class="t"><span class="rank-badge top">2</span>前 9 个月全社会用电量同比 +7.2%</div><div class="m"><span>澎湃</span><span>14:12</span></div></div>
+            <div class="news-item"><div class="t"><span class="rank-badge top">3</span>国际金价站上 4,180 美元/盎司</div><div class="m"><span>澎湃</span><span>13:58</span></div></div>
+            <div class="news-item"><div class="t"><span class="rank-badge">4</span>国常会：部署深入实施自贸区提升战略</div><div class="m"><span>澎湃</span><span>13:31</span></div></div>
+            <div class="news-item"><div class="t"><span class="rank-badge">5</span>全国秋粮收获过七成</div><div class="m"><span>澎湃</span><span>13:02</span></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= 08 今天炒什么 ================= -->
+<div class="page-title" id="p08"><span class="no">08</span><h2>今天炒什么</h2><span class="desc">五平台热股榜单横向卡片流 · 与热点新闻同骨架</span></div>
+<div class="browser dark-demo" data-url="whf-stock-board · /what-to-trade">
+  <div class="app">
+    <nav class="side" data-side="/what-to-trade"></nav>
+    <div class="main">
+      <div class="topbar"><span class="crumb">今天炒什么</span><span class="spacer"></span>
+        <span class="top-clock">已启用 5 / 5 个平台 · 快照 30 分钟刷新</span>
+        <span class="gbtn pri">✦ AI 分析</span><span class="gbtn">平台设置</span></div>
+      <div class="flow">
+        <div class="src-card">
+          <div class="src-head"><span class="logo" style="background:#0e9488">同</span><b>同花顺热股</b><span class="cnt">Top 50</span></div>
+          <div class="news-list">
+            <div class="news-item"><div class="t"><span class="rank-badge top">1</span>北方稀土 <span class="pill up" style="margin-left:6px">+9.98%</span></div><div class="m"><span>44.87</span><span>热度 95</span></div></div>
+            <div class="news-item"><div class="t"><span class="rank-badge top">2</span>中际旭创 <span class="pill up" style="margin-left:6px">+6.42%</span></div><div class="m"><span>182.60</span><span>热度 91</span></div></div>
+            <div class="news-item"><div class="t"><span class="rank-badge top">3</span>紫金矿业 <span class="pill up" style="margin-left:6px">+3.88%</span></div><div class="m"><span>27.94</span><span>热度 86</span></div></div>
+            <div class="news-item"><div class="t"><span class="rank-badge">4</span>东方财富 <span class="pill down" style="margin-left:6px">−1.26%</span></div><div class="m"><span>31.28</span><span>热度 80</span></div></div>
+            <div class="news-item"><div class="t"><span class="rank-badge">5</span>贵州茅台 <span class="pill up" style="margin-left:6px">+0.87%</span></div><div class="m"><span>1,412.00</span><span>热度 77</span></div></div>
+          </div>
+        </div>
+        <div class="src-card">
+          <div class="src-head"><span class="logo" style="background:#b45309">东</span><b>东财热股</b><span class="cnt">Top 50</span></div>
+          <div class="news-list">
+            <div class="news-item"><div class="t"><span class="rank-badge top">1</span>宁德时代 <span class="pill up" style="margin-left:6px">+2.15%</span></div><div class="m"><span>412.30</span><span>人气 8.6 万</span></div></div>
+            <div class="news-item"><div class="t"><span class="rank-badge top">2</span>北方稀土 <span class="pill up" style="margin-left:6px">+9.98%</span></div><div class="m"><span>44.87</span><span>人气 7.9 万</span></div></div>
+            <div class="news-item"><div class="t"><span class="rank-badge top">3</span>阳光电源 <span class="pill up" style="margin-left:6px">+5.28%</span></div><div class="m"><span>96.44</span><span>人气 6.2 万</span></div></div>
+            <div class="news-item"><div class="t"><span class="rank-badge">4</span>中芯国际 <span class="pill up" style="margin-left:6px">+1.54%</span></div><div class="m"><span>98.20</span><span>人气 5.8 万</span></div></div>
+            <div class="news-item"><div class="t"><span class="rank-badge">5</span>隆基绿能 <span class="pill down" style="margin-left:6px">−2.31%</span></div><div class="m"><span>18.66</span><span>人气 5.1 万</span></div></div>
+          </div>
+        </div>
+        <div class="src-card">
+          <div class="src-head"><span class="logo" style="background:#1f4fd8">雪</span><b>雪球热股</b><span class="cnt">Top 50</span></div>
+          <div class="news-list">
+            <div class="news-item"><div class="t"><span class="rank-badge top">1</span>贵州茅台 <span class="pill up" style="margin-left:6px">+0.87%</span></div><div class="m"><span>讨论 3,214</span></div></div>
+            <div class="news-item"><div class="t"><span class="rank-badge top">2</span>紫金矿业 <span class="pill up" style="margin-left:6px">+3.88%</span></div><div class="m"><span>讨论 2,876</span></div></div>
+            <div class="news-item"><div class="t"><span class="rank-badge top">3</span>北方稀土 <span class="pill up" style="margin-left:6px">+9.98%</span></div><div class="m"><span>讨论 2,540</span></div></div>
+            <div class="news-item"><div class="t"><span class="rank-badge">4</span>中际旭创 <span class="pill up" style="margin-left:6px">+6.42%</span></div><div class="m"><span>讨论 2,183</span></div></div>
+            <div class="news-item"><div class="t"><span class="rank-badge">5</span>东方财富 <span class="pill down" style="margin-left:6px">−1.26%</span></div><div class="m"><span>讨论 1,967</span></div></div>
+          </div>
+        </div>
+        <div class="src-card">
+          <div class="src-head"><span class="logo" style="background:#c53030">财</span><b>财联社热股</b><span class="cnt">Top 50</span></div>
+          <div class="news-list">
+            <div class="news-item"><div class="t"><span class="rank-badge top">1</span>北方稀土 <span class="pill up" style="margin-left:6px">+9.98%</span></div><div class="m"><span>44.87</span><span>电报提及 412</span></div></div>
+            <div class="news-item"><div class="t"><span class="rank-badge top">2</span>中际旭创 <span class="pill up" style="margin-left:6px">+6.42%</span></div><div class="m"><span>182.60</span><span>电报提及 388</span></div></div>
+            <div class="news-item"><div class="t"><span class="rank-badge top">3</span>阳光电源 <span class="pill up" style="margin-left:6px">+5.28%</span></div><div class="m"><span>96.44</span><span>电报提及 301</span></div></div>
+            <div class="news-item"><div class="t"><span class="rank-badge">4</span>万华化学 <span class="pill up" style="margin-left:6px">+4.15%</span></div><div class="m"><span>82.36</span><span>电报提及 266</span></div></div>
+            <div class="news-item"><div class="t"><span class="rank-badge">5</span>贵州茅台 <span class="pill up" style="margin-left:6px">+0.87%</span></div><div class="m"><span>1,412.00</span><span>电报提及 240</span></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= 09 板块资金流向 ================= -->
+<div class="page-title" id="p09"><span class="no">09</span><h2>板块资金流向</h2><span class="desc">曲线 / 列表双视图 · 多行业当日累计主力净流入叠加</span></div>
+<div class="browser" data-url="whf-stock-board · /board-flow">
+  <div class="app">
+    <nav class="side" data-side="/board-flow"></nav>
+    <div class="main">
+      <div class="topbar"><span class="crumb">板块资金流向</span><span class="spacer"></span>
+        <span class="top-clock">截至 14:57 · 已选 4 个行业</span><span class="gbtn">⟳</span></div>
+      <div class="toolbar">
+        <span class="chips"><span class="chip on">曲线</span><span class="chip">列表</span></span>
+        <span class="gbtn">选择行业（4/26）</span>
+        <span class="spacer"></span>
+        <span class="gbtn pri">✦ AI 分析</span><span class="gbtn">导出 Excel</span>
+      </div>
+      <div style="background:var(--color-surface);flex:1">
+        <div class="fl-legend">
+          <span><i style="background:#0e9488"></i>有色金属 +18.4 亿</span>
+          <span><i style="background:#b45309"></i>半导体 +12.1 亿</span>
+          <span><i style="background:#c53030"></i>基础化工 +8.7 亿</span>
+          <span><i style="background:#64757a"></i>通信 −3.2 亿</span>
+        </div>
+        <div class="chart-wrap">
+          <svg viewBox="0 0 900 260" height="260" role="img" aria-label="多行业累计主力净流入分时曲线">
+            <!-- 网格与 0 轴 -->
+            <g stroke="rgba(23,36,42,.08)" stroke-width="1">
+              <line x1="40" y1="30" x2="890" y2="30"/><line x1="40" y1="80" x2="890" y2="80"/>
+              <line x1="40" y1="130" x2="890" y2="130"/><line x1="40" y1="180" x2="890" y2="180"/><line x1="40" y1="230" x2="890" y2="230"/>
+            </g>
+            <line x1="40" y1="130" x2="890" y2="130" stroke="rgba(23,36,42,.28)" stroke-width="1" stroke-dasharray="4 4"/>
+            <g font-family="ui-monospace,Consolas,monospace" font-size="10" fill="#8a9aa1">
+              <text x="6" y="34">+20</text><text x="6" y="84">+10</text><text x="12" y="134">0</text>
+              <text x="6" y="184">−10</text><text x="6" y="234">−20</text>
+              <text x="42" y="250">09:30</text><text x="250" y="250">10:30</text><text x="460" y="250">11:30/13:00</text>
+              <text x="660" y="250">14:00</text><text x="856" y="250">15:00</text>
+            </g>
+            <!-- 四条行业曲线（累计净流入，亿元） -->
+            <polyline fill="none" stroke="#0e9488" stroke-width="2" points="40,130 130,118 220,102 310,92 400,78 490,70 580,58 670,50 760,44 850,40 890,38"/>
+            <polyline fill="none" stroke="#b45309" stroke-width="2" points="40,130 130,124 220,114 310,108 400,96 490,90 580,84 670,80 760,74 850,70 890,68"/>
+            <polyline fill="none" stroke="#c53030" stroke-width="2" points="40,130 130,126 220,120 310,114 400,106 490,100 580,94 670,90 760,86 850,82 890,80"/>
+            <polyline fill="none" stroke="#64757a" stroke-width="2" stroke-dasharray="5 4" points="40,130 130,133 220,137 310,140 400,138 490,142 580,145 670,148 760,146 850,150 890,152"/>
+            <!-- 终值标注 -->
+            <g font-family="ui-monospace,Consolas,monospace" font-size="10.5" font-weight="700">
+              <text x="846" y="32" fill="#0e9488">+18.4</text>
+              <text x="846" y="62" fill="#b45309">+12.1</text>
+              <text x="846" y="74" fill="#c53030">+8.7</text>
+              <text x="846" y="166" fill="#64757a">−3.2</text>
+            </g>
+          </svg>
+        </div>
+        <div class="cell-pad" style="border-top:1px solid var(--hairline)">
+          <div class="sec"><h3>当前时点排行</h3><span class="en">RANK</span><span class="more">切「列表」看完整榜 · 行点击开停靠详情</span></div>
+          <div class="subrow" style="gap:12px;flex-wrap:wrap">
+            <span class="pill up">有色 +18.4 亿</span><span class="pill up">半导体 +12.1 亿</span>
+            <span class="pill up">化工 +8.7 亿</span><span class="pill up">新能源 +5.9 亿</span>
+            <span class="pill down">通信 −3.2 亿</span><span class="pill down">电子 −9.6 亿</span><span class="pill down">煤炭 −6.1 亿</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= 10 账户管理 ================= -->
+<div class="page-title" id="p10"><span class="no">10</span><h2>账户管理</h2><span class="desc">账户页签 + 导入工具条 + 成交流水面板（对账单 / 交割单）</span></div>
+<div class="browser" data-url="whf-stock-board · /stock-account">
+  <div class="app">
+    <nav class="side" data-side="/stock-account"></nav>
+    <div class="main">
+      <div class="topbar"><span class="crumb">账户管理</span><span class="spacer"></span>
+        <span class="gbtn">☰ 账户管理</span><span class="gbtn">对账单导入</span><span class="gbtn">交割单导入</span><span class="gbtn pri">＋ 添加账户</span></div>
+      <div class="notice" style="margin-bottom:0">当前仅支持导入同花顺导出的对账单 / 交割单文件；导入后数据仅保存在本机。</div>
+      <div class="tabs-u">
+        <span class="tu on">主账户<span class="n">A股</span></span><span class="tu">打新户</span><span class="tu">可转债户</span>
+      </div>
+      <div style="background:var(--color-surface);flex:1">
+        <div class="toolbar" style="border-top:none">
+          <span class="chips"><span class="chip on">对账单</span><span class="chip">交割单</span></span>
+          <span class="muted" style="font-size:11.5px">共 86 条流水 · 累计盈亏 <b class="up" style="font-family:var(--font-num)">+42,318.50</b></span>
+          <span class="spacer"></span><span class="gbtn">导出</span>
+        </div>
+        <table class="tbl">
+          <thead><tr><th>成交日期</th><th>操作</th><th>名称</th><th class="num">成交价</th><th class="num">数量</th><th class="num">成交额</th><th class="num">盈亏</th><th>备注</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">2026-10-13</td><td><span class="pill up">买入</span></td><td><b>紫金矿业</b></td><td class="num">27.68</td><td class="num">2,000</td><td class="num">55,360.00</td><td class="num muted">—</td><td class="muted">回撤位加仓</td></tr>
+            <tr><td class="mono">2026-10-13</td><td><span class="pill down">卖出</span></td><td><b>中际旭创</b></td><td class="num">181.42</td><td class="num">300</td><td class="num">54,426.00</td><td class="num up">+6,820.00</td><td class="muted">止盈 1/2 仓</td></tr>
+            <tr><td class="mono">2026-10-12</td><td><span class="pill up">买入</span></td><td><b>北方稀土</b></td><td class="num">41.20</td><td class="num">1,500</td><td class="num">61,800.00</td><td class="num muted">—</td></tr>
+            <tr><td class="mono">2026-10-12</td><td><span class="pill down">卖出</span></td><td><b>东方财富</b></td><td class="num">31.86</td><td class="num">2,000</td><td class="num">63,720.00</td><td class="num down">−1,240.00</td><td class="muted">破位止损</td></tr>
+            <tr><td class="mono">2026-10-10</td><td><span class="pill up">买入</span></td><td><b>贵州茅台</b></td><td class="num">1,398.00</td><td class="num">100</td><td class="num">139,800.00</td><td class="num muted">—</td></tr>
+            <tr><td class="mono">2026-10-09</td><td><span class="pill down">卖出</span></td><td><b>宁德时代</b></td><td class="num">405.60</td><td class="num">200</td><td class="num">81,120.00</td><td class="num up">+3,540.00</td></tr>
+          </tbody>
+        </table>
+        <div class="pager"><span>按日分组展示 · 支持导出</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= 11 插件工坊 ================= -->
+<div class="page-title" id="p11"><span class="no">11</span><h2>插件工坊</h2><span class="desc">内核概览 4 格 + 插件卡列表 + 贡献点总览 + 最近事件</span></div>
+<div class="browser" data-url="whf-stock-board · /plugin-lab">
+  <div class="app">
+    <nav class="side" data-side="/plugin-lab"></nav>
+    <div class="main">
+      <div class="topbar"><span class="crumb">插件工坊</span><span class="spacer"></span>
+        <span class="gbtn">检查更新</span><span class="gbtn pri">＋ 安装插件</span></div>
+      <div class="cell-pad" style="border-bottom:1px solid var(--hairline)">
+        <div class="sec"><h3>内核概览</h3><span class="en">KERNEL</span><span class="more">开发者文档 ›</span></div>
+        <div class="metric-grid">
+          <div class="metric"><div class="k">已注册插件</div><div class="v">7</div></div>
+          <div class="metric"><div class="k">已挂载</div><div class="v">6</div></div>
+          <div class="metric"><div class="k">生效服务</div><div class="v">9</div></div>
+          <div class="metric"><div class="k">侧栏面板</div><div class="v">3</div></div>
+        </div>
+      </div>
+      <div class="cell-pad" style="border-bottom:1px solid var(--hairline)">
+        <div class="sec"><h3>插件清单</h3><span class="en">PLUGINS</span></div>
+        <div class="plug-card">
+          <div class="info"><div class="nm">盯盘小组件 <span class="ver">dsh-watch-widget · v1.4.2</span></div>
+            <div class="ds">任务栏三态电源 / 显示模式 / 拖动位置 · 贡献：侧栏面板 ×1 命令 ×2</div></div>
+          <span class="tagc upd">可更新 v1.5.0</span><span class="spacer" style="flex:1"></span><span class="sw on"></span>
+        </div>
+        <div class="plug-card">
+          <div class="info"><div class="nm">选股器 <span class="ver">dsh-stock-screener · v2.0.1</span></div>
+            <div class="ds">全市场条件选股 · 贡献：导航菜单 ×1 命令 ×1</div></div>
+          <span class="tagc ok">已挂载</span><span class="spacer" style="flex:1"></span><span class="sw on"></span>
+        </div>
+        <div class="plug-card" style="opacity:.75">
+          <div class="info"><div class="nm">龙虎榜增强 <span class="ver">dsh-lhb-plus · v0.9.0</span></div>
+            <div class="ds up">挂载失败：依赖 dsh-data-kit ≥2.0 未满足 · 重试</div></div>
+          <span class="tagc err">失败</span><span class="spacer" style="flex:1"></span><span class="sw"></span>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;border-top:none">
+        <div class="cell-pad" style="border-right:1px solid var(--hairline)">
+          <div class="sec"><h3>贡献点总览</h3><span class="en">CONTRIBUTIONS</span></div>
+          <div class="subrow" style="gap:10px;flex-wrap:wrap">
+            <span class="tagc">侧栏面板 ×3</span><span class="tagc">导航菜单 ×2</span>
+            <span class="tagc">命令 ×6 <span class="mono">（Ctrl+K…）</span></span><span class="tagc">Agent 工具 ×4</span>
+          </div>
+          <div class="sec" style="margin-top:14px"><h3>跨插件服务</h3><span class="en">SERVICES</span></div>
+          <div class="subrow" style="gap:8px;flex-wrap:wrap">
+            <span class="tagc">data.quotes</span><span class="tagc">data.board</span><span class="tagc">ui.notify</span>
+            <span class="tagc">storage.kv</span><span class="tagc">agent.prompt</span>
+          </div>
+        </div>
+        <div class="cell-pad">
+          <div class="sec"><h3>最近事件</h3><span class="en">EVENTS</span><span class="more mono">1s 心跳</span></div>
+          <div class="rows">
+            <div class="rrow"><span class="idx">14:57:02</span><span class="nm">service.invoke <span class="tag">data.quotes</span></span><span class="muted" style="margin-left:auto;font-size:11px">dsh-watch-widget</span></div>
+            <div class="rrow"><span class="idx">14:57:01</span><span class="nm">panel.mount <span class="tag">dock</span></span><span class="muted" style="margin-left:auto;font-size:11px">dsh-stock-screener</span></div>
+            <div class="rrow"><span class="idx">14:56:58</span><span class="nm">menu.register</span><span class="muted" style="margin-left:auto;font-size:11px">kernel</span></div>
+            <div class="rrow"><span class="idx">14:56:55</span><span class="nm">command.run <span class="tag">export</span></span><span class="muted" style="margin-left:auto;font-size:11px">host</span></div>
+            <div class="rrow"><span class="idx">14:56:50</span><span class="nm">plugin.ready <span class="tag">v2.0.1</span></span><span class="muted" style="margin-left:auto;font-size:11px">dsh-stock-screener</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /page -->
+
+<script>
+/* 侧栏与浏览器壳统一注入：11 页共用同一菜单源，active 项由 data-side 决定 */
+const MENU = [
+  { p: "/dashboard",     t: "市场总览",     ico: "▦", g: "总览" },
+  { p: "/market-rank",   t: "市场榜单",     ico: "▲", g: "行情" },
+  { p: "/stock-market",  t: "个股行情",     ico: "≡", g: null },
+  { p: "/panorama",      t: "行情全景",     ico: "◎", g: null },
+  { p: "/board-calendar",t: "板块日历",     ico: "▤", g: null },
+  { p: "/watchlist",     t: "自选股",       ico: "★", g: "我的" },
+  { p: "/hot-news",      t: "热点新闻",     ico: "◈", g: "资讯" },
+  { p: "/what-to-trade", t: "今天炒什么",   ico: "✦", g: null },
+  { p: "/board-flow",    t: "板块资金流向", ico: "≋", g: null },
+  { p: "/stock-account", t: "账户管理",     ico: "◷", g: "系统" },
+  { p: "/plugin-lab",    t: "插件工坊",     ico: "⚙", g: null },
+];
+document.querySelectorAll(".side[data-side]").forEach((nav) => {
+  const active = nav.dataset.side;
+  let html = "";
+  MENU.forEach((m) => {
+    if (m.g) html += `<div class="side-group">${m.g}</div>`;
+    html += `<div class="side-item${m.p === active ? " on" : ""}"><i class="ico">${m.ico}</i><span>${m.t}</span></div>`;
+  });
+  html += `<div class="side-foot"><span>A股 · 交易中</span><span>14:57</span></div>`;
+  nav.innerHTML = html;
+});
+/* 浏览器壳顶条注入 */
+document.querySelectorAll(".browser[data-url]").forEach((b) => {
+  const chrome = document.createElement("div");
+  chrome.className = "browser-chrome";
+  chrome.innerHTML = `<i></i><i></i><i></i><div class="browser-url">${b.dataset.url}</div>`;
+  b.prepend(chrome);
+});
+</script>
+</body>
+</html>

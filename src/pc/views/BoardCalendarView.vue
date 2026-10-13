@@ -234,9 +234,27 @@ const heatLabel = computed<string>(
     )?.label ?? '',
 );
 
+/** 库内有板块日聚合数据的交易日集合（列过滤基准） */
+const dataDates = computed<Set<string>>(() => new Set(dailyRows.value.map((row) => row.tradeDate)));
+
+/**
+ * 实际渲染的日期列：范围列 ∩ 周一~周五 ∩ 库内有数据日
+ *
+ * 王总 2026-10-13：板块日历只显示交易日列，非交易日列不显示——
+ * 交易日轴覆盖约 1.5 年（400 根日 K），「全部」档下绝大多数列没有快照数据，
+ * 整列 `--` 观感等同非交易日；这里把「非周一~周五」与「无任何板块数据」的列都剔除，
+ * 列数随数据覆盖自然收敛（数据未覆盖到的历史日不渲染空列）。
+ */
+const matrixDates = computed<string[]>(() =>
+  selectedDates.value.filter((date) => {
+    const weekday = new Date(`${date}T00:00:00`).getDay();
+    return weekday !== 0 && weekday !== 6 && dataDates.value.has(date);
+  }),
+);
+
 /** 矩阵：可见板块行 × 当前范围列（自定义顺序优先，否则按热门口径降序） */
 const matrix = computed<BoardCalendarMatrix>(() => {
-  const dates = selectedDates.value;
+  const dates = matrixDates.value;
   const byKey = new Map<string, BoardDailyRow>();
   for (const row of dailyRows.value) {
     byKey.set(`${row.tradeDate}|${row.boardCode}`, row);
@@ -336,7 +354,7 @@ const profitSnapshot = computed<{
  * 分析看的是全市场在做什么，隐藏个别板块不改变市场结构）。
  */
 const mainlineMatrix = computed(() =>
-  buildBoardMainlineMatrix(dailyRows.value, selectedDates.value, BOARD_MAINLINE_TOP_N),
+  buildBoardMainlineMatrix(dailyRows.value, matrixDates.value, BOARD_MAINLINE_TOP_N),
 );
 
 /**

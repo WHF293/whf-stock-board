@@ -2,15 +2,15 @@
 /**
  * 行情全景（v2 二期二级页，稿：market-modules-v2 P0-P2；规范：DESIGN-MOBILE.md §5.1）
  *
- * 模块 chips：A股 / 资金 / 美球（新股次新股 v4.5.2 拆为独立页 /ipo，入口在首页金刚区）；
+ * 模块 chips：A股 / 美球 / 宏观（2026-10-13 王总：「资金」模块整体移除，
+ * 「板块主力净流入榜」迁往 tabbar 资金流向页，mini 曲线由该页「板块资金」完整版覆盖）；
+ * 新股次新股 v4.5.2 拆为独立页 /ipo，入口在首页金刚区；
  * - A股：涨跌统计 4 卡（由板块表现前端现算，口径同 PC）+ 行业/概念板块行（点击手风琴展开成分股，行点击进个股页）
- * - 资金：板块主力净流入榜 + 净流入/净流出前 2 板块的当日逐分钟累计曲线（SVG）
  * - 美球：美股行业 ETF / 全球指数 / 外盘商品 三组涨跌列表
  * 数据层全部复用 PC common api；分区独立加载与降级（DESIGN-MOBILE.md §6）
  */
 import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { showToast } from 'vant';
 import {
   fetchConceptBoards,
   fetchConceptConstituents,
@@ -22,14 +22,9 @@ import {
   fetchGlobalIndexPanorama,
   fetchUsSectorPanorama,
 } from '../../common/api/panorama.api';
-import { fetchSectorFundFlowRank } from '../../common/api/flow.api';
-import {
-  fetchSectorFlowCurves,
-  pickDefaultCurveCodes,
-} from '../../common/api/sector-flow-curve.api';
-import type { SectorFundFlowItem } from '../../common/types/flow.types';
-import type { SectorFlowCurve } from '../../common/types/sector-flow-curve.types';
-import type { PanoramaItem } from '../../common/types/panorama.types';
+import { PANORAMA_MACRO_GROUPS } from '../../common/constants/panorama.constants';
+import { delay } from '../../common/utils/delay';
+import type { PanoramaItem, PanoramaMacroGroup } from '../../common/types/panorama.types';
 import type { BoardRow } from '../../common/constants/boards.constants';
 import { BOARD_STAT_THRESHOLD } from '../../common/constants/boards.constants';
 import { toFullSymbol } from '../../common/utils/to-full-symbol';
@@ -41,8 +36,8 @@ const router = useRouter();
 /** 模块 chips */
 const MODULES = [
   { key: 'cn', label: 'A股' },
-  { key: 'flow', label: '资金' },
   { key: 'global', label: '美球' },
+  { key: 'macro', label: '宏观' },
 ] as const;
 type ModuleKey = (typeof MODULES)[number]['key'];
 const activeModule = ref<ModuleKey>('cn');
@@ -142,64 +137,6 @@ const goStock = (code: string): void => {
   void router.push(`/stock/${toFullSymbol(code)}`);
 };
 
-/* === 板块资金 === */
-const flowRank = ref<SectorFundFlowItem[]>([]);
-const flowLoading = ref(false);
-const flowError = ref(false);
-/** 曲线（最多 4 条：流入/流出各前 2） */
-const curves = ref<SectorFlowCurve[]>([]);
-const curveNames = computed(() => {
-  const nameByCode = new Map(flowRank.value.map((r) => [r.code, r.name]));
-  return curves.value.map((c) => ({ code: c.code, name: nameByCode.get(c.code) ?? c.code }));
-});
-
-const loadFlow = async (force = false): Promise<void> => {
-  flowLoading.value = true;
-  flowError.value = false;
-  try {
-    const key = 'panorama.flow';
-    const cached = force ? null : mobileCacheGet<SectorFundFlowItem[]>(key);
-    if (cached) {
-      flowRank.value = cached.value;
-    } else {
-      const rank = await fetchSectorFundFlowRank();
-      flowRank.value = rank;
-      mobileCacheSet(key, rank);
-    }
-    // 曲线不落缓存（当日逐分钟，切页回来要新）；取流入/流出各前 2
-    const codes = pickDefaultCurveCodes(flowRank.value, 2);
-    curves.value = await fetchSectorFlowCurves(codes);
-  } catch {
-    flowError.value = true;
-  } finally {
-    flowLoading.value = false;
-  }
-};
-
-/** SVG 曲线：把各曲线 points 归一到同一 320x120 视窗 */
-const CURVE_W = 320;
-const CURVE_H = 120;
-const curvePaths = computed(() => {
-  const valid = curves.value.filter((c) => c.points.length > 1);
-  if (!valid.length) return [];
-  const all = valid.flatMap((c) => c.points.map((p) => p.mainNetInflow));
-  const min = Math.min(...all, 0);
-  const max = Math.max(...all, 0);
-  const span = max - min || 1;
-  const maxLen = Math.max(...valid.map((c) => c.points.length));
-  const COLORS = ['#e02020', '#f1998e', '#00b578', '#7fd3b3'];
-  return valid.map((curve, i) => {
-    const pts = curve.points.map((p, idx) => {
-      const x = (idx / (maxLen - 1)) * CURVE_W;
-      const y = CURVE_H - ((p.mainNetInflow - min) / span) * (CURVE_H - 8) - 4;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    });
-    return { code: curve.code, color: COLORS[i % COLORS.length], d: `M${pts.join('L')}` };
-  });
-});
-const fmtYi = (v: number | null): string =>
-  v === null ? '--' : `${(v / 1e8).toFixed(v >= 1e8 || v <= -1e8 ? 1 : 2)}亿`;
-
 /* === 美球 === */
 const usSectors = ref<PanoramaItem[]>([]);
 const globalIdx = ref<PanoramaItem[]>([]);
@@ -235,13 +172,63 @@ const loadGlobal = async (force = false): Promise<void> => {
   }
 };
 
+/* === 全球宏观（对齐 PC PanoramaView「宏观」模块：分组关键词匹配） === */
+const macroGroups = ref<PanoramaMacroGroup[]>([]);
+const macroLoading = ref(false);
+const macroError = ref(false);
+
+/** 宏观取数错峰间隔（PC 同款 500ms，避免对同一上游并发齐射） */
+const MACRO_REQUEST_GAP_MS = 500;
+
+/**
+ * 在条目列表内按关键词顺序匹配（名称包含即命中）：
+ * 优先名称与关键词完全一致的条目（指数 / 主力连续合约），否则取最后一个命中
+ * （外盘合约按到期月升序排列，最后一个为最新主力）——口径照搬 PC PanoramaView
+ * @param items 上游条目
+ * @param keywords 展示关键词
+ * @returns 匹配到的条目（顺序与 keywords 一致，未命中跳过）
+ */
+const matchKeywords = (items: PanoramaItem[], keywords: readonly string[]): PanoramaItem[] =>
+  keywords.flatMap((keyword) => {
+    const hits = items.filter((item) => item.name.includes(keyword));
+    const exact = hits.find((item) => item.name === keyword);
+    const hit = exact ?? hits.at(-1);
+    return hit ? [hit] : [];
+  });
+
+const loadMacro = async (force = false): Promise<void> => {
+  macroLoading.value = true;
+  macroError.value = false;
+  try {
+    const key = 'panorama.macro';
+    const cached = force ? null : mobileCacheGet<PanoramaMacroGroup[]>(key);
+    if (cached) {
+      macroGroups.value = cached.value;
+    } else {
+      // 全球指数 → 外盘商品串行错峰（PC fetchMacro 同款），再按配置分组匹配
+      const indexItems = await fetchGlobalIndexPanorama();
+      await delay(MACRO_REQUEST_GAP_MS);
+      const futuresItems = await fetchGlobalFuturesPanorama();
+      macroGroups.value = PANORAMA_MACRO_GROUPS.map((group) => {
+        const pool = group.source === 'index' ? indexItems : futuresItems;
+        return { label: group.label, items: matchKeywords(pool, group.keywords) };
+      }).filter((group) => group.items.length > 0);
+      mobileCacheSet(key, macroGroups.value);
+    }
+  } catch {
+    macroError.value = true;
+  } finally {
+    macroLoading.value = false;
+  }
+};
+
 /* === 模块切换：惰性加载 === */
 const loadedModules = new Set<ModuleKey>();
 const loadModule = (key: ModuleKey, force = false): void => {
   if (!force && loadedModules.has(key)) return;
   loadedModules.add(key);
   if (key === 'cn') void loadBoards(force);
-  else if (key === 'flow') void loadFlow(force);
+  else if (key === 'macro') void loadMacro(force);
   else void loadGlobal(force);
 };
 loadModule('cn');
@@ -267,14 +254,6 @@ const back = (): void => {
 };
 
 const fmtPct = (v: number | null): string => (v === null ? '--' : `${v > 0 ? '+' : ''}${v.toFixed(2)}%`);
-const goPanoramaDeep = (path: string): void => {
-  void router.push(path);
-};
-// 预留：PC 端「查看历史净流入」在移动端暂以 toast 占位（二期深化）
-const onHistoryClick = (): void => {
-  showToast('历史净流入移动端后续开放');
-  goPanoramaDeep('/market-rank');
-};
 </script>
 
 <template>
@@ -386,66 +365,8 @@ const onHistoryClick = (): void => {
           </template>
         </template>
 
-        <!-- === 板块资金 === -->
-        <template v-else-if="activeModule === 'flow'">
-          <div v-if="flowLoading" class="m-card m-skel-fill">
-            <div v-for="i in 8" :key="i" class="m-skel-row"></div>
-          </div>
-          <div v-else-if="flowError" class="m-state">
-            资金数据加载失败
-            <span class="retry" @click="loadModule('flow', true)">重试</span>
-          </div>
-          <template v-else>
-            <div v-if="curvePaths.length" class="m-pan-curve m-card">
-              <svg :viewBox="`0 0 ${CURVE_W} ${CURVE_H}`">
-                <path
-                  v-for="p in curvePaths"
-                  :key="p.code"
-                  :d="p.d"
-                  fill="none"
-                  :stroke="p.color"
-                  stroke-width="1.5"
-                />
-              </svg>
-              <div class="m-sec" style="padding: 6px 0 0">
-                <span
-                  v-for="c in curveNames"
-                  :key="c.code"
-                  class="m-home-sec__s"
-                  style="margin-right: 10px"
-                >
-                  {{ c.name }}
-                </span>
-              </div>
-            </div>
-            <div class="m-sec">
-              <span class="m-sec__t">板块主力净流入</span>
-              <span class="m-sec__s" @click="onHistoryClick">历史曲线 ›</span>
-            </div>
-            <div class="m-card">
-              <div
-                v-for="r in flowRank.slice(0, 30)"
-                :key="r.code"
-                class="m-row"
-                @click="goStock(r.topStockCode || '')"
-              >
-                <div class="m-row__nm">
-                  {{ r.name }}
-                  <span v-if="r.topStockName" class="sub">领涨 {{ r.topStockName }}</span>
-                </div>
-                <span class="m-row__val" :class="pctClass(r.mainNetInflow)">
-                  {{ fmtYi(r.mainNetInflow) }}
-                </span>
-                <span class="m-row__pct pill" :class="pctClass(r.changePercent)">
-                  {{ fmtPct(r.changePercent) }}
-                </span>
-              </div>
-            </div>
-          </template>
-        </template>
-
         <!-- === 美球 === -->
-        <template v-else>
+        <template v-else-if="activeModule === 'global'">
           <div v-if="globalLoading" class="m-card m-skel-fill">
             <div v-for="i in 8" :key="i" class="m-skel-row"></div>
           </div>
@@ -481,6 +402,30 @@ const onHistoryClick = (): void => {
                 </span>
               </div>
             </div>
+          </template>
+        </template>
+
+        <!-- === 全球宏观（PC 同款分组：全球指数 / 贵金属 / 其他商品 / 利率债…） === -->
+        <template v-else>
+          <div v-if="macroLoading" class="m-card m-skel-fill">
+            <div v-for="i in 8" :key="i" class="m-skel-row"></div>
+          </div>
+          <div v-else-if="macroError || macroGroups.length === 0" class="m-state">
+            宏观数据加载失败
+            <span class="retry" @click="loadModule('macro', true)">重试</span>
+          </div>
+          <template v-else>
+            <template v-for="group in macroGroups" :key="group.label">
+              <div class="m-sec"><span class="m-sec__t">{{ group.label }}</span></div>
+              <div class="m-card">
+                <div v-for="it in group.items" :key="it.name" class="m-row">
+                  <span class="m-row__nm">{{ it.name }}</span>
+                  <span class="m-row__pct" :class="pctClass(it.changePercent)">
+                    {{ fmtPct(it.changePercent) }}
+                  </span>
+                </div>
+              </div>
+            </template>
           </template>
         </template>
       </van-pull-refresh>

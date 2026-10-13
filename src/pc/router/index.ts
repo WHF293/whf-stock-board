@@ -6,6 +6,7 @@ import { LAYOUT_ROUTE_NAME, NOT_FOUND_ROUTE_NAME, ROUTE_PATH, MENU_ITEMS } from 
 import DashboardView from '../views/DashboardView.vue';
 import WatchlistView from '../views/WatchlistView.vue';
 import PanoramaView from '../views/PanoramaView.vue';
+import BoardFlowView from '../views/BoardFlowView.vue';
 import BoardCalendarView from '../views/BoardCalendarView.vue';
 import BoardCalendarDetailView from '../views/BoardCalendarDetailView.vue';
 import HotNewsView from '../views/HotNewsView.vue';
@@ -13,6 +14,7 @@ import HotBoardView from '../views/HotBoardView.vue';
 import StockAccountView from '../views/StockAccountView.vue';
 import AgentAnalysisView from '../views/AgentAnalysisView.vue';
 import MarketRankView from '../views/MarketRankView.vue';
+import StockMarketView from '../views/StockMarketView.vue';
 import SectorFlowHistoryView from '../views/SectorFlowHistoryView.vue';
 import StockDetailView from '../views/StockDetailView.vue';
 import SystemLogView from '../views/SystemLogView.vue';
@@ -58,6 +60,12 @@ const routes = [
         component: PanoramaView,
         meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.PANORAMA] },
       },
+      // 板块资金流向：原「行情全景-最新板块资金」独立成页（2026-10-13）
+      {
+        path: ROUTE_PATH.BOARD_FLOW,
+        component: BoardFlowView,
+        meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.BOARD_FLOW] },
+      },
       {
         path: ROUTE_PATH.BOARD_CALENDAR,
         component: BoardCalendarView,
@@ -76,6 +84,12 @@ const routes = [
         path: ROUTE_PATH.MARKET_RANK,
         component: MarketRankView,
         meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.MARKET_RANK] },
+      },
+      // 个股行情：全市场列表（同花顺行情中心同源，服务端排序 + 翻页）
+      {
+        path: ROUTE_PATH.STOCK_MARKET,
+        component: StockMarketView,
+        meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.STOCK_MARKET] },
       },
       // 选股器已改为插件分发（dsh-stock-screener，路径 /screener 由插件注册）；
       // 未安装插件时旧路径由 404 兜底页承接
