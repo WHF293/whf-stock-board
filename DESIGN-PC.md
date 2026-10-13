@@ -215,7 +215,7 @@ class 策略（`<html class="dark">`），`@custom-variant dark`。覆盖 canvas
 
 - 卡片阴影 `{shadow.card}`：`0 1px 3px rgb(31 39 51 / 0.06), 0 4px 16px rgb(31 39 51 / 0.06)`；暗色下改为 `0 1px 3px rgb(0 0 0 / 0.4)`
 - 无边框线、无分层面板阶梯——深度仅靠阴影与底色差表达
-- 装饰性深度：报价变动的 weak 色底闪烁动画（600ms ease-out 淡出）、NProgress 主色顶部进度条（3px）
+- 装饰性深度：报价变动的 weak 色底闪烁动画（600ms ease-out 淡出）
 
 ## Shapes
 

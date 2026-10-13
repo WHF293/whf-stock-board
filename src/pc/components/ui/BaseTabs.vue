@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
+import { useSlidingThumb } from "../../../common/composables/use-sliding-thumb";
 
 /**
  * 标签页组件：v-model 选中值，选项驱动渲染
  *
- * - segmented（默认）：胶囊式分段控件（bg-flat-weak 容器 + 淡主色选中态）
+ * - segmented（默认）：胶囊式分段控件（bg-flat-weak 容器 + 滑动玻璃气泡选中态——
+ *   选中态玻璃质感挂在组内共享 thumb 层上，切换时气泡按移动端 TabBar 同款动画滑到新项，
+ *   规格见 common/constants/sliding-thumb.constants.ts）
  * - underline：antd Tabs 风格（透明容器 + 底部下划线指示器 + 主色文字）
  */
 const props = withDefaults(
@@ -19,6 +22,28 @@ const props = withDefaults(
 
 const model = defineModel<string>({ required: true });
 
+/** segmented 容器（滑动气泡的定位父级） */
+const containerRef = ref<HTMLElement | null>(null);
+
+/** 激活项序号（驱动气泡位移；未匹配 = -1 气泡隐藏） */
+const activeIndex = computed(() =>
+  props.options.findIndex((option) => option.value === model.value),
+);
+
+const { thumbStyle, measure } = useSlidingThumb({
+  container: containerRef,
+  activeIndex,
+});
+
+// 选项列表变化（增删项）后重量取气泡几何
+watch(
+  () => props.options,
+  () => {
+    void nextTick(measure);
+  },
+  { flush: "post" },
+);
+
 /** 容器类名 */
 const containerClass = computed(() => {
   if (props.variant === "underline") {
@@ -26,7 +51,8 @@ const containerClass = computed(() => {
     // 父容器放不下所有子项时横向滚动
     return "flex overflow-y-hidden overflow-x-auto border-b border-flat-weak [scrollbar-width:thin]";
   }
-  return "inline-flex max-w-full items-center gap-0.5 overflow-y-hidden overflow-x-auto rounded-lg bg-flat-weak p-0.5 [scrollbar-width:none]";
+  // relative：滑动气泡（absolute）的定位父级
+  return "relative inline-flex max-w-full items-center gap-0.5 overflow-y-hidden overflow-x-auto rounded-lg bg-flat-weak p-0.5 [scrollbar-width:none]";
 });
 
 /**
@@ -46,17 +72,22 @@ const tabClass = (active: boolean): string[] => {
     ];
   }
   return [
-    "pressable shrink-0 whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-medium active:scale-95",
-    active
-      ? // 选中态：高光玻璃气泡（theme.css .pc-nav-bubble，与侧栏选中项同源质感）
-        "pc-nav-bubble text-primary"
-      : "text-text-secondary hover:text-text",
+    // relative：让按钮叠在气泡层之上（气泡是 positioned 元素，按钮不抬层会被盖住）；
+    // 选中态只留文字色，玻璃底由组内共享滑动气泡提供
+    "pressable relative shrink-0 whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-medium active:scale-95",
+    active ? "text-primary" : "text-text-secondary hover:text-text",
   ];
 };
 </script>
 
 <template>
-  <div :class="containerClass" role="tablist">
+  <div ref="containerRef" :class="containerClass" role="tablist">
+    <!-- 滑动玻璃气泡：选中态底座，切换时按移动端同款动画滑到新项 -->
+    <span
+      v-if="variant === 'segmented' && thumbStyle"
+      class="pc-nav-bubble pointer-events-none absolute left-0 top-0 z-0 rounded-md"
+      :style="thumbStyle"
+    ></span>
     <button
       v-for="option in options"
       :key="option.value"

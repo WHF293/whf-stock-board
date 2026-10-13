@@ -1,7 +1,7 @@
 {
   "name": "whf-stock-board",
   "private": true,
-  "version": "4.8.0",
+  "version": "4.9.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -38,7 +38,6 @@
     "klinecharts": "^10.0.3",
     "langchain": "^1.5.11",
     "markdown-it": "^15.0.2",
-    "nprogress": "^0.2.0",
     "pinia": "^4.0.3",
     "pinia-plugin-persistedstate": "^4.7.1",
     "stock-sdk": "^2.4.3",
@@ -55,7 +54,6 @@
     "@tauri-apps/cli": "^2.11.4",
     "@types/markdown-it": "^14.2.0",
     "@types/node": "^24.13.3",
-    "@types/nprogress": "^0.2.3",
     "@vitejs/plugin-vue": "^6.0.8",
     "@vue/tsconfig": "^0.9.1",
     "eslint": "^10.10.0",

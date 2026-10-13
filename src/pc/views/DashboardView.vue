@@ -709,12 +709,6 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
     >
       <template #extra>
         <div class="flex items-center gap-2">
-          <!-- 量纲口径：仅图表视图展示（实时成交额 / 历史成交量 / 相对成交量，2026-10-13 并入实时成交额子功能） -->
-          <BaseTabs
-            v-if="turnoverViewMode === VIEW_MODE.CHART"
-            v-model="turnoverChartMetric"
-            :options="TURNOVER_CHART_METRIC_OPTIONS"
-          />
           <!-- 交易日窗口：仅历史口径（历史/相对成交量）有意义，实时成交额视图下隐藏 -->
           <BaseTabs
             v-if="turnoverViewMode === VIEW_MODE.CHART && turnoverChartMetric !== TURNOVER_CHART_METRIC.REALTIME"
@@ -726,6 +720,12 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
             v-if="turnoverChartMetric !== TURNOVER_CHART_METRIC.REALTIME"
             v-model="turnoverViewMode"
             :options="VIEW_MODE_OPTIONS"
+          />
+          <!-- 量纲口径：仅图表视图展示（实时成交额 / 历史成交量 / 相对成交量，2026-10-13 并入实时成交额子功能） -->
+          <BaseTabs
+            v-if="turnoverViewMode === VIEW_MODE.CHART"
+            v-model="turnoverChartMetric"
+            :options="TURNOVER_CHART_METRIC_OPTIONS"
           />
         </div>
       </template>
