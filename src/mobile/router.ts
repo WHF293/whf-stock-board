@@ -13,6 +13,7 @@ import MobilePanorama from './views/MobilePanorama.vue';
 import MobileSearch from './views/MobileSearch.vue';
 import MobileSettings from './views/MobileSettings.vue';
 import MobileStockDetail from './views/MobileStockDetail.vue';
+import MobileStockMarket from './views/MobileStockMarket.vue';
 import MobileTheme from './views/MobileTheme.vue';
 import MobileWatchlist from './views/MobileWatchlist.vue';
 
@@ -62,6 +63,8 @@ export const mobileRouter = createRouter({
     { path: '/bull-review', name: 'bull-review', component: MobileBullReview },
     // 新股次新股（v4.5.2 自行情全景拆出的独立二级页，入口在首页金刚区）
     { path: '/ipo', name: 'ipo', component: MobileIpoBoard },
+    // 个股行情（2026-10-13 新增二级页，入口在首页金刚区；PC /stock-market 同源移动版）
+    { path: '/stock-market', name: 'stock-market', component: MobileStockMarket },
     // /board-calendar 列表矩阵；/board-calendar/:code 板块详情矩阵
     { path: '/board-calendar/:code?', name: 'board-calendar', component: MobileBoardCalendar },
     // 个股 K 线详情：全站股票行点击统一落点（code 为完整符号，如 sh600519）

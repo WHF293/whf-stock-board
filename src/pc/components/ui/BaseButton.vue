@@ -3,6 +3,9 @@ import { computed } from 'vue';
 
 /**
  * 基础按钮：主色 / 幽灵 / 危险三种变体
+ *
+ * 2026-10-13 王总：三种变体统一改高光玻璃底（.pc-nav-bubble，含斜向光带 + 内高光 +
+ * 磨砂），语义差异靠描边色 + 文字色区分——主色绿描边、危险红描边、幽灵无着色
  */
 const props = withDefaults(
   defineProps<{
@@ -21,11 +24,11 @@ const props = withDefaults(
   { variant: 'primary', disabled: false, type: 'button' },
 );
 
-/** 变体 -> 样式类名 */
+/** 变体 -> 样式类名（玻璃底统一，语义色走描边 + 文字） */
 const VARIANT_CLASS = {
-  primary: 'bg-primary text-on-primary hover:opacity-90',
-  ghost: 'bg-flat-weak text-text hover:bg-flat-weak/70',
-  danger: 'bg-up-weak text-up hover:opacity-80',
+  primary: 'pc-nav-bubble pc-nav-bubble--primary text-primary',
+  ghost: 'pc-nav-bubble text-text',
+  danger: 'pc-nav-bubble pc-nav-bubble--danger text-up',
 } as const;
 
 const variantClass = computed(() => VARIANT_CLASS[props.variant]);
@@ -35,7 +38,7 @@ const variantClass = computed(() => VARIANT_CLASS[props.variant]);
   <button
     :type="type"
     :disabled="disabled"
-    class="pressable inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+    class="pressable inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition-transform duration-150 hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
     :class="variantClass"
   >
     <slot />
