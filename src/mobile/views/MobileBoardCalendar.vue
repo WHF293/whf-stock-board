@@ -13,6 +13,7 @@ import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import {
   BOARD_CALENDAR_RANGE,
+  BOARD_CALENDAR_RANGE_DEFAULT,
   BOARD_CALENDAR_RANGE_OPTIONS,
   BOARD_DATA_LEVEL,
   CALENDAR_BOARDS,
@@ -68,7 +69,7 @@ const loadTradingDates = async (): Promise<boolean> => {
 };
 
 /* === 列表模式：板块×日 矩阵 === */
-const range = ref<string>(BOARD_CALENDAR_RANGE.D10);
+const range = ref<string>(BOARD_CALENDAR_RANGE_DEFAULT);
 const matrixRows = ref<BoardDailyRow[]>([]);
 const matrixLoading = ref(false);
 const matrixError = ref(false);

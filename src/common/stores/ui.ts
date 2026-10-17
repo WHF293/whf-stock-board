@@ -9,10 +9,10 @@ interface UiState {
 /**
  * 应用级 UI 杂项状态（会话级，一律不持久化）
  *
- * 当前只承载「页面全屏」：个股详情页 K 线卡头部的全屏按钮置位后，
- * MainLayout 隐藏侧栏与页内页头、详情页隐藏底部页签并拉伸主区，
- * 让应用窗口只剩详情页本体（王总 2026-10-17）。
- * 路由切换时由 MainLayout 兜底复位，Esc 亦可退出。
+ * 当前只承载「页面全屏」：入口在应用顶栏（TitleBar #tools / 浏览器端页内页头，
+ * 王总 2026-10-17 指定全局入口，任意页面可用）——置位后 MainLayout 隐藏侧栏、
+ * 页内页头与停靠面板，页面根由 .pc-page-fs 全局规则拉伸撑满（详情页另有
+ * 分模式高度响应）。路由切换时由 MainLayout 兜底复位，Esc 亦可退出。
  */
 export const useUiStore = defineStore('ui', {
   state: (): UiState => ({

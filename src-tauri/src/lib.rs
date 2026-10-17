@@ -815,6 +815,46 @@ fn stock_board_db_migrations() -> Vec<Migration> {
   ]
 }
 
+/// 大盘云图（dapanyuntu.com）iframe 主题跟随注入脚本
+///
+/// 经 `initialization_script_for_all_frames` 注入：会在主窗口**所有 frame**
+/// （含跨域 iframe）的每个 document 创建时、页面自身脚本执行前运行，
+/// 因此用 hostname 门控，只在第三方云图页面内生效。
+///
+/// 第三方主题机制（2026-10-13 抓取原站 HTML 查证）：Tailwind class 模式——
+/// `<html class="dark">` + `style.colorScheme`，持久化键为
+/// `localStorage["heatmap-display-mode"]`（无值或非 "light" 一律暗色）。
+///
+/// 同步协议（宿主 HeatmapView.vue 经 postMessage 发起，与 `heatmap.constants.ts`
+/// 的 `HEATMAP_THEME_MESSAGE_SOURCE` 约定一致，两端改动必须同步）：
+/// - iframe → 宿主 `{ source, type: 'heatmap-theme-ready' }`：脚本就绪，宿主收到即回发当前主题
+///   （早于 iframe load 完成首次同步，减少明暗闪烁）；
+/// - 宿主 → iframe `{ source, type: 'heatmap-theme', dark: boolean }`：应用主题并写入
+///   localStorage，使原站自身 theme-init / 后续导航读到与宿主一致的值。
+///
+/// 纯浏览器 dev / 移动端不注入（无此机制），宿主侧 postMessage 无接收方、静默失效。
+const HEATMAP_THEME_INIT_SCRIPT: &str = r#"
+(function () {
+  if (!/(^|\.)dapanyuntu\.com$/.test(location.hostname)) return;
+  var SITE_SOURCE = 'whf-stock-board';
+  var applyTheme = function (isDark) {
+    document.documentElement.classList.toggle('dark', isDark);
+    document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
+    try {
+      localStorage.setItem('heatmap-display-mode', isDark ? 'dark' : 'light');
+    } catch (e) { /* 隐私模式等场景写不进则仅本次会话生效 */ }
+  };
+  window.addEventListener('message', function (event) {
+    var data = event.data;
+    if (!data || data.source !== SITE_SOURCE || data.type !== 'heatmap-theme') return;
+    applyTheme(!!data.dark);
+  });
+  try {
+    window.parent.postMessage({ source: SITE_SOURCE, type: 'heatmap-theme-ready' }, '*');
+  } catch (e) { /* 顶层 frame 场景不存在，防御性忽略 */ }
+})();
+"#;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   let builder = tauri::Builder::default()
@@ -864,12 +904,24 @@ pub fn run() {
             .build(),
         )?;
       }
+      // 主窗口改为 Rust 侧构建（tauri.conf.json 声明 create:false）：只有构建期
+      // 才能挂 initialization_script_for_all_frames——这是跨域 iframe（大盘云图页）
+      // 内执行脚本的唯一通道，用于把宿主明暗主题同步给第三方站点。
+      // 窗口几何 / 装饰等仍以 tauri.conf.json 为唯一事实源（from_config 原样取用）。
+      let window_config = app
+        .config()
+        .app
+        .windows
+        .first()
+        .cloned()
+        .expect("tauri.conf.json 缺少主窗口配置");
+      let main_window = tauri::WebviewWindowBuilder::from_config(app.handle(), &window_config)?
+        .initialization_script_for_all_frames(HEATMAP_THEME_INIT_SCRIPT)
+        .build()?;
       // 无边框主窗口补系统命令支持：decorations:false 后触控板三指手势投递的
       // WM_SYSCOMMAND（最大化 / 最小化）无人处理，见 window_syscmd.rs。
       // Agent 窗口是原生边框，系统自带处理，无需启用。
-      if let Some(main_window) = app.get_webview_window("main") {
-        window_syscmd::enable(&main_window);
-      }
+      window_syscmd::enable(&main_window);
       // 系统托盘：左键唤起主窗口，右键菜单「显示主窗口 / 退出」（桌面专属）
       #[cfg(desktop)]
       build_tray(app)?;

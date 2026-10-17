@@ -375,3 +375,54 @@ export interface BoardSyncResult {
   /** 失败信息（null 表示无失败） */
   error: string | null;
 }
+
+/* -------------------------- 手动获取 / 刷新（表头弹窗） -------------------------- */
+
+/**
+ * 手动获取弹窗的单日状态：
+ * ok = 已取到数据（待应用写入）；empty = 上游无该日（回溯窗口边界）；
+ * failed = 探测失败（可重试）
+ */
+export type BoardFetchDayStatus = 'ok' | 'empty' | 'failed';
+
+/**
+ * 手动获取 / 刷新弹窗的单日结果（内存形态，点「应用」才落库）
+ */
+export interface BoardFetchDayResult {
+  /** 交易日（`YYYY-MM-DD`） */
+  tradeDate: string;
+  /** 单日状态 */
+  status: BoardFetchDayStatus;
+  /** 该日全市场涨停家数（ok / empty 时有效） */
+  limitUpCnt: number;
+  /** 该日全市场跌停家数（ok / empty 时有效） */
+  limitDownCnt: number;
+  /** 板块日聚合行（仅 ok 非空） */
+  rows: BoardDailyRow[];
+  /** 涨跌停个股明细（仅 ok 非空） */
+  limitRows: BoardLimitStock[];
+  /** 采集台账（仅 ok 非空） */
+  meta: BoardCalendarMeta | null;
+  /** 板块档案（仅当日快照刷新时非空） */
+  profiles: BoardProfile[];
+  /** 展示用补充说明（失败原因 / 跳过原因 / 定稿提示） */
+  message: string;
+}
+
+/**
+ * 手动获取 / 刷新弹窗的一次采集结果（全部为内存数据，不落库）
+ */
+export interface BoardManualFetchResult {
+  /** fetch = 回补缺失交易日；refresh = 强制重采当日快照 */
+  mode: 'fetch' | 'refresh';
+  /** 单日结果（采集层不保证顺序，展示层自行排序） */
+  days: BoardFetchDayResult[];
+  /** 本次探明到的回溯窗口边界（仅 fetch 模式可能非 null；点「应用」时落库） */
+  boundaryDate: string | null;
+  /** fetch 模式：交易日轴上库内缺失的交易日总数（含边界之后未逐日列出的） */
+  missingTotal: number;
+  /** fetch 模式：位于边界之后、未逐日列出的缺失日数（必然超出回溯窗口） */
+  beyondBoundaryCount: number;
+  /** 致命错误（连第一步都没走通）；单日失败不在这里，在 days[].message */
+  error: string | null;
+}

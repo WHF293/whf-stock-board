@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import BoardCalendarGrid from '../components/business/BoardCalendarGrid.vue';
 import BoardCellDetailModal from '../components/business/BoardCellDetailModal.vue';
+import BoardDataSyncMenu from '../components/business/BoardDataSyncMenu.vue';
 import BoardFilterModal from '../components/business/BoardFilterModal.vue';
 import BoardMainlinePanel from '../components/business/BoardMainlinePanel.vue';
 import BoardProfitBubblePanel from '../components/business/BoardProfitBubblePanel.vue';
@@ -456,6 +457,15 @@ const onForceRefresh = async (): Promise<void> => {
 };
 
 /**
+ * 表头「获取 / 刷新板块数据」弹窗点「应用」后：数据已落库，重读本地库刷新表格
+ *
+ * 刻意传 `false`：交易日轴未变化（采集层只加了日数据），强制重拉只会白打一次腾讯日 K。
+ */
+const onSyncApplied = (): void => {
+  void refresh(false);
+};
+
+/**
  * 打开单元格详情弹窗
  * @param row 行
  * @param cell 单元格
@@ -502,9 +512,20 @@ const onConfirmFilter = (selection: BoardColumnSelection): void => {
 const NOTICE_TEXT =
   '单元格得分 = 涨停×10 + 跌停×-10 + 净上涨×5 + 净下跌×-5（净额口径：涨停 / 跌停不重复计入上涨 / 下跌）。' +
   '背景色按「得分率 = 得分 ÷ 成分股数」取 7 档涨跌语义色：越亮赚钱效应越强，越暗越弱；颜色随涨跌配色主题变化。' +
-  '盘中为快照，15:00 后定稿。带 ⓘ 的格子是历史回补：板块级涨跌家数没有历史接口，只有涨跌停数据，故不带背景色；' +
+  '盘中为快照，15:00 后定稿。右上角带三角标记的格子是历史回补：板块级涨跌家数没有历史接口，' +
+  '只有涨跌停数据（该日没开软件时由涨跌停池回补），故不带背景色、涨跌停数字照常可点开明细；' +
   '从本版本起每个交易日都以完整快照入库，可视范围内的历史色阶会随时间自然补齐。' +
   '点击左侧板块名称可进入板块详情（该板块成分股 × 交易日的涨跌幅矩阵）。';
+
+/**
+ * 图例中「历史回补」三角标记的示意样式（与 BoardCalendarGrid 的 .bc-backfill-mark 同款）
+ */
+const BACKFILL_MARK_STYLE: Record<string, string> = {
+  borderTop: '10px solid var(--color-text-tertiary)',
+  borderLeft: '10px solid transparent',
+  borderTopRightRadius: '2px',
+  opacity: '0.65',
+};
 
 /**
  * 图例色块样式（背景取档位色，随主题级联自动变化）
@@ -528,34 +549,9 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
         </span>
       </BaseButton>
     </Teleport>
-    <!-- 控制条：热门口径 / 范围 / 刷新（内容高固定，剩余高度全部留给矩阵） -->
-    <div class="flex shrink-0 flex-wrap items-center justify-between gap-2">
-      <div class="flex flex-wrap items-center gap-2">
-        <BaseTabs
-          :model-value="settingsStore.boardCalendarHeatBasis"
-          :options="BOARD_CALENDAR_HEAT_OPTIONS"
-          @update:model-value="settingsStore.setBoardCalendarHeatBasis($event as never)"
-        />
-        <BaseTabs
-          :model-value="settingsStore.boardCalendarRange"
-          :options="BOARD_CALENDAR_RANGE_OPTIONS"
-          @update:model-value="settingsStore.setBoardCalendarRange($event as never)"
-        />
-        <BaseTabs
-          :model-value="calendarView"
-          :options="BOARD_CALENDAR_VIEW_OPTIONS"
-          @update:model-value="calendarView = $event as BoardCalendarViewMode"
-        />
-        <button
-          v-if="hasCustomOrder"
-          type="button"
-          class="pressable rounded-lg px-1.5 py-1 text-xs text-primary hover:underline"
-          title="清除自定义行序，回到按热门口径自动排序"
-          @click="settingsStore.resetBoardCalendarColumns()"
-        >
-          恢复热门排序
-        </button>
-      </div>
+    <!-- 视图页签行（参考行情全景：underline 页签独立成行，右侧状态与刷新） -->
+    <div class="flex shrink-0 items-center justify-between gap-2">
+      <BaseTabs v-model="calendarView" :options="BOARD_CALENDAR_VIEW_OPTIONS" variant="underline" />
       <div class="flex items-center gap-2">
         <span class="text-xs text-text-tertiary">
           <template v-if="lastUpdatedAt">更新于 {{ formatRelativeTime(lastUpdatedAt) }} · </template>
@@ -566,6 +562,29 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
           {{ isForcing ? '采集中…' : '刷新' }}
         </BaseButton>
       </div>
+    </div>
+
+    <!-- 控制条：热门口径 / 范围 / 恢复排序（内容高固定，剩余高度全部留给矩阵） -->
+    <div class="flex shrink-0 flex-wrap items-center gap-2">
+      <BaseTabs
+        :model-value="settingsStore.boardCalendarHeatBasis"
+        :options="BOARD_CALENDAR_HEAT_OPTIONS"
+        @update:model-value="settingsStore.setBoardCalendarHeatBasis($event as never)"
+      />
+      <BaseTabs
+        :model-value="settingsStore.boardCalendarRange"
+        :options="BOARD_CALENDAR_RANGE_OPTIONS"
+        @update:model-value="settingsStore.setBoardCalendarRange($event as never)"
+      />
+      <button
+        v-if="hasCustomOrder"
+        type="button"
+        class="pressable rounded-lg px-1.5 py-1 text-xs text-primary hover:underline"
+        title="清除自定义行序，回到按热门口径自动排序"
+        @click="settingsStore.resetBoardCalendarColumns()"
+      >
+        恢复热门排序
+      </button>
     </div>
 
     <NoticeBar :text="NOTICE_TEXT" />
@@ -584,24 +603,35 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
       class="min-h-0 flex-1"
       :title="`板块日历 · 板块 ${matrix.rows.length}/${CALENDAR_BOARDS.length} 个 · 覆盖 ${coveredDateCount} 个交易日`"
     >
-      <!-- 图例 -->
+      <!-- 图例 + 表头数据维护入口（获取 / 刷新板块数据） -->
       <template #extra>
-        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-text-tertiary">
-          <span
-            v-for="item in BOARD_SCORE_LEGEND"
-            :key="item.bucket"
-            class="flex items-center gap-1"
-          >
-            <i
-              class="inline-block h-3 w-3 rounded-sm"
-              :style="legendSwatchStyle(item.bucket)"
-            />
-            {{ item.label }} {{ item.hint }}
-          </span>
-          <span class="flex items-center gap-1">
-            <i class="inline-block h-3 w-3 rounded-sm border border-dashed border-flat-weak" />
-            无数据
-          </span>
+        <div class="flex items-center gap-3">
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-text-tertiary">
+            <span
+              v-for="item in BOARD_SCORE_LEGEND"
+              :key="item.bucket"
+              class="flex items-center gap-1"
+            >
+              <i
+                class="inline-block h-3 w-3 rounded-sm"
+                :style="legendSwatchStyle(item.bucket)"
+              />
+              {{ item.label }} {{ item.hint }}
+            </span>
+            <span class="flex items-center gap-1">
+              <i
+                class="inline-block h-0 w-0"
+                :style="BACKFILL_MARK_STYLE"
+              />
+              历史回补（缺涨跌家数）
+            </span>
+            <span class="flex items-center gap-1">
+              <i class="inline-block h-3 w-3 rounded-sm border border-dashed border-flat-weak" />
+              无数据
+            </span>
+          </div>
+          <!-- 应用 = 采集数据已写入本地库，重读即可（交易日轴未变，无需强制重拉） -->
+          <BoardDataSyncMenu @applied="onSyncApplied" />
         </div>
       </template>
 

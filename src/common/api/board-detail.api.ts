@@ -10,6 +10,7 @@ import {
 } from '../constants/board-detail.constants.ts';
 import type { BoardConstituent } from '../types/board-calendar.types.ts';
 import type {
+  BoardConstituentDayStats,
   BoardDetailLoadResult,
   BoardDetailRow,
   DailyCloseBar,
@@ -73,8 +74,11 @@ const fetchTencentDailyBars = async (
   for (const row of rows) {
     const tradeDate = row[0];
     const close = Number(row[2]);
+    // 成交额在下标 8（万元）：仅聚合补历史链路用，缺失/非法按 undefined（聚合侧计 0）
+    const amountRaw = Number(row[8]);
+    const amount = Number.isFinite(amountRaw) && amountRaw > 0 ? amountRaw * 10_000 : undefined;
     if (typeof tradeDate === 'string' && tradeDate.length === 10 && Number.isFinite(close) && close > 0) {
-      bars.push({ tradeDate, close });
+      bars.push({ tradeDate, close, amount });
     }
   }
   return bars;
@@ -257,4 +261,84 @@ export const loadBoardDetailMatrix = async (
     failed,
     source,
   };
+};
+
+/**
+ * 按「个股 → 板块」聚合出某板块在指定交易日的涨跌家数与成交额（日 K 推导）
+ *
+ * 板块日历补历史链路专用（板块级涨跌家数无历史接口，只能从成分股日 K 聚合）。
+ * 单票序列会话内缓存共享（{@link getDailyBars}），因此「补 1 天」与「补多天」
+ * 的请求量相同——一次 140 根的序列覆盖窗口内全部选中日。
+ * @param boardCode 板块代码（BKxxxx）
+ * @param dates 需要统计的交易日（**降序**，与详情矩阵列序一致）
+ * @param onProgress 进度回调（每完成一只票一次）
+ * @param signal 中断信号
+ * @returns 交易日 → 聚合统计（该日整板块无行情的票不计入；缺日期不在 Map 中）
+ * @throws Error 成分股取不到、或取数被 abort 时抛出
+ */
+export const loadBoardConstituentDayStats = async (
+  boardCode: string,
+  dates: string[],
+  onProgress?: (completed: number, total: number) => void,
+  signal?: AbortSignal,
+): Promise<Map<string, BoardConstituentDayStats>> => {
+  const statsByDate = new Map<string, BoardConstituentDayStats>();
+  if (dates.length === 0) {
+    return statsByDate;
+  }
+  const { items } = await loadConstituents(boardCode);
+  const targets = items.slice(0, BOARD_DETAIL_MAX_CONSTITUENTS);
+  const latestDate = dates[0];
+
+  await mapWithConcurrency(
+    targets,
+    async (item): Promise<void> => {
+      const fullSymbol = normalizeAShareCode(item.symbol);
+      // 单票失败只跳过该票（与详情矩阵同一容错口径），不让整板块失败
+      const bars = await getDailyBars(fullSymbol, latestDate).catch(() => []);
+      if (bars.length === 0) {
+        return;
+      }
+      const indexByDate = new Map<string, number>();
+      bars.forEach((bar, index) => {
+        indexByDate.set(bar.tradeDate, index);
+      });
+      for (const date of dates) {
+        const index = indexByDate.get(date);
+        // 无该日 bar 或无前一根（新上市 / 停牌缺口的首日）→ 该票该日不计
+        if (index === undefined || index === 0) {
+          continue;
+        }
+        const prev = bars[index - 1].close;
+        const close = bars[index].close;
+        if (prev <= 0) {
+          continue;
+        }
+        const change = (close / prev - 1) * 100;
+        const stats = statsByDate.get(date) ?? {
+          upCount: 0,
+          downCount: 0,
+          flatCount: 0,
+          consCount: 0,
+          amount: 0,
+        };
+        if (change > 0) {
+          stats.upCount += 1;
+        } else if (change < 0) {
+          stats.downCount += 1;
+        } else {
+          stats.flatCount += 1;
+        }
+        stats.consCount += 1;
+        stats.amount += bars[index].amount ?? 0;
+        statsByDate.set(date, stats);
+      }
+    },
+    {
+      concurrency: BOARD_DETAIL_CONCURRENCY,
+      signal,
+      onProgress,
+    },
+  );
+  return statsByDate;
 };
