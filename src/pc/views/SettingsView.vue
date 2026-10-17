@@ -5,6 +5,7 @@ import { VueDraggable } from "vue-draggable-plus";
 import BaseButton from "../components/ui/BaseButton.vue";
 import BaseCard from "../components/ui/BaseCard.vue";
 import BaseConfirmModal from "../components/ui/BaseConfirmModal.vue";
+import BaseInput from "../components/ui/BaseInput.vue";
 import BaseSwitch from "../components/ui/BaseSwitch.vue";
 import BaseTable from "../components/ui/BaseTable.vue";
 import BaseTabs from "../components/ui/BaseTabs.vue";
@@ -1015,6 +1016,23 @@ const onProbeProxy = async (): Promise<void> => {
         >
           打开
         </BaseButton>
+      </div>
+      <!-- 更新代理：打包版对系统代理跟随不稳定（cc-switch 同款方案），显式给 GitHub 请求配代理 -->
+      <div class="mb-4 border-t border-flat-weak pt-4">
+        <div class="flex items-center justify-between gap-4">
+          <div class="min-w-0">
+            <p class="text-sm text-text">更新代理</p>
+            <p class="mt-0.5 text-xs leading-relaxed text-text-tertiary">
+              检查 / 下载应用与插件更新时走的代理地址（如 http://127.0.0.1:7890）；留空 = 直连。打包版偶发不跟随系统代理，此处显式指定即可
+            </p>
+          </div>
+        </div>
+        <BaseInput
+          v-model="settingsStore.updateProxyUrl"
+          class="mt-2"
+          placeholder="http://127.0.0.1:7890（留空 = 直连）"
+          @change="settingsStore.setUpdateProxyUrl(settingsStore.updateProxyUrl)"
+        />
       </div>
       <div class="flex items-center justify-between gap-4">
         <div class="min-w-0">

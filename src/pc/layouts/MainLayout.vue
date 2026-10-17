@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { useIntervalFn } from "@vueuse/core";
+import { isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useDesktopChrome } from "../../common/composables/use-desktop-chrome";
@@ -26,7 +28,9 @@ import { matchesCommandKeys, parseCommandKeys } from "../plugin/command-keys";
 import { useTheme } from "../../common/composables/use-theme";
 import { useSlidingThumb } from "../../common/composables/use-sliding-thumb";
 import { MARKET_STATUS_REFRESH_INTERVAL_MS } from "../../common/constants/polling.constants.ts";
-import { HOST_HEADER_ITEM, HOST_HEADER_ITEMS } from "../../common/constants/header.constants.ts";
+import { HOST_HEADER_ITEM, HOST_HEADER_ITEMS, HEADER_PLUGIN_LEAD_KEY } from "../../common/constants/header.constants.ts";
+import { WATCH_WIDGET_EVENTS } from "../plugins/watch-widget/constants.ts";
+import { openInNewWindow } from "../../common/utils/open-in-new-window";
 import { MENU_ITEMS, ROUTE_PATH } from "../../common/constants/router-meta.constants.ts";
 import { SITE_URL } from "../../common/constants/app-info.constants.ts";
 import { openAgentAnalysisWindow } from "../../common/utils/agent-window";
@@ -36,6 +40,7 @@ import { useMarketStatusStore } from "../../common/stores/market-status";
 import { useSettingsStore } from "../../common/stores/settings";
 import { trackAction } from "../weblog/weblogActions";
 import type { SearchResult } from "../../common/types/stock-quote.types.ts";
+import type { WatchWidgetOpenUrlPayload } from "../../common/types/watch-widget.types.ts";
 import type { HeaderRenderItem } from "../../common/types/header.types.ts";
 import type { ParsedCommandKeys } from "../plugin/command-keys";
 import type { SidebarMenuEntry } from "../../common/utils/order-sidebar-menu";
@@ -276,6 +281,11 @@ const headerItems = computed<HeaderRenderItem[]>(() => {
   for (const item of all) {
     if (byKey.has(item.key)) ordered.push(item);
   }
+  // 盯盘轮播恒置首位（王总 2026-10-16 指定移到其他 icon 前面）：与 TitleBar
+  // 「Agent 分析恒置末位」同一套兜底思路，渲染时显式提前，不受用户编排影响；
+  // 插件被禁用 / 卸载时找不到该键，等于无操作
+  const leadIndex = ordered.findIndex((item) => item.id === HEADER_PLUGIN_LEAD_KEY);
+  if (leadIndex > 0) ordered.unshift(...ordered.splice(leadIndex, 1));
   return ordered;
 });
 
@@ -416,10 +426,23 @@ const onGlobalKeydown = (event: KeyboardEvent): void => {
 
 onMounted(() => {
   document.addEventListener("keydown", onGlobalKeydown, true);
+  // 盯盘小组件气泡「新闻原文」点击：气泡窗口 focusable:false 且无 shell 权限，
+  // 经 open-url 事件交主窗口用与热点新闻页一致的窗口逻辑打开（仅桌面端有气泡窗口）
+  if (isTauri()) {
+    void listen<WatchWidgetOpenUrlPayload>(WATCH_WIDGET_EVENTS.OPEN_URL, (event) => {
+      if (event.payload?.url) void openInNewWindow(event.payload.url);
+    }).then((unlisten) => {
+      unlistenOpenUrl = unlisten;
+    });
+  }
 });
+
+/** open-url 事件退订句柄（仅桌面端注册） */
+let unlistenOpenUrl: (() => void) | undefined;
 
 onBeforeUnmount(() => {
   document.removeEventListener("keydown", onGlobalKeydown, true);
+  unlistenOpenUrl?.();
 });
 
 /**

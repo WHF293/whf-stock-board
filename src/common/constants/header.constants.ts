@@ -42,6 +42,15 @@ export const HEADER_DEFAULT_ORDER: readonly string[] = HOST_HEADER_ITEMS.map(
 );
 
 /**
+ * 恒置顶栏首位的插件条目全局键（盯盘轮播，王总 2026-10-16 指定移到其他 icon 前面）
+ *
+ * 与 TitleBar 的「Agent 分析恒置末位」同一套兜底思路：渲染时显式提到最前，
+ * 不随 settings.headerOrder 的用户编排变化（编排弹窗里拖动它不生效）。
+ * 键形态是 `<pluginId>#<itemId>`；插件被禁用 / 卸载时渲染层自然找不到，等于无操作。
+ */
+export const HEADER_PLUGIN_LEAD_KEY = 'dsh-sidebar-watch#watch';
+
+/**
  * 轮播行语义色调 → 文本色类名
  *
  * 只有颜色走这个映射，其余外观（字号 / 截断 / 对齐）在 `HeaderItemHost.vue` 里统一 ——

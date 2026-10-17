@@ -121,6 +121,8 @@ interface SettingsState {
   launchAtStartup: boolean;
   /** 桌面端 · 任务栏盯盘小组件（三态电源 / 显示模式 / 拖动位置；浏览器模式无此行为） */
   watchWidget: WatchWidgetSettings;
+  /** 更新检查代理地址（如 http://127.0.0.1:7890；空 = 直连。应用更新与插件更新的 GitHub 请求共用） */
+  updateProxyUrl: string;
 }
 
 /**
@@ -158,6 +160,7 @@ export const useSettingsStore = defineStore('settings', {
     closeToTray: CLOSE_TO_TRAY_DEFAULT,
     launchAtStartup: LAUNCH_AT_STARTUP_DEFAULT,
     watchWidget: { ...WATCH_WIDGET_SETTINGS_DEFAULT },
+    updateProxyUrl: '',
   }),
 
   actions: {
@@ -427,6 +430,14 @@ export const useSettingsStore = defineStore('settings', {
   /** 标记初始设置引导已完成（无论用户点了「开始使用」还是直接关闭，都不再弹出） */
   completeSetup(): void {
     this.setupCompleted = true;
+  },
+
+  /**
+   * 设置更新检查代理地址
+   * @param url 代理地址（如 http://127.0.0.1:7890；空串 = 直连不走代理）
+   */
+  setUpdateProxyUrl(url: string): void {
+    this.updateProxyUrl = url.trim();
   },
 },
 

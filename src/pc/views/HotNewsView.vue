@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import { computed, onActivated, onMounted, ref, watch } from "vue";
-import { isTauri } from "@tauri-apps/api/core";
-import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openInNewWindow } from "../../common/utils/open-in-new-window";
 import BaseButton from "../components/ui/BaseButton.vue";
 import BaseCard from "../components/ui/BaseCard.vue";
 import BaseEmpty from "../components/ui/BaseEmpty.vue";
@@ -1327,65 +1325,6 @@ const SOURCE_LOGOS: Record<NewsSource, string> = {
   tdx: "/news-logos/tdx.ico",
 };
 
-/** 新闻原文窗口尺寸（居中弹出） */
-const NEWS_WINDOW_WIDTH = 1024;
-const NEWS_WINDOW_HEIGHT = 768;
-
-/**
- * 打开新闻原文：
- * - Tauri：新建独立 WebviewWindow 加载原文页（应用内 webview 容器），
- *   远程页面无 IPC 权限（capabilities 仅对 main 授予核心权限，
- *   news-* 窗口只保留原生关闭能力）；创建失败时回退系统默认浏览器；
- * - 浏览器：新开 900 x 300 小窗直接导航原文页——不使用 iframe，
- *   规避新闻站点的 X-Frame-Options / CSP 反框架限制（iframe 方案会白屏）
- * @param url 新闻原文链接
- */
-const openInNewWindow = async (url: string): Promise<void> => {
-  if (isTauri()) {
-    try {
-      // label 全局唯一且不能复用已销毁窗口的 label，用时间戳避免冲突
-      const label = `news-${Date.now()}`;
-      const win = new WebviewWindow(label, {
-        url,
-        title: "新闻",
-        width: NEWS_WINDOW_WIDTH,
-        height: NEWS_WINDOW_HEIGHT,
-        center: true,
-      });
-      // 创建失败（权限缺失 / label 冲突等）时回退系统浏览器
-      win.once("tauri://error", (event) => {
-        console.error("[hot-news] webview window", event);
-        void openUrl(url);
-      });
-      return;
-    } catch (error) {
-      console.error("[hot-news] webview window", error);
-      try {
-        await openUrl(url);
-      } catch (openError) {
-        console.error("[hot-news] opener", openError);
-      }
-      return;
-    }
-  }
-  // 浏览器：3:1 小窗（900 x 300）居中弹出
-  const BROWSER_WINDOW_WIDTH = 900;
-  const BROWSER_WINDOW_HEIGHT = Math.round(BROWSER_WINDOW_WIDTH / 3);
-  const left = Math.max(
-    0,
-    Math.round((window.screen.availWidth - BROWSER_WINDOW_WIDTH) / 2),
-  );
-  const top = Math.max(
-    0,
-    Math.round((window.screen.availHeight - BROWSER_WINDOW_HEIGHT) / 2),
-  );
-  const features =
-    `width=${BROWSER_WINDOW_WIDTH},height=${BROWSER_WINDOW_HEIGHT},left=${left},top=${top},` +
-    "menubar=no,toolbar=no,location=no,status=no";
-  if (!window.open(url, "_blank", features)) {
-    window.open(url, "_blank", "noopener");
-  }
-};
 
 /**
  * 时间展示
