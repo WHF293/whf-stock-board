@@ -127,6 +127,9 @@ const ICON_PATHS: Record<string, string> = {
   // 退出全屏：四角向内（页面全屏按钮的还原态）
   minimize:
     '<path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/>',
+  // 数据库（板块日历表头数据维护入口）：圆柱 + 两道分层线
+  database:
+    '<ellipse cx="12" cy="5.5" rx="8" ry="3"/><path d="M4 5.5v13c0 1.66 3.58 3 8 3s8-1.34 8-3v-13"/><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/>',
 };
 
 const props = withDefaults(

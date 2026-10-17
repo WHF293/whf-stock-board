@@ -3,6 +3,7 @@ import { HEATMAP_TOP_DEFAULT } from '../constants/index-symbols.constants.ts';
 import { HEATMAP_VIEW_MODE_DEFAULT } from '../constants/heatmap.constants.ts';
 import {
   BOARD_CALENDAR_HEAT_BASIS_DEFAULT,
+  BOARD_CALENDAR_RANGE,
   BOARD_CALENDAR_RANGE_DEFAULT,
 } from '../constants/board-calendar.constants.ts';
 import { BOARD_DETAIL_RANGE_DEFAULT } from '../constants/board-detail.constants.ts';
@@ -491,6 +492,11 @@ export const useSettingsStore = defineStore('settings', {
       }
       // 玻璃透明度坏数据回落：非法值会让 rgba() alpha 失效、玻璃变实心
       context.store.glassOpacity = normalizeGlassOpacity(context.store.glassOpacity);
+      // 板块日历展示范围缩编（10/20/60/180 → 15/30/全部，2026-10-17）：
+      // 旧持久化值不在新值集合时回落默认，否则 BaseTabs 无选中态、范围文案为空
+      if (!Object.values(BOARD_CALENDAR_RANGE).includes(context.store.boardCalendarRange)) {
+        context.store.boardCalendarRange = BOARD_CALENDAR_RANGE_DEFAULT;
+      }
     },
   },
 });

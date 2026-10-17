@@ -511,3 +511,11 @@ textarea {
 .dark .pc-nav-bubble--danger {
   border-color: rgba(239, 68, 68, 0.45);
 }
+
+/* === 页面全屏（2026-10-17 王总：全局入口移到顶栏，任意页面可用） === */
+/* MainLayout 内容容器全屏态挂 .pc-page-fs（flex h-full min-h-0 flex-col p-3），
+   其直接子元素 = 当前页面根节点。!important 压过各页面根的
+   h-[calc(100dvh-6.5rem)] 定高——全屏后页内页头已隐藏，按旧公式算会偏矮留白。 */
+.pc-page-fs > * {
+  height: 100% !important;
+}

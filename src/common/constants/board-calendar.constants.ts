@@ -344,26 +344,20 @@ export const BOARD_CALENDAR_HEAT_OPTIONS = [
   { label: '当日成交额', value: BOARD_CALENDAR_HEAT_BASIS.AMOUNT },
 ] as const;
 
-/** 展示范围（交易日列数） */
+/** 展示范围（交易日列数；2026-10-17 王总拍板缩编为 15 / 30 / 全部三档） */
 export const BOARD_CALENDAR_RANGE = {
-  D10: '10',
-  D20: '20',
+  D15: '15',
   D30: '30',
-  D60: '60',
-  D180: '180',
   ALL: 'all',
 } as const;
 
-/** 展示范围默认值（需求：默认最近 10 天） */
-export const BOARD_CALENDAR_RANGE_DEFAULT = BOARD_CALENDAR_RANGE.D10;
+/** 展示范围默认值（默认最近 15 天） */
+export const BOARD_CALENDAR_RANGE_DEFAULT = BOARD_CALENDAR_RANGE.D15;
 
 /** 展示范围选项（BaseTabs） */
 export const BOARD_CALENDAR_RANGE_OPTIONS = [
-  { label: '10天', value: BOARD_CALENDAR_RANGE.D10 },
-  { label: '20天', value: BOARD_CALENDAR_RANGE.D20 },
+  { label: '15天', value: BOARD_CALENDAR_RANGE.D15 },
   { label: '30天', value: BOARD_CALENDAR_RANGE.D30 },
-  { label: '60天', value: BOARD_CALENDAR_RANGE.D60 },
-  { label: '180天', value: BOARD_CALENDAR_RANGE.D180 },
   { label: '全部', value: BOARD_CALENDAR_RANGE.ALL },
 ] as const;
 
@@ -432,6 +426,14 @@ export const BOARD_SNAPSHOT_THROTTLE_MS = 10 * 60 * 1_000;
 
 /** 历史回补交易日数（涨停池 date 实测仅可回溯约 14 个交易日，超窗口返回 tc=0 自动跳过） */
 export const ZT_BACKFILL_DAYS = 20;
+
+/**
+ * 手动补数弹窗的日期选择范围（最近 N 个交易日）
+ *
+ * 60 档已从展示范围缩编，但补数一次拉 140 根日 K 序列（请求量与天数无关），
+ * 60 天足够覆盖「没开软件」的回溯窗口并留余量。
+ */
+export const BOARD_SYNC_DATE_PICK_MAX = 60;
 
 /** 收盘定稿时刻（本地小时）：此时间后首次采集标记 is_final */
 export const BOARD_FINAL_HOUR = 15;

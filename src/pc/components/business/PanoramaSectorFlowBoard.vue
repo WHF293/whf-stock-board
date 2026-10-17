@@ -373,7 +373,9 @@ const mergeCurveView = (curve: SectorFlowCurve): void => {
   const rest = curveViews.value.filter((row) => row.code !== curve.code);
   rest.push({
     ...curve,
-    name: rankItem?.name ?? curve.code,
+    // 名称三级回填：榜单 → 曲线接口自带 → BK 编号兜底（与 MobileFundFlow 同款，
+    // 王总 2026-10-12 / 2026-10-17：曲线图例与 tooltip 须显示板块名而非代码）
+    name: rankItem?.name ?? curve.name ?? curve.code,
     changePercent: rankItem?.changePercent ?? null,
   });
   rest.sort((a, b) => {

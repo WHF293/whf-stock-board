@@ -661,22 +661,9 @@ const pctClass = (value: number | null): string =>
         </ul>
       </BaseCard>
 
-      <!-- K 线主图：撑满整列高度（min-w-0 允许随窗口收缩，canvas 不撑破行） -->
+      <!-- K 线主图：撑满整列高度（min-w-0 允许随窗口收缩，canvas 不撑破行）。
+           全屏入口已上移至应用顶栏（全局，任意页面可用），此处不再放页内按钮 -->
       <BaseCard title="K 线图" class="flex min-h-0 min-w-0 flex-1 flex-col">
-        <!-- 全屏切换（extra 槽，卡片头部右侧；王总 2026-10-17 指定此位置）：
-             铺满 = 隐藏侧栏 / 页头 / 底部页签，本卡随主区拉伸吃满应用窗口 -->
-        <template #extra>
-          <button
-            type="button"
-            class="pressable flex shrink-0 items-center justify-center rounded-lg p-1 text-text-tertiary hover:bg-flat-weak hover:text-text active:scale-90"
-            :aria-label="isPageFullscreen ? '退出全屏' : '全屏'"
-            :title="isPageFullscreen ? '退出全屏（Esc）' : '全屏'"
-            data-track="STOCK_DETAIL_FULLSCREEN"
-            @click="uiStore.togglePageFullscreen()"
-          >
-            <MenuIcon :name="isPageFullscreen ? 'minimize' : 'maximize'" :size="14" />
-          </button>
-        </template>
         <div class="min-h-0 min-w-0 flex-1">
           <div v-if="klineError" class="py-10">
             <BaseEmpty text="K 线数据加载失败，请稍后重试（上游可能限频，稍后自动恢复）" />

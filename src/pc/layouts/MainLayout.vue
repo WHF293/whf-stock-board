@@ -616,6 +616,19 @@ void marketStatusStore.refresh();
           @open-agent="openAgentAnalysis"
           @open-site-docs="openSiteDocs"
         />
+        <!-- 页面全屏：全局入口（王总 2026-10-17 指定移到顶栏，任意页面可用；
+             置位后 MainLayout 隐藏侧栏 / 页内页头 / 停靠面板，页面根由
+             .pc-page-fs 全局规则拉伸撑满），图标随态切换，Esc 亦可退出 -->
+        <button
+          type="button"
+          class="pressable flex shrink-0 items-center justify-center rounded-lg p-1.5 text-text-tertiary hover:bg-flat-weak hover:text-text active:scale-90"
+          :aria-label="pageFullscreen ? '退出页面全屏' : '页面全屏'"
+          :title="pageFullscreen ? '退出页面全屏（Esc）' : '页面全屏'"
+          data-track="PAGE_FULLSCREEN_TOGGLE"
+          @click="uiStore.togglePageFullscreen()"
+        >
+          <MenuIcon :name="pageFullscreen ? 'minimize' : 'maximize'" :size="14" />
+        </button>
       </template>
     </TitleBar>
 
@@ -833,7 +846,7 @@ void marketStatusStore.refresh();
                详情页据此用 flex-1 拉伸主区（见 StockDetailView 的分模式高度） -->
           <div
             class="w-full"
-            :class="pageFullscreen ? 'flex h-full min-h-0 flex-col p-3' : 'mx-auto max-w-[1600px] p-6'"
+            :class="pageFullscreen ? 'pc-page-fs flex h-full min-h-0 flex-col p-3' : 'mx-auto max-w-[1600px] p-6'"
           >
             <!-- 页面切换：KeepAlive 缓存页面状态；进入动画由 pageAnim 类名驱动（无离场状态机） -->
             <RouterView v-slot="{ Component, route: routeRecord }">

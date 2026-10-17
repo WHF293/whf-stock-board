@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref } from 'vue';
-import MenuIcon from '../ui/MenuIcon.vue';
 import {
   BOARD_CALENDAR_COL_OVERSCAN,
   BOARD_CALENDAR_COL_WIDTH,
@@ -117,7 +116,9 @@ const cellTitle = (
     `${row.name} ${date}\n涨停 ${cell.limitUp} · 跌停 ${cell.limitDown}\n` +
     `上涨 ${cell.upCount} · 下跌 ${cell.downCount} · 成分股 ${cell.consCount}\n` +
     `得分 ${Math.round(cell.score)}（得分率 ${cell.scoreRate.toFixed(2)}）`;
-  return cell.dataLevel === 0 ? `${base}\n该日仅回补到涨跌停数据，不参与色阶` : base;
+  return cell.dataLevel === 0
+    ? `${base}\n历史回补：仅涨跌停数据（涨跌家数无历史接口），不参与色阶`
+    : base;
 };
 </script>
 
@@ -186,12 +187,8 @@ const cellTitle = (
         <template v-if="row.cells[index]">
           <span class="font-medium tabular-nums">涨停 {{ row.cells[index]?.limitUp }}</span>
           <span class="tabular-nums opacity-80">跌停 {{ row.cells[index]?.limitDown }}</span>
-          <MenuIcon
-            v-if="row.cells[index]?.dataLevel === 0"
-            name="info"
-            :size="10"
-            class="absolute right-1 top-1 opacity-70"
-          />
+          <!-- 历史回补日角标（右上角三角）：含义见图例与公告条，悬停有 title 详解 -->
+          <i v-if="row.cells[index]?.dataLevel === 0" class="bc-backfill-mark" aria-hidden="true" />
         </template>
         <span v-else class="text-[11px]">--</span>
       </button>
@@ -208,6 +205,25 @@ const cellTitle = (
 }
 .bc-cell:not(:disabled):hover {
   filter: brightness(1.12);
+}
+
+/*
+ * 历史回补日角标：右上角三角（border trick）
+ *
+ * 2026-10-17 王总反馈原 ⓘ 图标太隐晦、误判为「数据缺失」——三角在矩阵里
+ * 一眼可辨，与图例的「历史回补（缺涨跌家数）」条目、格子女 title 三处呼应。
+ * 颜色取中性 tertiary 而非涨跌语义色：该标记表达的是「数据口径」，不是涨跌。
+ */
+.bc-backfill-mark {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  border-top: 13px solid var(--color-text-tertiary);
+  border-left: 13px solid transparent;
+  border-top-right-radius: 3px;
+  opacity: 0.65;
 }
 
 /* 首列可点击的暗示：hover 时板块名加下划线（与板块详情页首列同一套反馈） */
