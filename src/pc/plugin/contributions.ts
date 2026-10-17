@@ -29,6 +29,7 @@ import {
   STOCK_DETAIL_SECTION_ORDER_DEFAULT,
   STOCK_ROW_ACTION_ORDER_DEFAULT,
 } from '../../common/constants/plugin.constants.ts';
+import { SIDEBAR_MENU_GROUP_DEFAULT } from '../../common/constants/sidebar-group.constants.ts';
 import { createDisposable } from './disposable';
 import type { PluginEventBus } from './events';
 import type { DisposableBag } from './disposable';
@@ -198,6 +199,8 @@ export class MenuRegistry {
       pluginId,
       icon: item.icon,
       order,
+      /** 分组归一化：不声明的一律归「插件」组（消费方不必再判 undefined） */
+      group: item.group ?? SIDEBAR_MENU_GROUP_DEFAULT,
       /** 兜底落点归一化成布尔：消费方（宿主收尾逻辑）不必再判 undefined */
       fallbackLanding: item.fallbackLanding === true,
     };

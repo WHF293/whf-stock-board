@@ -32,6 +32,7 @@ import { syncCloseToTray } from '../api/tray.api.ts';
 import { SIDEBAR_COLLAPSED_DEFAULT } from '../constants/sidebar.constants.ts';
 import { WEBLOG_ENABLED_DEFAULT } from '../constants/weblog.constants.ts';
 import { MENU_DEFAULT_ORDER } from '../constants/router-meta.constants.ts';
+import { SIDEBAR_MENU_GROUP_DEFAULT_ORDER } from '../constants/sidebar-group.constants.ts';
 import { HEADER_DEFAULT_ORDER } from '../constants/header.constants.ts';
 import { PANORAMA_CN_VIEW_MODE_DEFAULT } from '../constants/panorama.constants.ts';
 import {
@@ -75,6 +76,10 @@ interface SettingsState {
   sidebarCollapsed: boolean;
   /** 左侧导航顺序（存路由 path 数组；默认按 MENU_ITEMS 声明顺序，插件菜单追加末尾） */
   menuOrder: string[];
+  /** 左侧导航分组顺序（存分组 id 数组；默认按 SIDEBAR_MENU_GROUP_DEFAULT_ORDER，插件声明的新组追加末尾） */
+  menuGroupOrder: string[];
+  /** 左侧导航中被折叠的分组 id（点组头折叠 / 展开；侧栏不渲染折叠组的条目但路由仍可达） */
+  collapsedMenuGroups: string[];
   /** 左侧导航中被隐藏的页面 path（编排弹窗里关掉开关的项；侧栏不渲染但路由仍可达） */
   hiddenMenus: string[];
   /** 顶栏顺序（存条目键数组；宿主项为 id、插件条目为 `<pluginId>#<id>`；插件条目追加末尾） */
@@ -137,6 +142,8 @@ export const useSettingsStore = defineStore('settings', {
     panoramaCnViewMode: PANORAMA_CN_VIEW_MODE_DEFAULT,
     sidebarCollapsed: SIDEBAR_COLLAPSED_DEFAULT,
     menuOrder: [...MENU_DEFAULT_ORDER],
+    menuGroupOrder: [...SIDEBAR_MENU_GROUP_DEFAULT_ORDER],
+    collapsedMenuGroups: [],
     hiddenMenus: [],
     headerOrder: [...HEADER_DEFAULT_ORDER],
     hiddenHeaderItems: [],
@@ -307,6 +314,27 @@ export const useSettingsStore = defineStore('settings', {
     },
 
     /**
+     * 设置左侧导航分组顺序（持久化，下次进入自动恢复）
+     * @param order 编排后的分组 id 数组
+     */
+    setMenuGroupOrder(order: string[]): void {
+      this.menuGroupOrder = [...order];
+    },
+
+    /**
+     * 切换左侧导航分组的折叠状态（点组头收起 / 展开；持久化）
+     * @param groupId 分组 id
+     */
+    toggleMenuGroupCollapsed(groupId: string): void {
+      const index = this.collapsedMenuGroups.indexOf(groupId);
+      if (index >= 0) {
+        this.collapsedMenuGroups.splice(index, 1);
+      } else {
+        this.collapsedMenuGroups.push(groupId);
+      }
+    },
+
+    /**
      * 设置左侧导航隐藏页集合（编排弹窗的显隐开关；持久化）
      * @param paths 被隐藏的页面 path 数组
      */
@@ -314,9 +342,11 @@ export const useSettingsStore = defineStore('settings', {
       this.hiddenMenus = [...paths];
     },
 
-    /** 重置左侧导航：顺序恢复默认、全部页面重新显示 */
+    /** 重置左侧导航：顺序恢复默认（含分组顺序）、全部页面重新显示、全部分组展开 */
     resetMenuOrder(): void {
       this.menuOrder = [...MENU_DEFAULT_ORDER];
+      this.menuGroupOrder = [...SIDEBAR_MENU_GROUP_DEFAULT_ORDER];
+      this.collapsedMenuGroups = [];
       this.hiddenMenus = [];
     },
 

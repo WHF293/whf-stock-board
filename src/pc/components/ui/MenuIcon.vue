@@ -121,6 +121,12 @@ const ICON_PATHS: Record<string, string> = {
   // 导入（粘贴）：剪贴板 + 向下箭头
   clipboardPaste:
     '<rect x="8" y="3" width="8" height="4" rx="1"/><path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2"/><path d="M12 11v6"/><path d="M9.5 14.5 12 17l2.5-2.5"/>',
+  // 进入全屏：四角向外（页面全屏按钮）
+  maximize:
+    '<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>',
+  // 退出全屏：四角向内（页面全屏按钮的还原态）
+  minimize:
+    '<path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/>',
 };
 
 const props = withDefaults(

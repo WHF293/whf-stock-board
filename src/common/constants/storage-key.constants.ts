@@ -57,6 +57,9 @@ export const STORAGE_KEY_SECTOR_FLOW_HISTORY = 'whf:sector-flow-history';
 /** ETF 持仓股缓存命名空间（详情页 ETF 持仓 Tab，按 ETF 代码整包存取） */
 export const STORAGE_NS_ETF_HOLDINGS = 'etf.holdings';
 
+/** ETF 基金概况缓存命名空间（详情页基金概况 Tab，按 ETF 代码整包存取） */
+export const STORAGE_NS_ETF_PROFILE = 'etf.profile';
+
 /** 移动端 · 前台轮询间隔（毫秒数值的 JSON 串，四档：5s/10s/30s/1min） */
 export const STORAGE_NS_MOBILE_POLLING = 'mobile.pollingMs';
 
@@ -94,3 +97,9 @@ export const STORAGE_NS_DEBUG_DESKTOP_CHROME = 'pc.debugDesktopChrome';
 
 /** 大盘评分历史（按本地日积累，近 5 日评分柱消费；值 = RatingHistoryEntry[]） */
 export const STORAGE_NS_THS_RATING_HISTORY = 'ths.ratingHistory';
+
+/** 命令面板 · 最近使用（空输入态展示；值 = RecentPaletteEntry[]，最多 PALETTE_RECENT_MAX 条） */
+export const STORAGE_NS_COMMAND_PALETTE_RECENT = 'pc.commandPaletteRecent';
+
+/** 自选 · 叠加对比组合（勾选符号 + 区间交易日数，JSON：{ symbols, rangeDays }） */
+export const STORAGE_NS_WATCHLIST_COMPARE = 'pc.watchlistCompare';

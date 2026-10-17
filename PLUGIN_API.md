@@ -160,11 +160,12 @@ ctx.menu.add({
   component: PageVue,      // 传了 → 自动注册该路径的布局子路由，无需再 ctx.router.add
   props: {},
   order: 500,              // 默认 500（宿主页在前，插件页在后）
+  group: 'plugin',         // 侧栏分组 id，默认 'plugin'；宿主内置组见 sidebar-group.constants.ts，自定义 id 会新增分组（标题用该 id、组序排末尾）
   fallbackLanding: true,   // 声明本页为「插件页随插件撤销时的兜底落点」，同值取 order 最小者
 });
 ```
 
-菜单项注册本身不广播专用事件（`sidebar:changed` / `header:changed` 除外）；菜单的**顺序与显隐**由用户在设置页「路由顺序编排」调整（`settings.menuOrder` / `hiddenMenus`）。
+菜单项注册本身不广播专用事件（`sidebar:changed` / `header:changed` 除外）；菜单的**顺序、分组与显隐**由用户在设置页「路由顺序编排」调整（分组归属由 `group` 声明决定不可改，用户可调组顺序 `settings.menuGroupOrder` 与组内顺序 `settings.menuOrder` / `hiddenMenus`；侧栏展开态按组折叠展示，折叠态存 `settings.collapsedMenuGroups`）。
 
 > `fallbackLanding` 的解析顺序（宿主 `recoverVanishedRoute`）：
 > ① 声明了 `fallbackLanding` 的页面（**宿主自带页优先**，再是插件声明的）→ ② 侧栏第一个菜单 → ③ 宿主首页 `/dashboard`；

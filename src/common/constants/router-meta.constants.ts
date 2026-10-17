@@ -2,6 +2,7 @@
  * 路由路径集中管理（代替魔法字符串）
  */
 import type { SidebarMenuEntry } from '../utils/order-sidebar-menu';
+import { SIDEBAR_MENU_GROUP } from './sidebar-group.constants.ts';
 
 export const ROUTE_PATH = {
   DASHBOARD: "/dashboard",
@@ -65,29 +66,32 @@ export const NOT_FOUND_ROUTE_NAME = 'not-found';
  * 龙虎榜 / 大宗为其页签）；设置不入主导航（固定为侧栏底部入口）；
  * 插件贡献的菜单项由内核注册表提供，本数组只声明宿主自带的菜单。
  *
+ * `group` 声明侧栏分组（归属由声明决定，用户只能调组序与组内序，见
+ * `sidebar-group.constants.ts`）；插件菜单不声明 group 默认归「插件」组。
+ *
  * `fallbackLanding` 声明「插件页随插件撤销」时的兜底落点（必须是宿主自带页面，
  * 恒可用）：用户停在其他插件页面上关掉那个插件，宿主优先把他送到这里。
  */
 export const MENU_ITEMS: readonly SidebarMenuEntry[] = [
-  { path: ROUTE_PATH.DASHBOARD, title: "市场总览", icon: MENU_ICON.DASHBOARD },
-  { path: ROUTE_PATH.MARKET_RANK, title: "市场榜单", icon: MENU_ICON.RANK },
+  { path: ROUTE_PATH.DASHBOARD, title: "市场总览", icon: MENU_ICON.DASHBOARD, group: SIDEBAR_MENU_GROUP.MARKET },
+  { path: ROUTE_PATH.MARKET_RANK, title: "市场榜单", icon: MENU_ICON.RANK, group: SIDEBAR_MENU_GROUP.RANK },
   // 个股行情紧跟市场榜单：同为「全市场个股维度」的行情视角
-  { path: ROUTE_PATH.STOCK_MARKET, title: "个股行情", icon: MENU_ICON.FUNDS },
-  { path: ROUTE_PATH.PANORAMA, title: "行情全景", icon: MENU_ICON.PANORAMA },
+  { path: ROUTE_PATH.STOCK_MARKET, title: "个股行情", icon: MENU_ICON.FUNDS, group: SIDEBAR_MENU_GROUP.RANK },
+  { path: ROUTE_PATH.PANORAMA, title: "行情全景", icon: MENU_ICON.PANORAMA, group: SIDEBAR_MENU_GROUP.MARKET },
   // 大盘云图紧跟行情全景：原其页内 tab，独立成页（2026-10-13），同为「市场全景视角」
-  { path: ROUTE_PATH.HEATMAP, title: "大盘云图", icon: MENU_ICON.HEATMAP },
+  { path: ROUTE_PATH.HEATMAP, title: "大盘云图", icon: MENU_ICON.HEATMAP, group: SIDEBAR_MENU_GROUP.MARKET },
   // 板块日历紧跟行情全景：同为「板块维度的行情视角」
-  { path: ROUTE_PATH.BOARD_CALENDAR, title: "板块日历", icon: MENU_ICON.CALENDAR },
-  { path: ROUTE_PATH.WATCHLIST, title: "自选股", icon: MENU_ICON.STAR },
+  { path: ROUTE_PATH.BOARD_CALENDAR, title: "板块日历", icon: MENU_ICON.CALENDAR, group: SIDEBAR_MENU_GROUP.MARKET },
+  { path: ROUTE_PATH.WATCHLIST, title: "自选股", icon: MENU_ICON.STAR, group: SIDEBAR_MENU_GROUP.ACCOUNT },
   // 选股器已改为插件分发（dsh-stock-screener），由插件注册菜单与 /screener 路由
-  { path: ROUTE_PATH.HOT_NEWS, title: "热点新闻", icon: MENU_ICON.NEWS },
+  { path: ROUTE_PATH.HOT_NEWS, title: "热点新闻", icon: MENU_ICON.NEWS, group: SIDEBAR_MENU_GROUP.NEWS },
   // 今天炒什么紧跟热点新闻：同为「盘前 / 盘中扫一眼市场在炒什么」的日常视角
-  { path: ROUTE_PATH.WHAT_TO_TRADE, title: "今天炒什么", icon: MENU_ICON.FLAME },
+  { path: ROUTE_PATH.WHAT_TO_TRADE, title: "今天炒什么", icon: MENU_ICON.FLAME, group: SIDEBAR_MENU_GROUP.NEWS },
   // 板块资金流向：原「行情全景-最新板块资金」模块独立成页（2026-10-13），默认排在账户管理前
-  { path: ROUTE_PATH.BOARD_FLOW, title: "板块资金流向", icon: MENU_ICON.FUNDS },
-  { path: ROUTE_PATH.STOCK_ACCOUNT, title: "账户管理", icon: MENU_ICON.ACCOUNT },
+  { path: ROUTE_PATH.BOARD_FLOW, title: "板块资金流向", icon: MENU_ICON.FUNDS, group: SIDEBAR_MENU_GROUP.RANK },
+  { path: ROUTE_PATH.STOCK_ACCOUNT, title: "账户管理", icon: MENU_ICON.ACCOUNT, group: SIDEBAR_MENU_GROUP.ACCOUNT },
   // 插件工坊：宿主自带的插件自省与管理页，同时是「插件页随插件撤销」的兜底落点
-  { path: ROUTE_PATH.PLUGIN_LAB, title: "插件工坊", icon: MENU_ICON.PLUG, fallbackLanding: true },
+  { path: ROUTE_PATH.PLUGIN_LAB, title: "插件工坊", icon: MENU_ICON.PLUG, fallbackLanding: true, group: SIDEBAR_MENU_GROUP.PLUGIN },
 ];
 
 /**

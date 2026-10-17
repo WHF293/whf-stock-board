@@ -34,3 +34,47 @@ export const EM_FINANCIAL_DEFAULT_PERIODS = 6;
 
 /** 单次返回的报告期数上限（控制 token，超过由工具层截断） */
 export const EM_FINANCIAL_MAX_PERIODS = 12;
+
+/* ---- 财务页签 UI 常量（详情整页「财务」Tab，2026-10-17 需求稿 ui-drafts/2026-10-17-stock-financial-report.html） ---- */
+
+/** 财务摘要 / 资产负债 / 现金流三表展示的报告期数（最近 N 期，列数自适应实际返回） */
+export const FINANCIAL_UI_PERIODS = 5;
+
+/** 业绩预告展示条数（公告日倒序取最近 N 条） */
+export const FINANCIAL_FORECAST_COUNT = 3;
+
+/** 财务快照缓存有效期（财务数据日级更新，页签触发一次后 6 小时内只读快照） */
+export const FINANCIAL_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+
+/** 资产负债率弱色底提示阈值（%），仅视觉提示不构成风险判定；金融行业豁免（见 FINANCIAL_DEBT_EXEMPT_INDUSTRIES） */
+export const FINANCIAL_DEBT_RATIO_WARN = 60;
+
+/** 负债率弱色底豁免的行业关键词（券商 / 银行等金融股负债率天然高企，常亮提示反而吵闹） */
+export const FINANCIAL_DEBT_EXEMPT_INDUSTRIES: readonly string[] = [
+  '证券',
+  '银行',
+  '保险',
+  '信托',
+  '多元金融',
+];
+
+/** 财务趋势图系列色（营收 / 归母净利；固定色不随涨跌主题变，避免语义色误读，见 chart.constants.ts 同类约定） */
+export const FINANCIAL_TREND_SERIES_COLORS = ['#0e9488', '#4f83cc'] as const;
+
+/**
+ * 业绩预告类型 → 徽标色调映射（up 红 = 向好 / down 绿 = 转差 / flat 灰 = 中性）
+ *
+ * 键为上游 PREDICT_TYPE 原文（缺省未列出的类型按 flat 处理）
+ */
+export const FINANCIAL_FORECAST_TONE: Readonly<Record<string, 'up' | 'down' | 'flat'>> = {
+  预增: 'up',
+  略增: 'up',
+  扭亏: 'up',
+  续盈: 'up',
+  预减: 'down',
+  略减: 'down',
+  首亏: 'down',
+  续亏: 'down',
+  增亏: 'down',
+  不确定: 'flat',
+} as const;

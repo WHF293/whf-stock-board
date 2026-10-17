@@ -840,6 +840,16 @@ watch(
 watch([trendSet, isDark], () => {
   chartRef.value?.setStyles(buildStyles());
 });
+
+/**
+ * 暴露图表实例（画线工具等 overlay 扩展消费）：
+ * 实例生命周期与组件一致（不随主题 / 模式切换重建，只 setStyles / applyData），
+ * 外部拿到的引用长期有效；组件卸载后 chart.value 为 null
+ */
+defineExpose({
+  /** klinecharts 图表实例（挂载前 / 卸载后为 null） */
+  chart: chartRef,
+});
 </script>
 
 <template>

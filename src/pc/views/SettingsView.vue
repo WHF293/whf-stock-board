@@ -20,6 +20,11 @@ import { isAutoStartEnabled } from "../../common/api/autostart.api.ts";
 import { pluginKernel } from "../plugin/index";
 import { sdk } from "../../common/api/sdk";
 import { MENU_DEFAULT_ORDER, MENU_ITEMS, ROUTE_PATH } from "../../common/constants/router-meta.constants.ts";
+import {
+  SIDEBAR_MENU_GROUP_DEFAULT,
+  SIDEBAR_MENU_GROUP_DEFAULT_ORDER,
+} from "../../common/constants/sidebar-group.constants.ts";
+import { groupSidebarMenu } from "../../common/utils/order-sidebar-menu";
 import { HEADER_DEFAULT_ORDER, HOST_HEADER_ITEMS } from "../../common/constants/header.constants.ts";
 import { STOCK_PROXY_PATH } from "../../common/constants/proxy.constants.ts";
 import {
@@ -113,7 +118,7 @@ const onResetGlassOpacity = (): void => {
   settingsStore.setGlassOpacity(GLASS_OPACITY_DEFAULT);
 };
 
-// ---------- 侧栏导航顺序编排 ----------
+// ---------- 侧栏导航顺序编排（两级：组顺序 + 组内顺序） ----------
 
 /** 编排弹窗显隐 */
 const menuOrderModalOpen = ref(false);
@@ -131,20 +136,32 @@ interface MenuOrderDraftItem {
   title: string;
   /** 图标 key */
   icon: string;
+  /** 侧栏分组 id（归属由声明决定，弹窗内不可改） */
+  group: string;
   /** 是否插件贡献的菜单 */
   plugin: boolean;
   /** 是否在侧栏显示 */
   visible: boolean;
 }
 
-/** 编排草稿（打开弹窗时按当前顺序初始化；未点「确认」前仅本地改动，不落盘） */
-const menuOrderDraft = ref<MenuOrderDraftItem[]>([]);
+/** 编排弹窗里单组的草稿形态（组间可拖拽排序；组内条目可拖拽排序） */
+interface MenuGroupDraft {
+  /** 分组 id */
+  id: string;
+  /** 组头展示标题 */
+  title: string;
+  /** 组内菜单项草稿 */
+  items: MenuOrderDraftItem[];
+}
+
+/** 编排草稿（打开弹窗时按当前分组 + 顺序 + 显隐初始化；未点「确认」前仅本地改动，不落盘） */
+const menuGroupDraft = ref<MenuGroupDraft[]>([]);
 
 /**
  * 全部可编排的菜单项（宿主 + 已挂载插件贡献的），按当前持久化顺序排好
  *
  * 插件菜单订阅内核版本号实时刷新；未在顺序里的新页面（升级新增 / 新装插件）追加末尾。
- * @returns 有序菜单项（path / title / icon / plugin 标记）
+ * @returns 有序菜单项（path / title / icon / group / plugin 标记）
  */
 const orderedMenuItems = computed<MenuOrderDraftItem[]>(() => {
   void pluginKernel.revision.value;
@@ -152,6 +169,7 @@ const orderedMenuItems = computed<MenuOrderDraftItem[]>(() => {
     path: item.path,
     title: item.title,
     icon: item.icon,
+    group: item.group ?? SIDEBAR_MENU_GROUP_DEFAULT,
     plugin: false,
     visible: true,
   }));
@@ -160,6 +178,7 @@ const orderedMenuItems = computed<MenuOrderDraftItem[]>(() => {
       path: item.path,
       title: item.title,
       icon: item.icon,
+      group: item.group,
       plugin: true,
       visible: true,
     }),
@@ -183,62 +202,96 @@ const orderedMenuItems = computed<MenuOrderDraftItem[]>(() => {
 });
 
 /**
- * 默认顺序的草稿（宿主项按 MENU_DEFAULT_ORDER 排、插件项追加末尾，且全部显示）
+ * 当前持久化状态对应的分组序列（组序 = menuGroupOrder，组内序 = 扁平 menuOrder）
+ *
+ * 打开弹窗时以它初始化草稿；归组只看声明，所以草稿里组间移动条目没有入口。
+ */
+const groupedMenuItems = computed<MenuGroupDraft[]>(() =>
+  groupSidebarMenu(orderedMenuItems.value, settingsStore.menuGroupOrder).map(
+    (group) => ({
+      id: group.id,
+      title: group.title,
+      items: group.items.map((item) => ({ ...item, visible: true })),
+    }),
+  ),
+);
+
+/**
+ * 默认分组草稿（宿主项按 MENU_DEFAULT_ORDER、插件项追加末尾、分组按默认序，全部显示）
  *
  * 供弹窗内「恢复默认」使用：只重排草稿，是否落盘仍由「确认」决定。
  */
-const defaultMenuDraft = computed<MenuOrderDraftItem[]>(() => {
+const defaultMenuDraft = computed<MenuGroupDraft[]>(() => {
   const byPath = new Map(orderedMenuItems.value.map((item) => [item.path, item]));
-  const ordered: MenuOrderDraftItem[] = [];
+  const flatDefault: MenuOrderDraftItem[] = [];
   for (const path of MENU_DEFAULT_ORDER) {
     const item = byPath.get(path);
     if (item) {
-      ordered.push({ ...item, visible: true });
+      flatDefault.push({ ...item, visible: true });
       byPath.delete(path);
     }
   }
   for (const item of orderedMenuItems.value) {
-    if (byPath.has(item.path)) ordered.push({ ...item, visible: true });
+    if (byPath.has(item.path)) flatDefault.push({ ...item, visible: true });
   }
-  return ordered;
-});
-
-/**
- * 草稿是否已是默认（顺序一致 + 全部显示；用于禁用弹窗内「恢复默认」）
- *
- * 逐项比对而非只比宿主项：插件项被拖到中间同样算「已改动」，
- * 否则按钮会被误判为不可用、点了没反应。
- */
-const isDefaultMenuDraft = computed(() => {
-  const draft = menuOrderDraft.value;
-  const target = defaultMenuDraft.value;
-  if (draft.length !== target.length) return false;
-  return draft.every(
-    (item, index) => item.visible && item.path === target[index].path,
+  return groupSidebarMenu(flatDefault, SIDEBAR_MENU_GROUP_DEFAULT_ORDER).map(
+    (group) => ({
+      id: group.id,
+      title: group.title,
+      items: group.items.map((item) => ({ ...item, visible: true })),
+    }),
   );
 });
+/**
+ * 草稿是否已是默认（组序一致 + 组内序一致 + 全部显示；用于禁用弹窗内「恢复默认」）
+ *
+ * 分组化后逐组比对而非拍平了比：组顺序变化（只是组换位置）同样算「已改动」。
+ */
+const isDefaultMenuDraft = computed(() => {
+  const draft = menuGroupDraft.value;
+  const target = defaultMenuDraft.value;
+  if (draft.length !== target.length) return false;
+  return draft.every((group, index) => {
+    const other = target[index];
+    if (group.id !== other.id || group.items.length !== other.items.length) return false;
+    return group.items.every(
+      (item, itemIndex) => item.visible && item.path === other.items[itemIndex].path,
+    );
+  });
+});
 
-/** 打开编排弹窗：以当前顺序 + 显隐状态初始化草稿 */
+/** 打开编排弹窗：以当前分组 + 顺序 + 显隐状态初始化草稿 */
 const openMenuOrderModal = (): void => {
   const hidden = new Set(settingsStore.hiddenMenus);
-  menuOrderDraft.value = orderedMenuItems.value.map((item) => ({
-    ...item,
-    visible: !hidden.has(item.path),
+  menuGroupDraft.value = groupedMenuItems.value.map((group) => ({
+    ...group,
+    items: group.items.map((item) => ({
+      ...item,
+      visible: !hidden.has(item.path),
+    })),
   }));
   menuOrderModalOpen.value = true;
 };
 
-/** 确认编排：持久化新顺序与显隐集合，侧栏即时刷新（下次进入仍生效） */
+/** 确认编排：持久化组顺序、组内顺序与显隐集合，侧栏即时刷新（下次进入仍生效） */
 const onConfirmMenuOrder = (): void => {
-  settingsStore.setMenuOrder(menuOrderDraft.value.map((item) => item.path));
+  settingsStore.setMenuGroupOrder(menuGroupDraft.value.map((group) => group.id));
+  settingsStore.setMenuOrder(
+    menuGroupDraft.value.flatMap((group) => group.items.map((item) => item.path)),
+  );
   settingsStore.setHiddenMenus(
-    menuOrderDraft.value.filter((item) => !item.visible).map((item) => item.path),
+    menuGroupDraft.value.flatMap((group) =>
+      group.items.filter((item) => !item.visible).map((item) => item.path),
+    ),
   );
 };
 
-/** 恢复默认：仅重排草稿（顺序复原 + 全部页面重新显示），点「确认」才写回 */
+/** 恢复默认：仅重排草稿（分组与组内顺序复原 + 全部页面重新显示），点「确认」才写回 */
 const resetMenuOrderDraft = (): void => {
-  menuOrderDraft.value = defaultMenuDraft.value.map((item) => ({ ...item }));
+  menuGroupDraft.value = defaultMenuDraft.value.map((group) => ({
+    ...group,
+    items: group.items.map((item) => ({ ...item })),
+  }));
 };
 
 // ---------- 顶栏工具顺序编排 ----------
@@ -784,7 +837,11 @@ const onProbeProxy = async (): Promise<void> => {
             aria-label="玻璃透明度"
             data-track="GLASS_OPACITY_CHANGE"
           >
-          <BaseTag tone="primary" class="tabular-nums">{{ glassOpacityLabel }}</BaseTag>
+          <!-- w-11 定宽：百分比跨「9% ↔ 10%」位数变化时行宽不变。
+               右对齐行的宽度若随标签位数变化，滑杆会跟着水平位移，
+               真实拖拽中指针相对轨道位置被反向推移，值再跨越位数边界，
+               布局 ⇄ 值形成自持振荡（滑杆来回横跳的根因） -->
+          <BaseTag tone="primary" class="w-11 justify-center tabular-nums">{{ glassOpacityLabel }}</BaseTag>
           <BaseButton
             variant="ghost"
             :disabled="settingsStore.glassOpacity === GLASS_OPACITY_DEFAULT"
@@ -1136,40 +1193,68 @@ const onProbeProxy = async (): Promise<void> => {
       @ok="onConfirmMenuOrder"
     >
       <p class="mb-3 text-xs text-text-tertiary">
-        拖拽调整顺序；开关控制该页是否显示在左侧栏（隐藏后路由仍可达）。「恢复默认」复原默认顺序并重新显示全部页面，点「确认」保存并立即刷新侧栏
+        侧栏按分组展示：拖分组头调整组顺序，拖组内条目调整该组内的顺序（页面归属哪个组由页面声明决定，不可跨组拖动）；开关控制该页是否显示在左侧栏（隐藏后路由仍可达）。「恢复默认」复原默认分组与顺序并重新显示全部页面，点「确认」保存并立即刷新侧栏
       </p>
       <VueDraggable
-        v-model="menuOrderDraft"
-        tag="ul"
+        v-model="menuGroupDraft"
+        tag="div"
         :animation="150"
-        handle=".draft-handle"
+        handle=".group-handle"
         :force-fallback="true"
         fallback-class="sortable-fallback bg-surface shadow-lg ring-1 ring-flat-weak"
         ghost-class="opacity-40"
         chosen-class="bg-flat-weak"
-        class="space-y-1"
+        class="space-y-3"
       >
-        <li
-          v-for="item in menuOrderDraft"
-          :key="item.path"
-          class="flex select-none items-center gap-3 rounded-lg border border-flat-weak px-3 py-2.5 text-sm text-text-secondary"
-          :class="item.visible ? '' : 'opacity-55'"
+        <div
+          v-for="group in menuGroupDraft"
+          :key="group.id"
+          class="rounded-lg border border-flat-weak p-2"
         >
-          <MenuIcon
-            name="grip"
-            :size="16"
-            class="draft-handle cursor-grab text-text-tertiary active:cursor-grabbing"
-          />
-          <MenuIcon :name="item.icon" :size="16" class="text-text-tertiary" />
-          <span class="text-text">{{ item.title }}</span>
-          <BaseTag v-if="item.plugin" tone="flat">插件</BaseTag>
-          <BaseSwitch
-            v-model="item.visible"
-            class="ml-auto shrink-0"
-            data-track="MENU_VISIBILITY_TOGGLE"
-            :aria-label="`在侧栏显示${item.title}`"
-          />
-        </li>
+          <!-- 组头：拖拽把手 + 组名 + 页数（组序编排的最小操作单元） -->
+          <div class="flex select-none items-center gap-2 px-1 pb-1 text-xs text-text-tertiary">
+            <MenuIcon
+              name="grip"
+              :size="14"
+              class="group-handle cursor-grab text-text-tertiary active:cursor-grabbing"
+            />
+            <span class="font-medium text-text-secondary">{{ group.title }}</span>
+            <span>{{ group.items.length }} 页</span>
+          </div>
+          <VueDraggable
+            v-model="group.items"
+            tag="ul"
+            :animation="150"
+            handle=".draft-handle"
+            :force-fallback="true"
+            fallback-class="sortable-fallback bg-surface shadow-lg ring-1 ring-flat-weak"
+            ghost-class="opacity-40"
+            chosen-class="bg-flat-weak"
+            class="space-y-1"
+          >
+            <li
+              v-for="item in group.items"
+              :key="item.path"
+              class="flex select-none items-center gap-3 rounded-lg border border-flat-weak px-3 py-2.5 text-sm text-text-secondary"
+              :class="item.visible ? '' : 'opacity-55'"
+            >
+              <MenuIcon
+                name="grip"
+                :size="16"
+                class="draft-handle cursor-grab text-text-tertiary active:cursor-grabbing"
+              />
+              <MenuIcon :name="item.icon" :size="16" class="text-text-tertiary" />
+              <span class="text-text">{{ item.title }}</span>
+              <BaseTag v-if="item.plugin" tone="flat">插件</BaseTag>
+              <BaseSwitch
+                v-model="item.visible"
+                class="ml-auto shrink-0"
+                data-track="MENU_VISIBILITY_TOGGLE"
+                :aria-label="`在侧栏显示${item.title}`"
+              />
+            </li>
+          </VueDraggable>
+        </div>
       </VueDraggable>
       <template #footer-extra>
         <BaseButton
