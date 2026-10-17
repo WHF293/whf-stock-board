@@ -14,6 +14,7 @@ import {
   UPDATE_WRITE_CHUNK_BYTES,
 } from '../constants/update.constants.ts';
 import type { GithubReleasePayload, LatestReleaseInfo, ReleaseAssetInfo } from '../types/app-update.types.ts';
+import { buildUpdateProxyInit } from '../utils/update-proxy.ts';
 
 /**
  * 应用自动更新（GitHub Releases）· API
@@ -98,6 +99,8 @@ export const fetchLatestRelease = async (): Promise<LatestReleaseInfo | null> =>
     const response = await netFetch(UPDATE_LATEST_API, {
       signal: controller.signal,
       headers: { Accept: UPDATE_API_ACCEPT },
+      // 设置页配置了更新代理时显式走代理（打包版对系统代理跟随不稳定，见 update-proxy.ts）
+      ...buildUpdateProxyInit(),
     });
     if (!response.ok) return null;
     const release = (await response.json()) as GithubReleasePayload;
@@ -138,6 +141,8 @@ export const downloadReleaseAsset = async (
     const response = await tauriFetch(asset.downloadUrl, {
       signal: controller.signal,
       redirect: 'follow',
+      // 检测与下载同通道：检测走通了代理，下载也必须走同一个，否则装包拉不下来
+      ...buildUpdateProxyInit(),
     });
     if (!response.ok || !response.body) {
       throw new Error(`下载响应异常 HTTP ${response.status}`);

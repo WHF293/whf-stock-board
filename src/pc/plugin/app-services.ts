@@ -9,8 +9,21 @@ import { fetchZtPool } from '../../common/api/event.api.ts';
 import { fetchIndustryBoards } from '../../common/api/board.api.ts';
 import { fetchMarketTurnover } from '../../common/api/turnover.api.ts';
 import { fetchWidgetIndexQuotes } from '../../common/api/panorama.api.ts';
+import { fetchThsTurnoverDay, fetchThsTurnoverMinute } from '../../common/api/ths-market-analysis.api.ts';
+import {
+  fetchClsHotList,
+  fetchEastmoneyHotNews,
+  fetchSinaHotNews,
+  fetchThepaperHotNews,
+  fetchThsHotNews,
+  fetchTdxHotNews,
+} from '../../common/api/news.api.ts';
+import { fetchHotBoard } from '../../common/api/hot-board.api.ts';
 import { createPollingScheduler } from '../../common/composables/polling-scheduler';
 import { NUMBER_PLACEHOLDER } from '../../common/constants/format.constants.ts';
+import {
+  MARKET_BOARD_SOURCE_GROUP,
+} from '../../common/constants/market-data.constants.ts';
 import { ROUTE_PATH } from '../../common/constants/router-meta.constants.ts';
 import {
   getTrendByChangePercent,
@@ -21,6 +34,7 @@ import {
   TREND_TEXT_CLASS,
 } from '../../common/constants/stock-colors.constants.ts';
 import { delay } from '../../common/utils/delay';
+import { computeTurnoverAverage5 } from '../../common/utils/compute-turnover-averages';
 import { findQuoteBySymbol } from '../../common/utils/find-quote-by-symbol';
 import { formatPercent, formatPercentUnsigned } from '../../common/utils/format-percent';
 import { formatPrice } from '../../common/utils/format-price';
@@ -39,12 +53,19 @@ import type {
   FormatService,
   IndustryBoardSnapshot,
   LimitUpPoolMember,
+  MarketDataService,
   MarketService,
   PollingService,
   StockContextItem,
   StockOpenService,
   WatchlistService,
 } from '../../common/types/plugin.types.ts';
+import type {
+  MarketBoardRow,
+  MarketNewsHeadline,
+  MarketNewsSource,
+  MarketTurnoverSnapshot,
+} from '../../common/types/market-data.types.ts';
 
 /**
  * `app:format` 的实现
@@ -220,4 +241,66 @@ export const createWatchlistService = (pinia?: Pinia): WatchlistService => {
  */
 export const createPollingService = (): PollingService => ({
   create: createPollingScheduler,
+});
+
+/** 新闻标题行单源条数上限（气泡单行展示口径，足够滚动一屏，避免整页大载荷） */
+const MARKET_NEWS_HEADLINE_LIMIT = 20;
+
+/**
+ * `app:market-data` 的实现
+ *
+ * 三个方法都是「宿主已有取数代码 + 显式字段映射」：上游类型不进契约，
+ * 插件与气泡渲染端拿到的结构长期稳定。任一上游失败直接抛错，由调用方
+ * （小组件的轮询引擎）决定保留旧快照还是展示空态。
+ * @returns 市场资讯数据服务
+ */
+export const createMarketDataService = (): MarketDataService => ({
+  fetchRealtimeTurnover: async (): Promise<MarketTurnoverSnapshot> => {
+    const [minute, day] = await Promise.all([fetchThsTurnoverMinute(), fetchThsTurnoverDay()]);
+    return {
+      turnover: minute.turnover,
+      turnoverChange: minute.turnoverChange,
+      predictTurnover: minute.predictTurnover,
+      averageTurnover: day.averageTurnover,
+      averageTurnover5: computeTurnoverAverage5(day.points),
+      points: minute.points.map((point) => ({
+        turnover: point.turnover,
+        pre: point.pre,
+      })),
+    };
+  },
+  fetchHotNews: async (source: MarketNewsSource): Promise<MarketNewsHeadline[]> => {
+    let items: { url: string; title: string; ctime: string }[];
+    switch (source) {
+      case 'sina':
+        items = await fetchSinaHotNews(1, MARKET_NEWS_HEADLINE_LIMIT);
+        break;
+      case 'eastmoney':
+        items = (await fetchEastmoneyHotNews('', MARKET_NEWS_HEADLINE_LIMIT)).items;
+        break;
+      case 'ths':
+        items = await fetchThsHotNews(1, MARKET_NEWS_HEADLINE_LIMIT);
+        break;
+      case 'thepaper':
+        items = (await fetchThepaperHotNews('', MARKET_NEWS_HEADLINE_LIMIT)).items;
+        break;
+      case 'cls':
+        items = await fetchClsHotList(MARKET_NEWS_HEADLINE_LIMIT);
+        break;
+      case 'tdx':
+        items = await fetchTdxHotNews('yw', MARKET_NEWS_HEADLINE_LIMIT);
+        break;
+    }
+    return items.map((item) => ({ url: item.url, title: item.title, ctime: item.ctime }));
+  },
+  fetchHotBoard: async (source): Promise<MarketBoardRow[]> => {
+    const items = await fetchHotBoard(source, MARKET_BOARD_SOURCE_GROUP[source]);
+    return items.map((item) => ({
+      symbol: item.symbol,
+      name: item.name,
+      price: item.price,
+      changePct: item.changePct,
+      heatLabel: item.heatLabel,
+    }));
+  },
 });

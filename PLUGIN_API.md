@@ -1,12 +1,12 @@
 # PLUGIN_API.md — 插件开放接口清单
 
-> 本文件盘点**宿主开放给插件的全部能力**（`ctx.*` 九个贡献点、数据持久化、十六个宿主服务、事件、配额与红线）。
+> 本文件盘点**宿主开放给插件的全部能力**（`ctx.*` 九个贡献点、数据持久化、十七个宿主服务、事件、配额与红线）。
 > **第三方（应用内安装）插件作者请优先看 [PLUGIN_WIKI.md](./PLUGIN_WIKI.md)** —— 那份是面向你的独立 wiki；
 > 本文件面向宿主仓库贡献者（含第三层「宿主内部模块」清单）。
 > 类型契约的唯一事实源是 `src/types/plugin.types.ts`，宿主侧接线（注册顺序、 `recoverVanishedRoute`）见 `src/plugin/setup.ts`；
 > 两者冲突时以代码为准，并回来修本文档。
 >
-> 适用版本：v2.6.2（含「官方插件改为 zip 产物包分发」与十六个宿主服务的改动）。
+> 适用版本：v2.6.2（含「官方插件改为 zip 产物包分发」与十七个宿主服务的改动）。
 
 ## 0. 稳定性分层（先读这一节，它决定你能依赖什么）
 
@@ -14,7 +14,7 @@
 
 | 层 | 内容 | 谁能用 | 兼容承诺 |
 | --- | --- | --- | --- |
-| **① 契约层** | `ctx.*` 全部成员、`AppServiceMap` 十六个宿主服务、`AppEventMap` 六个内置事件、`types/plugin.types.ts` 全部导出类型 | 源码级插件 + 应用内安装的用户插件 | **主版本号内保证向后兼容**；要改形态须同步本文档 |
+| **① 契约层** | `ctx.*` 全部成员、`AppServiceMap` 十七个宿主服务、`AppEventMap` 六个内置事件、`types/plugin.types.ts` 全部导出类型 | 源码级插件 + 应用内安装的用户插件 | **主版本号内保证向后兼容**；要改形态须同步本文档 |
 | **② 服务扩展层** | 插件之间经 `ctx.provide` / `ctx.consume` 互相暴露的自定义服务与事件（如 `note:repo` / `note:saved`） | 任何插件 | 由「提供方插件」负责；消费方必须允许 `consume` 返回 `undefined` 并降级 |
 | **③ 宿主内部模块** | `@/api/*`、`@/utils/*`、`@/composables/*`、`@/components/ui/*`、`@/stores/*` 等源码模块 | **仅源码级插件**（跟宿主一起构建） | 无承诺；改名 / 搬文件不另行通知 |
 
@@ -38,7 +38,7 @@
 > Tailwind 类不拦（能装），只在预览区给出「可能没有样式」的提醒。
 
 ✅ **好消息**：不 import 任何东西的插件完全可以挂载——实测注册侧栏面板并渲染成功，
-且 `ctx` 全套、十六个宿主服务、`ctx.storage` / `ctx.db`（`ensureTable`→`insert`→`select`→`remove`→`count`）、`ctx.on` 全部可用。
+且 `ctx` 全套、十七个宿主服务、`ctx.storage` / `ctx.db`（`ensureTable`→`insert`→`select`→`remove`→`count`）、`ctx.on` 全部可用。
 **第三方插件请把自己限制在第 ① 层。**
 
 第一条红线的替代方案已经补齐了，写第三方插件不再需要 import：
@@ -354,7 +354,7 @@ ctx.settings.reset();                 // 回到声明默认值
 | `panel:open` | `(panelKey: string) => void` | 按全局键打开面板：drawer → 开右侧抽屉；inline → 取消折叠并滚动到可视区；顶栏条目 → 展开下拉。键不存在只 `console.warn` |
 | `app:notify` | `NotifyService` | 右下角应用级浮窗（宿主渲染，**跨路由常驻、与发起它的组件是否挂载无关**） |
 | `app:stock-search` | `StockSearchService` | 标的搜索（代码 / 名称 / 拼音，腾讯源） |
-| `app:stock-picker` | `StockPickerService` | **选股弹窗**：宿主渲染全站统一的标的搜索，Promise 回传 `SearchResult \| null`（§5.12） |
+| `app:stock-picker` | `StockPickerService` | **选股弹窗**：宿主渲染全站统一的标的搜索，Promise 回传 `SearchResult \| null`（§5.13） |
 | `kernel:runtime` | `PluginRuntimeReader` | 内核只读自省：`list()` / `get(id)` / `listServices()` / `recentEvents()` |
 | `panel:close` | `(panelKey: string) => void` | 关闭自己的面板（`panel:open` 的反向动作）：drawer 关抽屉、顶栏条目收起下拉、inline 折叠。键不存在只 `console.warn` |
 | `app:stock-open` | `StockOpenService` | **全站统一的个股打开交互**：`openSidebar` 开右侧详情侧栏 / `openPage` 进详情整页（§5.7） |
@@ -364,6 +364,7 @@ ctx.settings.reset();                 // 回到声明默认值
 | `app:http` | `HttpService` | **受控网络请求**：走宿主上游通道，仅允许白名单域名（§5.5） |
 | `app:quotes` | `QuotesService` | **行情报价**：按代码批量取实时快照（§5.6） |
 | `app:market` | `MarketService` | **市场剖面**：沪深逐日成交额 / 指定交易日涨停池（重接口，只能点击触发）+ 行业板块列表（轻接口，可低频轮询，§5.10） |
+| `app:market-data` | `MarketDataService` | **市场资讯**：实时成交额快照 / 热点新闻标题（六源切换）/ 热股榜单（五平台切换），小组件内容视图的取数出口（§5.13） |
 | `app:format` | `FormatService` | **格式化与涨跌语义**：红涨绿跌、百分比 / 价格 / 相对时间、符号三形态互转、`delay` / `debounce`、按符号查报价（§5.11） |
 
 ### 5.1 `app:notify`
@@ -655,6 +656,32 @@ if (picked) {
 
 与 `app:ui` 的 `confirm()` 同一范式：**插件发起、宿主渲染**（承载组件 `PluginStockPickerHost`
 挂在 `MainLayout`），因此发起方组件被卸载（面板折叠、路由切走）也照样拿得到结果。
+
+### 5.13 `app:market-data` — 市场资讯（成交额 / 新闻标题 / 热股榜）
+
+```ts
+const marketData = ctx.consume('app:market-data');
+
+// 实时成交额快照（市场总览「实时成交额」模块同源：同花顺 dq 域）
+const snapshot = await marketData.fetchRealtimeTurnover();
+// → { turnover, turnoverChange, predictTurnover, averageTurnover, averageTurnover5,
+//     points: [{ turnover, pre }] }   // 金额一律「元」原始数值，格式化调用方自理
+
+// 热点新闻标题（六源：sina / eastmoney / ths / thepaper / cls / tdx）
+const news = await marketData.fetchHotNews('cls');
+// → [{ url, title, ctime }]   // 只标题不带摘要，气泡单行展示口径
+
+// 热股榜单（五平台：ths / em / cls / tdx / xq，分组取各平台默认榜）
+const rows = await marketData.fetchHotBoard('ths');
+// → [{ symbol, name, price, changePct, heatLabel }]
+```
+
+实现层包装宿主已有的 ths-market-analysis / news / hot-board 取数代码并做**显式字段映射**
+（契约见 `types/market-data.types.ts`），插件不直接触碰上游接口。源切换由调用方传参；
+合法源清单与展示名在 `constants/market-data.constants.ts`。现存唯一用例是任务栏小组件
+气泡的三个内容视图（成交额 / 热点新闻 / 今天炒什么）：仅在气泡展开且对应视图激活期间
+以 30s 拉取，气泡收起即停——新闻 / 热榜页面另有自己的缓存与限速策略，这里不做缓存，
+**不要把它做成常驻轮询**。任一上游失败直接抛错，由调用方决定保留旧快照还是展示空态。
 
 ---
 

@@ -44,7 +44,14 @@ import BaseSkeleton from '../components/ui/BaseSkeleton.vue';
 import MenuIcon from '../components/ui/MenuIcon.vue';
 import { BUILTIN_PLUGINS } from '../plugins/index';
 import { pluginKernel } from './index';
-import { createFormatService, createMarketService, createPollingService, createStockOpenService, createWatchlistService } from './app-services';
+import {
+  createFormatService,
+  createMarketDataService,
+  createMarketService,
+  createPollingService,
+  createStockOpenService,
+  createWatchlistService,
+} from './app-services';
 import { mountUserPluginRecord } from './user-plugin-loader';
 import { attachPluginRoutes } from './router-bridge';
 import { router } from '../router/index';
@@ -251,6 +258,10 @@ export const installPlugins = (pinia?: Pinia): void => {
 
   // 市场剖面（成交额 / 涨停池）：重接口，取数口径固定在宿主一侧
   pluginKernel.services.provide('app:market', createMarketService());
+
+  // 市场资讯（实时成交额 / 新闻标题 / 热股榜）：小组件三个内容视图的取数出口，
+  // 实现包装宿主已有 api 并做字段映射，插件不直接触碰上游
+  pluginKernel.services.provide('app:market-data', createMarketDataService());
 
   // 打开个股（右侧详情侧栏 / 详情整页）：全站两条交互的唯一实现，
   // 与宿主组件侧的 useStockOpen 共用 createStockOpenService，避免行为分叉

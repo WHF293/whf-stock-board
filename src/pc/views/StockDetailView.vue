@@ -37,6 +37,10 @@ import {
 import { usePolling } from '../../common/composables/use-polling';
 import { useChartPeriod } from '../../common/composables/use-chart-period';
 import { useDetailPanelCollapse } from '../../common/composables/use-detail-panel-collapse';
+import {
+  PAGE_HEADER_ACTIONS_TARGET,
+  usePageHeaderSlot,
+} from '../../common/composables/use-page-header-slot';
 import { POLLING_INTERVAL } from '../../common/constants/polling.constants.ts';
 import { CHART_PERIOD_OPTIONS } from '../../common/constants/stock-detail.constants.ts';
 import {
@@ -89,6 +93,12 @@ const onAiAnalysis = (): void => {
     buildStockAnalysisPrompt({ name: quoteRef.value?.name ?? '', symbol: symbol.value }),
   );
 };
+
+/**
+ * 页级动作挂载守卫：「AI 分析 / 自选」按钮上移 MainLayout 页头右侧（插件设置之前），
+ * Teleport 投射需配合激活守卫（KeepAlive 缓存页切走时按钮不会自动撤离，见 composable 说明）
+ */
+const { active: headerSlotActive } = usePageHeaderSlot();
 
 // ---------- 报价（4s 轮询；快照播种，与侧栏互通） ----------
 const quoteRef = ref<FullQuote | null>(
@@ -414,6 +424,40 @@ const pctClass = (value: number | null): string =>
     4.5rem 为本页顶栏卡与行间距——交易记录因此与 K 线卡片等高（需求口径）
   -->
   <div class="flex min-h-0 flex-col gap-3">
+    <!-- 页级动作上移 MainLayout 页头：「AI 分析 + 自选」按钮（Teleport 投射，本页激活时才挂载；
+         弹窗仍留在页内。位置在「插件设置」齿轮之前，王总 2026-10-16 指定） -->
+    <Teleport v-if="headerSlotActive" :to="PAGE_HEADER_ACTIONS_TARGET">
+      <div class="flex items-center gap-2">
+        <!-- AI 分析（交 Agent 做个股短期综合分析；样式保持原 ghost 按钮） -->
+        <BaseButton v-if="quoteRef && agentEntryVisible" variant="ghost" @click="onAiAnalysis">
+          <MenuIcon name="agent" :size="14" />
+          AI 分析
+        </BaseButton>
+        <!-- 自选按钮（原右栏报价头再上移至此）；2026-10-17 起用 BaseButton，
+             与旁边「AI 分析 / 插件设置」同款形状字号（rounded-lg 玻璃）。
+             王总 2026-10-17：红色去除——未加 = primary 绿、已加 = ghost 无语义色 -->
+        <BaseButton
+          v-if="quoteRef"
+          :variant="isInWatchlist ? 'ghost' : 'primary'"
+          @click="isInWatchlist ? openRemoveDialog() : openAddDialog()"
+        >
+          <svg
+            v-if="!isInWatchlist"
+            viewBox="0 0 24 24"
+            class="h-3 w-3"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+            stroke-linecap="round"
+          >
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+          <!-- 文案统一为「自选」（点击都弹自选编辑弹窗，王总 2026-10-13），颜色区分加/删 -->
+          自选
+        </BaseButton>
+      </div>
+    </Teleport>
+
     <!-- 顶栏：返回 + 标的报价摘要 + 周期按钮组（参考 pro period-bar 横条） -->
     <BaseCard class="shrink-0">
       <div class="flex flex-wrap items-center justify-between gap-3">
@@ -439,37 +483,6 @@ const pctClass = (value: number | null): string =>
               {{ quoteRef.changePercent >= 0 ? '+' : '' }}{{ quoteRef.changePercent.toFixed(2) }}%
             </span>
           </div>
-          <!-- AI 分析（交 Agent 做个股短期综合分析；与热点新闻页同款 BaseButton ghost） -->
-          <BaseButton
-            v-if="quoteRef && agentEntryVisible"
-            variant="ghost"
-            @click="onAiAnalysis"
-          >
-            <MenuIcon name="agent" :size="14" />
-            AI 分析
-          </BaseButton>
-          <!-- 自选按钮（原右栏报价头移此） -->
-          <button
-            v-if="quoteRef"
-            type="button"
-            class="pressable inline-flex shrink-0 items-center gap-1 rounded-full px-3 py-1 text-xs font-medium hover:opacity-80 active:scale-95"
-            :class="isInWatchlist ? 'bg-up-weak text-up' : 'bg-primary-weak text-primary'"
-            @click="isInWatchlist ? openRemoveDialog() : openAddDialog()"
-          >
-            <svg
-              v-if="!isInWatchlist"
-              viewBox="0 0 24 24"
-              class="h-3 w-3"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2.5"
-              stroke-linecap="round"
-            >
-              <path d="M12 5v14M5 12h14" />
-            </svg>
-            <!-- 文案统一为「自选」（点击都弹自选编辑弹窗，王总 2026-10-13），颜色区分加/删 -->
-            自选
-          </button>
         </div>
         <!-- 周期按钮组（胶囊高亮当前周期）+ 指标配置按钮 -->
         <div class="flex items-center gap-2">
@@ -585,14 +598,14 @@ const pctClass = (value: number | null): string =>
         </div>
       </BaseCard>
 
-      <!-- 右侧信息栏：报价头 + 五档盘口（不随图表周期切换）。
+      <!-- 右侧信息栏：报价头 + 五档盘口（不随图表周期切换），两卡为高光玻璃质感（王总 2026-10-16）。
            支持展开/收起（与左侧列表同款交互，会话级）：收起时列宽 w-44，
            报价头切 compact（高/低/开/收 两列）、五档盘口切 vertical（买盘上/卖盘下） -->
       <div
         class="flex shrink-0 flex-col gap-3 overflow-y-auto transition-all duration-200"
         :class="isInfoCollapsed ? 'w-44' : 'w-80'"
       >
-        <BaseCard class="shrink-0">
+        <BaseCard glass class="shrink-0">
           <!-- 展开/收起按钮（extra 槽，卡片头部右侧）：panelRight 面板形状（panelLeft 镜像，
                竖线靠右对应右栏位置） -->
           <template #extra>
@@ -612,7 +625,7 @@ const pctClass = (value: number | null): string =>
             :compact="isInfoCollapsed"
           />
         </BaseCard>
-        <BaseCard title="五档盘口" class="shrink-0">
+        <BaseCard glass title="五档盘口" class="shrink-0">
           <StockOrderBook :quote="quoteRef" :vertical="isInfoCollapsed" />
         </BaseCard>
       </div>

@@ -22,6 +22,12 @@ defineProps<{
   fill?: boolean;
   /** 标题是否可点击（hover 高亮 + 箭头提示；点击发射 title-click） */
   clickableTitle?: boolean;
+  /**
+   * 高光玻璃质感（theme.css `.pc-glass-card`：半透明底 + backdrop-blur +
+   * 斜向高光带），透明度跟随设置页「玻璃透明度」滑杆、高光带跟随「玻璃高光带」开关。
+   * 开启后不再挂 `bg-surface / shadow-card`（玻璃类自带底色与投影）
+   */
+  glass?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -32,8 +38,8 @@ const emit = defineEmits<{
 
 <template>
   <section
-    class="rounded-card bg-surface p-4 shadow-card"
-    :class="fill ? 'flex min-h-0 flex-col' : ''"
+    class="rounded-card p-4"
+    :class="[glass ? 'pc-glass-card' : 'bg-surface shadow-card', fill ? 'flex min-h-0 flex-col' : '']"
   >
     <header
       v-if="title || $slots.extra"
