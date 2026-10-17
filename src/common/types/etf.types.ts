@@ -34,3 +34,52 @@ export interface EtfHoldingsRecord {
 
 /** 本地持仓缓存整包（localStorage 命名空间的值结构） */
 export type EtfHoldingsCache = Record<string, EtfHoldingsRecord>;
+
+/** ETF 基金概况记录（天天基金 f10「基金概况」页披露口径，字段均为原始文本，缺失为 null） */
+export interface EtfProfileRecord {
+  /** ETF 代码（6 位数字） */
+  code: string;
+  /** 本地抓取时间戳（毫秒） */
+  fetchedAt: number;
+  /** 基金全称 */
+  fullName: string | null;
+  /** 基金类型（如 指数型-股票） */
+  fundType: string | null;
+  /** 发行日期 */
+  issueDate: string | null;
+  /** 成立日期/规模（原文，如 `2012年05月04日 / 329.686亿份`） */
+  setupInfo: string | null;
+  /** 净资产规模（原文，含截止日期） */
+  netAssetScale: string | null;
+  /** 份额规模（原文，含截止日期） */
+  shareScale: string | null;
+  /** 基金管理人 */
+  manager: string | null;
+  /** 基金托管人 */
+  custodian: string | null;
+  /** 基金经理人 */
+  fundManager: string | null;
+  /** 成立来分红（原文，如 `每份累计0.88元（14次）`） */
+  dividend: string | null;
+  /** 管理费率 */
+  mgmtFeeRate: string | null;
+  /** 托管费率 */
+  custodyFeeRate: string | null;
+  /** 销售服务费率 */
+  salesServiceFeeRate: string | null;
+  /** 最高认购费率 */
+  maxSubscribeFeeRate: string | null;
+  /** 最高申购费率 */
+  maxPurchaseFeeRate: string | null;
+  /** 最高赎回费率 */
+  maxRedeemFeeRate: string | null;
+  /** 业绩比较基准 */
+  benchmark: string | null;
+  /** 跟踪标的（主动型基金无此字段） */
+  trackingTarget: string | null;
+  /** 投资目标（长文本，缺失为 null） */
+  objective: string | null;
+}
+
+/** 本地概况缓存整包（localStorage 命名空间的值结构） */
+export type EtfProfileCache = Record<string, EtfProfileRecord>;

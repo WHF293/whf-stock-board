@@ -162,11 +162,12 @@ ctx.menu.add({
   icon: 'star',
   component: PageComponent, // 传了就自动注册路由，不用再 ctx.router.add
   order: 500,               // 默认 500（宿主页在前、插件页在后）
+  group: 'plugin',          // 侧栏分组 id，缺省 'plugin'（插件组）；传宿主内置组 id（'market' / 'rank' / 'news' / 'account'）挂进对应组，传自定义 id 则侧栏新增一个组（标题用该 id、排在末尾）
   fallbackLanding: true,    // 声明为「插件页被撤销时的兜底落点」
 });
 ```
 
-菜单的顺序与显隐由用户在设置页「路由顺序编排」调整。
+菜单的顺序与显隐由用户在设置页「路由顺序编排」调整（分组页可调组顺序与组内顺序，不能跨组移动）。
 `fallbackLanding` 的作用：插件被停用 / 卸载时，正停在你页面上的用户会被接走到兜底页（宿主页优先 → 侧栏第一个 → 首页），并浮窗说明原因。
 
 ### 3.3 `ctx.router.add()` — 隐藏路由（不进菜单）

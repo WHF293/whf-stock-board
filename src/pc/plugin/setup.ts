@@ -11,7 +11,11 @@
  * `usePlugins()` 会直接调 `pluginKernel.setEnabled()`，内核即时卸载 / 重挂。
  */
 import * as vueRuntime from 'vue';
-import { orderSidebarMenu } from '../../common/utils/order-sidebar-menu';
+import {
+  flattenSidebarMenuGroups,
+  groupSidebarMenu,
+  orderSidebarMenu,
+} from '../../common/utils/order-sidebar-menu';
 import { NOTIFY_TONE } from '../../common/constants/notify.constants.ts';
 import {
   PLUGIN_RUNTIME_BRIDGE_KEY,
@@ -112,7 +116,7 @@ const openPanelByKey = (panelKey: string): void => {
  * 三级落点全部取自「撤销之后」的注册表，所以不会跳进另一个刚消失的页面；
  * 第一级「兜底落点」两处来源并存：宿主自带的正式页面（如插件工坊，在
  * `MENU_ITEMS` 里声明）与插件自己声明的贡献点（`ctx.menu.add` 的 `fallbackLanding`）。
- * ② 侧栏第一个菜单（顺序与界面完全同源：`orderSidebarMenu`）；
+ * ② 侧栏第一个菜单（顺序与界面完全同源：先按扁平序合并、再按分组序归组后拍平）；
  * ③ 宿主首页（侧栏菜单全被用户隐藏时的最后一道）。
  *
  * 用 `replace` 而不是 `push`：原页面已不存在，留在历史里只会让「后退」撞上 404 兜底。
@@ -120,11 +124,16 @@ const openPanelByKey = (panelKey: string): void => {
  */
 const recoverVanishedRoute = (info: VanishedRouteInfo): void => {
   const settingsStore = useSettingsStore();
-  const sidebar = orderSidebarMenu(
-    MENU_ITEMS,
-    pluginKernel.contributions.menu.items,
-    settingsStore.menuOrder,
-    settingsStore.hiddenMenus,
+  const sidebar = flattenSidebarMenuGroups(
+    groupSidebarMenu(
+      orderSidebarMenu(
+        MENU_ITEMS,
+        pluginKernel.contributions.menu.items,
+        settingsStore.menuOrder,
+        settingsStore.hiddenMenus,
+      ),
+      settingsStore.menuGroupOrder,
+    ),
   );
   const target = resolveRouteFallback({
     landingPaths: [

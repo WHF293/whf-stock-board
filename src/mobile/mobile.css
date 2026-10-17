@@ -1422,3 +1422,31 @@ body {
 .page-anim-back {
   animation-duration: 0.4s;
 }
+
+/* ============================================================
+   详情底部页签扩展（2026-10-17：财务 / 基金概况 / 资讯 对齐 PC 口径）
+   ============================================================ */
+/* 键值行（基金概况 / 财务指标共用）：左键右值，值右对齐允许换行 */
+.m-kv {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 9px 16px;
+  font-size: 12.5px;
+}
+.m-kv + .m-kv { border-top: 1px solid var(--color-border); }
+.m-kv__k { flex-shrink: 0; font-weight: 600; color: var(--color-text-2); }
+.m-kv__v {
+  min-width: 0;
+  text-align: right;
+  font-weight: 700;
+  font-family: var(--font-num);
+  word-break: break-all;
+}
+/* 可点击行（公告 / 新闻）：链接语义重置为行外观，:active 反馈沿用 .m-row */
+a.m-row--link {
+  width: 100%;
+  color: inherit;
+  text-decoration: none;
+}

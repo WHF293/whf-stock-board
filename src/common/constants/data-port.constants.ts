@@ -83,9 +83,9 @@ export const DATA_PORT_MANIFEST: readonly DataPortCategory[] = [
     label: 'ETF 持仓股缓存',
     db: 'stock-board',
     storage: 'local-storage',
-    nsKeys: ['etf.holdings'],
+    nsKeys: ['etf.holdings', 'etf.profile'],
     defaultEnabled: false,
-    tip: '详情页 ETF 持仓 Tab 的季度持仓快照（含抓取时间），可重新抓取，不导出也能用',
+    tip: '详情页 ETF 持仓 Tab 的季度持仓快照 + 基金概况 Tab 的概况快照（含抓取时间），可重新抓取，不导出也能用',
   },
 
   // ---------- stock-board.db ----------

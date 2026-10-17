@@ -39,6 +39,10 @@ export const DATA_CACHE_KEY = {
   DETAIL_QUOTE_PREFIX: 'detail.quote.',
   DETAIL_TIMELINE_PREFIX: 'detail.timeline.',
   DETAIL_KLINE_PREFIX: 'detail.kline.',
+  /** 个股详情资讯（公告 + 关联新闻，前缀 + 符号；会话级，手动刷新绕过） */
+  DETAIL_NEWS_PREFIX: 'detail.news.',
+  /** 个股详情财务页签（前缀 + 符号；四张 datacenter 报表合并快照，含 fetchedAt） */
+  DETAIL_FINANCIAL_PREFIX: 'detail.financial.',
   HOT_NEWS_ITEMS: 'hot-news.items.',
   /** 今天炒什么（前缀 + `平台#分组` 通道键） */
   HOT_BOARD_ITEMS: 'hot-board.items.',

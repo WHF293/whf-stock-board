@@ -31,3 +31,15 @@ export const ETF_PERCENT_BASE = 100;
 
 /** 持仓股展示的占比门槛（%）：仅展示占净值比例高于该值重仓股（缓存仍存全量） */
 export const ETF_HOLDINGS_MIN_RATIO = 1;
+
+/** 天天基金 f10「基金概况」页 URL 模板（`jbgk_<code>.html`，静态页） */
+export const ETF_JBGK_URL_TEMPLATE = 'https://fundf10.eastmoney.com/jbgk_{code}.html';
+
+/** jbgk 请求 Referer（与持仓同域，带站内 Referer 防上游 404） */
+export const ETF_JBGK_REFERER = 'https://fundf10.eastmoney.com/jbgk.html';
+
+/**
+ * 概况缓存自动刷新阈值（毫秒）：净资产/份额规模按季度披露、费率极少变动，
+ * 与持仓同款约一个季度；用户点「刷新」时 force 跳过
+ */
+export const ETF_PROFILE_TTL_MS = 100 * 24 * 60 * 60 * 1000;

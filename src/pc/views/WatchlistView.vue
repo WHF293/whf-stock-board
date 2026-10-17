@@ -11,6 +11,7 @@ import StockSearchModal from "../components/business/StockSearchModal.vue";
 import WatchlistBatchAddModal from "../components/business/WatchlistBatchAddModal.vue";
 import WatchlistGroupEditModal from "../components/business/WatchlistGroupEditModal.vue";
 import WatchlistTable from "../components/business/WatchlistTable.vue";
+import WatchlistComparePanel from "../components/business/WatchlistComparePanel.vue";
 import { fetchFullQuotes } from "../../common/api/quotes.api.ts";
 import { usePolling } from "../../common/composables/use-polling";
 import { POLLING_INTERVAL } from "../../common/constants/polling.constants.ts";
@@ -58,6 +59,9 @@ const groupTabOptions = computed(() =>
     value: group.id,
   })),
 );
+
+/** 卡片内容视图：table = 分组表格（默认）/ compare = 归一化叠加对比 */
+const cardView = ref<"table" | "compare">("table");
 
 /** 当前分组报价映射（key 为 FullQuote.code 原始形态；快照播种） */
 const quotesMap = ref<Record<string, FullQuote>>(
@@ -427,17 +431,43 @@ const onConfirmBatchAdd = (payload: BatchAddResolveResult): void => {
       :title="`当前分组-${activeGroup?.name ?? ''}（${activeGroup?.stocks.length ?? 0}只股票）`"
     >
       <template #extra>
-        <button
-          v-if="activeGroup?.id !== DEFAULT_GROUP_ID"
-          type="button"
-          class="pressable shrink-0 rounded-md p-1.5 text-text-tertiary hover:bg-up-weak hover:text-down active:scale-90"
-          :aria-label="`删除分组 ${activeGroup?.name}`"
-          @click="onRemoveGroup(activeGroup.id)"
-        >
-          <MenuIcon name="trash" :size="14" />
-        </button>
+        <!-- 视图切换：表格 / 叠加对比 -->
+        <div class="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            class="pressable rounded-md p-1.5 active:scale-90"
+            :class="cardView === 'table' ? 'bg-primary-weak text-primary' : 'text-text-tertiary hover:bg-flat-weak hover:text-text'"
+            aria-label="切换到分组表格视图"
+            @click="cardView = 'table'"
+          >
+            <MenuIcon name="menu" :size="14" />
+          </button>
+          <button
+            type="button"
+            class="pressable rounded-md p-1.5 active:scale-90"
+            :class="cardView === 'compare' ? 'bg-primary-weak text-primary' : 'text-text-tertiary hover:bg-flat-weak hover:text-text'"
+            aria-label="切换到叠加对比视图"
+            @click="cardView = 'compare'"
+          >
+            <MenuIcon name="filter" :size="14" />
+          </button>
+          <button
+            v-if="activeGroup?.id !== DEFAULT_GROUP_ID"
+            type="button"
+            class="pressable shrink-0 rounded-md p-1.5 text-text-tertiary hover:bg-up-weak hover:text-down active:scale-90"
+            :aria-label="`删除分组 ${activeGroup?.name}`"
+            @click="onRemoveGroup(activeGroup.id)"
+          >
+            <MenuIcon name="trash" :size="14" />
+          </button>
+        </div>
       </template>
-      <template v-if="(activeGroup?.stocks.length ?? 0) > 0">
+      <!-- 对比视图：归一化叠加曲线 + 统计 -->
+      <WatchlistComparePanel
+        v-if="cardView === 'compare'"
+        :stocks="activeGroup?.stocks ?? []"
+      />
+      <template v-else-if="(activeGroup?.stocks.length ?? 0) > 0">
         <WatchlistTable
           v-if="!isQuotesLoading"
           scroll-class="table-scroll-fill"

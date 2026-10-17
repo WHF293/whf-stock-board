@@ -26,16 +26,21 @@ export const CHART_PERIOD_OPTIONS: readonly { label: string; value: ChartPeriod 
 export const CHART_PERIOD_DEFAULT: ChartPeriod = 'minute';
 
 /** 详情页底部页签值 */
-export type DetailBottomTab = 'trade' | 'etf';
+export type DetailBottomTab = 'trade' | 'etf' | 'financial' | 'news' | 'fund';
 
 /**
- * 详情页底部页签选项（交易记录 / ETF 持仓股）
+ * 详情页底部页签选项（交易记录 / ETF 持仓股 / 财务 / 资讯 / 基金概况）
  *
- * 「ETF 持仓股」仅当场内基金时由页面追加渲染（DETAIL_BOTTOM_TAB_OPTIONS[0..1]）
+ * 「ETF 持仓股」「基金概况」仅当场内基金时由页面追加渲染；「财务」仅当普通股票时由页面追加
+ * （场内基金无财务报表概念，对应披露口径由「基金概况」页签承接），见 StockDetailView 的
+ * bottomTabOptions；「资讯」（公告 + 个股新闻）普通股票与场内基金均可查看
  */
 export const DETAIL_BOTTOM_TAB_OPTIONS: readonly { label: string; value: DetailBottomTab }[] = [
   { label: '交易记录', value: 'trade' },
   { label: 'ETF 持仓股', value: 'etf' },
+  { label: '财务', value: 'financial' },
+  { label: '资讯', value: 'news' },
+  { label: '基金概况', value: 'fund' },
 ] as const;
 
 /** 详情页底部页签默认值（交易记录） */

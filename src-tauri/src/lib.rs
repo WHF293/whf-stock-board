@@ -673,6 +673,21 @@ CREATE TABLE IF NOT EXISTS kline_cache_meta (
 );
 ";
 
+/// stock-board.db v8：K 线画线工具持久化（kline_drawings）
+///
+/// 一行一票一周期：全部形状序列化进 `data_json`（klinecharts overlay points，
+/// 锚点存时间戳 + 价格，不存 K 线索引——增量补尾后索引会错位，见开发方案），
+/// 写入走防抖整行 upsert，删除/清空立即写
+const STOCK_BOARD_DB_V8: &str = "
+CREATE TABLE IF NOT EXISTS kline_drawings (
+  symbol     TEXT NOT NULL,
+  period     TEXT NOT NULL,
+  data_json  TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (symbol, period)
+);
+";
+
 /// weblog.db v1：系统日志（报错日志 + 行为日志）
 ///
 /// 独立成库的理由：日志是高频写入 + 按保留期整段删除的「滚动数据」，
@@ -789,6 +804,12 @@ fn stock_board_db_migrations() -> Vec<Migration> {
       version: 7,
       description: "create_kline_cache",
       sql: STOCK_BOARD_DB_V7,
+      kind: MigrationKind::Up,
+    },
+    Migration {
+      version: 8,
+      description: "create_kline_drawings",
+      sql: STOCK_BOARD_DB_V8,
       kind: MigrationKind::Up,
     },
   ]
