@@ -10,9 +10,12 @@
  *   （2026-10-20 王总指定：评级在前；热力同日与首页今天炒什么互换回首页）
  * - 失败态：保留指数名、数值 --/--%（与原首页同口径）
  * - 整页下拉刷新并行重拉
+ * - 骨架：.m-page-flex + .m-home-scroll（navbar 固定、面板内滚动，与首页同构；2026-10-20 修复）
  */
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
+import { showFailToast } from 'vant';
+import { VueDraggable } from 'vue-draggable-plus';
 import { fetchFullQuotes } from '../../common/api/quotes.api';
 import { fetchGlobalIndexQuotes } from '../../common/api/panorama.api';
 import { fetchHotBoard } from '../../common/api/hot-board.api';
@@ -29,7 +32,7 @@ import type { FullQuote } from '../../common/types/stock-quote.types';
 import { appStorage } from '../../common/utils/app-local-storage';
 import {
   STORAGE_NS_MOBILE_BOARD_SETTINGS,
-  STORAGE_NS_MOBILE_KING_SETTINGS,
+  STORAGE_NS_MOBILE_QUOTE_KING_SETTINGS,
 } from '../../common/constants/storage-key.constants';
 import MobileRatingCard from '../components/MobileRatingCard.vue';
 
@@ -124,28 +127,130 @@ const QUOTE_KING_ITEMS: readonly QuoteKingItem[] = [
   { icon: 'flag-o', label: '龙虎榜', to: '/rank/dragon-tiger', color: '#ec4899' },
 ];
 
-/* 首页金刚区入口设置（长按 tile 弹出）同样适用于行情页四项的显隐——
-   共用同一持久化键，首页设置里隐藏的项此处也不渲染（口径一致，避免两处入口状态分叉） */
-interface KingSettings {
+/* === 金刚区入口设置（长按 tile 弹出，显隐 + 拖拽排序；与首页同交互，独立持久化键——
+   行情页入口集合与首页不相交，共用键会让两页设置互相污染，2026-10-20 修正为独立键） === */
+/** 行情页金刚区设置持久化形态（order 全量序 / hidden 隐藏集合），与首页 kingSettings 同构 */
+interface QuoteKingSettings {
   order: string[];
   hidden: string[];
 }
-const readKingHidden = (): Set<string> => {
-  const raw = appStorage.getItem(STORAGE_NS_MOBILE_KING_SETTINGS);
+
+/** to → 定义（设置弹窗行渲染 / 持久化序回填用） */
+const QUOTE_KING_BY_TO = new Map(QUOTE_KING_ITEMS.map((item) => [item.to, item]));
+
+const readQuoteKingSettings = (): QuoteKingSettings => {
+  const raw = appStorage.getItem(STORAGE_NS_MOBILE_QUOTE_KING_SETTINGS);
   if (raw !== null) {
     try {
-      const parsed = JSON.parse(raw) as Partial<KingSettings>;
-      if (Array.isArray(parsed.hidden)) return new Set(parsed.hidden);
+      const parsed = JSON.parse(raw) as Partial<QuoteKingSettings>;
+      if (Array.isArray(parsed.order) && Array.isArray(parsed.hidden)) {
+        // 未知 key 剔除、新入口按默认序补尾（版本升级后 defs 增删的兜底）
+        const known = parsed.order.filter((to) => QUOTE_KING_BY_TO.has(to));
+        for (const item of QUOTE_KING_ITEMS) {
+          if (!known.includes(item.to)) known.push(item.to);
+        }
+        return { order: known, hidden: parsed.hidden.filter((to) => QUOTE_KING_BY_TO.has(to)) };
+      }
     } catch {
-      // 坏包按全显示处理
+      // 坏包按全显示默认序处理
     }
   }
-  return new Set();
+  return { order: QUOTE_KING_ITEMS.map((item) => item.to), hidden: [] };
 };
-const kingHidden = ref<Set<string>>(readKingHidden());
+
+const quoteKingSettings = reactive<QuoteKingSettings>(readQuoteKingSettings());
+
+const persistQuoteKingSettings = (): void => {
+  appStorage.setItem(
+    STORAGE_NS_MOBILE_QUOTE_KING_SETTINGS,
+    JSON.stringify({ order: quoteKingSettings.order, hidden: quoteKingSettings.hidden }),
+  );
+};
+
+/** 可见入口（隐藏项不渲染；顺序 = 设置调整后的持久化序） */
 const visibleQuoteKingItems = computed<QuoteKingItem[]>(() =>
-  QUOTE_KING_ITEMS.filter((item) => !kingHidden.value.has(item.to)),
+  quoteKingSettings.order
+    .filter((to) => !quoteKingSettings.hidden.includes(to))
+    .map((to) => QUOTE_KING_BY_TO.get(to))
+    .filter((item): item is QuoteKingItem => item !== undefined),
 );
+
+/* --- 金刚区设置弹窗（长按 tile 打开；桌面浏览器右键同开，便于调试） --- */
+const kingSettingsOpen = ref(false);
+
+/**
+ * 入口显隐开关（至少保留一个入口）
+ * @param to 入口路由路径
+ * @param visible true 显示，false 隐藏
+ */
+const toggleKing = (to: string, visible: boolean): void => {
+  const nextHidden = new Set(quoteKingSettings.hidden);
+  if (visible) {
+    nextHidden.delete(to);
+  } else {
+    if (quoteKingSettings.order.length - nextHidden.size <= 1) {
+      showFailToast('至少保留一个入口');
+      return;
+    }
+    nextHidden.add(to);
+  }
+  quoteKingSettings.hidden = [...nextHidden];
+  persistQuoteKingSettings();
+};
+
+/* --- 长按手势（pointer 事件统一覆盖触屏长按与桌面按住；阈值 500ms，位移 >10px 视为滚动取消） --- */
+const KING_LONG_PRESS_MS = 500;
+let kingPressTimer: number | null = null;
+let kingPressStart: { x: number; y: number } | null = null;
+/** 长按已触发标记：吞掉长按后 pointerup 派生的 click，避免弹窗打开同时跳页 */
+let kingLongPressFired = false;
+
+const clearKingPress = (): void => {
+  if (kingPressTimer !== null) {
+    clearTimeout(kingPressTimer);
+    kingPressTimer = null;
+  }
+  kingPressStart = null;
+};
+
+/** tile 按下：启动长按计时
+ * @param e 指针按下事件（记录起点坐标，供移动阈值判定） */
+const onKingPressStart = (e: PointerEvent): void => {
+  clearKingPress();
+  kingLongPressFired = false;
+  kingPressStart = { x: e.clientX, y: e.clientY };
+  kingPressTimer = window.setTimeout(() => {
+    kingPressTimer = null;
+    kingLongPressFired = true;
+    kingSettingsOpen.value = true;
+  }, KING_LONG_PRESS_MS);
+};
+
+/** tile 抬起 / 取消：停表（长按已触发的场景由 click 兜底吞掉跳页） */
+const onKingPressEnd = (): void => {
+  clearKingPress();
+};
+
+/** tile 移动：超过阈值判定为滚动/拖动，取消长按
+ * @param e 指针移动事件 */
+const onKingPressMove = (e: PointerEvent): void => {
+  if (!kingPressStart) return;
+  const dx = e.clientX - kingPressStart.x;
+  const dy = e.clientY - kingPressStart.y;
+  if (dx * dx + dy * dy > 100) clearKingPress();
+};
+
+/**
+ * tile 点击跳页（长按触发过的当次点击吞掉）
+ * @param to 入口路由路径
+ */
+const goTile = (to: string): void => {
+  if (kingLongPressFired) {
+    kingLongPressFired = false;
+    return;
+  }
+  router.push(to);
+};
 
 /* === 今天炒什么入口卡（自首页迁入，2026-10-20 王总指定两模块互换）：主线 + Top5 预览 === */
 interface BoardCardState {
@@ -223,10 +328,12 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="m-tab-safe">
+  <!-- 主 Tab 骨架（.m-page-flex）：navbar 固定在顶、下拉刷新区面板内滚动（与首页 MobileHome 同构，
+       修复 navbar 随内容滑走——2026-10-20 王总反馈） -->
+  <div class="m-page-flex">
     <van-nav-bar title="行情" class="m-nav" safe-area-inset-top />
 
-    <van-pull-refresh v-model="refreshing" @refresh="onRefresh">
+    <van-pull-refresh v-model="refreshing" class="m-home-scroll" @refresh="onRefresh">
       <!-- 1. 指数模块（自首页迁入：A 股指数条 + 全球指数展开区） -->
       <div class="m-home-index-bar">
         <!-- 失败态：保留指数名，数值显示 --/--%（弱化展示），不整块报错 -->
@@ -314,13 +421,19 @@ onMounted(() => {
         <van-icon name="arrow-down" />
       </button>
 
-      <!-- 2. 金刚区快捷入口（今天炒什么 / 市场榜单 / 连板 / 异动 / 龙虎榜，自首页金刚区迁入） -->
+      <!-- 2. 金刚区快捷入口（今天炒什么 / 市场榜单 / 连板 / 异动 / 龙虎榜，自首页金刚区迁入；
+           长按任意 tile 弹出入口设置，显隐 + 拖拽排序，交互与首页一致） -->
       <div class="m-home-king m-quote-king">
         <div
           v-for="item in visibleQuoteKingItems"
           :key="item.to"
           class="m-home-king__item"
-          @click="router.push(item.to)"
+          @click="goTile(item.to)"
+          @pointerdown="onKingPressStart"
+          @pointerup="onKingPressEnd"
+          @pointercancel="onKingPressEnd"
+          @pointermove="onKingPressMove"
+          @contextmenu.prevent="kingSettingsOpen = true"
         >
           <span class="m-home-king__ic"><van-icon :name="item.icon" :style="{ color: item.color }" /></span>
           <span class="m-home-king__name">{{ item.label }}</span>
@@ -376,6 +489,52 @@ onMounted(() => {
       <!-- 底部让位（悬浮 TabBar + 手势区） -->
       <div class="m-home-tail"></div>
     </van-pull-refresh>
+
+    <!-- 金刚区入口设置弹层（长按 tile 打开；显隐 + 拖拽排序，与首页金刚区设置同构；
+         拖拽用 vue-draggable-plus，handle 限定手柄 + force-fallback（WebView 必需）） -->
+    <van-popup v-model:show="kingSettingsOpen" position="bottom" round>
+      <div style="padding: 14px 16px 18px">
+        <div class="m-board-head" style="padding-top: 0">
+          <div class="m-board-head__title">金刚区入口设置</div>
+          <div class="m-board-head__time">开关显隐 · 拖拽调整顺序</div>
+        </div>
+        <VueDraggable
+          v-model="quoteKingSettings.order"
+          tag="div"
+          :animation="150"
+          handle=".m-drag-handle"
+          :force-fallback="true"
+          fallback-class="sortable-fallback"
+          ghost-class="m-drag-ghost"
+          chosen-class="m-drag-chosen"
+          :fallback-tolerance="6"
+          @update="persistQuoteKingSettings()"
+        >
+          <div
+            v-for="to in quoteKingSettings.order"
+            :key="to"
+            class="m-sheet-row"
+          >
+            <span class="m-drag-handle"><van-icon name="wap-nav" /></span>
+            <div
+              class="m-sheet-row__name"
+              :class="{ 'm-sheet-row__name--off': quoteKingSettings.hidden.includes(to) }"
+            >
+              {{ QUOTE_KING_BY_TO.get(to)?.label ?? to }}
+              <span v-if="quoteKingSettings.hidden.includes(to)">已隐藏</span>
+            </div>
+            <van-switch
+              :model-value="!quoteKingSettings.hidden.includes(to)"
+              size="20px"
+              @update:model-value="(value: boolean) => toggleKing(to, value)"
+            />
+          </div>
+        </VueDraggable>
+        <van-button type="primary" block round style="margin-top: 14px" @click="kingSettingsOpen = false">
+          完成
+        </van-button>
+      </div>
+    </van-popup>
   </div>
 </template>
 

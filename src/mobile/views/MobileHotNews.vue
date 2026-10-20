@@ -47,7 +47,6 @@ import {
   mobileCacheRemove,
   mobileCacheSet,
 } from '../cache';
-import { useMobilePolling } from '../composables/use-mobile-polling';
 import { formatNewsTime, formatPct, formatSnapshotTime, isTopRank, pctClass } from '../utils/format';
 import NewsRow from '../components/NewsRow.vue';
 
@@ -57,7 +56,10 @@ import NewsRow from '../components/NewsRow.vue';
  * 新闻源切换在 navbar 标题两侧的箭头 icon（◀ logo 当前源名 ▶，点击循环切换可见源）；
  * 各源子栏目（如同花顺的快讯/头条）升为 Vant Tabs（原源 tabs 的位置），一次只渲染当前源；
  * 频道页状态（items/翻页游标）按「源:栏目」独立持久化缓存
- * （30 分钟 TTL），下拉 / 前台轮询为强制刷新，navbar 不设刷新按钮
+ * （30 分钟 TTL），下拉为唯一强制刷新，navbar 不设刷新按钮；
+ * 2026-10-20 起取消前台轮询（王总反馈「页面放着不动自己闪一下刷新」）：
+ * 原 30s 轮询 force 路径会清列表 + 删缓存重建，既闪屏又打穿缓存 TTL——
+ * 快照类内容刷新只走下拉，进入 / 切回页面一律吃缓存
  */
 
 /** 频道加载上下文（翻页参数） */
@@ -399,7 +401,7 @@ const channelDefOf = (channelKey: string): MobileNewsChannel | null => {
  * 加载一个频道页（重置 / 追加二态；静默轮询失败不动现有内容）
  * @param channelKey 频道 key（`<sourceKey>:<channelKey>`）
  * @param opts 加载选项
- * @param opts.force 清空重拉（下拉 / 轮询）
+ * @param opts.force 清空重拉（下拉）
  * @param opts.silent 失败不翻错误态、不打 toast
  */
 const ensureChannel = async (
@@ -660,9 +662,6 @@ const footerText = (channelKey: string): string => {
   if (st.finished || def?.type === 'single') return '已经到底了~';
   return '上拉加载更多';
 };
-
-/** 前台轮询：按设置间隔静默刷新当前「源 × 栏目」 */
-useMobilePolling(() => ensureChannel(activeChannelKey.value, { force: true, silent: true }));
 
 /** 触底哨兵元素登记表（key = 频道 key `<sourceKey>:<channelKey>`，元素由各面板的函数 ref 提供） */
 const sentinelEls = reactive<Record<string, Element | null>>({});
