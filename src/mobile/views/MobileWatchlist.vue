@@ -16,6 +16,7 @@ import { DEFAULT_GROUP_ID } from '../../common/constants/watchlist.constants';
 import { fetchFullQuotes } from '../../common/api/quotes.api';
 import { searchStocks } from '../../common/api/search.api';
 import { findQuoteBySymbol } from '../../common/utils/find-quote-by-symbol';
+import { parseWatchlistImportText } from '../../common/utils/parse-watchlist-import';
 import type { FullQuote, SearchResult } from '../../common/types/stock-quote.types';
 import type { WatchlistStock } from '../../common/types/watchlist.types';
 import { mobileCacheGetStale, mobileCacheSet } from '../cache';
@@ -190,6 +191,39 @@ const onRemoveStock = (row: WatchRowView): void => {
   showToast('已从当前分组移除');
 };
 
+/* === 导入 JSON（PC「数据迁移 → 复制 JSON 片段」粘贴恢复自选，按分组 id 合并） === */
+const importOpen = ref(false);
+const importText = ref('');
+const importing = ref(false);
+
+const openImport = (): void => {
+  importText.value = '';
+  importOpen.value = true;
+};
+
+/** 确认导入：解析粘贴文本 → 合并进 store（同 id 组覆盖追加 / 新组整体追加，组内去重） */
+const confirmImport = (): void => {
+  if (importing.value) return;
+  const text = importText.value.trim();
+  if (!text) {
+    showToast('请先粘贴 JSON 内容');
+    return;
+  }
+  importing.value = true;
+  try {
+    const groups = parseWatchlistImportText(text);
+    const { groupsAdded, stocksAdded } = store.mergeImportedGroups(groups);
+    importOpen.value = false;
+    showToast(`已导入：新增 ${groupsAdded} 个分组 · 追加 ${stocksAdded} 只自选`);
+    activeGroupId.value = store.groups[0]?.id ?? DEFAULT_GROUP_ID;
+    void loadQuotes();
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : '导入失败，请检查内容');
+  } finally {
+    importing.value = false;
+  }
+};
+
 /* === 长按行：分组归属点选切换 + 删除自选（底部弹层，参考 PC 多组归属模型） === */
 const sheetOpen = ref(false);
 const sheetStock = ref<WatchlistStock | null>(null);
@@ -272,6 +306,7 @@ const onSheetRemove = (): void => {
     <van-nav-bar title="自选" class="m-nav" safe-area-inset-top>
       <template #right>
         <div class="m-wl-nav-acts">
+          <van-icon name="description" size="18" @click="openImport" />
           <van-icon name="delete-o" size="18" @click="onRemoveGroup" />
           <van-icon name="plus" size="19" @click="openSearch" />
         </div>
@@ -367,6 +402,32 @@ const onSheetRemove = (): void => {
       <van-field v-model="newGroupName" placeholder="分组名称" maxlength="10" />
     </van-dialog>
 
+    <!-- 导入 JSON：PC 导出的 JSON 片段 / 文件粘贴解析，按分组 id 合并进当前自选 -->
+    <van-popup v-model:show="importOpen" position="bottom" round>
+      <div style="padding: 14px 16px calc(18px + env(safe-area-inset-bottom, 0px))">
+        <div class="m-board-head" style="padding-top: 0">
+          <div class="m-board-head__title">导入自选 JSON</div>
+          <div class="m-board-head__time">粘贴 PC「数据迁移 → 复制 JSON 片段」的内容</div>
+        </div>
+        <textarea
+          v-model="importText"
+          class="m-wl-imp-ta"
+          rows="8"
+          placeholder="粘贴 JSON 片段或导出文件全文；也支持直接粘贴分组数组 [{&quot;id&quot;:…,&quot;name&quot;:…,&quot;stocks&quot;:[…]}]"
+        ></textarea>
+        <van-button
+          type="primary"
+          block
+          round
+          style="margin-top: 14px"
+          :disabled="importing"
+          @click="confirmImport"
+        >
+          {{ importing ? '导入中…' : '导入' }}
+        </van-button>
+      </div>
+    </van-popup>
+
     <!-- 长按个股：分组归属切换 + 删除自选 -->
     <van-action-sheet
       v-model:show="sheetOpen"
@@ -397,3 +458,25 @@ const onSheetRemove = (): void => {
     </van-action-sheet>
   </div>
 </template>
+
+<style scoped>
+/* 导入粘贴区：等宽字体 + 弱化底色，滚动容器内直接输多行 */
+.m-wl-imp-ta {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border, rgba(127, 127, 127, 0.25));
+  border-radius: 10px;
+  background: var(--color-flat-weak, rgba(127, 127, 127, 0.08));
+  color: var(--color-text);
+  font-family: var(--font-num, 'SF Mono', Menlo, Consolas, monospace);
+  font-size: 11px;
+  line-height: 1.5;
+  resize: none;
+  outline: none;
+}
+.m-wl-imp-ta:focus {
+  border-color: var(--color-primary);
+}
+</style>

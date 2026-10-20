@@ -16,7 +16,6 @@ import { STORAGE_NS_MOBILE_BOARD_SETTINGS } from '../../common/constants/storage
 import { MOBILE_CACHE_TTL_MS } from '../constants';
 import { mobileCacheGet, mobileCacheGetStale, mobileCacheSet } from '../cache';
 import { appStorage } from '../../common/utils/app-local-storage';
-import { useMobilePolling } from '../composables/use-mobile-polling';
 import {
   formatPct,
   formatRankChange,
@@ -29,7 +28,7 @@ import {
 /**
  * 今天炒什么（移动端）
  *
- * 平台切换在 navbar 标题两侧的箭头 icon（◀ logo 今天炒什么 ▶，点击循环切换可见平台）；
+ * 平台切换在 navbar 标题两侧的箭头 icon（◀ logo 当前平台名 ▶，点击循环切换可见平台；
  * 各平台的分组子分类升为 Vant Tabs（原平台 tabs 的位置），一次只渲染当前平台；
  * 榜单页状态按「平台 × 分组」独立持久化缓存（30 分钟 TTL）；
  * 榜单行点击进个股详情页 /stock/:symbol（与搜索页 / 市场榜单行同口径）；
@@ -292,11 +291,8 @@ const toggleSource = (source: BoardSource, visible: boolean): void => {
 /* 平台排序改 vue-draggable-plus 拖拽（2026-10-20 王总指定）：v-model 即时更新 order，
    拖拽结束 @update 持久化，原上下移 moveSource 已删 */
 
-/** 前台轮询：静默刷新当前「平台 × 分组」 */
-useMobilePolling(() => {
-  const source = activeSource.value;
-  return ensureBoard(source, groupOf(source)!, { force: true, silent: true });
-});
+/* 2026-10-20 王总指定取消前台轮询（同 MobileHotNews：force 轮询清列表 + 删缓存
+   造成闪屏且打穿 30 分钟缓存 TTL），榜单刷新只走下拉 */
 
 onMounted(() => {
   const source = activeSource.value;
@@ -318,7 +314,7 @@ onMounted(() => {
         <div class="m-nav-switch">
           <van-icon name="play" class="m-nav-switch__flip" size="15" @click="switchSource(-1)" />
           <img class="m-nav-src-logo" :src="BOARD_SOURCE_LOGOS[activeSource]" alt="" />
-          <span>今天炒什么</span>
+          <span>{{ BOARD_SOURCE_LABELS[activeSource] }}</span>
           <van-icon name="play" size="15" @click="switchSource(1)" />
         </div>
       </template>

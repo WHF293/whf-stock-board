@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue';
 import BaseButton from '../ui/BaseButton.vue';
 import BaseModal from '../ui/BaseModal.vue';
 import {
+  buildDataPortJson,
   countAllCategories,
   exportDataPort,
   isDataPortAvailable,
@@ -111,6 +112,51 @@ const onExport = async (): Promise<void> => {
     exporting.value = false;
   }
 };
+
+/** 复制片段执行中 */
+const copying = ref(false);
+
+/**
+ * 把剪贴板文本落到剪贴板（优先 Clipboard API，非安全上下文 / 拒绝授权时回落隐藏 textarea）
+ * @param text 待复制文本
+ */
+const writeClipboard = async (text: string): Promise<void> => {
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+  try {
+    document.execCommand('copy');
+  } finally {
+    textarea.remove();
+  }
+};
+
+/** 复制 JSON 片段：勾选类别序列化为与导出文件同构的 JSON，直接进剪贴板
+ * （粘贴到移动端「自选导入」即可恢复自选股，无需经手文件） */
+const onCopySnippet = async (): Promise<void> => {
+  errorText.value = '';
+  copying.value = true;
+  try {
+    const text = await buildDataPortJson(checkedIds.value);
+    await writeClipboard(text);
+    notifications.push({
+      title: 'JSON 片段已复制',
+      body: `已复制 ${formatBytes(text.length)}，可在移动端「自选 → 导入」粘贴恢复`,
+      tone: NOTIFY_TONE.PRIMARY,
+    });
+  } catch (error) {
+    errorText.value = `复制失败：${toErrorText(error)}`;
+  } finally {
+    copying.value = false;
+  }
+};
 </script>
 
 <template>
@@ -120,7 +166,8 @@ const onExport = async (): Promise<void> => {
     max-width-class="max-w-lg"
   >
     <p class="mb-3 text-xs text-text-tertiary">
-      勾选要导出的本地数据，确认后选择保存位置，生成单个 JSON 文件（可在另一台电脑的「数据导入」中恢复）
+      勾选要导出的本地数据，确认后选择保存位置，生成单个 JSON 文件（可在另一台电脑的「数据导入」中恢复）；
+      「复制 JSON 片段」把同样内容直接进剪贴板，手机端「自选 → 导入」粘贴即可恢复自选股
     </p>
     <div class="space-y-1">
       <label
@@ -176,6 +223,14 @@ const onExport = async (): Promise<void> => {
           全不选
         </BaseButton>
       </div>
+      <BaseButton
+        variant="ghost"
+        data-track="DATA_EXPORT_COPY_SNIPPET"
+        :disabled="!available || !canExport || copying"
+        @click="onCopySnippet"
+      >
+        {{ copying ? '复制中…' : '复制 JSON 片段' }}
+      </BaseButton>
       <BaseButton
         variant="primary"
         data-track="DATA_EXPORT_CONFIRM"

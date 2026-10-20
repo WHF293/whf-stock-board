@@ -184,12 +184,11 @@ const collectCategory = async (
 };
 
 /**
- * 导出勾选类别到指定路径（单 JSON 文件）
- * @param path 目标文件绝对路径（pickExportPath 返回值）
+ * 收集勾选类别的数据并组装导出文件对象（导出文件 / JSON 片段共用的唯一出口）
  * @param selectedIds 勾选的类别 id 列表
- * @returns 文件字符长度（供成功提示展示）；无可导出数据返回 0
+ * @returns 完整 DataPortFile 对象（未序列化）
  */
-export const exportDataPort = async (path: string, selectedIds: readonly string[]): Promise<number> => {
+const collectExportFile = async (selectedIds: readonly string[]): Promise<DataPortFile> => {
   const data: Record<string, Record<string, unknown>> = {
     'stock-board': {},
     agent: {},
@@ -205,14 +204,34 @@ export const exportDataPort = async (path: string, selectedIds: readonly string[
     Object.assign(bucket, categoryData);
     categories.push(summary);
   }
-  const file: DataPortFile = {
+  return {
     formatVersion: DATA_PORT_FORMAT_VERSION,
     appVersion: APP_VERSION,
     exportedAt: new Date().toISOString(),
     categories,
     data,
   };
-  const text = JSON.stringify(file);
+};
+
+/**
+ * 序列化勾选类别为 JSON 文本（「复制 JSON 片段」用：结构与导出文件完全一致，
+ * 直接粘贴到移动端「自选导入」即可解析）
+ * @param selectedIds 勾选的类别 id 列表
+ * @returns JSON 文本
+ */
+export const buildDataPortJson = async (selectedIds: readonly string[]): Promise<string> => {
+  const file = await collectExportFile(selectedIds);
+  return JSON.stringify(file);
+};
+
+/**
+ * 导出勾选类别到指定路径（单 JSON 文件）
+ * @param path 目标文件绝对路径（pickExportPath 返回值）
+ * @param selectedIds 勾选的类别 id 列表
+ * @returns 文件字符长度（供成功提示展示）；无可导出数据返回 0
+ */
+export const exportDataPort = async (path: string, selectedIds: readonly string[]): Promise<number> => {
+  const text = await buildDataPortJson(selectedIds);
   await writeTextFile(path, text);
   return text.length;
 };
