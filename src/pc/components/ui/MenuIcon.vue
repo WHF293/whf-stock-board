@@ -130,6 +130,12 @@ const ICON_PATHS: Record<string, string> = {
   // 数据库（板块日历表头数据维护入口）：圆柱 + 两道分层线
   database:
     '<ellipse cx="12" cy="5.5" rx="8" ry="3"/><path d="M4 5.5v13c0 1.66 3.58 3 8 3s8-1.34 8-3v-13"/><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/>',
+  // 期货（机构行为页侧栏入口）：两根蜡烛（烛身 + 上下影线）
+  futures:
+    '<path d="M7.5 3v3M7.5 18v3M16.5 5v3M16.5 14v3"/><rect x="5" y="6" width="5" height="12" rx="1"/><rect x="14" y="8" width="5" height="6" rx="1"/>',
+  // 帮助 / 图例说明：圆圈 + 问号
+  help:
+    '<circle cx="12" cy="12" r="9"/><path d="M9.4 9.3a2.7 2.7 0 1 1 3.7 2.5c-.8.3-1.1.9-1.1 1.8v.4"/><circle cx="12" cy="16.9" r="0.5"/>',
 };
 
 const props = withDefaults(

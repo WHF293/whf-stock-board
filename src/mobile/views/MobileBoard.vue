@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { showFailToast } from 'vant';
+import { VueDraggable } from 'vue-draggable-plus';
 import { useRouter } from 'vue-router';
 import { fetchHotBoard } from '../../common/api/hot-board.api.ts';
 import type { HotBoardItem } from '../../common/types/hot-board.types.ts';
@@ -288,20 +289,8 @@ const toggleSource = (source: BoardSource, visible: boolean): void => {
   persistSettings();
 };
 
-/**
- * 平台排序（上移 / 下移；持久化）
- * @param index 当前序号
- * @param offset 移动偏移（-1 上移 / 1 下移）
- */
-const moveSource = (index: number, offset: number): void => {
-  const target = index + offset;
-  if (target < 0 || target >= settings.order.length) return;
-  const order = [...settings.order];
-  const [moved] = order.splice(index, 1);
-  order.splice(target, 0, moved!);
-  settings.order = order;
-  persistSettings();
-};
+/* 平台排序改 vue-draggable-plus 拖拽（2026-10-20 王总指定）：v-model 即时更新 order，
+   拖拽结束 @update 持久化，原上下移 moveSource 已删 */
 
 /** 前台轮询：静默刷新当前「平台 × 分组」 */
 useMobilePolling(() => {
@@ -431,43 +420,43 @@ onMounted(() => {
       </van-tab>
     </van-tabs>
 
-    <!-- 平台设置弹层（显隐 + 排序；拖拽为后续迭代，先上下移） -->
+    <!-- 平台设置弹层（显隐 + 拖拽排序；vue-draggable-plus，handle 手柄 + force-fallback） -->
     <van-popup v-model:show="settingsOpen" position="bottom" round>
       <div style="padding: 14px 16px 18px">
         <div class="m-board-head" style="padding-top: 0">
           <div class="m-board-head__title">平台设置</div>
-          <div class="m-board-head__time">开关显隐 · ↑↓ 调整顺序</div>
+          <div class="m-board-head__time">开关显隐 · 拖拽调整顺序</div>
         </div>
-        <div
-          v-for="(source, index) in settings.order"
-          :key="source"
-          class="m-sheet-row"
+        <VueDraggable
+          v-model="settings.order"
+          tag="div"
+          :animation="150"
+          handle=".m-drag-handle"
+          :force-fallback="true"
+          fallback-class="sortable-fallback"
+          ghost-class="m-drag-ghost"
+          chosen-class="m-drag-chosen"
+          :fallback-tolerance="6"
+          @update="persistSettings()"
         >
-          <div class="m-board-head__logo">{{ logoOf(source) }}</div>
-          <div class="m-sheet-row__name" :class="{ 'm-sheet-row__name--off': settings.hidden.includes(source) }">
-            {{ BOARD_SOURCE_LABELS[source] }}
-            <span v-if="settings.hidden.includes(source)">已隐藏 · 缓存保留</span>
+          <div
+            v-for="source in settings.order"
+            :key="source"
+            class="m-sheet-row"
+          >
+            <span class="m-drag-handle"><van-icon name="wap-nav" /></span>
+            <div class="m-board-head__logo">{{ logoOf(source) }}</div>
+            <div class="m-sheet-row__name" :class="{ 'm-sheet-row__name--off': settings.hidden.includes(source) }">
+              {{ BOARD_SOURCE_LABELS[source] }}
+              <span v-if="settings.hidden.includes(source)">已隐藏 · 缓存保留</span>
+            </div>
+            <van-switch
+              :model-value="!settings.hidden.includes(source)"
+              size="20px"
+              @update:model-value="(value: boolean) => toggleSource(source, value)"
+            />
           </div>
-          <van-switch
-            :model-value="!settings.hidden.includes(source)"
-            size="20px"
-            @update:model-value="(value: boolean) => toggleSource(source, value)"
-          />
-          <button
-            class="m-order-btn"
-            :disabled="index === 0"
-            @click="moveSource(index, -1)"
-          >
-            ↑
-          </button>
-          <button
-            class="m-order-btn"
-            :disabled="index === settings.order.length - 1"
-            @click="moveSource(index, 1)"
-          >
-            ↓
-          </button>
-        </div>
+        </VueDraggable>
         <van-button type="primary" block round style="margin-top: 14px" @click="settingsOpen = false">
           完成
         </van-button>

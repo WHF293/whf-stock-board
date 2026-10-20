@@ -48,6 +48,7 @@ import type { BoardDetailRange } from '../types/board-detail.types.ts';
 import type { WatchWidgetSettings } from '../types/watch-widget.types.ts';
 import { BOARD_DEFAULT_ORDER, normalizeBoardHidden, normalizeBoardOrder } from '../utils/board-order';
 import { migrateWatchWidgetSettings } from '../utils/migrate-watch-widget-settings';
+import { mergeMenuGroupOrder } from '../utils/order-sidebar-menu.ts';
 
 /**
  * 初始设置引导的默认完成态
@@ -492,6 +493,13 @@ export const useSettingsStore = defineStore('settings', {
       }
       // 玻璃透明度坏数据回落：非法值会让 rgba() alpha 失效、玻璃变实心
       context.store.glassOpacity = normalizeGlassOpacity(context.store.glassOpacity);
+      // 新版本新增的内置分组（如 2026-10-20「期货」）补插回规范位次：
+      // 老用户存档的 menuGroupOrder 里没有它，groupSidebarMenu 会把
+      // 未知组追加到「插件」组后面，违反默认信息架构
+      context.store.menuGroupOrder = mergeMenuGroupOrder(
+        context.store.menuGroupOrder,
+        SIDEBAR_MENU_GROUP_DEFAULT_ORDER,
+      );
       // 板块日历展示范围缩编（10/20/60/180 → 15/30/全部，2026-10-17）：
       // 旧持久化值不在新值集合时回落默认，否则 BaseTabs 无选中态、范围文案为空
       if (!Object.values(BOARD_CALENDAR_RANGE).includes(context.store.boardCalendarRange)) {

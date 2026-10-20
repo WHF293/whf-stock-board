@@ -688,6 +688,26 @@ CREATE TABLE IF NOT EXISTS kline_drawings (
 );
 ";
 
+/// stock-board.db v9：期货机构行为（中金所 CCPM）披露数据缓存（ccpm_day_cache）
+///
+/// 上游每日一品种一个静态 CSV（GBK），前端解析归并后整包 JSON 落库：
+/// 应用重启 / 回看历史披露日不再回源拉取。缓存语义（勿改）：
+/// - 披露数据收盘后定稿，正缓存（has_data=1）**永久有效**（交易所极罕见修正
+///   靠页面「刷新」按钮强制回源兜底）；
+/// - 负缓存（has_data=0，非披露日 / 尚未披露 / 探测落空）带 fetched_at，
+///   由前端读取侧按 TTL 过期（当天盘后披露时点前后都会探测同一天）；
+/// - 一行 = 一品种一交易日，data_json 为 CcpmProductDayData | null 的 JSON。
+const STOCK_BOARD_DB_V9: &str = "
+CREATE TABLE IF NOT EXISTS ccpm_day_cache (
+  product     TEXT    NOT NULL,
+  trading_day TEXT    NOT NULL,
+  has_data    INTEGER NOT NULL DEFAULT 1,
+  data_json   TEXT,
+  fetched_at  INTEGER NOT NULL,
+  PRIMARY KEY (product, trading_day)
+);
+";
+
 /// weblog.db v1：系统日志（报错日志 + 行为日志）
 ///
 /// 独立成库的理由：日志是高频写入 + 按保留期整段删除的「滚动数据」，
@@ -810,6 +830,12 @@ fn stock_board_db_migrations() -> Vec<Migration> {
       version: 8,
       description: "create_kline_drawings",
       sql: STOCK_BOARD_DB_V8,
+      kind: MigrationKind::Up,
+    },
+    Migration {
+      version: 9,
+      description: "create_ccpm_day_cache",
+      sql: STOCK_BOARD_DB_V9,
       kind: MigrationKind::Up,
     },
   ]

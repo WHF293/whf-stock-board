@@ -105,6 +105,9 @@ const lastUpdatedAt = ref<number | null>(null);
 /** 板块过滤器弹窗开关 */
 const filterOpen = ref(false);
 
+/** 表头图例气泡开关（问号图标点击） */
+const legendOpen = ref(false);
+
 /** 页头动作挂载守卫：只有本页激活时按钮才出现在页头（KeepAlive 缓存页切走不残留） */
 const { active: headerSlotActive } = usePageHeaderSlot();
 /** 主区视图：列表（涨跌停矩阵）/ 气泡图（赚钱效应） */
@@ -603,32 +606,52 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
       class="min-h-0 flex-1"
       :title="`板块日历 · 板块 ${matrix.rows.length}/${CALENDAR_BOARDS.length} 个 · 覆盖 ${coveredDateCount} 个交易日`"
     >
-      <!-- 图例 + 表头数据维护入口（获取 / 刷新板块数据） -->
+      <!-- 图例入口（问号气泡）+ 表头数据维护入口（获取 / 刷新板块数据） -->
       <template #extra>
         <div class="flex items-center gap-3">
-          <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-text-tertiary">
-            <span
-              v-for="item in BOARD_SCORE_LEGEND"
-              :key="item.bucket"
-              class="flex items-center gap-1"
+          <div class="relative">
+            <button
+              type="button"
+              class="pressable rounded p-1 text-text-tertiary hover:bg-flat-weak hover:text-text active:scale-90"
+              aria-label="涨跌档位图例"
+              title="涨跌档位图例"
+              @click="legendOpen = !legendOpen"
             >
-              <i
-                class="inline-block h-3 w-3 rounded-sm"
-                :style="legendSwatchStyle(item.bucket)"
-              />
-              {{ item.label }} {{ item.hint }}
-            </span>
-            <span class="flex items-center gap-1">
-              <i
-                class="inline-block h-0 w-0"
-                :style="BACKFILL_MARK_STYLE"
-              />
-              历史回补（缺涨跌家数）
-            </span>
-            <span class="flex items-center gap-1">
-              <i class="inline-block h-3 w-3 rounded-sm border border-dashed border-flat-weak" />
-              无数据
-            </span>
+              <MenuIcon name="help" :size="14" />
+            </button>
+
+            <!-- 透明遮罩：点外部收起气泡 -->
+            <div v-if="legendOpen" class="fixed inset-0 z-30" @click="legendOpen = false" />
+
+            <!-- 图例气泡：7 档得分率色阶 + 历史回补 + 无数据 -->
+            <div
+              v-if="legendOpen"
+              class="absolute right-0 top-full z-40 mt-1 w-64 rounded-lg border border-flat-weak bg-surface p-3 shadow-xl"
+              role="tooltip"
+            >
+              <p class="mb-2 text-xs font-medium text-text">涨跌档位（得分率 = 得分 ÷ 成分股数）</p>
+              <ul class="space-y-1.5 text-[11px] text-text-tertiary">
+                <li
+                  v-for="item in BOARD_SCORE_LEGEND"
+                  :key="item.bucket"
+                  class="flex items-center gap-2"
+                >
+                  <i
+                    class="inline-block h-3 w-3 shrink-0 rounded-sm"
+                    :style="legendSwatchStyle(item.bucket)"
+                  />
+                  {{ item.label }} {{ item.hint }}
+                </li>
+                <li class="flex items-center gap-2">
+                  <i class="inline-block h-3 w-3 shrink-0" :style="BACKFILL_MARK_STYLE" />
+                  历史回补（缺涨跌家数）
+                </li>
+                <li class="flex items-center gap-2">
+                  <i class="inline-block h-3 w-3 shrink-0 rounded-sm border border-dashed border-flat-weak" />
+                  无数据
+                </li>
+              </ul>
+            </div>
           </div>
           <!-- 应用 = 采集数据已写入本地库，重读即可（交易日轴未变，无需强制重拉） -->
           <BoardDataSyncMenu @applied="onSyncApplied" />

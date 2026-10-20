@@ -15,7 +15,7 @@ import {
 import { attachLiquidGlass, type LiquidGlassHandle } from '../utils/liquid-glass';
 
 /**
- * 底部 TabBar：四个主 Tab（首页 / 自选 / 热点新闻 / 我的）
+ * 底部 TabBar：五个主 Tab（首页 / 行情 / 自选 / 新闻 / 我的，2026-10-20 起）
  * 仅在主 Tab 路由显示（二级页隐藏）；激活态由 router-link 的 active-class 按路径匹配；
  * 选中态的亮胶囊是指示器（__thumb），切换 tab 时平滑滑动到新位置——
  * 行程中均匀缩小至 80% 并降低不透明度，接近落点时回弹放大恢复（液态玻璃手感，规格见 DESIGN-MOBILE.md §3）
@@ -83,7 +83,7 @@ let downX = 0;
 let dragPointerId: number | null = null;
 /** pointerdown 时量取的 tabbar 几何 */
 let navRect: DOMRect | null = null;
-/** 单个 tab 槽位宽度（px）＝(底座宽 - 左右 padding) / 4 */
+/** 单个 tab 槽位宽度（px）＝(底座宽 - 左右 padding) / 5 */
 let slotWidth = 0;
 /** 拖拽结束后吞掉落点处 router-link 的 click，防止松手即二次跳转 */
 let suppressClick = false;
@@ -248,7 +248,7 @@ onUnmounted(() => window.clearTimeout(restoreTimer));
       class="m-tabbar__item"
       active-class="m-tabbar__item--active"
     >
-      <span class="m-tabbar__icon">{{ item.icon }}</span>
+      <span class="m-tabbar__icon"><van-icon :name="item.icon" /></span>
       <span>{{ item.label }}</span>
     </router-link>
   </nav>

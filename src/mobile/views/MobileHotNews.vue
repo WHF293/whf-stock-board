@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import type { ComponentPublicInstance } from 'vue';
 import { useRouter } from 'vue-router';
 import { showFailToast, showSuccessToast } from 'vant';
+import { VueDraggable } from 'vue-draggable-plus';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import {
   fetchClsDepth,
@@ -520,21 +521,17 @@ const toggleSource = (sourceKey: string, visible: boolean): void => {
   clampActiveIndex();
 };
 
-/**
- * 源排序（上移 / 下移；持久化；激活 tab 跟随当前源的新位置）
- * @param index 当前序号（newsSettings.order 内）
- * @param offset 移动偏移（-1 上移 / 1 下移）
- */
-const moveSource = (index: number, offset: number): void => {
-  const target = index + offset;
-  if (target < 0 || target >= newsSettings.order.length) return;
-  const activeKey = activeSource.value.key;
-  const order = [...newsSettings.order];
-  const [moved] = order.splice(index, 1);
-  order.splice(target, 0, moved!);
-  newsSettings.order = order;
+/* === 源拖拽排序（vue-draggable-plus） ===
+ * 拖拽开始时记下当前激活源，排序结束后激活 tab 跟随该源的新位置
+ * （沿用原上下移排序的「tab 跟随」语义；v-model 已即时更新 order） */
+const dragActiveKey = ref<string | null>(null);
+
+/** 拖拽结束：持久化 + 激活 tab 跟随 */
+const onOrderChanged = (): void => {
   persistNewsSettings();
-  const newIndex = visibleSources.value.findIndex((source) => source.key === activeKey);
+  const key = dragActiveKey.value;
+  if (key === null) return;
+  const newIndex = visibleSources.value.findIndex((source) => source.key === key);
   if (newIndex >= 0 && newIndex !== activeIndex.value) activeIndex.value = newIndex;
 };
 
@@ -951,45 +948,47 @@ onUnmounted(() => {
       </van-tab>
     </van-tabs>
 
-    <!-- 新闻源设置弹层（显隐 + 排序，与今天炒什么平台设置同构） -->
+    <!-- 新闻源设置弹层（显隐 + 拖拽排序，与今天炒什么平台设置同构；
+         拖拽用 vue-draggable-plus，handle 限定手柄 + force-fallback（WebView 必需）） -->
     <van-popup v-model:show="settingsOpen" position="bottom" round>
       <div style="padding: 14px 16px 18px">
         <div class="m-board-head" style="padding-top: 0">
           <div class="m-board-head__title">新闻源设置</div>
-          <div class="m-board-head__time">开关显隐 · ↑↓ 调整顺序</div>
+          <div class="m-board-head__time">开关显隐 · 拖拽调整顺序</div>
         </div>
-        <div
-          v-for="(sourceKey, index) in newsSettings.order"
-          :key="sourceKey"
-          class="m-sheet-row"
+        <VueDraggable
+          v-model="newsSettings.order"
+          tag="div"
+          :animation="150"
+          handle=".m-drag-handle"
+          :force-fallback="true"
+          fallback-class="sortable-fallback"
+          ghost-class="m-drag-ghost"
+          chosen-class="m-drag-chosen"
+          :fallback-tolerance="6"
+          @start="dragActiveKey = activeSource.key"
+          @update="onOrderChanged"
         >
           <div
-            class="m-sheet-row__name"
-            :class="{ 'm-sheet-row__name--off': newsSettings.hidden.includes(sourceKey) }"
+            v-for="sourceKey in newsSettings.order"
+            :key="sourceKey"
+            class="m-sheet-row"
           >
-            {{ sourceLabel(sourceKey) }}
-            <span v-if="newsSettings.hidden.includes(sourceKey)">已隐藏 · 缓存保留</span>
+            <span class="m-drag-handle"><van-icon name="wap-nav" /></span>
+            <div
+              class="m-sheet-row__name"
+              :class="{ 'm-sheet-row__name--off': newsSettings.hidden.includes(sourceKey) }"
+            >
+              {{ sourceLabel(sourceKey) }}
+              <span v-if="newsSettings.hidden.includes(sourceKey)">已隐藏 · 缓存保留</span>
+            </div>
+            <van-switch
+              :model-value="!newsSettings.hidden.includes(sourceKey)"
+              size="20px"
+              @update:model-value="(value: boolean) => toggleSource(sourceKey, value)"
+            />
           </div>
-          <van-switch
-            :model-value="!newsSettings.hidden.includes(sourceKey)"
-            size="20px"
-            @update:model-value="(value: boolean) => toggleSource(sourceKey, value)"
-          />
-          <button
-            class="m-order-btn"
-            :disabled="index === 0"
-            @click="moveSource(index, -1)"
-          >
-            ↑
-          </button>
-          <button
-            class="m-order-btn"
-            :disabled="index === newsSettings.order.length - 1"
-            @click="moveSource(index, 1)"
-          >
-            ↓
-          </button>
-        </div>
+        </VueDraggable>
         <van-button type="primary" block round style="margin-top: 14px" @click="settingsOpen = false">
           完成
         </van-button>
