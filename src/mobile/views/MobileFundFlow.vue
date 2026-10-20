@@ -652,7 +652,14 @@ onMounted(() => {
 
 <template>
   <div class="m-page-flex">
-    <van-nav-bar title="资金流向" class="m-nav" safe-area-inset-top />
+    <!-- 2026-10-20 起移出 TabBar（入口 = 首页金刚区），二级页形态带返回键 -->
+    <van-nav-bar
+      title="资金流向"
+      class="m-nav"
+      safe-area-inset-top
+      left-arrow
+      @click-left="router.back()"
+    />
 
     <div class="m-ff-scroll">
       <!-- 模块一：主力净流入（近 10 日，每点标注 + tooltip + crosshair） -->

@@ -51,19 +51,19 @@
 }
 
 .dark {
-  /* 王总 2026-10-10 指定：移动端暗色统一灰底 #21282e——页面背景同色，
-     卡片面抬一档 #262e35（v3 清新版），靠 --color-border 细线分层 */
-  --color-surface: #262e35;
-  --m-page-bg: #21282e;
+  /* 王总 2026-10-20 指定：移动端暗色对齐 PC 黑灰——页面底 #09090b、
+     卡片面抬一档 #15161a（与 theme.css 的 .dark 覆盖同值），靠 --color-border 细线分层 */
+  --color-surface: #15161a;
+  --m-page-bg: #09090b;
   --color-border: rgba(255, 255, 255, 0.07);
   --m-card-shadow: none;
-  --glass-light: rgba(38, 44, 53, 0.55);
+  --glass-light: rgba(21, 22, 26, 0.55);
   --glass-light-strong: rgba(255, 255, 255, 0.14);
   --glass-border: rgba(255, 255, 255, 0.09);
   --glass-highlight: rgba(255, 255, 255, 0.1);
   --glass-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-  /* 金刚区 tile 底（暗档）：卡面 #262e35 再抬一档的浅灰 */
-  --m-king-ic-bg: #313943;
+  /* 金刚区 tile 底（暗档）：卡面 #15161a 再抬一档的中性灰（同 PC --color-flat-weak） */
+  --m-king-ic-bg: #212226;
 }
 
 html,
@@ -149,7 +149,9 @@ body {
   bottom: calc(10px + env(safe-area-inset-bottom, 0px));
   z-index: 100;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  /* 5 等分 = 五主 Tab（2026-10-20，与 constants.ts MOBILE_TAB_ITEMS.length 同步；
+     指示胶囊宽度 .m-tabbar__thumb 的 /5 需一并改） */
+  grid-template-columns: repeat(5, 1fr);
   padding: 6px;
   border-radius: 999px;
   /* 玻璃质感只在 TabBar 局部加浓（王总 2026-10-10：白天模式几乎看不出玻璃）——
@@ -181,9 +183,9 @@ body {
   will-change: transform;
 }
 .dark .m-tabbar {
-  /* 暗色玻璃同样加浓：抬亮的深灰玻璃（禁止深黑）、透明度更高，透白高光更明显 */
-  --glass-light: rgba(52, 60, 70, 0.42);
-  --glass-light-strong: rgba(62, 71, 82, 0.8);
+  /* 暗色玻璃同样加浓：抬亮的中性深灰玻璃（禁止深黑）、透明度更高，透白高光更明显 */
+  --glass-light: rgba(40, 41, 46, 0.42);
+  --glass-light-strong: rgba(52, 53, 60, 0.8);
   --glass-border: rgba(255, 255, 255, 0.14);
   --glass-highlight: rgba(255, 255, 255, 0.22);
   --glass-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
@@ -203,8 +205,8 @@ body {
   backdrop-filter: var(--liquid-glass-filter) blur(6px) saturate(1.3);
 }
 .dark .m-tabbar--liquid {
-  --glass-light: rgba(52, 60, 70, 0.26);
-  --glass-light-strong: rgba(62, 71, 82, 0.78);
+  --glass-light: rgba(40, 41, 46, 0.26);
+  --glass-light-strong: rgba(52, 53, 60, 0.78);
 }
 .m-tabbar__item {
   position: relative;
@@ -238,7 +240,8 @@ body {
   bottom: 6px;
   left: 6px;
   z-index: 0;
-  width: calc((100% - 12px) / 4);
+  /* 槽位宽 = (100% - 左右 6px padding × 2) / 5（五主 Tab，与 .m-tabbar 的列数同步） */
+  width: calc((100% - 12px) / 5);
   border-radius: 999px;
   background: var(--glass-light-strong);
   box-shadow:
@@ -311,14 +314,7 @@ body {
   padding: 2px;
 }
 .m-nav-switch .m-nav-switch__flip { transform: rotate(180deg); }
-/* 首页 navbar 左侧 app logo（「我的」页入口；TabBar 移除我的后 2026-10-12） */
-.m-nav-app-logo {
-  display: block;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  cursor: pointer;
-}
+/* 首页 navbar 左侧 app logo 样式已随 logo 移除（2026-10-20，「我的」回归 TabBar 后冗余） */
 
 /* chips 横滚区（一级源 / 二级子栏目 / 平台 / 分组共用）；v3 起透明底浮于页面底色 */
 .m-chips {
@@ -687,18 +683,27 @@ body {
 .m-sheet-row__name { flex: 1; min-width: 0; font-size: 13.5px; font-weight: 600; }
 .m-sheet-row__name span { font-size: 10.5px; color: var(--color-text-3); font-weight: 500; margin-left: 6px; }
 .m-sheet-row__name--off { color: var(--color-text-3); }
-.m-order-btn {
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: 8px;
-  background: var(--color-border);
-  color: var(--color-text);
-  font-size: 13px;
-  font-weight: 800;
-  cursor: pointer;
+/* 设置弹层行拖拽手柄（vue-draggable-plus，handle 限定；PC HotNewsSourceModal 同款约定：
+   force-fallback 必须——Tauri/Android WebView 下原生 HTML5 DnD 不触发 drop） */
+.m-drag-handle {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 4px 2px;
+  color: var(--color-text-3);
+  cursor: grab;
+  touch-action: none;
 }
-.m-order-btn:disabled { opacity: 0.4; cursor: default; }
+.m-drag-handle:active { cursor: grabbing; }
+/* 拖拽跟随元素（force-fallback 克隆体挂 body，fallback-class 只能传单个 class 名） */
+.sortable-fallback {
+  opacity: 0.95 !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  background: var(--color-surface);
+  border-radius: 8px;
+}
+.m-drag-ghost { opacity: 0.4; }
+.m-drag-chosen { background: var(--color-flat-weak, rgba(127, 127, 127, 0.12)); border-radius: 8px; }
 
 /* 通用辅助 */
 .m-empty { padding: 36px 16px; text-align: center; color: var(--color-text-3); font-size: 12.5px; background: var(--color-surface); }
@@ -864,7 +869,9 @@ body {
   padding: 16px 8px 14px;
   background: var(--color-surface);
   border-radius: 12px;
-  margin: 10px 12px 0;
+  /* 底距 10px（2026-10-20）：原间距由首页书本翻页容器提供，容器拆除后
+     改由金刚区自带，与 .m-home-panel / .m-card 的 10px 下距同节奏 */
+  margin: 10px 12px 10px;
   box-shadow: var(--m-card-shadow);
 }
 .m-home-king__item { display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer; }

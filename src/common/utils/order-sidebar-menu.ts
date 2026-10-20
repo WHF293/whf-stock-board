@@ -134,3 +134,45 @@ export const groupSidebarMenu = <T extends SidebarMenuEntry>(
 export const flattenSidebarMenuGroups = <T extends SidebarMenuEntry>(
   groups: readonly SidebarMenuGroupOf<T>[],
 ): T[] => groups.flatMap((group) => group.items);
+
+/**
+ * 把新版本新增的内置分组补插进用户已编排的组顺序（settings 水合迁移用）
+ *
+ * 背景：组顺序持久化在 settings.menuGroupOrder，老用户的存档里没有后来
+ * 新增的内置组（如 2026-10-20 的「期货」组）。`groupSidebarMenu` 对编排
+ * 序里没有的组一律追加到末尾，会让新内置组掉到「插件」组下面，违反默认
+ * 信息架构。本函数把缺失的内置组按 SIDEBAR_MENU_GROUP_DEFAULT_ORDER 的
+ * 位次插回：以「默认序里它前面、且用户存档里仍存在的最近一个组」为锚点
+ * 插到其身后；锚点不存在则插到最前。用户已编排的组相对顺序原样保留。
+ *
+ * 幂等：无缺失时原样返回；插件声明的自定义组不在 defaults 里，不受影响。
+ * @param persisted 用户持久化的分组 id 顺序
+ * @param defaults 内置分组默认顺序（SIDEBAR_MENU_GROUP_DEFAULT_ORDER）
+ * @returns 补插后的完整分组 id 顺序
+ */
+export const mergeMenuGroupOrder = (
+  persisted: readonly string[],
+  defaults: readonly string[],
+): string[] => {
+  const existing = persisted.filter((id): id is string => typeof id === 'string');
+  const missing = defaults.filter((id) => !existing.includes(id));
+  if (missing.length === 0) {
+    return existing;
+  }
+  const result = [...existing];
+  // 从后往前逐个插，保证多个缺失组之间也维持默认相对序
+  for (const id of [...missing].reverse()) {
+    const defIndex = defaults.indexOf(id);
+    let insertAt = 0;
+    for (let i = defIndex - 1; i >= 0; i -= 1) {
+      const anchor = defaults[i];
+      const anchorIndex = anchor === undefined ? -1 : result.indexOf(anchor);
+      if (anchorIndex >= 0) {
+        insertAt = anchorIndex + 1;
+        break;
+      }
+    }
+    result.splice(insertAt, 0, id);
+  }
+  return result;
+};

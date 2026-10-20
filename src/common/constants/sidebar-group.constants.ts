@@ -11,6 +11,7 @@
 export const SIDEBAR_MENU_GROUP = {
   MARKET: 'market',
   RANK: 'rank',
+  FUTURES: 'futures',
   NEWS: 'news',
   ACCOUNT: 'account',
   PLUGIN: 'plugin',
@@ -36,6 +37,7 @@ export const SIDEBAR_MENU_GROUP_DEFAULT: string = SIDEBAR_MENU_GROUP.PLUGIN;
 export const SIDEBAR_MENU_GROUP_TITLES: Readonly<Record<string, string>> = {
   [SIDEBAR_MENU_GROUP.MARKET]: '市场行情',
   [SIDEBAR_MENU_GROUP.RANK]: '榜单与资金',
+  [SIDEBAR_MENU_GROUP.FUTURES]: '期货',
   [SIDEBAR_MENU_GROUP.NEWS]: '热点资讯',
   [SIDEBAR_MENU_GROUP.ACCOUNT]: '自选与账户',
   [SIDEBAR_MENU_GROUP.PLUGIN]: '插件',
@@ -49,6 +51,7 @@ export const SIDEBAR_MENU_GROUP_TITLES: Readonly<Record<string, string>> = {
 export const SIDEBAR_MENU_GROUP_DEFAULT_ORDER: readonly string[] = [
   SIDEBAR_MENU_GROUP.MARKET,
   SIDEBAR_MENU_GROUP.RANK,
+  SIDEBAR_MENU_GROUP.FUTURES,
   SIDEBAR_MENU_GROUP.NEWS,
   SIDEBAR_MENU_GROUP.ACCOUNT,
   SIDEBAR_MENU_GROUP.PLUGIN,

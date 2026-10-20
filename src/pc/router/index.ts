@@ -15,6 +15,8 @@ import AgentAnalysisView from '../views/AgentAnalysisView.vue';
 import MarketRankView from '../views/MarketRankView.vue';
 import StockMarketView from '../views/StockMarketView.vue';
 import SectorFlowHistoryView from '../views/SectorFlowHistoryView.vue';
+import FuturesInstitutionalView from '../views/FuturesInstitutionalView.vue';
+import FuturesOverviewView from '../views/FuturesOverviewView.vue';
 import StockDetailView from '../views/StockDetailView.vue';
 import SystemLogView from '../views/SystemLogView.vue';
 import NotFoundView from '../views/NotFoundView.vue';
@@ -109,6 +111,18 @@ const routes = [
         path: ROUTE_PATH.STOCK_ACCOUNT,
         component: StockAccountView,
         meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.STOCK_ACCOUNT] },
+      },
+      // 期货·总览：期货分组首页（期货市场总览：主力流况 / 资金流向 / 多空比，2026-10-20 新增）
+      {
+        path: ROUTE_PATH.FUTURES_OVERVIEW,
+        component: FuturesOverviewView,
+        meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.FUTURES_OVERVIEW] },
+      },
+      // 期货·机构行为：中金所 CCPM 席位持仓行为分析（2026-10-20 新增）
+      {
+        path: ROUTE_PATH.FUTURES_INSTITUTIONAL,
+        component: FuturesInstitutionalView,
+        meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.FUTURES_INSTITUTIONAL] },
       },
       // 插件工坊：宿主自带的插件自省与管理页（原为一个内置插件，v2.6.2 起转正为正式功能，
       // 因此不受插件启停影响，也不再出现在插件清单里）

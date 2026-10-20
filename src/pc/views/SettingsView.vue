@@ -45,6 +45,7 @@ import { useAppUpdate } from "../../common/composables/use-app-update";
 import type { AppUpdateStatus } from "../../common/types/app-update.types.ts";
 import type { WeblogActionKey } from "../weblog/weblogActions.enum.ts";
 import { useSettingsStore } from "../../common/stores/settings";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { setWeblogEnabled, setWeblogWarnCapture, trackAction } from "../weblog/index";
 
 /**
@@ -605,19 +606,29 @@ const siteDisplayUrl = computed(() => SITE_URL.replace(/^https?:\/\//, "").repla
 /** 插件仓库地址展示文案（同上去协议头） */
 const pluginRepoDisplayUrl = computed(() => PLUGIN_REPO_URL.replace(/^https?:\/\//, ""));
 
-/** 「打开」仓库：与「前往下载」同口径开新窗口（不再用裸 <a>，按钮风格与同卡片其他按钮统一） */
+/**
+ * Tauri 态用系统默认浏览器打开外链（plugin-opener）；
+ * 纯浏览器 dev 环境无 runtime 时兜底新标签页——
+ * 直接 window.open 在 Tauri WebView 里不会落到系统浏览器（2026-10-20 王总反馈）
+ * @param url 外链地址
+ */
+const openExternal = (url: string): void => {
+  void openUrl(url).catch(() => window.open(url, "_blank"));
+};
+
+/** 「打开」仓库：与「前往下载」同口径（按钮风格与同卡片其他按钮统一） */
 const onOpenRepo = (): void => {
-  window.open(REPO_URL, "_blank", "noopener");
+  openExternal(REPO_URL);
 };
 
 /** 「打开」官网（同 onOpenRepo 口径） */
 const onOpenSite = (): void => {
-  window.open(SITE_URL, "_blank", "noopener");
+  openExternal(SITE_URL);
 };
 
 /** 「打开」插件仓库（同 onOpenRepo 口径） */
 const onOpenPluginRepo = (): void => {
-  window.open(PLUGIN_REPO_URL, "_blank", "noopener");
+  openExternal(PLUGIN_REPO_URL);
 };
 
 /** 自检探测地址：腾讯指数轻量行情（与真实数据链路一致，走同源代理） */

@@ -114,6 +114,9 @@
           "url": "https://cls.cn/*"
         },
         {
+          "url": "http://www.cffex.com.cn/*"
+        },
+        {
           "url": "https://*.linkdiary.cn/*"
         }
       ]

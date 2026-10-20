@@ -136,12 +136,16 @@ export const MOBILE_NEWS_SOURCE_LOGOS: Record<string, string> = {
   tp: '/news-logos/thepaper.ico',
 };
 
-/** 移动端底部 Tab（主 Tab 页路径 + 图标 + 文案；今天炒什么为首页模块跳转的二级页，不入 Tab） */
+/**
+ * 移动端底部 Tab（主 Tab 页路径 + 图标 + 文案；icon 为 Vant 图标名，2026-10-20 起
+ * 五 Tab：首页 / 行情 / 自选 / 新闻 / 我的；今天炒什么为行情页金刚区跳转的二级页，不入 Tab）
+ */
 export const MOBILE_TAB_ITEMS: readonly { path: string; label: string; icon: string }[] = [
-  { path: '/', label: '首页', icon: '⌂' },
-  { path: '/fund-flow', label: '资金流向', icon: '¥' },
-  { path: '/news', label: '热点新闻', icon: '✦' },
-  { path: '/watchlist', label: '我的自选', icon: '★' },
+  { path: '/', label: '首页', icon: 'wap-home-o' },
+  { path: '/quote', label: '行情', icon: 'chart-trending-o' },
+  { path: '/watchlist', label: '自选', icon: 'star-o' },
+  { path: '/news', label: '新闻', icon: 'newspaper-o' },
+  { path: '/mine', label: '我的', icon: 'user-o' },
 ];
 
 /** 移动端免责声明（「我的」页底部与设置页「免责声明」共用一份文案） */
