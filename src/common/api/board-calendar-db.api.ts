@@ -427,6 +427,49 @@ export const listBoardDailyByDates = async (dates: string[]): Promise<BoardDaily
 };
 
 /**
+ * 读取指定交易日的涨停个股明细（题材轮动视图批量取数）
+ * @param dates 交易日列表（`YYYY-MM-DD`，最多 30 天，分块查询）
+ * @returns 涨停个股明细（涨停在前，按封板时间升序；一只票可有多行 = 多板块归属）
+ */
+export const listLimitStocksByDates = async (dates: string[]): Promise<BoardLimitStock[]> => {
+  const db = await getBoardDb();
+  if (!db) return [];
+  const valid = dates.filter(isValidDate);
+  if (valid.length === 0) return [];
+  const result: BoardLimitStock[] = [];
+  for (const part of chunk(valid, INSERT_CHUNK_ROWS)) {
+    const quoted = part.map((date) => `'${date}'`).join(',');
+    const rows = await db.select<Row[]>(
+      `SELECT * FROM board_limit_stock WHERE trade_date IN (${quoted}) AND limit_type = 1 ` +
+        `ORDER BY trade_date, board_code, seal_time IS NULL, seal_time, symbol`,
+    );
+    result.push(...rows.map(toLimitStock));
+  }
+  return result;
+};
+
+/**
+ * 读取指定交易日的采集台账（题材轮动视图批量取数）
+ * @param dates 交易日列表（`YYYY-MM-DD`，最多 30 天，分块查询）
+ * @returns 采集台账行（库内缺失的日期不在返回值中）
+ */
+export const listCalendarMetasByDates = async (dates: string[]): Promise<BoardCalendarMeta[]> => {
+  const db = await getBoardDb();
+  if (!db) return [];
+  const valid = dates.filter(isValidDate);
+  if (valid.length === 0) return [];
+  const result: BoardCalendarMeta[] = [];
+  for (const part of chunk(valid, INSERT_CHUNK_ROWS)) {
+    const quoted = part.map((date) => `'${date}'`).join(',');
+    const rows = await db.select<Row[]>(
+      `SELECT * FROM board_calendar_meta WHERE trade_date IN (${quoted}) ORDER BY trade_date`,
+    );
+    result.push(...rows.map(toMeta));
+  }
+  return result;
+};
+
+/**
  * 读取库内已有数据的交易日（倒序）
  * @returns 交易日数组（`YYYY-MM-DD`）
  */
