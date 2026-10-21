@@ -43,6 +43,11 @@ import { mobileCacheGet, mobileCacheSet } from '../cache';
 import { MOBILE_TURNOVER_RANGE_DEFAULT, MOBILE_TURNOVER_RANGES } from '../constants';
 import { useMobilePolling } from '../composables/use-mobile-polling';
 import MobileHeatmap from '../components/MobileHeatmap.vue';
+import ArmsSparkline from '../components/ArmsSparkline.vue';
+import { ingestBreadthSnapshot, readBreadthDay } from '../../common/api/market-breadth-db.api';
+import type { MarketBreadth, BreadthPoint } from '../../common/types/market-breadth.types.ts';
+import { classifyArms } from '../../common/utils/classify-arms';
+import { toDayKey } from '../../common/utils/to-day-key';
 import { fetchThsTurnoverDay, fetchThsTurnoverMinute } from '../../common/api/ths-market-analysis.api.ts';
 import { computeTurnoverAverage5 } from '../../common/utils/compute-turnover-averages';
 import { formatAmount } from '../../common/utils/format-amount';
@@ -480,6 +485,9 @@ const loadBreadth = async (force = false): Promise<void> => {
       riseCount.value = quotes.filter((q) => (q.changePercent ?? 0) > 0).length;
       fallCount.value = quotes.filter((q) => (q.changePercent ?? 0) < 0).length;
       mobileCacheSet(BREADTH_CACHE_KEY, { dist: dist0, rise: riseCount.value, fall: fallCount.value });
+      // 市场宽度 · ARMS：与涨跌分布同源快照，ingest 落分钟点 / 收盘定稿日 bar（零新增请求）
+      breadth.value = ingestBreadthSnapshot(quotes);
+      armsSeries.value = readBreadthDay(toDayKey(Date.now()));
     }
     distError.value = false;
   } catch {
@@ -499,6 +507,14 @@ const distBars = computed(() => {
     h: Math.max((d.count / max) * 100, d.count > 0 ? 1.2 : 0),
   }));
 });
+
+/* === 市场宽度 · ARMS（与涨跌分布同源快照；分时序列本地按日积累） === */
+const breadth = ref<MarketBreadth | null>(null);
+const armsSeries = ref<BreadthPoint[]>([]);
+const armsState = computed(() => classifyArms(breadth.value?.arms ?? null));
+const armsText = computed(() => (breadth.value?.arms == null ? '--' : breadth.value!.arms!.toFixed(2)));
+const armsTone = computed(() => armsState.value?.tone ?? 'flat');
+const armsLabel = computed(() => armsState.value?.label ?? '--');
 
 /* === 市场情绪（涨停四池串行错峰 → computeMarketSentiment；30s TTL） === */
 const senti = ref<MarketSentiment | null>(null);
@@ -857,6 +873,19 @@ const pctClass = (v: number | null): string =>
           </div>
           <div class="m-home-dist__labels">
             <span v-for="bar in distBars" :key="`lb-${bar.key}`">{{ bar.label }}</span>
+          </div>
+
+          <!-- ARMS 分时（与涨跌分布同源快照；随行情 30s 更新，零新增请求） -->
+          <div v-if="armsSeries.length > 0 && breadth" class="m-home-arms">
+            <div class="m-home-arms-head">
+              <span class="t">ARMS 分时</span>
+              <span class="v" :class="armsTone === 'up' ? 'm-up' : armsTone === 'down' ? 'm-down' : ''">
+                {{ armsText }}
+              </span>
+              <span class="pill" :class="`pill--${armsTone}`">{{ armsLabel }}</span>
+              <span class="hint">1.0 平衡线 · 随快照更新</span>
+            </div>
+            <ArmsSparkline :points="armsSeries" />
           </div>
         </template>
         <div v-else class="m-home-panel__skel">

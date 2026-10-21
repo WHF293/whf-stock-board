@@ -107,3 +107,9 @@ export const STORAGE_NS_COMMAND_PALETTE_RECENT = 'pc.commandPaletteRecent';
 
 /** 自选 · 叠加对比组合（勾选符号 + 区间交易日数，JSON：{ symbols, rangeDays }） */
 export const STORAGE_NS_WATCHLIST_COMPARE = 'pc.watchlistCompare';
+
+/** 市场宽度 · 分钟点序列（按本地日积累；值 = { [date]: BreadthPoint[] }，滚存最近 3 日） */
+export const STORAGE_NS_MARKET_BREADTH_DAYS = 'marketBreadth.days';
+
+/** 市场宽度 · 日 bar（收盘定稿聚合，滚存 250 日；值 = BreadthDayBar[]，日期升序） */
+export const STORAGE_NS_MARKET_BREADTH_BARS = 'marketBreadth.bars';
