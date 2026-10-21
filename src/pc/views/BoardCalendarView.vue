@@ -7,6 +7,7 @@ import BoardDataSyncMenu from '../components/business/BoardDataSyncMenu.vue';
 import BoardFilterModal from '../components/business/BoardFilterModal.vue';
 import BoardMainlinePanel from '../components/business/BoardMainlinePanel.vue';
 import BoardProfitBubblePanel from '../components/business/BoardProfitBubblePanel.vue';
+import BoardRotationPanel from '../components/business/BoardRotationPanel.vue';
 import BaseButton from '../components/ui/BaseButton.vue';
 import BaseCard from '../components/ui/BaseCard.vue';
 import BaseEmpty from '../components/ui/BaseEmpty.vue';
@@ -18,6 +19,8 @@ import {
   isBoardDbAvailable,
   listBoardDailyByDates,
   listBoardProfiles,
+  listCalendarMetasByDates,
+  listLimitStocksByDates,
 } from '../../common/api/board-calendar-db.api.ts';
 import { usePolling } from '../../common/composables/use-polling';
 import { usePageHeaderSlot, PAGE_HEADER_ACTIONS_TARGET } from '../../common/composables/use-page-header-slot';
@@ -37,19 +40,23 @@ import {
   CALENDAR_BOARDS,
   HEAT_STREAK_WINDOW,
 } from '../../common/constants/board-calendar.constants.ts';
+import { ROTATION_RANGES } from '../../common/constants/board-rotation.constants.ts';
 import { DATA_CACHE_KEY } from '../../common/constants/data-cache.constants.ts';
 import { POLLING_INTERVAL } from '../../common/constants/polling.constants.ts';
 import { ROUTE_PATH } from '../../common/constants/router-meta.constants.ts';
 import { useDataCacheStore } from '../../common/stores/data-cache';
+import { useDockPanelStore } from '../../common/stores/dock-panel';
 import { useMarketStatusStore } from '../../common/stores/market-status';
 import { useSettingsStore } from '../../common/stores/settings';
 import type {
   BoardCalendarCell,
   BoardCalendarMatrix,
+  BoardCalendarMeta,
   BoardCalendarRow,
   BoardCalendarViewMode,
   BoardColumnSelection,
   BoardDailyRow,
+  BoardLimitStock,
   BoardMainlineCell,
   BoardProfile,
   BoardScoreBucket,
@@ -68,7 +75,10 @@ import { formatRelativeTime } from '../../common/utils/format-relative-time';
 import { handleSdkError } from '../../common/utils/handle-sdk-error';
 
 /**
- * 板块日历（板块热点 · 赚钱效应）
+ * 题材轮动（原板块日历 · 板块热点）
+ *
+ * 2026-10-21 王总指定页面改名「题材轮动」，主区四视图：题材轮动（bump 图，默认）/
+ * 板块日历（涨跌停矩阵）/ 赚钱效应（气泡图）/ 板块Top（名次 × 日期矩阵）。
  *
  * 行为：板块池为行（31 个申万一级行业 + 追加的热门板块，按热门口径降序）×
  * 交易日为列（降序，最近在左）；
@@ -76,12 +86,14 @@ import { handleSdkError } from '../../common/utils/handle-sdk-error';
  * 注意：追加板块与一级行业会重叠（半导体 ⊂ 电子），同一只票同时计入两边，属设计口径。
  * 数据来自本地库 sqlite:stock-board.db（由启动钩子与页内轮询逐日累积）。
  *
- * 口径见 .ai/开发方案/2026-09-14-板块日历与赚钱效应开发方案.md §3。
+ * 口径见 .ai/开发方案/2026-10-21-前端-题材轮动页面开发方案.md 与
+ * .ai/开发方案/2026-09-14-板块日历与赚钱效应开发方案.md §3。
  */
 
 const settingsStore = useSettingsStore();
 const dataCache = useDataCacheStore();
 const marketStatusStore = useMarketStatusStore();
+const dockPanelStore = useDockPanelStore();
 const router = useRouter();
 
 /** 桌面端才有本地库（浏览器端降级为「仅当日、不累积」） */
@@ -99,6 +111,10 @@ const tradingDates = ref<string[]>([]);
 const dailyRows = ref<BoardDailyRow[]>([]);
 /** 板块档案（回补日兜底展示成分股数） */
 const profiles = ref<BoardProfile[]>([]);
+/** 涨停个股明细（题材轮动视图：龙头 / 梯队 / 成员股来源，覆盖最近 30 个交易日） */
+const limitRows = ref<BoardLimitStock[]>([]);
+/** 采集台账（题材轮动视图：全市场涨跌停家数与数据级别来源，覆盖最近 30 个交易日） */
+const metaRows = ref<BoardCalendarMeta[]>([]);
 /** 最近一次读取成功时间 */
 const lastUpdatedAt = ref<number | null>(null);
 
@@ -110,7 +126,7 @@ const legendOpen = ref(false);
 
 /** 页头动作挂载守卫：只有本页激活时按钮才出现在页头（KeepAlive 缓存页切走不残留） */
 const { active: headerSlotActive } = usePageHeaderSlot();
-/** 主区视图：列表（涨跌停矩阵）/ 气泡图（赚钱效应） */
+/** 主区视图：题材轮动（bump 图，默认）/ 板块日历（涨跌停矩阵）/ 赚钱效应 / 板块Top */
 const calendarView = ref<BoardCalendarViewMode>(BOARD_CALENDAR_VIEW_DEFAULT);
 /** 弹窗状态 */
 const modalOpen = ref(false);
@@ -365,13 +381,17 @@ const mainlineMatrix = computed(() =>
   buildBoardMainlineMatrix(dailyRows.value, matrixDates.value, BOARD_MAINLINE_TOP_N),
 );
 
+/** 题材轮动取数窗口（交易日数）：覆盖轮动最大档位，不随日历范围档位缩水 */
+const ROTATION_WINDOW_DAYS = Math.max(...ROTATION_RANGES);
+
 /**
- * 从本地库读取矩阵数据（交易日轴 + 板块日聚合 + 板块档案）
+ * 从本地库读取矩阵数据（交易日轴 + 板块日聚合 + 板块档案 + 涨停明细 / 台账）
  *
  * 两步分别归因：交易日轴失败是上游问题，读库失败是本地库问题，
  * 不能共用一个「检查网络」文案（否则真实原因会被掩盖）。
  *
  * 交易日轴走采集层的共享缓存（入库后只做增量），页面轮询默认不产生任何上游请求。
+ * 涨停明细与台账按轮动窗口（最近 30 个交易日）批量读取，供题材轮动视图使用。
  * @param forceAxis 是否强制重拉交易日轴（仅用户点「刷新」时为 true）
  */
 const refresh = async (forceAxis: boolean): Promise<void> => {
@@ -391,14 +411,21 @@ const refresh = async (forceAxis: boolean): Promise<void> => {
     const descending = [...dates].reverse();
     const limit = rangeLimit.value;
     const selected = limit === null ? descending : descending.slice(0, limit);
+    const rotationDates = descending.slice(0, ROTATION_WINDOW_DAYS);
+    // 日聚合按「范围 ∪ 轮动窗口」读（单条 SQL，范围档位小于 30 天时补齐轮动窗口）
+    const readDates = [...new Set([...selected, ...rotationDates])];
 
     try {
-      const [rowList, profileList] = await Promise.all([
-        listBoardDailyByDates(selected),
+      const [rowList, profileList, limitList, metaList] = await Promise.all([
+        listBoardDailyByDates(readDates),
         listBoardProfiles(),
+        listLimitStocksByDates(rotationDates),
+        listCalendarMetasByDates(rotationDates),
       ]);
       dailyRows.value = rowList;
       profiles.value = profileList;
+      limitRows.value = limitList;
+      metaRows.value = metaList;
       dataCache.set(DATA_CACHE_KEY.BOARD_CALENDAR_MATRIX, rowList);
       lastUpdatedAt.value = Date.now();
       errorText.value = null;
@@ -504,6 +531,22 @@ const onMainlineCellClick = (cell: BoardMainlineCell): void => {
 };
 
 /**
+ * 题材轮动 · 点击成员股 / 龙头：打开右侧停靠面板（全站唯一入口口径）
+ * @param symbol 个股代码（6 位形态）
+ */
+const onRotationStockClick = (symbol: string): void => {
+  dockPanelStore.openStock(symbol);
+};
+
+/**
+ * 题材轮动 · 点击板块：进入板块详情页（与板块Top cellClick 同口径）
+ * @param boardCode 板块代码
+ */
+const onRotationBoardClick = (boardCode: string): void => {
+  void router.push(`${ROUTE_PATH.BOARD_DETAIL}/${boardCode}`);
+};
+
+/**
  * 确认板块过滤器：持久化勾选与行序（立即生效，下次进入自动恢复）
  * @param selection 勾选与顺序（已在弹窗内归一化）
  */
@@ -567,8 +610,8 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
       </div>
     </div>
 
-    <!-- 控制条：热门口径 / 范围 / 恢复排序（内容高固定，剩余高度全部留给矩阵） -->
-    <div class="flex shrink-0 flex-wrap items-center gap-2">
+    <!-- 控制条：热门口径 / 范围 / 恢复排序（仅板块日历 / 板块Top 需要，题材轮动与赚钱效应不显示） -->
+    <div v-if="calendarView !== BOARD_CALENDAR_VIEW.ROTATION && calendarView !== BOARD_CALENDAR_VIEW.BUBBLE" class="flex shrink-0 flex-wrap items-center gap-2">
       <BaseTabs
         :model-value="settingsStore.boardCalendarHeatBasis"
         :options="BOARD_CALENDAR_HEAT_OPTIONS"
@@ -590,7 +633,8 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
       </button>
     </div>
 
-    <NoticeBar :text="NOTICE_TEXT" />
+    <!-- 规则提示条描述的是日历矩阵口径，题材轮动 / 赚钱效应视图不显示 -->
+    <NoticeBar v-if="calendarView === BOARD_CALENDAR_VIEW.LIST" :text="NOTICE_TEXT" />
 
     <!-- 浏览器端降级提示 -->
     <p v-if="!isDbAvailable" class="text-xs text-text-tertiary" role="note">
@@ -672,12 +716,31 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
       />
     </BaseCard>
 
-    <!-- 板块分析卡片：每日得分绝对值 Top10 的「名次 × 日期」转置表 -->
+    <!-- 题材轮动：面板自带上下两张卡片，外层不再套背景卡（避免双层卡片左右露底色带） -->
+    <template v-else-if="calendarView === BOARD_CALENDAR_VIEW.ROTATION">
+      <BaseCard v-if="isLoading && dailyRows.length === 0" fill class="min-h-0 flex-1">
+        <BaseSkeleton />
+      </BaseCard>
+      <BaseCard v-else-if="dailyRows.length === 0" fill class="min-h-0 flex-1">
+        <BaseEmpty text="暂无板块日历数据，请点击右上角「刷新」采集" />
+      </BaseCard>
+      <BoardRotationPanel
+        v-else
+        :dates="tradingDates"
+        :daily-rows="dailyRows"
+        :limit-rows="limitRows"
+        :meta-rows="metaRows"
+        @stock-click="onRotationStockClick"
+        @board-click="onRotationBoardClick"
+      />
+    </template>
+
+    <!-- 板块Top卡片：每日得分绝对值 Top10 的「名次 × 日期」转置表（原板块分析） -->
     <BaseCard
       v-else-if="calendarView === BOARD_CALENDAR_VIEW.MAINLINE"
       fill
       class="min-h-0 flex-1"
-      title="板块分析"
+      title="板块Top"
     >
       <BaseSkeleton v-if="isLoading && dailyRows.length === 0" />
       <BaseEmpty
@@ -694,7 +757,7 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
       v-else
       fill
       class="min-h-0 flex-1"
-      title="赚钱效应气泡图"
+      title="赚钱效应"
     >
       <div class="min-h-0 flex-1">
         <BoardProfitBubblePanel

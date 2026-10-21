@@ -84,7 +84,7 @@ export const MENU_ITEMS: readonly SidebarMenuEntry[] = [
   // 大盘云图紧跟行情全景：原其页内 tab，独立成页（2026-10-13），同为「市场全景视角」
   { path: ROUTE_PATH.HEATMAP, title: "大盘云图", icon: MENU_ICON.HEATMAP, group: SIDEBAR_MENU_GROUP.MARKET },
   // 板块日历紧跟行情全景：同为「板块维度的行情视角」
-  { path: ROUTE_PATH.BOARD_CALENDAR, title: "板块日历", icon: MENU_ICON.CALENDAR, group: SIDEBAR_MENU_GROUP.MARKET },
+  { path: ROUTE_PATH.BOARD_CALENDAR, title: "题材轮动", icon: MENU_ICON.CALENDAR, group: SIDEBAR_MENU_GROUP.MARKET },
   { path: ROUTE_PATH.WATCHLIST, title: "自选股", icon: MENU_ICON.STAR, group: SIDEBAR_MENU_GROUP.ACCOUNT },
   // 选股器已改为插件分发（dsh-stock-screener），由插件注册菜单与 /screener 路由
   { path: ROUTE_PATH.HOT_NEWS, title: "热点新闻", icon: MENU_ICON.NEWS, group: SIDEBAR_MENU_GROUP.NEWS },

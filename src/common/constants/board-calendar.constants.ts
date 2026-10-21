@@ -361,21 +361,30 @@ export const BOARD_CALENDAR_RANGE_OPTIONS = [
   { label: '全部', value: BOARD_CALENDAR_RANGE.ALL },
 ] as const;
 
-/** 主区视图：list = 涨跌停矩阵列表（默认）/ bubble = 赚钱效应气泡图 / mainline = 板块主线分析 */
+/**
+ * 主区视图：rotation = 题材轮动 bump 图（默认）/ list = 涨跌停矩阵列表 /
+ * bubble = 赚钱效应气泡图 / mainline = 板块Top 分析
+ *
+ * 2026-10-21 王总指定：页面改名「题材轮动」，四个 Tab 改名重排
+ * （列表 → 板块日历、气泡图 → 赚钱效应、板块分析 → 板块Top、题材轮动置于首位）。
+ * key 不改名，只动 label 与顺序，路由与落库零影响。
+ */
 export const BOARD_CALENDAR_VIEW = {
+  ROTATION: 'rotation',
   LIST: 'list',
   BUBBLE: 'bubble',
   MAINLINE: 'mainline',
 } as const;
 
-/** 主区视图默认值 */
-export const BOARD_CALENDAR_VIEW_DEFAULT = BOARD_CALENDAR_VIEW.LIST;
+/** 主区视图默认值（页面即题材轮动页，默认进新视图） */
+export const BOARD_CALENDAR_VIEW_DEFAULT = BOARD_CALENDAR_VIEW.ROTATION;
 
-/** 主区视图选项（BaseTabs，样式与展示范围切换同款） */
+/** 主区视图选项（BaseTabs，顺序 = 页面 Tab 顺序） */
 export const BOARD_CALENDAR_VIEW_OPTIONS = [
-  { label: '列表', value: BOARD_CALENDAR_VIEW.LIST },
-  { label: '气泡图', value: BOARD_CALENDAR_VIEW.BUBBLE },
-  { label: '板块分析', value: BOARD_CALENDAR_VIEW.MAINLINE },
+  { label: '题材轮动', value: BOARD_CALENDAR_VIEW.ROTATION },
+  { label: '板块日历', value: BOARD_CALENDAR_VIEW.LIST },
+  { label: '赚钱效应', value: BOARD_CALENDAR_VIEW.BUBBLE },
+  { label: '板块Top', value: BOARD_CALENDAR_VIEW.MAINLINE },
 ] as const;
 
 /** 板块分析：每日按得分绝对值取前 N 名（横看同一板块是否连续在榜 = 资金集中，跳来跳去 = 快速轮动；多空由色阶区分） */
