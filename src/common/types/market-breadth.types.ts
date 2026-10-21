@@ -60,3 +60,25 @@ export interface BreadthDayBar {
   /** 收盘 ARMS 值（无法计算时 null） */
   arms: number | null;
 }
+
+/** 五大市场广度指标序列（ADL / ADR / OBOS / ARMS平滑 / MCO，逐日对齐） */
+export interface BreadthIndicatorSeries {
+  /** 交易日键序列（YYYY-MM-DD 升序，其余数组按此下标对齐） */
+  dates: string[];
+  /** ADL 腾落线（Σ(上涨-下跌家数)，自本地首条 bar 累加，仅相对意义） */
+  adl: Array<number | null>;
+  /** ADL 的 MA 均线 */
+  adlMa: Array<number | null>;
+  /** ADR 涨跌比率（N 日上涨家数总和 ÷ N 日下跌家数总和；下跌总和为 0 时 null） */
+  adr: Array<number | null>;
+  /** OBOS 超买超卖（N 日上涨家数总和 − N 日下跌家数总和） */
+  obos: Array<number | null>;
+  /** OBOS 的 MA 均线 */
+  obosMa: Array<number | null>;
+  /** ARMS 平滑均线（日 bar ARMS 的 MA；窗口内无有效 ARMS 时 null） */
+  armsMa: Array<number | null>;
+  /** MCO 麦克莱伦震荡指标（EMA(DIF,19) − EMA(DIF,39)，DIF = 上涨 − 下跌家数） */
+  mco: Array<number | null>;
+  /** MCO 信号线（MCO 的 MA） */
+  mcoSignal: Array<number | null>;
+}

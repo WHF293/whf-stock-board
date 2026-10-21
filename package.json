@@ -1,11 +1,13 @@
 {
   "name": "whf-stock-board",
   "private": true,
-  "version": "4.14.0",
+  "version": "4.15.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:web": "vite",
     "dev:mobile": "vite --mode mobile",
+    "dev:pc": "tauri dev",
     "dev:site": "vite --config vite.config.site.ts",
     "build": "vue-tsc -b && vite build",
     "build:mobile": "vue-tsc -b && vite build --mode mobile",

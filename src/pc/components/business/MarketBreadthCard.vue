@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 import BaseCard from '../ui/BaseCard.vue';
 import BaseEmpty from '../ui/BaseEmpty.vue';
 import BaseTabs from '../ui/BaseTabs.vue';
+import { ROUTE_PATH } from '../../../common/constants/router-meta.constants.ts';
 import ArmsTrendChart from '../charts/ArmsTrendChart.vue';
 import {
   BREADTH_VIEW,
@@ -34,6 +36,13 @@ const { breadth = null, sentiment = null } = defineProps<{
   /** 市场情绪统计（涨停 / 跌停家数复用其轮询结果） */
   sentiment?: MarketSentiment | null;
 }>();
+
+const router = useRouter();
+
+/** 跳转市场广度指标页（五大广度副图：ADL/ADR/OBOS/ARMS/MCO） */
+const gotoBreadthPage = (): void => {
+  void router.push(ROUTE_PATH.MARKET_BREADTH);
+};
 
 /** 当前视图（当日分时 / 近 30 日 / 近 60 日） */
 const view = ref<BreadthViewKey>(BREADTH_VIEW.INTRADAY);
@@ -97,14 +106,24 @@ const adText = computed(() => (breadth?.ad === null || breadth === null ? '--' :
 </script>
 
 <template>
-  <BaseCard title="市场宽度 · ARMS">
+  <BaseCard title="市场宽度 · ARMS" clickable-title @title-click="gotoBreadthPage">
     <template #extra>
-      <span
-        class="rounded-full px-2.5 py-1 text-xs font-bold"
-        style="color: var(--color-primary); background: var(--color-primary-weak)"
-      >
-        已积累 {{ accumDays }} 个交易日
-      </span>
+      <div class="flex items-center gap-2">
+        <button
+          type="button"
+          class="rounded-full px-2.5 py-1 text-xs font-bold transition-colors"
+          style="color: var(--color-primary); background: var(--color-primary-weak)"
+          @click="gotoBreadthPage"
+        >
+          广度指标详情
+        </button>
+        <span
+          class="rounded-full px-2.5 py-1 text-xs font-bold"
+          style="color: var(--color-primary); background: var(--color-primary-weak)"
+        >
+          已积累 {{ accumDays }} 个交易日
+        </span>
+      </div>
     </template>
 
     <div class="flex flex-wrap items-stretch gap-5">
