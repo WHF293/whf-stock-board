@@ -6,6 +6,7 @@ import WatchlistView from '../views/WatchlistView.vue';
 import PanoramaView from '../views/PanoramaView.vue';
 import HeatmapView from '../views/HeatmapView.vue';
 import BoardFlowView from '../views/BoardFlowView.vue';
+import MarketBreadthView from '../views/MarketBreadthView.vue';
 import BoardCalendarView from '../views/BoardCalendarView.vue';
 import BoardCalendarDetailView from '../views/BoardCalendarDetailView.vue';
 import HotNewsView from '../views/HotNewsView.vue';
@@ -69,6 +70,12 @@ const routes = [
         path: ROUTE_PATH.BOARD_FLOW,
         component: BoardFlowView,
         meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.BOARD_FLOW] },
+      },
+      // 市场广度指标：五大广度副图（ADL/ADR/OBOS/ARMS/MCO，2026-10-21）
+      {
+        path: ROUTE_PATH.MARKET_BREADTH,
+        component: MarketBreadthView,
+        meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.MARKET_BREADTH] },
       },
       {
         path: ROUTE_PATH.BOARD_CALENDAR,

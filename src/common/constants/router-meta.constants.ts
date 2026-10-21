@@ -20,6 +20,7 @@ export const ROUTE_PATH = {
   STOCK_MARKET: "/stock-market", // 个股行情（全市场列表，同花顺行情中心同源）
   BOARD_FLOW: "/board-flow", // 板块资金流向（原「行情全景-最新板块资金」独立成页，2026-10-13）
   HEATMAP: "/heatmap", // 大盘云图（原「行情全景-大盘云图」tab 独立成页，dapanyuntu.com iframe 直嵌，2026-10-13）
+  MARKET_BREADTH: "/market-breadth", // 市场广度指标（ADL/ADR/OBOS/ARMS/MCO 五指标副图，2026-10-21）
   SECTOR_FLOW_HISTORY: "/sector-flow-history", // 板块历史净流入（行情全景-板块资金 → 「查看历史净流入」，不入菜单）
   FUTURES_OVERVIEW: "/futures/overview", // 期货·总览（期货市场总览：主力流况 / 资金流向 / 多空比，同花顺期货通数据）
   FUTURES_INSTITUTIONAL: "/futures/institutional", // 期货·机构行为（中金所 CCPM 席位持仓行为分析，期货分组首页）
@@ -43,6 +44,7 @@ export const MENU_ICON = {
   FLAME: "flame",
   FUTURES: "futures",
   HEATMAP: "cloud",
+  BREADTH: "breadth",
   TROPHY: "trophy",
   FILTER: "filter",
   NEWS: "news",
@@ -85,6 +87,8 @@ export const MENU_ITEMS: readonly SidebarMenuEntry[] = [
   { path: ROUTE_PATH.HEATMAP, title: "大盘云图", icon: MENU_ICON.HEATMAP, group: SIDEBAR_MENU_GROUP.MARKET },
   // 板块日历紧跟行情全景：同为「板块维度的行情视角」
   { path: ROUTE_PATH.BOARD_CALENDAR, title: "题材轮动", icon: MENU_ICON.CALENDAR, group: SIDEBAR_MENU_GROUP.MARKET },
+  // 市场广度指标：五大广度副图（ADL/ADR/OBOS/ARMS/MCO），市场总览宽度卡的深化页
+  { path: ROUTE_PATH.MARKET_BREADTH, title: "市场广度指标", icon: MENU_ICON.BREADTH, group: SIDEBAR_MENU_GROUP.MARKET },
   { path: ROUTE_PATH.WATCHLIST, title: "自选股", icon: MENU_ICON.STAR, group: SIDEBAR_MENU_GROUP.ACCOUNT },
   // 选股器已改为插件分发（dsh-stock-screener），由插件注册菜单与 /screener 路由
   { path: ROUTE_PATH.HOT_NEWS, title: "热点新闻", icon: MENU_ICON.NEWS, group: SIDEBAR_MENU_GROUP.NEWS },

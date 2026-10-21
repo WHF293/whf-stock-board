@@ -237,9 +237,20 @@ const expandedFlatItems = computed<SidebarMenuEntry[]>(() =>
   ),
 );
 
+/**
+ * 收起态图标栏的扁平渲染序列（按组序展开、含被折叠组条目）
+ *
+ * 必须与展开态同源（menuGroups 的组序展开），不能直接用扁平 menuItems：
+ * 用户编排的扁平顺序与「组顺序 + 组内顺序」可能不一致，收起态若走 menuItems
+ * 会出现「收起后图标顺序和展开态不一样」的割裂感。
+ */
+const collapsedFlatItems = computed<SidebarMenuEntry[]>(() =>
+  flattenSidebarMenuGroups(menuGroups.value),
+);
+
 /** 当前侧栏顺序下的路径列表（驱动页面过渡方向与 Shift+Tab 循环；含被折叠组的页面） */
 const menuOrderPaths = computed<string[]>(() =>
-  flattenSidebarMenuGroups(menuGroups.value).map((item) => item.path),
+  collapsedFlatItems.value.map((item) => item.path),
 );
 
 // ---------- 页面进入动画（纯 CSS keyframes，方向按侧栏顺序） ----------
@@ -565,11 +576,12 @@ const navRef = ref<HTMLElement | null>(null);
  * 激活菜单序号（驱动气泡位移；当前路由不在菜单内 = -1 气泡隐藏）
  *
  * 两种形态的 DOM 序列不同：展开态 = 分组渲染、跳过被折叠组，序号取
- * expandedFlatItems；收起态 = 扁平图标流，序号取 menuItems。两者都与其
- * data-nav-item 锚点的 DOM 顺序一致，气泡按序号取元素才能对得上。
+ * expandedFlatItems；收起态 = 扁平图标流（按组序展开、含被折叠组），序号取
+ * collapsedFlatItems。两者都与其 data-nav-item 锚点的 DOM 顺序一致，
+ * 气泡按序号取元素才能对得上。
  */
 const activeNavIndex = computed(() => {
-  const items = effectiveCollapsed.value ? menuItems.value : expandedFlatItems.value;
+  const items = effectiveCollapsed.value ? collapsedFlatItems.value : expandedFlatItems.value;
   return items.findIndex((item) => isActive(item.path));
 });
 
@@ -727,10 +739,11 @@ void marketStatusStore.refresh();
             </div>
           </template>
 
-          <!-- 收起态（64px 图标栏）：不分组，纯扁平图标流 + tooltip（与旧版一致） -->
+          <!-- 收起态（64px 图标栏）：不分组，纯扁平图标流 + tooltip；
+               顺序与展开态同源（按组序展开），不能用扁平 menuItems，否则两态顺序不一致 -->
           <template v-else>
             <RouterLink
-              v-for="item in menuItems"
+              v-for="item in collapsedFlatItems"
               :key="item.path"
               :to="item.path"
               data-nav-item

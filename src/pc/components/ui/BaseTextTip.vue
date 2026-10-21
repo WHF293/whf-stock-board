@@ -101,7 +101,7 @@ onBeforeUnmount(() => {
     <div
       v-if="visible"
       ref="tipRef"
-      class="pointer-events-none fixed z-[60] max-w-xs rounded-lg border border-flat-weak bg-surface px-3 py-2 text-left text-xs leading-relaxed break-words text-text-secondary shadow-xl"
+      class="pointer-events-none fixed z-[60] max-w-xs whitespace-pre-line rounded-lg border border-flat-weak bg-surface px-3 py-2 text-left text-xs leading-relaxed break-words text-text-secondary shadow-xl"
       :style="tipStyle"
       role="tooltip"
     >

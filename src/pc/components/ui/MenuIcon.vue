@@ -44,6 +44,9 @@ const ICON_PATHS: Record<string, string> = {
     '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.7 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.7-3.8-9S9.5 5.6 12 3z"/>',
   // 大盘云图：云（云图页侧栏入口）
   cloud: '<path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>',
+  // 市场广度指标：上行趋势线 + 底部基线（广度曲线）
+  breadth:
+    '<path d="M3 16l5-7 4 4 6-9"/><path d="M3 21h18"/>',
   grip:
     '<circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/>',
   arrowLeft:

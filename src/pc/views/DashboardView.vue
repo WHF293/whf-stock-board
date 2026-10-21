@@ -10,6 +10,7 @@ import HeatmapBoardList from '../components/business/HeatmapBoardList.vue';
 import MarketFundFlowTrendChart from '../components/charts/MarketFundFlowTrendChart.vue';
 import TurnoverTrendChart from '../components/charts/TurnoverTrendChart.vue';
 import RealtimeTurnoverCard from '../components/business/RealtimeTurnoverCard.vue';
+import MarketBreadthCard from '../components/business/MarketBreadthCard.vue';
 import MarketRatingCard from '../components/business/MarketRatingCard.vue';
 import BaseTabs from '../components/ui/BaseTabs.vue';
 import MenuIcon from '../components/ui/MenuIcon.vue';
@@ -57,6 +58,8 @@ import type { MarketFundFlow } from '../../common/types/flow.types.ts';
 import type { TurnoverDayItem } from '../../common/types/turnover.types.ts';
 import type { ZTPoolItem } from '../../common/types/event.types.ts';
 import type { MarketSentiment } from '../../common/types/market-sentiment.types.ts';
+import type { MarketBreadth } from '../../common/types/market-breadth.types.ts';
+import { ingestBreadthSnapshot } from '../../common/api/market-breadth-db.api.ts';
 import type { TurnoverTableRow } from '../../common/constants/turnover.constants.ts';
 import type { TableColumn } from '../../common/types/table.types.ts';
 import type { FullQuote } from '../../common/types/stock-quote.types.ts';
@@ -155,6 +158,9 @@ const marketFlowHistory = ref<MarketFundFlow[]>([]);
 /** 两市成交额合计（万） */
 const totalAmountWan = ref<number | null>(null);
 
+/** 市场宽度 · ARMS 统计（随 fetchMarketBreadth 同源快照写入，供 MarketBreadthCard 消费） */
+const marketBreadth = ref<MarketBreadth | null>(null);
+
 /** 市场宽度快照结构 */
 interface BreadthSnapshot {
   distribution: DistributionCount[];
@@ -242,6 +248,8 @@ const fetchMarketBreadth = async (): Promise<void> => {
 
   distribution.value = countDistribution(quotes.map((quote) => quote.changePercent));
   totalAmountWan.value = quotes.reduce((acc, quote) => acc + (quote.amount ?? 0), 0);
+  // 市场宽度 · ARMS：与涨跌分布同源快照，ingest 落分钟点 / 收盘定稿日 bar（零新增请求）
+  marketBreadth.value = ingestBreadthSnapshot(quotes);
   industryBoards.value = boards;
   marketFundFlow.value = flows.at(-1) ?? null;
   marketFlowHistory.value = flows.slice(-MARKET_FLOW_DAYS);
@@ -879,6 +887,9 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
         </template>
       </BaseCard>
     </div>
+
+    <!-- 市场宽度 · ARMS（2026-10-21 新增：当日分时 + 近 30/60 日曲线；数据随行情快照本地积累） -->
+    <MarketBreadthCard :breadth="marketBreadth" :sentiment="sentiment" />
 
     <!-- 板块热力（标题跳行情全景 A 股全景模块） -->
     <BaseCard

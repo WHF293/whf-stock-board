@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>市场宽度 · ARMS 曲线 · UI 稿</title>
+<!--
+  需求稿 & UI 高保真稿（对齐 whf-stock-board 项目设计语言 DESIGN-PC.md / mobile.css）
+  - 外壳（TOC/hero/scene/notes）沿用 ui-drafts 需求稿容器风格；应用页面本体严格走项目 token
+  - 项目 token：canvas #f7f9fa / surface #fff / primary #0e9488 / primary-weak #e6f5f3
+    up #e02020 (up-weak #fdecec) / down #00b578 (down-weak #e6f7f1) / flat #8a94a6 (flat-weak #eef1f5)
+    ink #1f2733 / ink-muted #5c6b80 / ink-subtle #98a2b3 · 卡片 12px · 控件 8px · 无 1px 边框线
+  - 场景 A：PC 市场总览（DashboardView）新卡「市场宽度 · ARMS」，插入「涨跌分布+大盘资金流」行之后
+  - 场景 B：移动端首页「涨跌分布 · 市场情绪」合并卡内追加 ARMS 分时区块（卡片通栏贴边，无左右留白）
+  - 数据事实（2026-10-21 实测）：当日数据复用既有 30s 全市场快照轮询，零新增请求；历史日线本地按日落库自积累，
+    上线日起逐日长出（稿内「已积累 38 日」为积累后的示意）。详见 .ai/开发方案/2026-10-21-市场宽度与ARMS曲线开发方案.md
+  - ARMS（TRIN，成交量口径）= (上涨家数/下跌家数) ÷ (上涨成交量/下跌成交量)；<1 强势（红区），>1 弱势（绿区）
+-->
+<style>
+  :root{
+    /* 项目 token（theme.css 单源同步） */
+    --primary:#0e9488; --primary-weak:#e6f5f3;
+    --up:#e02020; --up-strong:#c51616; --up-light:#f2a6a6; --up-pale:#f8d7d7; --up-weak:#fdecec;
+    --down:#00b578; --down-strong:#00925f; --down-light:#8fd9bd; --down-pale:#ccefe0; --down-weak:#e6f7f1;
+    --flat:#8a94a6; --flat-weak:#eef1f5;
+    --ink:#1f2733; --ink-muted:#5c6b80; --ink-subtle:#98a2b3;
+    --canvas:#f7f9fa; --surface:#fff;
+    --shadow-card:0 1px 3px rgb(31 39 51 / .06), 0 4px 16px rgb(31 39 51 / .06);
+    --radius-card:12px; --radius-ctl:8px;
+    /* 需求稿外壳专用（不属于应用 token） */
+    --line:#e6e9ef; --shadow-soft:0 3px 14px rgba(28,36,55,.06);
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0; color:var(--ink); background:linear-gradient(180deg,#f7f8fb 0,#f0f3f7 100%);
+    font-family:"PingFang SC","Microsoft YaHei",sans-serif; line-height:1.55;
+  }
+  button{font:inherit; cursor:pointer;}
+
+  /* === 需求稿外壳 === */
+  .toc{position:fixed; top:24px; left:20px; z-index:100; width:200px;
+    max-height:calc(100vh - 48px); padding:14px 12px; overflow-y:auto;
+    border:1px solid var(--line); border-radius:18px;
+    background:rgba(255,255,255,.92); box-shadow:var(--shadow-soft); backdrop-filter:blur(10px);}
+  .toc-title{margin:0 0 8px 4px; color:var(--ink); font-size:12px; font-weight:800;}
+  .toc-group{margin:10px 8px 3px; color:var(--ink-subtle); font-size:9px; font-weight:800; letter-spacing:.06em;}
+  .toc a{display:flex; align-items:center; gap:7px; min-height:28px; padding:5px 8px;
+    color:var(--ink-muted); text-decoration:none; border-radius:8px; font-size:12px; font-weight:700;}
+  .toc a:hover{color:var(--primary); background:var(--primary-weak);}
+  .toc .dot{display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px;
+    flex:0 0 18px; color:var(--ink-subtle); font-size:10px; font-weight:900; border-radius:50%; background:#f1f4fa;}
+  .toc a.main .dot{color:var(--primary); background:var(--primary-weak);}
+
+  .wrap{width:min(1480px, calc(100% - 48px)); margin:0 auto; padding:42px 0 92px;}
+
+  .hero{position:relative; overflow:hidden; padding:34px 38px; border-radius:24px; color:#fff;
+    background:linear-gradient(130deg,#171b24 0%,#272d3a 55%,#1e2a3a 100%); box-shadow:var(--shadow-soft);}
+  .hero::after{content:""; position:absolute; right:-90px; top:-100px; width:360px; height:360px;
+    border:60px solid rgba(14,148,136,0.18); border-radius:50%;}
+  .hero > *{position:relative; z-index:1;}
+  .eyebrow{color:#7fd8cd; font-size:12px; font-weight:800; letter-spacing:0.14em;}
+  h1{max-width:900px; margin:8px 0 10px; font-size:clamp(28px, 3.2vw, 42px); line-height:1.15;}
+  .hero p{max-width:960px; margin:0; color:#c5cad4; font-size:14px;}
+  .tags{display:flex; flex-wrap:wrap; gap:8px; margin-top:20px;}
+  .tag{padding:5px 11px; color:#fff; border:1px solid rgba(255,255,255,0.15);
+    border-radius:999px; background:rgba(255,255,255,0.08); font-size:11px;}
+  .tag.teal{border-color:rgba(14,148,136,0.45); background:rgba(14,148,136,0.25);}
+  .tag.red{border-color:rgba(255,76,91,0.35); background:rgba(224,32,32,0.2);}
+
+  .ia{margin-top:28px; padding:22px; border:1px solid var(--line); border-radius:18px;
+    background:rgba(255,255,255,0.88); box-shadow:var(--shadow-soft);}
+  .ia h2{margin:0 0 14px; font-size:17px;}
+  .fact-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:12px;}
+  @media(max-width:1100px){.fact-grid{grid-template-columns:1fr;}}
+  .fact{padding:15px 16px; border:1px solid var(--line); border-radius:14px; background:var(--surface);}
+  .fact .k{display:flex; align-items:center; gap:8px; font-size:13px; font-weight:800;}
+  .fact .ok{color:var(--down); font-size:11px; font-weight:800; padding:2px 8px; border-radius:999px; background:var(--down-weak);}
+  .fact .no{color:var(--up); font-size:11px; font-weight:800; padding:2px 8px; border-radius:999px; background:var(--up-weak);}
+  .fact p{margin:8px 0 0; color:var(--ink-muted); font-size:11.5px;}
+  .fact p b{color:var(--ink);}
+
+  .module{margin-top:54px; scroll-margin-top:24px;}
+  .module-kicker{color:var(--primary); font-size:11px; font-weight:800; letter-spacing:0.14em;}
+  .module h2{margin:5px 0 6px; font-size:26px;}
+  .module > p{max-width:980px; margin:0; color:var(--ink-muted); font-size:13px;}
+  .scene{margin-top:34px; scroll-margin-top:24px;}
+  .scene-head{display:flex; align-items:flex-start; gap:13px; margin-bottom:16px;}
+  .scene-no{display:grid; place-items:center; width:42px; height:42px; flex:0 0 42px; color:white;
+    border-radius:14px 14px 14px 5px; background:linear-gradient(135deg, var(--primary), #0a6f66);
+    box-shadow:0 8px 20px rgba(14,148,136,0.24); font-size:12px; font-weight:800;}
+  .scene-head h3{margin:0 0 3px; font-size:20px;}
+  .scene-head p{margin:0; color:var(--ink-muted); font-size:12px;}
+
+  .scene-grid{display:grid; grid-template-columns:minmax(0,1fr) 320px; gap:16px; align-items:start;}
+  @media(max-width:1200px){.scene-grid{grid-template-columns:1fr;}}
+
+  .notes{display:flex; flex-direction:column; gap:10px;}
+  .note{position:relative; padding:12px 14px 12px 34px; border:1px solid var(--line);
+    border-radius:14px; background:rgba(255,255,255,0.92); box-shadow:var(--shadow-soft);
+    color:var(--ink-muted); font-size:12px;}
+  .note b{color:var(--ink); font-weight:600;}
+  .note .pin{position:absolute; left:10px; top:11px; display:grid; place-items:center;
+    width:18px; height:18px; border-radius:50% 50% 50% 4px; background:var(--up); color:#fff;
+    font-size:10px; font-weight:800; box-shadow:0 3px 8px rgba(224,32,32,.3);}
+
+  /* === 应用页面高保真（PC） === */
+  .app-shell{display:grid; grid-template-columns:172px minmax(0,1fr); gap:0;
+    border-radius:16px; overflow:hidden; background:var(--canvas); box-shadow:var(--shadow-card);}
+  .shell-side{padding:14px 10px; background:var(--surface);}
+  .side-logo{padding:0 8px 12px; font-size:14px; font-weight:600;}
+  .side-nav{display:flex; flex-direction:column; gap:2px;}
+  .side-item{padding:8px 10px; border-radius:8px; color:var(--ink-muted); font-size:12px; font-weight:600;}
+  .side-item.on{color:var(--primary); background:var(--primary-weak);}
+  .shell-main{padding:18px 20px 22px; display:flex; flex-direction:column; gap:16px; min-width:0;}
+  .page-head{display:flex; align-items:center; justify-content:space-between;}
+  .page-head h4{margin:0; font-size:17px;}
+  .page-head .meta{color:var(--ink-subtle); font-size:11px;}
+
+  .ghost{border-radius:var(--radius-card); background:var(--surface); box-shadow:var(--shadow-card);
+    padding:14px 16px; color:var(--ink-subtle); font-size:12px; display:flex; align-items:center; justify-content:space-between;}
+  .ghost .bar{height:10px; border-radius:5px; background:#eef1f5;}
+  .ghost-row{display:grid; grid-template-columns:1fr 1fr; gap:16px;}
+  .ghost-inner{display:flex; gap:10px; align-items:center;}
+  .ghost-inner .bar{width:120px;} .ghost-inner .bar.s{width:64px;}
+
+  /* 新卡本体 */
+  .bread-card{border-radius:var(--radius-card); background:var(--surface); box-shadow:var(--shadow-card); padding:16px 18px 18px;}
+  .bread-head{display:flex; align-items:flex-start; justify-content:space-between; gap:12px;}
+  .bread-head h5{margin:0; font-size:14.5px; font-weight:700;}
+  .bread-head .sub{margin-top:3px; color:var(--ink-subtle); font-size:11px;}
+  .accum{flex:0 0 auto; color:var(--primary); font-size:11px; font-weight:700;
+    padding:4px 10px; border-radius:999px; background:var(--primary-weak);}
+  .bread-body{display:grid; grid-template-columns:236px minmax(0,1fr); gap:18px; margin-top:14px;}
+  @media(max-width:1000px){.bread-body{grid-template-columns:1fr;}}
+
+  .gauge{display:flex; flex-direction:column; gap:10px;}
+  .gauge-row{display:flex; align-items:center; justify-content:space-between; padding:9px 12px;
+    border-radius:10px; background:#fafbfc; font-size:12px; color:var(--ink-muted);}
+  .gauge-row b{font-size:14px; font-variant-numeric:tabular-nums;}
+  .gauge-row .u{color:var(--up);} .gauge-row .d{color:var(--down);} .gauge-row .f{color:var(--flat);}
+  .gauge-row .n{color:var(--ink); font-weight:700;}
+  .arms-hero{padding:12px 14px; border-radius:12px; background:linear-gradient(135deg,var(--up-weak),#fff 70%);}
+  .arms-hero .lb{display:flex; align-items:center; justify-content:space-between;}
+  .arms-hero .lb span{color:var(--ink-muted); font-size:11.5px; font-weight:700;}
+  .arms-hero .v{margin-top:2px; font-size:30px; font-weight:800; color:var(--up-strong); font-variant-numeric:tabular-nums; letter-spacing:-.5px;}
+  .pill{display:inline-flex; align-items:center; gap:5px; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:800;}
+  .pill i{width:6px; height:6px; border-radius:50%;}
+  .pill.s-red{color:var(--up-strong); background:var(--up-weak);} .pill.s-red i{background:var(--up);}
+  .pill.s-green{color:var(--down-strong); background:var(--down-weak);} .pill.s-green i{background:var(--down);}
+  .pill.s-gray{color:var(--ink-muted); background:var(--flat-weak);} .pill.s-gray i{background:var(--flat);}
+
+  .chart-col{min-width:0;}
+  .tabs{display:inline-flex; gap:2px; padding:3px; border-radius:var(--radius-ctl); background:var(--flat-weak); margin-bottom:10px;}
+  .tabs button{border:0; background:transparent; padding:5px 14px; border-radius:6px;
+    color:var(--ink-muted); font-size:12px; font-weight:700;}
+  .tabs button.on{background:var(--surface); color:var(--ink); box-shadow:0 1px 3px rgba(31,39,51,.12);}
+  .chart-box{position:relative;}
+  .chart-box svg{display:block; width:100%; height:auto;}
+  .axis-t{font-size:9.5px; fill:var(--ink-subtle);}
+  .leg{display:flex; gap:14px; margin-top:8px; color:var(--ink-muted); font-size:11px; flex-wrap:wrap;}
+  .leg i{display:inline-block; width:14px; height:3px; border-radius:2px; vertical-align:middle; margin-right:5px;}
+  .leg .sq{width:10px; height:8px; border-radius:2px;}
+
+  /* === 应用页面高保真（Mobile） === */
+  .phone-wrap{display:flex; justify-content:center;}
+  .phone{width:390px; border-radius:40px; border:10px solid #1b1f27; background:var(--canvas);
+    overflow:hidden; box-shadow:0 24px 60px rgba(20,26,40,.25);}
+  .m-nav{display:flex; align-items:center; justify-content:space-between; padding:14px 16px 10px; background:var(--canvas);}
+  .m-nav .t{font-size:16px; font-weight:800;}
+  .m-nav .ic{width:30px; height:30px; border-radius:50%; background:var(--surface); box-shadow:var(--shadow-card);}
+  .m-body{padding:0 0 20px; display:flex; flex-direction:column; gap:10px;}
+  .m-card{background:var(--surface); padding:13px 14px 14px;}  /* 通栏贴边：无左右 margin */
+  .m-sec{display:flex; align-items:baseline; justify-content:space-between; margin-bottom:9px;}
+  .m-sec .t{font-size:13.5px; font-weight:800;}
+  .m-sec .s{font-size:10.5px; color:var(--ink-subtle);}
+  .m-dist-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;}
+  .m-dist-head .t{font-size:12px; font-weight:700; color:var(--ink-muted);}
+  .m-dist-head .cnt{font-size:11.5px; color:var(--ink-muted);}
+  .m-dist-head b{font-variant-numeric:tabular-nums;}
+  .m-up{color:var(--up);} .m-down{color:var(--down);}
+
+  .m-arms{margin-top:12px; padding-top:11px; border-top:1px dashed #e6e9ef;}
+  .m-arms-head{display:flex; align-items:center; gap:8px;}
+  .m-arms-head .t{font-size:12px; font-weight:700; color:var(--ink-muted);}
+  .m-arms-head .v{font-size:17px; font-weight:800; color:var(--up-strong); font-variant-numeric:tabular-nums;}
+  .m-arms-head .hint{margin-left:auto; font-size:10px; color:var(--ink-subtle);}
+  .m-arms svg{display:block; width:100%; height:auto; margin-top:6px;}
+  .m-senti{margin-top:11px; font-size:11.5px; color:var(--ink-muted); display:flex; flex-wrap:wrap; gap:2px 4px; align-items:center;}
+  .m-senti i{color:#d3d9e3; margin:0 3px;}
+  .m-ladder{display:flex; gap:6px; margin-top:9px; flex-wrap:wrap;}
+  .m-lad{padding:3px 9px; border-radius:999px; background:var(--flat-weak); font-size:10.5px; color:var(--ink-muted); font-weight:700;}
+  .m-lad.hot{background:var(--up-weak); color:var(--up-strong);}
+
+  /* 附录 */
+  .spec{margin-top:28px; padding:22px; border:1px solid var(--line); border-radius:18px; background:rgba(255,255,255,.9); box-shadow:var(--shadow-soft);}
+  .spec h2{margin:0 0 12px; font-size:17px;}
+  table{width:100%; border-collapse:collapse; font-size:12px;}
+  th,td{text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top;}
+  th{color:var(--ink-subtle); font-size:11px; font-weight:800; letter-spacing:.04em;}
+  td b{font-variant-numeric:tabular-nums;}
+  .code{font-family:ui-monospace,Consolas,monospace; font-size:11px; background:#f4f6fa; padding:1px 6px; border-radius:5px;}
+  .sw{display:inline-block; width:12px; height:12px; border-radius:3px; vertical-align:-2px; margin-right:6px;}
+</style>
+</head>
+<body>
+<nav class="toc">
+  <div class="toc-title">市场宽度 · ARMS 稿</div>
+  <div class="toc-group">概览</div>
+  <a href="#overview" class="main"><span class="dot">◆</span>数据可得性结论</a>
+  <div class="toc-group">高保真场景</div>
+  <a href="#scene-pc"><span class="dot">A</span>PC · 市场总览新卡</a>
+  <a href="#scene-m"><span class="dot">B</span>移动端 · 首页合并卡</a>
+  <div class="toc-group">附录</div>
+  <a href="#spec"><span class="dot">§</span>口径 / 阈值 / 管道</a>
+</nav>
+
+<div class="wrap">
+  <header class="hero">
+    <div class="eyebrow">WHF STOCK BOARD · UI DRAFT · 2026-10-21</div>
+    <h1>市场宽度 · 阿姆氏指标（ARMS）曲线</h1>
+    <p>PC 市场总览新增全宽卡「市场宽度 · ARMS」（当日分时 + 近 30/60 日两形态）；移动端首页在「涨跌分布 · 市场情绪」合并卡内追加 ARMS 分时 sparkline。
+       全部数据由既有 30s 全市场快照轮询本地计算，零新增上游请求；历史日线本地按日积累，UI 明示积累天数。</p>
+    <div class="tags">
+      <span class="tag teal">PC DashboardView · 新卡</span>
+      <span class="tag teal">MobileHome · 合并卡扩展</span>
+      <span class="tag red">零新增轮询 / 请求</span>
+      <span class="tag">历史自积累 · 冷启动空态</span>
+      <span class="tag">ARMS &lt;1 强 · &gt;1 弱</span>
+    </div>
+  </header>
+
+  <section class="ia" id="overview">
+    <h2>数据可得性结论（2026-10-21 实测）</h2>
+    <div class="fact-grid">
+      <div class="fact">
+        <div class="k">当日实时 + 盘中分时 <span class="ok">可行 · 零新增请求</span></div>
+        <p>复用两页既有 <b>30s 全市场快照轮询</b>（fetchAllMarketQuotes）。FullQuote 自带
+          <b>changePercent / volume(手) / amount(万) / limitUp / limitDown</b>（stock-sdk FullQuote 类型 L145-191），
+          宽度家数、涨跌分组成交量、ARMS 全部本地可算。</p>
+      </div>
+      <div class="fact">
+        <div class="k">近 30/60 日历史曲线 <span class="no">无现成源 · 本地自积累</span></div>
+        <p>实测：同花顺图表接口只有成交额两个 key；乐咕市场活跃度 API 已 404；东财涨跌分布接口只有当日快照。
+           <b>「每日上涨/下跌分组成交量」历史任何免费源都没有</b> → 每交易日 15:10 后首轮快照聚合成日 bar 落库，上线日起逐日长出，无法回填。</p>
+      </div>
+      <div class="fact">
+        <div class="k">宽度降级源 <span class="ok">东财 getTopicZDFenBu</span></div>
+        <p>push2ex 单请求返回全市场涨跌分布桶计数（实测 200），可加总出涨跌家数——快照失败时宽度数值的降级通道；
+           <b>无分组成交量，不支撑 ARMS</b>（降级时 ARMS 显示 --）。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 场景 A：PC ============ -->
+  <section class="module">
+    <div class="module-kicker">SCENE A</div>
+    <h2>PC · 市场总览「市场宽度 · ARMS」卡</h2>
+    <p>插入位置：成交额卡 → 涨跌分布+大盘资金流行 → <b>本卡（全宽）</b> → 板块热力。左列实时指标面板 + 右列 ECharts 曲线（当日分时 / 近30日 / 近60日 Tab 切换，稿内可点击切换）。</p>
+    <div class="scene">
+      <div class="scene-grid">
+        <div class="app-shell">
+          <aside class="shell-side">
+            <div class="side-logo">📊 股票看板</div>
+            <nav class="side-nav">
+              <div class="side-item on">市场总览</div>
+              <div class="side-item">自选股</div>
+              <div class="side-item">题材轮动</div>
+              <div class="side-item">行情全景</div>
+              <div class="side-item">资金动向</div>
+              <div class="side-item">涨停与异动</div>
+              <div class="side-item">龙虎榜·大宗</div>
+              <div class="side-item">设置</div>
+            </nav>
+          </aside>
+          <div class="shell-main">
+            <div class="page-head">
+              <h4>市场总览</h4>
+              <span class="meta">轮询 30s · 2026-10-21 14:57</span>
+            </div>
+
+            <!-- 上方既有卡：占位 -->
+            <div class="ghost"><div class="ghost-inner"><span class="bar"></span><span class="bar s"></span></div><span>成交额（实时/历史/相对）卡 — 占位</span></div>
+            <div class="ghost-row">
+              <div class="ghost"><span>涨跌分布卡 — 占位</span><span class="bar s"></span></div>
+              <div class="ghost"><span>大盘资金流（近10日）— 占位</span><span class="bar s"></span></div>
+            </div>
+
+            <!-- ★ 新卡本体 -->
+            <div class="bread-card">
+              <div class="bread-head">
+                <div>
+                  <h5>市场宽度 · ARMS</h5>
+                  <div class="sub">全市场 A 股 · 随行情快照 30s 更新 · ARMS = (涨家数/跌家数)÷(涨成交量/跌成交量)</div>
+                </div>
+                <span class="accum">已积累 38 个交易日</span>
+              </div>
+              <div class="bread-body">
+                <!-- 左：指标面板 -->
+                <div class="gauge">
+                  <div class="arms-hero">
+                    <div class="lb">
+                      <span>ARMS 现值</span>
+                      <span class="pill s-red"><i></i>偏强</span>
+                    </div>
+                    <div class="v">0.87</div>
+                  </div>
+                  <div class="gauge-row"><span>上涨</span><b class="u">2,913</b></div>
+                  <div class="gauge-row"><span>下跌</span><b class="d">2,189</b></div>
+                  <div class="gauge-row"><span>平盘</span><b class="f">206</b></div>
+                  <div class="gauge-row"><span>涨停 / 跌停</span><b><span class="u">68</span> / <span class="d">9</span></b></div>
+                  <div class="gauge-row"><span>涨跌比 A/D</span><b class="n">1.33</b></div>
+                </div>
+                <!-- 右：曲线 -->
+                <div class="chart-col">
+                  <div class="tabs" id="pcTabs">
+                    <button class="on" data-v="intraday">当日分时</button>
+                    <button data-v="d30">近 30 日</button>
+                    <button data-v="d60">近 60 日</button>
+                  </div>
+                  <div class="chart-box" id="pcChart"></div>
+                  <div class="leg" id="pcLeg"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 下方既有卡：占位 -->
+            <div class="ghost"><span>板块热力卡 — 占位</span><span class="bar s"></span></div>
+          </div>
+        </div>
+
+        <div class="notes">
+          <div class="note"><span class="pin">1</span><b>左列指标面板</b>：上涨/下跌/平盘（红/绿/灰）、涨停/跌停复用既有 fetchZtPool 轮询结果（快照比对仅降级）；A/D = 上涨家数÷下跌家数。</div>
+          <div class="note"><span class="pin">2</span><b>ARMS 大数字 + 五档状态 pill</b>：阈值 &lt;0.75 强势 / 0.75~0.9 偏强 / 0.9~1.1 平衡 / 1.1~1.3 偏弱 / &gt;1.3 弱势（constants）。强势=红、弱势=绿，与 A 股涨跌配色对齐。</div>
+          <div class="note"><span class="pin">3</span><b>当日分时</b>：30s 一点、同分钟去重；y=1.0 虚线平衡线；&lt;1 红色淡带（强势区）、&gt;1 绿色淡带（弱势区）；tooltip 显示时刻家数与量比。</div>
+          <div class="note"><span class="pin">4</span><b>近 30/60 日</b>：ARMS 日线（主轴）+ 涨跌家数差柱（次轴，红涨绿跌）；缺口日断线 connectNulls:false。</div>
+          <div class="note"><span class="pin">5</span><b>「已积累 N 个交易日」badge</b>：历史自积累的冷启动明示；不足 30/60 日时 Tab 置灰并提示剩余天数。</div>
+          <div class="note"><span class="pin">6</span><b>数据通道</b>：快照轮询既有（涨跌分布同源）；本卡零新增请求、零新增轮询。快照失败时宽度走 push2ex 降级，ARMS 显示 --。</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 场景 B：移动端 ============ -->
+  <section class="module">
+    <div class="module-kicker">SCENE B</div>
+    <h2>移动端首页 · 涨跌分布卡内 ARMS 区块</h2>
+    <p>落在「涨跌分布 · 市场情绪」合并卡内、8 桶柱状之下：ARMS 现值 + 状态 chip + 自绘 SVG sparkline（不引 ECharts）。卡片<b>通栏贴边无左右留白</b>；零新增请求，消费同一份快照轮询结果。</p>
+    <div class="scene">
+      <div class="scene-grid">
+        <div class="phone-wrap">
+          <div class="phone">
+            <div class="m-nav"><span class="t">股票看板</span><span class="ic"></span></div>
+            <div class="m-body">
+              <!-- 既有成交额卡：占位 -->
+              <div class="m-card" style="color:var(--ink-subtle); font-size:11.5px;">成交额曲线卡 — 占位</div>
+
+              <!-- ★ 涨跌分布 · 市场情绪 合并卡（现有卡 + 新增 ARMS 区块） -->
+              <div class="m-card">
+                <div class="m-sec"><span class="t">涨跌分布 · 市场情绪</span><span class="s">全市场 A 股 · 30s 轮询</span></div>
+                <div class="m-dist-head">
+                  <span class="t">今日涨跌分布</span>
+                  <div class="cnt"><span class="m-up">上涨 <b>2,913</b> 家</span>&nbsp;&nbsp;<span class="m-down">下跌 <b>2,189</b> 家</span></div>
+                </div>
+                <!-- 8 桶柱状（示意） -->
+                <svg viewBox="0 0 362 86" style="display:block;width:100%;height:auto;">
+                  <g stroke="rgba(140,152,155,.14)" stroke-width="1">
+                    <line x1="0" y1="1" x2="362" y2="1" vector-effect="non-scaling-stroke"/>
+                    <line x1="0" y1="43" x2="362" y2="43" vector-effect="non-scaling-stroke"/>
+                    <line x1="0" y1="85" x2="362" y2="85" vector-effect="non-scaling-stroke"/>
+                  </g>
+                  <rect x="6"   y="18" width="28" height="67" rx="2" fill="#00b578" opacity=".85"/>
+                  <rect x="48"  y="38" width="28" height="47" rx="2" fill="#00b578" opacity=".85"/>
+                  <rect x="90"  y="52" width="28" height="33" rx="2" fill="#00b578" opacity=".85"/>
+                  <rect x="132" y="66" width="28" height="19" rx="2" fill="#00b578" opacity=".85"/>
+                  <rect x="174" y="60" width="14" height="25" rx="2" fill="#8a94a6" opacity=".7"/>
+                  <rect x="200" y="40" width="28" height="45" rx="2" fill="#e02020" opacity=".85"/>
+                  <rect x="242" y="30" width="28" height="55" rx="2" fill="#e02020" opacity=".85"/>
+                  <rect x="284" y="20" width="28" height="65" rx="2" fill="#e02020" opacity=".85"/>
+                  <rect x="326" y="34" width="30" height="51" rx="2" fill="#e02020" opacity=".85"/>
+                </svg>
+                <div style="display:flex;justify-content:space-between;font-size:9.5px;color:var(--ink-subtle);margin-top:3px;">
+                  <span>≤-10%</span><span>-7~-3</span><span>-3~0</span><span>0~3%</span><span>3~7%</span><span>≥7%</span>
+                </div>
+
+                <!-- ★★ 新增：ARMS 分时区块 -->
+                <div class="m-arms">
+                  <div class="m-arms-head">
+                    <span class="t">ARMS 分时</span>
+                    <span class="v">0.87</span>
+                    <span class="pill s-red"><i></i>偏强</span>
+                    <span class="hint">1.0 平衡线 · 随快照 30s 更新</span>
+                  </div>
+                  <div id="mSpark"></div>
+                </div>
+
+                <div class="m-senti">
+                  <span>涨停 <b class="m-up">68</b></span><i>/</i>
+                  <span>跌停 <b class="m-down">9</b></span><i>/</i>
+                  <span>炸板 <b>14</b>（17%）</span><i>/</i>
+                  <span>最高连板 <b class="m-up">6</b> 板</span><i>/</i>
+                  <span>昨涨停均涨 <b class="m-up">+2.4%</b></span>
+                </div>
+                <div class="m-ladder">
+                  <span class="m-lad hot">6板 · 1 家</span>
+                  <span class="m-lad">5板 · 2 家</span>
+                  <span class="m-lad">4板 · 4 家</span>
+                  <span class="m-lad">3板 · 9 家</span>
+                  <span class="m-lad">首板 · 52 家</span>
+                </div>
+              </div>
+
+              <div class="m-card" style="color:var(--ink-subtle); font-size:11.5px;">板块热力卡 — 占位</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="notes">
+          <div class="note"><span class="pin">1</span><b>位置</b>：8 桶柱状与情绪行之间——ARMS 与涨跌分布同源同频（同一份快照），合并卡内自然分组；不动 BookFlipBook 结构。</div>
+          <div class="note"><span class="pin">2</span><b>形态</b>：现值大数字 + 五档状态 chip + sparkline（自绘 SVG，仿成交额曲线轻量方案）；1.0 平衡虚线；<b>不引 ECharts</b>，控制首屏体积。</div>
+          <div class="note"><span class="pin">3</span><b>通栏贴边</b>：卡片无左右 margin（王总 UI 偏好），内边距 14px。</div>
+          <div class="note"><span class="pin">4</span><b>移动端不做历史视图</b>：屏幕小 + 历史需积累；后续数据厚了可在个股行情/市场榜单页补独立 ARMS 页。</div>
+          <div class="note"><span class="pin">5</span><b>失败降级</b>：随既有分区独立降级——快照失败显示「--」与重试，不阻塞分布/情绪区块。</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 附录 ============ -->
+  <section class="spec" id="spec">
+    <h2>附录 · 口径 / 阈值 / 数据管道</h2>
+    <table>
+      <tr><th style="width:150px;">项</th><th>定稿</th></tr>
+      <tr><td>ARMS 公式</td><td><b>(上涨家数 ÷ 下跌家数) ÷ (上涨成交量 ÷ 下跌成交量)</b>，成交量取快照 volume（手），与通达信主流口径一致；解读：&lt;1 上涨方量能占优（强），&gt;1 下跌方占优（弱）</td></tr>
+      <tr><td>五档阈值</td><td><b>&lt;0.75</b> 强势（红）/ <b>0.75~0.9</b> 偏强（红）/ <b>0.9~1.1</b> 平衡（灰）/ <b>1.1~1.3</b> 偏弱（绿）/ <b>&gt;1.3</b> 弱势（绿）→ constants 落地</td></tr>
+      <tr><td>宽度口径</td><td>上涨/下跌/平盘按 changePercent 数值判定（停牌/非数值剔除）；涨停/跌停优先复用既有 fetchZtPool 轮询，快照 limitUp/limitDown 比对仅降级</td></tr>
+      <tr><td>分时点</td><td>每轮 30s 快照算一点，同分钟去重取最后；localStorage（appStorage 命名空间，先例 rating-history.ts），60s 节流落盘，单日 241 点上限</td></tr>
+      <tr><td>日线 bar</td><td>每交易日 <b>15:10 后</b>首轮快照聚合落库，滚存 250 日；盘中/节假日不落 bar（防半日 bar 污染历史，2026-09-18 教训）</td></tr>
+      <tr><td>降级</td><td>快照失败 → 宽度走 push2ex getTopicZDFenBu（家数 only）；ARMS 显示 --，不自动重试</td></tr>
+      <tr><td>新增请求</td><td><b>0</b>（复用既有 30s 全市场快照轮询；降级源仅快照失败时补一发）</td></tr>
+      <tr><td>PC 落点</td><td><span class="code">DashboardView.vue</span> 涨跌分布+资金流行之后、板块热力之前，全宽卡（<span class="code">MarketBreadthCard.vue</span> + <span class="code">ArmsTrendChart.vue</span>）</td></tr>
+      <tr><td>移动落点</td><td><span class="code">MobileHome.vue</span> 涨跌分布合并卡内新增区块（<span class="code">ArmsSparkline.vue</span> 自绘 SVG）</td></tr>
+      <tr><td>预计工作量</td><td>纯函数+存储 0.5d · PC 卡 0.5d · 移动 sparkline 0.25d · 自验 0.25d ≈ <b>1.5 天</b></td></tr>
+    </table>
+  </section>
+</div>
+
+<script>
+/* ============ mock 数据与曲线渲染 ============ */
+const UP='#e02020', DOWN='#00b578', PRIMARY='#0e9488', SUBTLE='#98a2b3';
+
+/* 当日分时 mock：09:30~15:00，高开 1.35 → 回落至 0.85 */
+function genIntraday(){
+  const pts=[]; let v=1.35;
+  for(let i=0;i<180;i++){
+    const h=9+Math.floor((30+i)/60), m=(30+i)%60;
+    const drift=(1.0-v)*0.035+(Math.sin(i/9)*0.018)+((i%17===0)?0.03:0)-0.004;
+    v=Math.min(1.55,Math.max(0.62,v+drift+(Math.random()-0.5)*0.02));
+    pts.push([`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`,+v.toFixed(3)]);
+  }
+  return pts;
+}
+const INTRADAY=genIntraday();
+INTRADAY[INTRADAY.length-1][1]=0.87;
+
+/* 近 30 日 mock：ARMS 随机游走 0.7~1.5 + 涨跌家数差 */
+function genDaily(n){
+  const pts=[]; let v=1.05;
+  for(let i=0;i<n;i++){
+    v=Math.min(1.5,Math.max(0.68,v+(Math.random()-0.48)*0.16));
+    const diff=Math.round((1.15-v)*2600+(Math.random()-0.5)*500);
+    pts.push([`10-${(i*1+1).toString().padStart(2,'0')}`,+v.toFixed(3),diff]);
+  }
+  return pts;
+}
+const D30=genDaily(30);
+const D60=genDaily(60);
+
+/* 通用：把序列画到 viewBox 内 */
+function renderArmsChart(el, pts, opt){
+  const W=opt.w, H=opt.h, padL=34, padR=8, padT=10, padB=18;
+  const ys=pts.map(p=>p[1]);
+  let yMin=opt.yMin, yMax=opt.yMax;
+  const x=i=>padL+(W-padL-padR)*(pts.length<2?0.5:i/(pts.length-1));
+  const y=v=>padT+(H-padT-padB)*(1-(v-yMin)/(yMax-yMin));
+  const y1=y(1.0);
+  let s=`<svg viewBox="0 0 ${W} ${H}">`;
+  /* 强/弱带 */
+  s+=`<rect x="${padL}" y="${padT}" width="${W-padL-padR}" height="${Math.max(0,y1-padT)}" fill="${UP}" opacity=".045"/>`;
+  s+=`<rect x="${padL}" y="${y1}" width="${W-padL-padR}" height="${Math.max(0,H-padB-y1)}" fill="${DOWN}" opacity=".045"/>`;
+  /* 网格 + y 轴刻度 */
+  for(let k=0;k<=3;k++){
+    const gv=yMin+(yMax-yMin)*k/3, gy=y(gv);
+    s+=`<line x1="${padL}" y1="${gy}" x2="${W-padR}" y2="${gy}" stroke="rgba(140,152,155,.14)" vector-effect="non-scaling-stroke"/>`;
+    s+=`<text class="axis-t" x="${padL-5}" y="${gy+3}" text-anchor="end">${gv.toFixed(1)}</text>`;
+  }
+  /* 平衡线 1.0 */
+  s+=`<line x1="${padL}" y1="${y1}" x2="${W-padR}" y2="${y1}" stroke="${SUBTLE}" stroke-width="1" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"/>`;
+  /* 曲线 */
+  const d=pts.map((p,i)=>`${i?'L':'M'}${x(i).toFixed(1)},${y(p[1]).toFixed(1)}`).join('');
+  s+=`<path d="${d}" fill="none" stroke="${PRIMARY}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>`;
+  /* 末点 */
+  const last=pts[pts.length-1];
+  s+=`<circle cx="${x(pts.length-1).toFixed(1)}" cy="${y(last[1]).toFixed(1)}" r="3" fill="${PRIMARY}"/>`;
+  /* 副层数据（家数差柱） */
+  if(opt.bars){
+    const bMax=Math.max(...pts.map(p=>Math.abs(p[2]||0)))||1;
+    pts.forEach((p,i)=>{
+      const dv=p[2]||0; if(!dv) return;
+      const bw=Math.max(2,(W-padL-padR)/pts.length-1.5);
+      const bh=Math.abs(dv)/bMax*(H-padT-padB)*0.42;
+      const bx=x(i)-bw/2, by=dv>0?H-padB-bh:H-padB;
+      s+=`<rect x="${bx.toFixed(1)}" y="${by.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1,bh).toFixed(1)}" rx="1" fill="${dv>0?UP:DOWN}" opacity=".28"/>`;
+    });
+  }
+  /* x 轴标签 */
+  const tickN=opt.ticks||4;
+  for(let k=0;k<tickN;k++){
+    const i=Math.round((pts.length-1)*k/(tickN-1));
+    s+=`<text class="axis-t" x="${x(i).toFixed(1)}" y="${H-4}" text-anchor="${k===0?'start':(k===tickN-1?'end':'middle')}">${pts[i][0]}</text>`;
+  }
+  s+='</svg>';
+  el.innerHTML=s;
+}
+
+/* PC：三视图切换 */
+const pcChart=document.getElementById('pcChart'), pcLeg=document.getElementById('pcLeg');
+const VIEWS={
+  intraday:{pts:INTRADAY,yMin:0.6,yMax:1.6,ticks:4,
+    leg:`<span><i style="background:${PRIMARY}"></i>ARMS 分时（30s 一点）</span><span><i class="sq" style="background:${UP};opacity:.15"></i>强势区 &lt;1</span><span><i class="sq" style="background:${DOWN};opacity:.15"></i>弱势区 &gt;1</span><span><i style="background:${SUBTLE};height:1px"></i>平衡线 1.0</span>`},
+  d30:{pts:D30,yMin:0.6,yMax:1.6,ticks:5,bars:true,
+    leg:`<span><i style="background:${PRIMARY}"></i>ARMS 日线</span><span><i class="sq" style="background:${UP};opacity:.35"></i>上涨-下跌家数差（次轴）</span><span><i class="sq" style="background:${DOWN};opacity:.35"></i>负值</span><span><i style="background:${SUBTLE};height:1px"></i>平衡线 1.0</span>`},
+  d60:{pts:D60,yMin:0.6,yMax:1.6,ticks:5,bars:true,leg:''}
+};
+VIEWS.d60.leg=VIEWS.d30.leg;
+function drawPc(key){
+  const v=VIEWS[key];
+  renderArmsChart(pcChart,v.pts,{w:760,h:236,yMin:v.yMin,yMax:v.yMax,ticks:v.ticks,bars:v.bars});
+  pcLeg.innerHTML=v.leg;
+}
+document.getElementById('pcTabs').addEventListener('click',e=>{
+  const b=e.target.closest('button'); if(!b) return;
+  document.querySelectorAll('#pcTabs button').forEach(x=>x.classList.toggle('on',x===b));
+  drawPc(b.dataset.v);
+});
+drawPc('intraday');
+
+/* 移动端 sparkline（当日分时压缩版） */
+renderArmsChart(document.getElementById('mSpark'),INTRADAY,{w:362,h:104,yMin:0.6,yMax:1.6,ticks:3});
+</script>
+</body>
+</html>
