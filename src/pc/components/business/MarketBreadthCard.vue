@@ -3,17 +3,9 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import BaseCard from '../ui/BaseCard.vue';
 import BaseEmpty from '../ui/BaseEmpty.vue';
-import BaseTabs from '../ui/BaseTabs.vue';
 import { ROUTE_PATH } from '../../../common/constants/router-meta.constants.ts';
 import ArmsTrendChart from '../charts/ArmsTrendChart.vue';
-import {
-  BREADTH_VIEW,
-  BREADTH_VIEW_DAYS,
-  BREADTH_VIEW_OPTIONS,
-  type BreadthViewKey,
-} from '../../../common/constants/market-breadth.constants.ts';
 import type {
-  BreadthDayBar,
   BreadthPoint,
   MarketBreadth,
 } from '../../../common/types/market-breadth.types.ts';
@@ -26,9 +18,10 @@ import { toDayKey } from '../../../common/utils/to-day-key';
  * 市场宽度 · ARMS 卡（PC 市场总览）
  *
  * 左列实时指标面板（涨跌家数 / 涨停跌停 / A/D / ARMS 现值 + 五档状态），
- * 右列曲线：当日分时（本地分钟点积累）/ 近 30 / 60 日（本地日 bar 积累）。
+ * 右列为当日分时曲线（固定全天 09:30~15:00 时间轴）。
+ * 更长历史（近 30/60 日与五大广度副图）在「市场广度指标」页查看（右上角入口按钮）。
  * 全部数据来自既有 30s 全市场快照轮询（DashboardView fetchMarketBreadth 内 ingest），
- * 零新增上游请求；历史为本地积累，卡片自身只读 appStorage。
+ * 零新增上游请求；分时为本地积累，卡片自身只读 appStorage。
  */
 const { breadth = null, sentiment = null } = defineProps<{
   /** 当日市场宽度统计（快照轮询写入；null 时左列显示占位） */
@@ -44,19 +37,16 @@ const gotoBreadthPage = (): void => {
   void router.push(ROUTE_PATH.MARKET_BREADTH);
 };
 
-/** 当前视图（当日分时 / 近 30 日 / 近 60 日） */
-const view = ref<BreadthViewKey>(BREADTH_VIEW.INTRADAY);
-
 /** 当日分钟点序列（appStorage 读取） */
 const todaySeries = ref<BreadthPoint[]>([]);
 
-/** 日 bar 序列（appStorage 读取，日期升序） */
-const bars = ref<BreadthDayBar[]>([]);
+/** 日 bar 序列（appStorage 读取，仅用于「已积累 N 个交易日」徽标） */
+const accumDays = ref(0);
 
 /** 从本地库刷新序列（每轮快照后快照轻量重读） */
 const refreshSeries = (): void => {
   todaySeries.value = readBreadthDay(toDayKey(Date.now()));
-  bars.value = readBreadthBars();
+  accumDays.value = readBreadthBars().length;
 };
 
 onMounted(refreshSeries);
@@ -74,28 +64,6 @@ const stateStyle = computed<Record<string, string>>(() => {
   if (tone === 'up') return { color: 'var(--color-up-strong)', background: 'var(--color-up-weak)' };
   if (tone === 'down') return { color: 'var(--color-down-strong)', background: 'var(--color-down-weak)' };
   return { color: 'var(--color-flat)', background: 'var(--color-flat-weak)' };
-});
-
-/** 已积累的交易日数（历史冷启动明示） */
-const accumDays = computed(() => bars.value.length);
-
-/** 当前视图的日 bar 窗口（分时视图为空数组） */
-const windowBars = computed<BreadthDayBar[]>(() => {
-  if (view.value === BREADTH_VIEW.INTRADAY) return [];
-  const days = BREADTH_VIEW_DAYS[view.value as Exclude<BreadthViewKey, typeof BREADTH_VIEW.INTRADAY>];
-  return bars.value.slice(-days);
-});
-
-/** 当前视图是否为空态 */
-const isViewEmpty = computed(() =>
-  view.value === BREADTH_VIEW.INTRADAY ? todaySeries.value.length === 0 : windowBars.value.length === 0,
-);
-
-/** 距下一档窗口还差几个交易日（日线空态文案） */
-const daysToFill = computed(() => {
-  if (view.value === BREADTH_VIEW.INTRADAY) return 0;
-  const days = BREADTH_VIEW_DAYS[view.value as Exclude<BreadthViewKey, typeof BREADTH_VIEW.INTRADAY>];
-  return Math.max(0, days - accumDays.value);
 });
 
 /** ARMS 现值文案（null 显「--」） */
@@ -173,18 +141,15 @@ const adText = computed(() => (breadth?.ad === null || breadth === null ? '--' :
         </div>
       </div>
 
-      <!-- 右：曲线 -->
+      <!-- 右：当日分时曲线（固定全天 09:30~15:00 时间轴；更长历史走「市场广度指标」页）。
+           高度随左列指标面板拉伸对齐（items-stretch + h-full），极窄换行时回落 min-h -->
       <div class="min-w-0 flex-1">
-        <BaseTabs v-model="view" :options="BREADTH_VIEW_OPTIONS" />
-        <BaseEmpty
-          v-if="isViewEmpty"
-          :text="
-            view === BREADTH_VIEW.INTRADAY
-              ? '今日暂无采样（交易日盘中随行情快照自动积累）'
-              : `历史按本地逐日积累，距 ${view === BREADTH_VIEW.D30 ? 30 : 60} 日还差 ${daysToFill} 个交易日`
-          "
-        />
-        <ArmsTrendChart v-else :view="view" :points="todaySeries" :bars="bars" />
+        <BaseEmpty v-if="todaySeries.length === 0" text="今日暂无采样（交易日盘中随行情快照自动积累）" />
+        <div v-else class="relative h-full min-h-[236px]">
+          <div class="absolute inset-0">
+            <ArmsTrendChart :points="todaySeries" />
+          </div>
+        </div>
       </div>
     </div>
   </BaseCard>

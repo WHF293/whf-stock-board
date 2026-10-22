@@ -52,6 +52,11 @@
   /* 卡片圆角与柔和阴影 */
   --radius-card: 12px;
   --shadow-card: 0 1px 3px rgb(31 39 51 / 0.06), 0 4px 16px rgb(31 39 51 / 0.06);
+
+  /* Islands 布局区域岛阴影（2026-10-22 PC 布局岛化）：侧栏 / 页头 / 停靠面板
+     等从贴边通栏改为浮在画布上的独立岛，比卡片阴影深一层托起「浮岛」感。
+     岛圆角不走 token，直接用 rounded-2xl（16px，比卡片 12px 抬一档） */
+  --shadow-island: 0 2px 6px rgb(31 39 51 / 0.06), 0 8px 24px rgb(31 39 51 / 0.08);
 }
 
 /* 暗色变量覆盖：级联位于 @theme 之后，.dark 与 :root 同特异性故此处胜出 */
@@ -68,6 +73,7 @@
   --color-text-secondary: #9aa6b6;
   --color-text-tertiary: #6b7686;
   --shadow-card: 0 1px 3px rgb(0 0 0 / 0.4);
+  --shadow-island: 0 2px 6px rgb(0 0 0 / 0.35), 0 8px 24px rgb(0 0 0 / 0.35);
 }
 
 /*

@@ -241,67 +241,71 @@ const readinessBadges = computed(() => [
         </span>
       </div>
 
-      <BaseCard>
-        <div class="mb-2 flex items-center gap-1.5">
-          <h2 class="text-sm font-semibold text-text">ADL 腾落线</h2>
-          <BaseTextTip as="span" class="cursor-help" :text="infoText(BREADTH_INDICATOR_KIND.ADL)" placement="top">
-            <MenuIcon name="help" :size="14" class="text-text-tertiary transition-colors hover:text-primary" />
-          </BaseTextTip>
-          <span class="text-sm font-bold tabular-nums">{{ fmt(latest.adl, 0) }}</span>
-          <span class="ml-auto truncate pl-3 text-xs text-text-tertiary">
-            Σ(上涨−下跌家数)，起点为本地首条 bar（相对意义）；虚线为 MA{{ BREADTH_ADL_MA_PERIOD }}
-          </span>
-        </div>
-        <BreadthIndicatorChart kind="adl" :view="view" :bars="bars" :series="series" />
-      </BaseCard>
+      <!-- 五指标副图：宽容器一行两列、窄容器单列（主区已开 @container，
+           侧栏折叠 / 详情停靠面板开合都会实时响应；2026-10-22 王总指定） -->
+      <div class="grid grid-cols-1 gap-3 @3xl:grid-cols-2">
+        <BaseCard>
+          <div class="mb-2 flex items-center gap-1.5">
+            <h2 class="text-sm font-semibold text-text">ADL 腾落线</h2>
+            <BaseTextTip as="span" class="cursor-help" :text="infoText(BREADTH_INDICATOR_KIND.ADL)" placement="top">
+              <MenuIcon name="help" :size="14" class="text-text-tertiary transition-colors hover:text-primary" />
+            </BaseTextTip>
+            <span class="text-sm font-bold tabular-nums">{{ fmt(latest.adl, 0) }}</span>
+            <span class="ml-auto truncate pl-3 text-xs text-text-tertiary">
+              Σ(上涨−下跌家数)，起点为本地首条 bar（相对意义）；虚线为 MA{{ BREADTH_ADL_MA_PERIOD }}
+            </span>
+          </div>
+          <BreadthIndicatorChart kind="adl" :view="view" :bars="bars" :series="series" />
+        </BaseCard>
 
-      <BaseCard>
-        <div class="mb-2 flex items-center gap-1.5">
-          <h2 class="text-sm font-semibold text-text">ADR 涨跌比率</h2>
-          <BaseTextTip as="span" class="cursor-help" :text="infoText(BREADTH_INDICATOR_KIND.ADR)" placement="top">
-            <MenuIcon name="help" :size="14" class="text-text-tertiary transition-colors hover:text-primary" />
-          </BaseTextTip>
-          <span class="text-sm font-bold tabular-nums">{{ fmt(latest.adr) }}</span>
-          <span class="ml-auto truncate pl-3 text-xs text-text-tertiary">N=10；＞1.5 超买，＜0.5 超卖</span>
-        </div>
-        <BreadthIndicatorChart kind="adr" :view="view" :bars="bars" :series="series" />
-      </BaseCard>
+        <BaseCard>
+          <div class="mb-2 flex items-center gap-1.5">
+            <h2 class="text-sm font-semibold text-text">ADR 涨跌比率</h2>
+            <BaseTextTip as="span" class="cursor-help" :text="infoText(BREADTH_INDICATOR_KIND.ADR)" placement="top">
+              <MenuIcon name="help" :size="14" class="text-text-tertiary transition-colors hover:text-primary" />
+            </BaseTextTip>
+            <span class="text-sm font-bold tabular-nums">{{ fmt(latest.adr) }}</span>
+            <span class="ml-auto truncate pl-3 text-xs text-text-tertiary">N=10；＞1.5 超买，＜0.5 超卖</span>
+          </div>
+          <BreadthIndicatorChart kind="adr" :view="view" :bars="bars" :series="series" />
+        </BaseCard>
 
-      <BaseCard>
-        <div class="mb-2 flex items-center gap-1.5">
-          <h2 class="text-sm font-semibold text-text">OBOS 超买超卖</h2>
-          <BaseTextTip as="span" class="cursor-help" :text="infoText(BREADTH_INDICATOR_KIND.OBOS)" placement="top">
-            <MenuIcon name="help" :size="14" class="text-text-tertiary transition-colors hover:text-primary" />
-          </BaseTextTip>
-          <span class="text-sm font-bold tabular-nums">{{ fmt(latest.obos, 0) }}</span>
-          <span class="ml-auto truncate pl-3 text-xs text-text-tertiary">N=10 净差（家）；正值多头占优</span>
-        </div>
-        <BreadthIndicatorChart kind="obos" :view="view" :bars="bars" :series="series" />
-      </BaseCard>
+        <BaseCard>
+          <div class="mb-2 flex items-center gap-1.5">
+            <h2 class="text-sm font-semibold text-text">OBOS 超买超卖</h2>
+            <BaseTextTip as="span" class="cursor-help" :text="infoText(BREADTH_INDICATOR_KIND.OBOS)" placement="top">
+              <MenuIcon name="help" :size="14" class="text-text-tertiary transition-colors hover:text-primary" />
+            </BaseTextTip>
+            <span class="text-sm font-bold tabular-nums">{{ fmt(latest.obos, 0) }}</span>
+            <span class="ml-auto truncate pl-3 text-xs text-text-tertiary">N=10 净差（家）；正值多头占优</span>
+          </div>
+          <BreadthIndicatorChart kind="obos" :view="view" :bars="bars" :series="series" />
+        </BaseCard>
 
-      <BaseCard>
-        <div class="mb-2 flex items-center gap-1.5">
-          <h2 class="text-sm font-semibold text-text">TRIN 阿姆氏（ARMS）</h2>
-          <BaseTextTip as="span" class="cursor-help" :text="infoText(BREADTH_INDICATOR_KIND.ARMS)" placement="top">
-            <MenuIcon name="help" :size="14" class="text-text-tertiary transition-colors hover:text-primary" />
-          </BaseTextTip>
-          <span class="text-sm font-bold tabular-nums">{{ fmt(latest.armsMa) }}</span>
-          <span class="ml-auto truncate pl-3 text-xs text-text-tertiary">日线 + MA{{ BREADTH_ARMS_MA_PERIOD }}；＜1 多头强，＞1 空头强</span>
-        </div>
-        <BreadthIndicatorChart kind="arms" :view="view" :bars="bars" :series="series" />
-      </BaseCard>
+        <BaseCard>
+          <div class="mb-2 flex items-center gap-1.5">
+            <h2 class="text-sm font-semibold text-text">TRIN 阿姆氏（ARMS）</h2>
+            <BaseTextTip as="span" class="cursor-help" :text="infoText(BREADTH_INDICATOR_KIND.ARMS)" placement="top">
+              <MenuIcon name="help" :size="14" class="text-text-tertiary transition-colors hover:text-primary" />
+            </BaseTextTip>
+            <span class="text-sm font-bold tabular-nums">{{ fmt(latest.armsMa) }}</span>
+            <span class="ml-auto truncate pl-3 text-xs text-text-tertiary">日线 + MA{{ BREADTH_ARMS_MA_PERIOD }}；＜1 多头强，＞1 空头强</span>
+          </div>
+          <BreadthIndicatorChart kind="arms" :view="view" :bars="bars" :series="series" />
+        </BaseCard>
 
-      <BaseCard>
-        <div class="mb-2 flex items-center gap-1.5">
-          <h2 class="text-sm font-semibold text-text">麦克莱伦震荡（MCO）</h2>
-          <BaseTextTip as="span" class="cursor-help" :text="infoText(BREADTH_INDICATOR_KIND.MCO)" placement="top">
-            <MenuIcon name="help" :size="14" class="text-text-tertiary transition-colors hover:text-primary" />
-          </BaseTextTip>
-          <span class="text-sm font-bold tabular-nums">{{ fmt(latest.mco, 1) }}</span>
-          <span class="ml-auto truncate pl-3 text-xs text-text-tertiary">EMA19−EMA39；±25~35 为超买超卖区</span>
-        </div>
-        <BreadthIndicatorChart kind="mco" :view="view" :bars="bars" :series="series" />
-      </BaseCard>
+        <BaseCard>
+          <div class="mb-2 flex items-center gap-1.5">
+            <h2 class="text-sm font-semibold text-text">麦克莱伦震荡（MCO）</h2>
+            <BaseTextTip as="span" class="cursor-help" :text="infoText(BREADTH_INDICATOR_KIND.MCO)" placement="top">
+              <MenuIcon name="help" :size="14" class="text-text-tertiary transition-colors hover:text-primary" />
+            </BaseTextTip>
+            <span class="text-sm font-bold tabular-nums">{{ fmt(latest.mco, 1) }}</span>
+            <span class="ml-auto truncate pl-3 text-xs text-text-tertiary">EMA19−EMA39；±25~35 为超买超卖区</span>
+          </div>
+          <BreadthIndicatorChart kind="mco" :view="view" :bars="bars" :series="series" />
+        </BaseCard>
+      </div>
     </template>
   </div>
 </template>

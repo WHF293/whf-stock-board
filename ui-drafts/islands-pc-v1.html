@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WHF 看板 · PC Islands 风格改版稿 v1</title>
+<!--
+  设计 token 对照（取自 DESIGN-PC.md，与现行主题变量同源）：
+  primary #0e9488 · canvas #f7f9fa · surface #ffffff · ink #1f2733 ·
+  ink-muted #5c6b80 · ink-subtle #98a2b3 · flat-weak #eef1f5 ·
+  up #e02020 · down #00b578 · 卡片圆角 12 → islands 升级 16
+-->
+<style>
+  :root{
+    --primary:#0e9488;
+    --primary-weak:#e6f5f3;
+    --canvas:#f7f9fa;
+    --surface:#ffffff;
+    --ink:#1f2733;
+    --ink-muted:#5c6b80;
+    --ink-subtle:#98a2b3;
+    --flat-weak:#eef1f5;
+    --up:#e02020;
+    --up-weak:#fdecec;
+    --down:#00b578;
+    --down-weak:#e6f7f1;
+    --font:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+    --shadow-island:0 4px 18px rgba(28,36,55,.07), 0 1px 3px rgba(28,36,55,.04);
+    --shadow-float:0 12px 36px rgba(28,36,55,.13);
+    --r-island:16px;
+    --r-ctl:8px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; color:var(--ink); font-family:var(--font); line-height:1.55;
+    background:linear-gradient(180deg,#f2f5f7 0,#eaeef2 100%);
+  }
+  .num{font-family:'SF Mono',Menlo,Consolas,'Segoe UI',monospace; font-variant-numeric:tabular-nums;}
+  .wrap{width:min(1560px,calc(100% - 48px)); margin:0 auto; padding:36px 0 80px;}
+
+  /* ---------- 文档头 ---------- */
+  .doc-head{display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:20px;}
+  .doc-head h1{margin:0; font-size:24px; font-weight:800;}
+  .doc-head p{margin:4px 0 0; color:var(--ink-muted); font-size:13px;}
+  .doc-tags{display:flex; gap:8px;}
+  .doc-tag{padding:4px 12px; border-radius:999px; background:var(--primary-weak); color:var(--primary); font-size:12px; font-weight:600;}
+  .doc-tag.gray{background:var(--flat-weak); color:var(--ink-muted);}
+
+  /* ---------- 应用外壳画布 ---------- */
+  .shell{
+    background:
+      radial-gradient(circle at 85% 0%, rgba(14,148,136,.05), transparent 30rem),
+      var(--canvas);
+    border-radius:20px;
+    box-shadow:0 20px 60px rgba(28,36,55,.14);
+    overflow:hidden;
+  }
+  /* islands 全局骨架：外壳即画布，所有区域是浮在画布上的岛 */
+  .frame{
+    display:grid; grid-template-columns:204px 1fr 372px; grid-template-rows:46px 1fr;
+    gap:10px; padding:10px; height:880px;
+  }
+  .frame.no-dock{grid-template-columns:204px 1fr;}
+  .island{background:var(--surface); border-radius:var(--r-island); box-shadow:var(--shadow-island);}
+
+  /* ---------- 标题栏岛 ---------- */
+  .bar{
+    grid-column:1/-1; display:flex; align-items:center; gap:12px; padding:0 14px;
+  }
+  .traffic{display:flex; gap:6px;}
+  .traffic i{width:11px; height:11px; border-radius:50%; background:#e3e7ec;}
+  .bar-brand{display:flex; align-items:center; gap:8px; font-weight:800; font-size:13px;}
+  .bar-logo{width:22px; height:22px; border-radius:7px; background:linear-gradient(135deg,var(--primary),#0aa08f);
+    display:grid; place-items:center; color:#fff; font-size:12px; font-weight:900;}
+  .bar-sep{width:1px; height:18px; background:var(--flat-weak);}
+  .bar-tools{margin-left:auto; display:flex; align-items:center; gap:8px;}
+  .tool-ic{width:28px; height:28px; border-radius:var(--r-ctl); display:grid; place-items:center;
+    color:var(--ink-muted); font-size:13px; cursor:pointer;}
+  .tool-ic:hover{background:var(--flat-weak);}
+  .tool-ic.on{background:var(--primary-weak); color:var(--primary);}
+  .pill{display:inline-flex; align-items:center; gap:6px; height:28px; padding:0 10px;
+    border-radius:999px; background:var(--flat-weak); color:var(--ink-muted); font-size:12px; font-weight:600;}
+  .pill.live{background:var(--primary-weak); color:var(--primary);}
+  .pill.live::before{content:""; width:6px; height:6px; border-radius:50%; background:var(--primary);}
+
+  /* ---------- 侧栏岛 ---------- */
+  .side{display:flex; flex-direction:column; padding:10px; gap:2px; overflow:hidden;}
+  .side-search{display:flex; align-items:center; gap:7px; height:30px; margin:2px 2px 8px;
+    padding:0 10px; border-radius:var(--r-ctl); background:var(--flat-weak); color:var(--ink-subtle); font-size:12px;}
+  .side-group{margin:8px 6px 3px; color:var(--ink-subtle); font-size:10px; font-weight:800; letter-spacing:.08em;}
+  .nav{display:flex; align-items:center; gap:9px; height:34px; padding:0 10px;
+    border-radius:10px; color:var(--ink-muted); font-size:13px; font-weight:500; cursor:pointer;}
+  .nav .ic{width:18px; text-align:center; font-size:14px;}
+  .nav:hover{background:var(--flat-weak); color:var(--ink);}
+  .nav.on{background:var(--primary-weak); color:var(--primary); font-weight:600;}
+  .nav .badge{margin-left:auto; padding:1px 7px; border-radius:999px; background:var(--up-weak);
+    color:var(--up); font-size:10px; font-weight:700;}
+  .side-foot{margin-top:auto; border-top:1px solid var(--flat-weak); padding-top:8px;}
+
+  /* ---------- 主区：多岛纵排 ---------- */
+  .main{display:flex; flex-direction:column; gap:10px; min-width:0; overflow:hidden;}
+  .page-head{display:flex; align-items:center; gap:12px; padding:0 16px; flex:0 0 52px;}
+  .page-head h2{margin:0; font-size:16px; font-weight:600;}
+  .page-head .sub{color:var(--ink-subtle); font-size:12px;}
+  .ph-actions{margin-left:auto; display:flex; gap:8px;}
+  .btn{height:30px; padding:0 12px; border:none; border-radius:var(--r-ctl); font-size:12.5px;
+    font-weight:500; cursor:pointer; display:inline-flex; align-items:center; gap:6px;}
+  .btn.ghost{background:var(--flat-weak); color:var(--ink);}
+  .btn.primary{background:var(--primary); color:#fff;}
+  .btn.icon{width:30px; padding:0; justify-content:center;}
+
+  /* 指数摘要岛 */
+  .idx-strip{display:flex; align-items:center; gap:28px; padding:10px 16px; flex:0 0 64px; overflow:hidden;}
+  .idx{display:flex; flex-direction:column; gap:1px;}
+  .idx .n{font-size:11px; color:var(--ink-muted); font-weight:600;}
+  .idx .v{font-size:16px; font-weight:700;}
+  .idx .v small{font-size:11px; font-weight:600; margin-left:5px;}
+
+  /* 表格岛（主体） */
+  .table-card{flex:1; display:flex; flex-direction:column; min-height:0; overflow:hidden;}
+  .tb-bar{display:flex; align-items:center; gap:10px; padding:10px 14px; flex:0 0 auto;}
+  .seg{display:flex; background:var(--flat-weak); border-radius:10px; padding:3px; gap:2px;}
+  .seg span{padding:4px 12px; border-radius:8px; font-size:12px; font-weight:600; color:var(--ink-muted); cursor:pointer;}
+  .seg span.on{background:var(--surface); color:var(--ink); box-shadow:0 1px 4px rgba(28,36,55,.10);}
+  .tb-input{margin-left:auto; display:flex; align-items:center; gap:6px; height:30px; padding:0 10px;
+    border-radius:var(--r-ctl); background:var(--flat-weak); color:var(--ink-subtle); font-size:12px; width:200px;}
+  .scroll{flex:1; overflow:auto; padding:0 8px 8px;}
+  table{width:100%; border-collapse:collapse; font-size:12.5px;}
+  thead th{position:sticky; top:0; z-index:2; background:var(--surface); text-align:right; padding:7px 12px;
+    color:var(--ink-subtle); font-size:11px; font-weight:600; border-bottom:1px solid var(--flat-weak); white-space:nowrap;}
+  thead th:first-child, tbody td:first-child{text-align:left;}
+  tbody td{padding:8px 12px; text-align:right; white-space:nowrap; border-bottom:1px solid #f6f8fa;}
+  tbody tr{cursor:pointer;}
+  tbody tr:hover, tbody tr:hover td:first-child{background:var(--flat-weak);}
+  tbody tr.sel{background:var(--primary-weak);}
+  tbody tr.sel:hover{background:var(--primary-weak);}
+  .sname{font-weight:600;}
+  .scode{color:var(--ink-subtle); font-size:11px; margin-left:6px;}
+  .chip{display:inline-flex; align-items:center; gap:4px; padding:1px 8px; border-radius:999px; font-size:11px; font-weight:600;}
+  .chip.up{background:var(--up-weak); color:var(--up);}
+  .chip.down{background:var(--down-weak); color:var(--down);}
+  .chip.flat{background:var(--flat-weak); color:var(--ink-muted);}
+  .row-ops{display:flex; gap:6px; justify-content:flex-end;}
+  .op{height:24px; padding:0 9px; border:none; border-radius:7px; font-size:11px; font-weight:600; cursor:pointer;
+    background:var(--flat-weak); color:var(--ink-muted); display:inline-flex; align-items:center; gap:4px;}
+  .op.hot{background:var(--up-weak); color:var(--up);}
+  .op.star{background:var(--primary-weak); color:var(--primary);}
+
+  /* ---------- 详情停靠岛 ---------- */
+  .dock{display:flex; flex-direction:column; min-height:0; overflow:hidden; position:relative;}
+  .dock-head{display:flex; align-items:center; gap:10px; padding:12px 14px 0;}
+  .dock-head .t{font-weight:800; font-size:15px;}
+  .dock-head .c{color:var(--ink-subtle); font-size:11.5px;}
+  .dock-close{margin-left:auto; display:flex; gap:4px;}
+  .dq{padding:10px 14px 4px;}
+  .dq .px{font-size:28px; font-weight:800;}
+  .dq .px small{font-size:13px; color:var(--ink-muted); font-weight:600; margin-left:6px;}
+  .dq .chg{display:flex; gap:8px; margin-top:2px; font-size:12px; font-weight:700;}
+  .dq-meta{display:flex; gap:14px; padding:0 14px 10px; color:var(--ink-muted); font-size:11.5px;}
+  .dq-meta b{color:var(--ink); font-weight:700;}
+  .dock-tabs{display:flex; gap:2px; margin:0 10px; background:var(--flat-weak); border-radius:10px; padding:3px;}
+  .dock-tabs span{flex:1; text-align:center; padding:5px 0; border-radius:8px; font-size:12px;
+    font-weight:600; color:var(--ink-muted); cursor:pointer;}
+  .dock-tabs span.on{background:var(--surface); color:var(--primary); box-shadow:0 1px 4px rgba(28,36,55,.10);}
+  .chart{margin:10px 14px 0; height:150px; border-radius:12px; background:var(--flat-weak); position:relative; overflow:hidden; flex:0 0 auto;}
+  .chart svg{display:block;}
+  .chart .legend{position:absolute; left:10px; top:8px; display:flex; gap:10px; font-size:10.5px; color:var(--ink-muted); font-weight:600;}
+  .wul{padding:8px 14px 0; flex:1; min-height:0; overflow:hidden;}
+  .wul h4{margin:0 0 6px; font-size:12px; font-weight:700; color:var(--ink-muted);}
+  .wrow{display:grid; grid-template-columns:1fr 1fr 1fr; align-items:center; padding:3px 6px;
+    border-radius:6px; font-size:11.5px; position:relative; overflow:hidden;}
+  .wrow:hover{background:var(--flat-weak);}
+  .wrow .l{text-align:left;} .wrow .m{text-align:center; color:var(--ink-muted);} .wrow .r{text-align:right;}
+  .wrow .bg{position:absolute; top:0; bottom:0; right:0; opacity:.5;}
+  .wrow.up .bg{background:var(--up-weak);} .wrow.down .bg{background:var(--down-weak);}
+  .dock-notes{margin:8px 14px 12px; padding:10px 12px; border-radius:12px; background:var(--primary-weak);}
+  .dock-notes h5{margin:0 0 4px; font-size:11.5px; color:var(--primary); font-weight:700; display:flex; gap:6px; align-items:center;}
+  .dock-notes p{margin:0; font-size:12px; color:var(--ink);}
+
+  /* ---------- 标注 pin ---------- */
+  .pin{position:absolute; z-index:9; width:22px; height:22px; border-radius:50% 50% 50% 4px;
+    background:#ff2638; color:#fff; font-size:11px; font-weight:900; display:grid; place-items:center;
+    box-shadow:0 4px 10px rgba(255,38,56,.4); transform:rotate(-8deg);}
+
+  /* ---------- 变体区 ---------- */
+  .variants{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:24px;}
+  .variant{border-radius:20px; overflow:hidden; box-shadow:0 16px 44px rgba(28,36,55,.12);}
+  .variant h3{margin:0; padding:14px 18px 0; font-size:14px; font-weight:800;}
+  .variant .vp{margin:2px 18px 0; color:var(--ink-muted); font-size:12px;}
+  .v-frame{display:grid; gap:10px; padding:10px; height:300px; margin-top:10px;}
+  .v-frame.side-collapsed{grid-template-columns:60px 1fr;}
+  .v-frame.dark{
+    grid-template-columns:170px 1fr 300px;
+    background:#101418;
+  }
+  .v-frame.dark .island{background:#1a2027; color:#e6eaf0;}
+  .v-frame.dark .nav{color:#9aa6b6;}
+  .v-frame.dark .nav.on{background:#123f3b; color:#4cc8bb;}
+  .v-frame.dark .nav:hover{background:#232a33;}
+  .v-frame.dark .side-group{color:#6b7686;}
+  .v-frame.dark .side-search,.v-frame.dark .seg,.v-frame.dark .tb-input,.v-frame.dark .tool-ic:hover{background:#232a33; color:#9aa6b6;}
+  .v-frame.dark .side-foot{border-top-color:#232a33;}
+  .v-frame.dark .btn.ghost{background:#232a33; color:#e6eaf0;}
+  .v-frame.dark .seg span{color:#9aa6b6;}
+  .v-frame.dark .seg span.on{background:#1a2027; color:#e6eaf0; box-shadow:0 1px 4px rgba(0,0,0,.4);}
+  .v-frame.dark thead th{background:#1a2027; color:#6b7686; border-bottom-color:#232a33;}
+  .v-frame.dark tbody td{border-bottom-color:#20262e;}
+  .v-frame.dark tbody tr:hover{background:#232a33;}
+  .v-frame.dark tbody tr.sel{background:#123f3b;}
+  .v-frame.dark .chip.up{background:#3a1a1a; color:#ff7b7b;}
+  .v-frame.dark .chip.down{background:#12332a; color:#3ddba4;}
+  .v-frame.dark .idx .n{color:#9aa6b6;}
+  .v-frame.dark .page-head .sub,.v-frame.dark .scode,.v-frame.dark thead th{color:#6b7686;}
+  .v-frame.dark .pill{background:#232a33; color:#9aa6b6;}
+  .v-frame.dark .pill.live{background:#123f3b; color:#4cc8bb;}
+  .v-frame.dark .chart{background:#232a33;}
+  .v-frame.dark .scroll{background:#1a2027;}
+  .v-frame.dark .wul h4,.v-frame.dark .chart .legend{color:#9aa6b6;}
+  .mini-side{display:flex; flex-direction:column; gap:4px; padding:10px 8px;}
+  .mini-side .n{height:36px; border-radius:10px; display:grid; place-items:center; font-size:15px; color:var(--ink-muted);}
+  .mini-side .n.on{background:var(--primary-weak); color:var(--primary);}
+
+  /* ---------- 说明卡 ---------- */
+  .notes-grid{display:grid; grid-template-columns:repeat(2,1fr); gap:14px; margin-top:24px;}
+  .note{background:var(--surface); border-radius:16px; padding:18px 20px; box-shadow:0 3px 14px rgba(28,36,55,.06);}
+  .note .no{display:inline-grid; place-items:center; width:22px; height:22px; border-radius:50%;
+    background:#ff2638; color:#fff; font-size:11px; font-weight:900; margin-bottom:8px;}
+  .note h4{margin:0 0 6px; font-size:14px; font-weight:800;}
+  .note p{margin:0; color:var(--ink-muted); font-size:12.5px;}
+  .note p b{color:var(--ink);}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="doc-head">
+    <div>
+      <h1>WHF 看板 · PC Islands 风格改版稿</h1>
+      <p>侧边栏 / 主内容区 / 个股详情停靠面板 三区域岛化 · 预览稿 v1（浅色为主，附暗色变体）</p>
+    </div>
+    <div class="doc-tags">
+      <span class="doc-tag">PC Web / Tauri 桌面</span>
+      <span class="doc-tag gray">纯视觉稿 · 无埋点</span>
+      <span class="doc-tag gray">2026-10-22</span>
+    </div>
+  </div>
+
+  <!-- ============ 主画面：完整外壳 ============ -->
+  <div class="shell">
+    <div class="frame">
+
+      <!-- 标题栏岛（桌面端自绘 TitleBar） -->
+      <div class="island bar">
+        <span class="pin" style="left:38%; top:52px;">1</span>
+        <div class="traffic"><i></i><i></i><i></i></div>
+        <div class="bar-sep"></div>
+        <div class="bar-brand"><span class="bar-logo">W</span>WHF 看板</div>
+        <div class="bar-sep"></div>
+        <div class="tool-ic" title="收起侧栏">☰</div>
+        <div class="bar-tools">
+          <span class="pill live">A股交易中 10:12</span>
+          <span class="pill">⌕ 搜索 <small>Ctrl K</small></span>
+          <span class="tool-ic on">👁 盯盘中</span>
+          <span class="tool-ic">✦</span>
+          <span class="tool-ic">✉ Agent</span>
+          <span class="tool-ic">☾</span>
+        </div>
+      </div>
+
+      <!-- 侧栏岛 -->
+      <div class="island side">
+        <div class="side-search">⌕ 搜索股票 / 页面…</div>
+        <div class="side-group">行情</div>
+        <div class="nav"><span class="ic">▦</span>市场总览</div>
+        <div class="nav on"><span class="ic">★</span>自选股<span class="badge">12</span></div>
+        <div class="nav"><span class="ic">◎</span>行情全景</div>
+        <div class="side-group">洞察</div>
+        <div class="nav"><span class="ic">⇄</span>资金动向</div>
+        <div class="nav"><span class="ic">⚡</span>涨停与异动</div>
+        <div class="nav"><span class="ic">▤</span>龙虎榜·大宗</div>
+        <div class="side-group">插件</div>
+        <div class="nav"><span class="ic">⚙</span>选股器</div>
+        <div class="nav"><span class="ic">📰</span>热点快讯</div>
+        <div class="side-foot">
+          <div class="nav"><span class="ic">◈</span>插件工坊</div>
+          <div class="nav"><span class="ic">⚙</span>设置</div>
+        </div>
+      </div>
+
+      <!-- 主内容区：多岛纵排 -->
+      <div class="main">
+        <div class="island page-head">
+          <span class="pin" style="right:210px; top:-6px;">2</span>
+          <h2>自选股</h2><span class="sub">12 只 · 最后更新 10:12:36</span>
+          <div class="ph-actions">
+            <button class="btn ghost">＋ 添加自选</button>
+            <button class="btn ghost icon">⟳</button>
+            <button class="btn primary">↗ 导出</button>
+          </div>
+        </div>
+
+        <div class="island idx-strip">
+          <div class="idx"><span class="n">上证指数</span><span class="v num" style="color:var(--up)">3,362.12<small>+0.45%</small></span></div>
+          <div class="idx"><span class="n">深证成指</span><span class="v num" style="color:var(--up)">10,741.56<small>+0.62%</small></span></div>
+          <div class="idx"><span class="n">创业板指</span><span class="v num" style="color:var(--down)">2,214.30<small>-0.31%</small></span></div>
+          <div class="idx"><span class="n">科创50</span><span class="v num" style="color:var(--up)">986.44<small>+0.88%</small></span></div>
+          <div class="idx" style="margin-left:auto"><span class="n">今日浮动盈亏</span><span class="v num" style="color:var(--up)">+12,460.50<small>+1.87%</small></span></div>
+        </div>
+
+        <div class="island table-card">
+          <div class="tb-bar">
+            <div class="seg"><span class="on">全部 12</span><span>A股 9</span><span>美股 3</span><span>盯盘中 2</span></div>
+            <div class="tb-input">⌕ 输入代码 / 名称筛选</div>
+          </div>
+          <div class="scroll">
+            <table>
+              <thead><tr>
+                <th>名称</th><th>最新价</th><th>涨跌幅</th><th>涨跌额</th><th>成交量</th><th>成交额</th><th>今开</th><th>最高</th><th>最低</th><th>操作</th>
+              </tr></thead>
+              <tbody>
+                <tr class="sel">
+                  <td><span class="sname">贵州茅台</span><span class="scode">600518.SH</span></td>
+                  <td class="num" style="color:var(--up)">1,523.60</td><td><span class="chip up">+1.24%</span></td>
+                  <td class="num" style="color:var(--up)">+18.70</td><td class="num">2.84 万</td><td class="num">43.1 亿</td><td class="num">1,505.00</td><td class="num" style="color:var(--up)">1,531.00</td><td class="num" style="color:var(--down)">1,498.00</td>
+                  <td><div class="row-ops"><button class="op hot">👁 盯盘中</button><button class="op">备注</button></div></td>
+                </tr>
+                <tr>
+                  <td><span class="sname">宁德时代</span><span class="scode">300750.SZ</span></td>
+                  <td class="num" style="color:var(--down)">262.35</td><td><span class="chip down">-0.86%</span></td>
+                  <td class="num" style="color:var(--down)">-2.28</td><td class="num">8.61 万</td><td class="num">22.6 亿</td><td class="num">265.10</td><td class="num" style="color:var(--up)">267.44</td><td class="num" style="color:var(--down)">260.02</td>
+                  <td><div class="row-ops"><button class="op">👁 盯盘</button><button class="op">备注</button></div></td>
+                </tr>
+                <tr>
+                  <td><span class="sname">比亚迪</span><span class="scode">002594.SZ</span></td>
+                  <td class="num" style="color:var(--up)">358.20</td><td><span class="chip up">+2.05%</span></td>
+                  <td class="num" style="color:var(--up)">+7.20</td><td class="num">5.02 万</td><td class="num">17.9 亿</td><td class="num">351.00</td><td class="num" style="color:var(--up)">361.66</td><td class="num" style="color:var(--down)">349.11</td>
+                  <td><div class="row-ops"><button class="op">👁 盯盘</button><button class="op">备注</button></div></td>
+                </tr>
+                <tr>
+                  <td><span class="sname">中芯国际</span><span class="scode">688981.SH</span></td>
+                  <td class="num" style="color:var(--up)">98.75</td><td><span class="chip up">+3.42%</span></td>
+                  <td class="num" style="color:var(--up)">+3.27</td><td class="num">21.3 万</td><td class="num">21.0 亿</td><td class="num">95.60</td><td class="num" style="color:var(--up)">100.18</td><td class="num" style="color:var(--down)">94.85</td>
+                  <td><div class="row-ops"><button class="op">👁 盯盘</button><button class="op">备注</button></div></td>
+                </tr>
+                <tr>
+                  <td><span class="sname">东方财富</span><span class="scode">300059.SZ</span></td>
+                  <td class="num" style="color:var(--down)">22.68</td><td><span class="chip down">-1.14%</span></td>
+                  <td class="num" style="color:var(--down)">-0.26</td><td class="num">102.4 万</td><td class="num">23.3 亿</td><td class="num">22.95</td><td class="num" style="color:var(--up)">23.10</td><td class="num" style="color:var(--down)">22.50</td>
+                  <td><div class="row-ops"><button class="op">👁 盯盘</button><button class="op">备注</button></div></td>
+                </tr>
+                <tr>
+                  <td><span class="sname">隆基绿能</span><span class="scode">601012.SH</span></td>
+                  <td class="num" style="color:var(--up)">19.82</td><td><span class="chip up">+0.61%</span></td>
+                  <td class="num" style="color:var(--up)">+0.12</td><td class="num">45.7 万</td><td class="num">9.1 亿</td><td class="num">19.70</td><td class="num" style="color:var(--up)">20.05</td><td class="num" style="color:var(--down)">19.55</td>
+                  <td><div class="row-ops"><button class="op">👁 盯盘</button><button class="op">备注</button></div></td>
+                </tr>
+                <tr>
+                  <td><span class="sname">五粮液</span><span class="scode">000858.SZ</span></td>
+                  <td class="num">142.00</td><td><span class="chip flat">0.00%</span></td>
+                  <td class="num">0.00</td><td class="num">3.11 万</td><td class="num">4.4 亿</td><td class="num">142.00</td><td class="num" style="color:var(--up)">143.20</td><td class="num" style="color:var(--down)">141.05</td>
+                  <td><div class="row-ops"><button class="op">👁 盯盘</button><button class="op">备注</button></div></td>
+                </tr>
+                <tr>
+                  <td><span class="sname">长江电力</span><span class="scode">600900.SH</span></td>
+                  <td class="num" style="color:var(--up)">29.45</td><td><span class="chip up">+0.75%</span></td>
+                  <td class="num" style="color:var(--up)">+0.22</td><td class="num">12.8 万</td><td class="num">3.8 亿</td><td class="num">29.20</td><td class="num" style="color:var(--up)">29.68</td><td class="num" style="color:var(--down)">29.10</td>
+                  <td><div class="row-ops"><button class="op">👁 盯盘</button><button class="op">备注</button></div></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- 详情停靠岛 -->
+      <div class="island dock">
+        <span class="pin" style="right:12px; top:-6px;">3</span>
+        <div class="dock-head">
+          <div><span class="t">贵州茅台</span><span class="c"> 600518.SH</span></div>
+          <div class="dock-close"><span class="tool-ic">📌</span><span class="tool-ic">✕</span></div>
+        </div>
+        <div class="dq">
+          <div class="px num" style="color:var(--up)">1,523.60<small>+18.70（+1.24%）</small></div>
+        </div>
+        <div class="dq-meta">
+          <span>今开 <b class="num">1,505.00</b></span><span>最高 <b class="num" style="color:var(--up)">1,531.00</b></span><span>最低 <b class="num" style="color:var(--down)">1,498.00</b></span><span>量 <b class="num">2.84 万</b></span>
+        </div>
+        <div class="dock-tabs"><span class="on">分时</span><span>日K</span><span>五档</span><span>资金</span></div>
+        <div class="chart">
+          <div class="legend"><span>均价 1,514.2</span><span style="color:var(--up)">现价 1,523.60</span></div>
+          <svg viewBox="0 0 344 150" width="100%" height="150" preserveAspectRatio="none">
+            <polyline fill="none" stroke="#e02020" stroke-width="1.6"
+              points="0,118 24,112 48,120 72,104 96,98 120,108 144,88 168,80 192,86 216,70 240,62 264,66 288,52 312,44 344,38"/>
+            <polyline fill="none" stroke="#98a2b3" stroke-width="1" stroke-dasharray="3 3"
+              points="0,116 344,96"/>
+            <circle cx="344" cy="38" r="3" fill="#e02020"/>
+          </svg>
+        </div>
+        <div class="wul">
+          <h4>五档盘口</h4>
+          <div class="wrow up"><span class="bg" style="width:82%"></span><span class="l">卖5 1,526.00</span><span class="m num">42</span><span class="r num">64.1 万</span></div>
+          <div class="wrow up"><span class="bg" style="width:64%"></span><span class="l">卖4 1,525.20</span><span class="m num">31</span><span class="r num">47.3 万</span></div>
+          <div class="wrow up"><span class="bg" style="width:55%"></span><span class="l">卖3 1,524.80</span><span class="m num">26</span><span class="r num">39.7 万</span></div>
+          <div class="wrow up"><span class="bg" style="width:70%"></span><span class="l">卖2 1,524.20</span><span class="m num">35</span><span class="r num">53.4 万</span></div>
+          <div class="wrow up"><span class="bg" style="width:48%"></span><span class="l">卖1 1,523.60</span><span class="m num">24</span><span class="r num">36.6 万</span></div>
+          <div class="wrow down"><span class="bg" style="width:36%"></span><span class="l">买1 1,523.50</span><span class="m num">18</span><span class="r num">27.4 万</span></div>
+          <div class="wrow down"><span class="bg" style="width:58%"></span><span class="l">买2 1,523.00</span><span class="m num">29</span><span class="r num">44.2 万</span></div>
+          <div class="wrow down"><span class="bg" style="width:44%"></span><span class="l">买3 1,522.60</span><span class="m num">22</span><span class="r num">33.5 万</span></div>
+          <div class="wrow down"><span class="bg" style="width:66%"></span><span class="l">买4 1,522.00</span><span class="m num">33</span><span class="r num">50.3 万</span></div>
+          <div class="wrow down"><span class="bg" style="width:80%"></span><span class="l">买5 1,521.50</span><span class="m num">40</span><span class="r num">61.0 万</span></div>
+        </div>
+        <div class="dock-notes">
+          <h5>✎ 速记（dsh-quick-note）</h5>
+          <p>白酒板块今早异动，关注 1530 一线压力位；Q3 业绩 10/28 披露。</p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ============ 变体 ============ -->
+  <div class="variants">
+    <div class="variant" style="background:var(--canvas)">
+      <h3>变体 A · 侧栏收起态（图标岛）</h3>
+      <p class="vp">收起后侧栏岛变窄为图标列，hover 浮出 tooltip；主区两岛自动铺满。</p>
+      <div class="v-frame side-collapsed" style="background:var(--canvas)">
+        <div class="island mini-side">
+          <div class="n" style="color:var(--primary); font-weight:900; background:var(--primary-weak)">W</div>
+          <div class="n">▦</div>
+          <div class="n on">★</div>
+          <div class="n">◎</div>
+          <div class="n">⇄</div>
+          <div class="n">⚡</div>
+          <div class="n">▤</div>
+          <div class="n" style="margin-top:auto">⚙</div>
+        </div>
+        <div class="main">
+          <div class="island page-head"><h2>自选股</h2><span class="sub">12 只</span>
+            <div class="ph-actions"><button class="btn ghost">＋ 添加</button><button class="btn primary">导出</button></div></div>
+          <div class="island table-card">
+            <div class="tb-bar"><div class="seg"><span class="on">全部</span><span>盯盘中</span></div></div>
+            <div class="scroll"><table><thead><tr><th>名称</th><th>最新价</th><th>涨跌幅</th><th>操作</th></tr></thead>
+              <tbody>
+                <tr class="sel"><td><span class="sname">贵州茅台</span><span class="scode">600518.SH</span></td><td class="num" style="color:var(--up)">1,523.60</td><td><span class="chip up">+1.24%</span></td><td><button class="op hot">👁</button></td></tr>
+                <tr><td><span class="sname">宁德时代</span><span class="scode">300750.SZ</span></td><td class="num" style="color:var(--down)">262.35</td><td><span class="chip down">-0.86%</span></td><td><button class="op">👁</button></td></tr>
+                <tr><td><span class="sname">比亚迪</span><span class="scode">002594.SZ</span></td><td class="num" style="color:var(--up)">358.20</td><td><span class="chip up">+2.05%</span></td><td><button class="op">👁</button></td></tr>
+                <tr><td><span class="sname">中芯国际</span><span class="scode">688981.SH</span></td><td class="num" style="color:var(--up)">98.75</td><td><span class="chip up">+3.42%</span></td><td><button class="op">👁</button></td></tr>
+              </tbody></table></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="variant" style="background:var(--canvas)">
+      <h3>变体 B · 暗色主题（跟随现行 html.dark token）</h3>
+      <p class="vp">岛面 #1a2027、画布 #101418、主色弱底 #123f3b，涨跌色换暗色阶，岛间隙同样露出画布。</p>
+      <div class="v-frame dark">
+        <div class="island side">
+          <div class="side-search">⌕ 搜索…</div>
+          <div class="side-group">行情</div>
+          <div class="nav"><span class="ic">▦</span>市场总览</div>
+          <div class="nav on"><span class="ic">★</span>自选股</div>
+          <div class="nav"><span class="ic">◎</span>行情全景</div>
+          <div class="side-group">洞察</div>
+          <div class="nav"><span class="ic">⚡</span>涨停与异动</div>
+          <div class="nav"><span class="ic">▤</span>龙虎榜</div>
+          <div class="side-foot"><div class="nav"><span class="ic">⚙</span>设置</div></div>
+        </div>
+        <div class="main">
+          <div class="island page-head"><h2>自选股</h2><span class="sub">12 只 · 10:12</span>
+            <div class="ph-actions"><button class="btn ghost">＋ 添加自选</button><button class="btn primary">导出</button></div></div>
+          <div class="island idx-strip">
+            <div class="idx"><span class="n">上证指数</span><span class="v num" style="color:#ff7b7b">3,362.12<small>+0.45%</small></span></div>
+            <div class="idx"><span class="n">创业板指</span><span class="v num" style="color:#3ddba4">2,214.30<small>-0.31%</small></span></div>
+          </div>
+          <div class="island table-card">
+            <div class="tb-bar"><div class="seg"><span class="on">全部 12</span><span>A股 9</span><span>美股 3</span></div>
+              <div class="tb-input">⌕ 筛选</div></div>
+            <div class="scroll"><table><thead><tr><th>名称</th><th>最新价</th><th>涨跌幅</th><th>涨跌额</th><th>成交额</th><th>操作</th></tr></thead>
+              <tbody>
+                <tr class="sel"><td><span class="sname">贵州茅台</span><span class="scode">600518.SH</span></td><td class="num" style="color:#ff7b7b">1,523.60</td><td><span class="chip up">+1.24%</span></td><td class="num" style="color:#ff7b7b">+18.70</td><td class="num">43.1 亿</td><td><button class="op hot">👁</button></td></tr>
+                <tr><td><span class="sname">宁德时代</span><span class="scode">300750.SZ</span></td><td class="num" style="color:#3ddba4">262.35</td><td><span class="chip down">-0.86%</span></td><td class="num" style="color:#3ddba4">-2.28</td><td class="num">22.6 亿</td><td><button class="op" style="background:#232a33;color:#9aa6b6">👁</button></td></tr>
+                <tr><td><span class="sname">比亚迪</span><span class="scode">002594.SZ</span></td><td class="num" style="color:#ff7b7b">358.20</td><td><span class="chip up">+2.05%</span></td><td class="num" style="color:#ff7b7b">+7.20</td><td class="num">17.9 亿</td><td><button class="op" style="background:#232a33;color:#9aa6b6">👁</button></td></tr>
+                <tr><td><span class="sname">东方财富</span><span class="scode">300059.SZ</span></td><td class="num" style="color:#3ddba4">22.68</td><td><span class="chip down">-1.14%</span></td><td class="num" style="color:#3ddba4">-0.26</td><td class="num">23.3 亿</td><td><button class="op" style="background:#232a33;color:#9aa6b6">👁</button></td></tr>
+              </tbody></table></div>
+          </div>
+        </div>
+        <div class="island dock">
+          <div class="dock-head"><div><span class="t">贵州茅台</span><span class="c"> 600518.SH</span></div>
+            <div class="dock-close"><span class="tool-ic">✕</span></div></div>
+          <div class="dq"><div class="px num" style="color:#ff7b7b">1,523.60<small style="color:#9aa6b6">+1.24%</small></div></div>
+          <div class="dock-tabs" style="background:#232a33"><span class="on">分时</span><span>日K</span><span>五档</span><span>资金</span></div>
+          <div class="chart">
+            <svg viewBox="0 0 344 150" width="100%" height="150" preserveAspectRatio="none">
+              <polyline fill="none" stroke="#ff7b7b" stroke-width="1.6"
+                points="0,118 24,112 48,120 72,104 96,98 120,108 144,88 168,80 192,86 216,70 240,62 264,66 288,52 312,44 344,38"/>
+              <circle cx="344" cy="38" r="3" fill="#ff7b7b"/>
+            </svg>
+          </div>
+          <div class="wul"><h4>五档盘口</h4>
+            <div class="wrow up" style="color:#ff7b7b"><span class="bg" style="background:#3a1a1a;width:70%"></span><span class="l">卖1 1,523.60</span><span class="m num">24</span><span class="r num">36.6 万</span></div>
+            <div class="wrow down" style="color:#3ddba4"><span class="bg" style="background:#12332a;width:50%"></span><span class="l">买1 1,523.50</span><span class="m num">18</span><span class="r num">27.4 万</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 标注说明 ============ -->
+  <div class="notes-grid">
+    <div class="note"><span class="no">1</span>
+      <h4>全局：外壳即画布，区域即岛</h4>
+      <p>外壳背景铺 <b>canvas #f7f9fa</b>，标题栏 / 侧栏 / 页头 / 指数条 / 表格 / 详情面板各自成为独立岛：<b>统一 10px 间隙 + 16px 圆角</b>（现行 12px 升级），岛用 <b>0 4px 18px rgba(28,36,55,.07)</b> 双层软阴影分层，延续「无 1px 边框」约定。岛化后原 main 区的滚动容器不再通栏贴边，改为岛内滚动。</p>
+    </div>
+    <div class="note"><span class="no">2</span>
+      <h4>主内容区：一页多岛</h4>
+      <p>原整块 main 拆成 <b>页头岛 → 指数摘要岛 → 表格岛</b> 纵排三岛，间隙 10px。表格岛内 toolbar 与表格吸顶逻辑不变（sticky 顶随岛内生效）。岛化收益：指数条 / 表格可按页配独立背景与折叠，页头动作按钮不再挤占表格宽度。</p>
+    </div>
+    <div class="note"><span class="no">3</span>
+      <h4>详情停靠岛</h4>
+      <p>DockPanel 从贴边通栏改为 <b>独立浮岛</b>：宽 372px（+12px），头部加 <b>📌 固定</b> 按钮支撑多股切换不覆盖；速记等插件扩展区（ctx.stockDetail）落在岛底部 <b>primary-weak 软底卡</b>，与盘口区视觉分层。开合保持现状（openStock 驱动），无路由。</p>
+    </div>
+    <div class="note"><span class="no">4</span>
+      <h4>实施提示与代价</h4>
+      <p>① 全部改动集中在 MainLayout 的布局层与主题 token，页面组件基本不动；② 暗色 / 三套主题色 / 三套涨跌配色经 CSS 变量自动生效，只需补岛的画布-阴影映射（<code>--shadow-island</code> 暗色加深）；③ 代价：岛间隙吃掉约 20px 横向空间，小窗（&lt;1280px）建议回落为现在的通栏布局。</p>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

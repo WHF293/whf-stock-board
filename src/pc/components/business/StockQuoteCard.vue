@@ -32,6 +32,18 @@ const emit = defineEmits<{
 
 const trend = computed(() => getTrendByChangePercent(props.quote.changePercent ?? 0));
 
+/** 整卡底色跟随涨跌（2026-10-22 王总指定）：不用纯色，走 135° 渐变到卡面
+ * （写法对齐市场宽度卡的 ARMS 现值面板）；平盘不挂渐变，回落 bg-surface 纯色 */
+const trendBgStyle = computed<Record<string, string> | null>(() => {
+  if (trend.value === TREND.UP) {
+    return { background: 'linear-gradient(135deg, var(--color-up-weak), transparent 70%) var(--color-surface)' };
+  }
+  if (trend.value === TREND.DOWN) {
+    return { background: 'linear-gradient(135deg, var(--color-down-weak), transparent 70%) var(--color-surface)' };
+  }
+  return null;
+});
+
 /** 报价刷新触发闪烁动画的 key（时间戳缺失时退化为价格本身） */
 const flashKey = computed(() => props.quote.timestamp ?? props.quote.price ?? '--');
 
@@ -49,6 +61,7 @@ const flashClass = computed(() => {
     :type="clickable ? 'button' : undefined"
     class="block w-full rounded-card bg-surface p-4 text-left shadow-card"
     :class="clickable ? 'pressable active:scale-[0.98] hover:shadow-lg' : ''"
+    :style="trendBgStyle"
     @click="clickable && emit('click')"
   >
     <p class="text-sm font-medium text-text-secondary">{{ quote.name }}</p>

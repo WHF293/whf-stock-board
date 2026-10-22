@@ -215,6 +215,55 @@ const toggleMenuGroup = (groupId: string): void => {
   settingsStore.toggleMenuGroupCollapsed(groupId);
 };
 
+// ---------- 分组条目高度过渡（展开 / 收起动画，参考市场总览指数卡片的 row-clamp 过渡） ----------
+
+/**
+ * 展开：高度 0 → 实测内容高（auto 不可动画，须显式起止值）
+ * @param el 组条目容器
+ */
+const onNavGroupEnter = (el: Element): void => {
+  const node = el as HTMLElement;
+  node.style.height = '0';
+  void node.offsetHeight; // 强制 reflow，让起始高度先落定再过渡
+  node.style.height = `${node.scrollHeight}px`;
+};
+
+/**
+ * 展开结束：归还高度给内容自适应，并补测气泡几何（理由同 onNavGroupAfterLeave）
+ * @param el 组条目容器
+ */
+const onNavGroupAfterEnter = (el: Element): void => {
+  (el as HTMLElement).style.height = '';
+  measureNavThumb();
+};
+
+/**
+ * 收起：高度实测值 → 0；同时摘掉离场条目的 data-nav-item 锚点——
+ * expandedFlatItems 在折叠瞬间已同步缩表，过渡期 DOM 若仍带旧锚点，
+ * 气泡按序号取元素会错位闪跳
+ * @param el 组条目容器
+ */
+const onNavGroupLeave = (el: Element): void => {
+  const node = el as HTMLElement;
+  node.style.height = `${node.scrollHeight}px`;
+  void node.offsetHeight; // 强制 reflow，让起始高度先落定再过渡
+  node.style.height = '0';
+  node.querySelectorAll('a[data-nav-item]').forEach((anchor) => {
+    anchor.removeAttribute('data-nav-item');
+  });
+};
+
+/**
+ * 收起结束：补测一次气泡几何。
+ * nav 容器是 flex-1（内容再矮也不缩盒子），分组折叠只改内容高度 →
+ * useSlidingThumb 的 ResizeObserver 不触发；而折叠瞬间 activeIndex watch
+ * 那次 measure 落在高度动画起步（下方条目还没上移），量到的 offsetTop
+ * 是旧布局——不在收尾重测，气泡就永远停在错位上（2026-10-22 王总报告）
+ */
+const onNavGroupAfterLeave = (): void => {
+  measureNavThumb();
+};
+
 /**
  * 当前路由所在分组 id（未命中 = undefined）
  *
@@ -585,7 +634,7 @@ const activeNavIndex = computed(() => {
   return items.findIndex((item) => isActive(item.path));
 });
 
-const { thumbStyle: navThumbStyle } = useSlidingThumb({
+const { thumbStyle: navThumbStyle, measure: measureNavThumb } = useSlidingThumb({
   container: navRef,
   activeIndex: activeNavIndex,
   itemSelector: ":scope a[data-nav-item]",
@@ -644,13 +693,17 @@ void marketStatusStore.refresh();
       </template>
     </TitleBar>
 
-    <div class="flex min-h-0 flex-1 overflow-hidden">
+    <!-- Islands 布局（2026-10-22）：本行是岛化画布——p-2.5 露出画布底色、gap-2.5
+         是岛间隙；侧栏 / 页内页头 / 停靠面板各自为独立浮岛，标题栏不岛化保持通栏 -->
+    <div class="flex min-h-0 flex-1 overflow-hidden gap-2.5 p-2.5">
       <!-- 左侧导航：常驻侧栏（桌面端品牌区与收起/展开开关均已上移至标题栏，
            顶部不再有头部块，导航加顶部留白；浏览器模式保留原头部块）。
+           Islands（2026-10-22）：去贴边通栏的 border-r，改独立浮岛
+           （rounded-2xl + shadow-island，overflow-hidden 裁圆角）。
            页面全屏（详情页铺满）时整体隐藏（v-show 保留 DOM，退出全屏零重建） -->
       <aside
         v-show="!pageFullscreen"
-        class="flex shrink-0 flex-col border-r border-flat-weak bg-surface transition-all duration-200"
+        class="flex shrink-0 flex-col overflow-hidden rounded-2xl bg-surface shadow-island transition-all duration-200"
         :class="sidebarWidthClass"
       >
         <!-- 浏览器模式头部：品牌 + 收起/展开开关（Tauri 桌面端整块移入 TitleBar，不渲染） -->
@@ -715,27 +768,37 @@ void marketStatusStore.refresh();
                   :class="isGroupCollapsed(group.id) ? '-rotate-90' : ''"
                 />
               </button>
-              <!-- 折叠组整组不渲染条目（v-if 从 DOM 摘除，保证 data-nav-item 序列
-                   与 expandedFlatItems 一一对应，滑动气泡按序号取元素才不跑位） -->
-              <template v-if="!isGroupCollapsed(group.id)">
-                <RouterLink
-                  v-for="item in group.items"
-                  :key="item.path"
-                  :to="item.path"
-                  data-nav-item
-                  data-track="NAV_MENU_CLICK"
-                  :data-track-detail="item.title"
-                  class="group relative pressable flex items-center gap-3 rounded-lg px-3 py-2 text-sm active:scale-[0.98]"
-                  :class="
-                    isActive(item.path)
-                      ? 'font-medium text-primary'
-                      : 'text-text-secondary hover:bg-flat-weak'
-                  "
-                >
-                  <MenuIcon :name="item.icon" :size="16" />
-                  <span class="truncate">{{ item.title }}</span>
-                </RouterLink>
-              </template>
+              <!-- 折叠组条目高度过渡收起（参考市场总览指数卡片的展开/收起动画）。
+                   离场即从 DOM 摘除（Transition 结束后），保证 data-nav-item 序列
+                   与 expandedFlatItems 一一对应，滑动气泡按序号取元素才不跑位；
+                   离场钩子还会先摘掉离场条目的锚点属性，过渡期内序号同样对得上 -->
+              <Transition
+                name="nav-group"
+                @enter="onNavGroupEnter"
+                @after-enter="onNavGroupAfterEnter"
+                @leave="onNavGroupLeave"
+                @after-leave="onNavGroupAfterLeave"
+              >
+                <div v-if="!isGroupCollapsed(group.id)" class="space-y-1">
+                  <RouterLink
+                    v-for="item in group.items"
+                    :key="item.path"
+                    :to="item.path"
+                    data-nav-item
+                    data-track="NAV_MENU_CLICK"
+                    :data-track-detail="item.title"
+                    class="group relative pressable flex items-center gap-3 rounded-lg px-3 py-2 text-sm active:scale-[0.98]"
+                    :class="
+                      isActive(item.path)
+                        ? 'font-medium text-primary'
+                        : 'text-text-secondary hover:bg-flat-weak'
+                    "
+                  >
+                    <MenuIcon :name="item.icon" :size="16" />
+                    <span class="truncate">{{ item.title }}</span>
+                  </RouterLink>
+                </div>
+              </Transition>
             </div>
           </template>
 
@@ -802,12 +865,14 @@ void marketStatusStore.refresh();
         </div>
       </aside>
 
-      <!-- 右侧内容区 -->
-      <div class="relative flex min-w-0 flex-1 flex-col">
-        <!-- 页内页头：页面全屏（详情页铺满）时隐藏（v-show，Teleport 的页级动作随之隐藏） -->
+      <!-- 右侧内容区（岛间隙 gap-2.5 承接页头岛与主区的间隔） -->
+      <div class="relative flex min-w-0 flex-1 flex-col gap-2.5">
+        <!-- 页内页头：页面全屏（详情页铺满）时隐藏（v-show，Teleport 的页级动作随之隐藏）。
+             Islands（2026-10-22）：去贴边通栏的 border-b，改独立浮岛。
+             与主区内容共用 max-w-[1600px] 居中约束：页头岛与页面卡片左右缘严格对齐 -->
         <header
           v-show="!pageFullscreen"
-          class="flex h-14 shrink-0 items-center justify-between border-b border-flat-weak bg-surface px-6"
+          class="mx-auto flex h-14 w-full max-w-[1600px] shrink-0 items-center justify-between rounded-2xl bg-surface px-5 shadow-island"
         >
           <div class="flex min-w-0 items-center gap-2">
             <!-- 返回上一页：仅历史栈存在 back 记录时展示（直达 / 首页不显示） -->
@@ -857,9 +922,11 @@ void marketStatusStore.refresh();
           <!-- 内容上限 1600px：报价卡片栅格（quote-card-grid）在上限内按列宽公式排布。
                页面全屏（详情页铺满）时改为撑满视口高度的 flex 列 + 小留白，
                详情页据此用 flex-1 拉伸主区（见 StockDetailView 的分模式高度） -->
+          <!-- 顶部留白由内容列的 gap-2.5 承接（与岛间隙一致）；横向不留 padding，
+               与页头岛共用 max-w-[1600px] 居中约束（对齐在页头岛类上），左右缘严格一致 -->
           <div
-            class="w-full"
-            :class="pageFullscreen ? 'pc-page-fs flex h-full min-h-0 flex-col p-3' : 'mx-auto max-w-[1600px] p-6'"
+            class="@container w-full"
+            :class="pageFullscreen ? 'pc-page-fs flex h-full min-h-0 flex-col p-3' : 'mx-auto max-w-[1600px] pb-6'"
           >
             <!-- 页面切换：KeepAlive 缓存页面状态；进入动画由 pageAnim 类名驱动（无离场状态机） -->
             <RouterView v-slot="{ Component, route: routeRecord }">
@@ -919,3 +986,21 @@ void marketStatusStore.refresh();
     <PluginStockPickerHost />
   </div>
 </template>
+
+<style scoped>
+/* 侧栏分组条目高度过渡：起止高度由 JS 钩子写内联（auto 不可动画），
+   这里只负责过渡曲线与裁切；收尾后高度交还内容自适应 */
+.nav-group-enter-active,
+.nav-group-leave-active {
+  overflow: hidden;
+  transition: height 200ms ease;
+}
+
+/* 尊重系统「减少动态效果」偏好：直接跳变，不播过渡 */
+@media (prefers-reduced-motion: reduce) {
+  .nav-group-enter-active,
+  .nav-group-leave-active {
+    transition: none;
+  }
+}
+</style>

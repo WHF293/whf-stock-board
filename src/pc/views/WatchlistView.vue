@@ -5,6 +5,7 @@ import BaseCard from "../components/ui/BaseCard.vue";
 import BaseConfirmModal from "../components/ui/BaseConfirmModal.vue";
 import BaseEmpty from "../components/ui/BaseEmpty.vue";
 import BaseInput from "../components/ui/BaseInput.vue";
+import BaseModal from "../components/ui/BaseModal.vue";
 import BaseTabs from "../components/ui/BaseTabs.vue";
 import MenuIcon from "../components/ui/MenuIcon.vue";
 import StockSearchModal from "../components/business/StockSearchModal.vue";
@@ -124,10 +125,19 @@ watch(activeGroupId, () => {
   void fetchActiveGroupQuotes();
 });
 
-/** 新分组名称输入 */
+/** 新建分组弹窗开关（2026-10-22 王总指定：页内输入框移除，改弹窗创建） */
+const createGroupOpen = ref(false);
+
+/** 新分组名称输入（弹窗内；最多 8 个字） */
 const newGroupName = ref("");
 
-/** 新建分组并切换过去 */
+/** 打开新建分组弹窗（顺手清掉上次的输入） */
+const onCreateGroupOpen = (): void => {
+  newGroupName.value = "";
+  createGroupOpen.value = true;
+};
+
+/** 新建分组并切换过去（弹窗「创建分组」；空名由确认按钮禁用兜底） */
 const onAddGroup = (): void => {
   const name = newGroupName.value.trim();
   if (!name) {
@@ -135,7 +145,7 @@ const onAddGroup = (): void => {
   }
   const group = watchlistStore.addGroup(name);
   activeGroupId.value = group.id;
-  newGroupName.value = "";
+  createGroupOpen.value = false;
 };
 
 /** 删除分组确认弹窗开关 */
@@ -394,33 +404,29 @@ const onConfirmBatchAdd = (payload: BatchAddResolveResult): void => {
       </div>
     </div>
 
-    <!-- 搜索添加（左侧）+ 新建分组（右侧） -->
-    <div class="flex shrink-0 flex-wrap items-center justify-between gap-2">
-      <div class="flex items-center gap-2">
-        <BaseButton variant="ghost" @click="searchModalOpen = true">
-          <MenuIcon name="plus" :size="14" />
-          添加股票
-        </BaseButton>
-        <BaseButton
-          variant="ghost"
-          data-track="WATCHLIST_BATCH_ADD"
-          @click="batchAddOpen = true"
-        >
-          <MenuIcon name="tradeImport" :size="14" />
-          批量添加
-        </BaseButton>
-      </div>
-      <form class="flex items-center gap-2" @submit.prevent="onAddGroup">
-        <BaseInput
-          v-model="newGroupName"
-          placeholder="新分组名称"
-          class="w-28"
-        />
-        <BaseButton type="submit" variant="ghost">
-          <MenuIcon name="plus" :size="14" />
-          新建
-        </BaseButton>
-      </form>
+    <!-- 添加股票 / 批量添加 / 新建分组（2026-10-22 王总指定：原右侧「输入框 + 新建」
+         移除，新建分组改为左侧按钮 + 弹窗创建） -->
+    <div class="flex shrink-0 flex-wrap items-center gap-2">
+      <BaseButton variant="ghost" @click="searchModalOpen = true">
+        <MenuIcon name="plus" :size="14" />
+        添加股票
+      </BaseButton>
+      <BaseButton
+        variant="ghost"
+        data-track="WATCHLIST_BATCH_ADD"
+        @click="batchAddOpen = true"
+      >
+        <MenuIcon name="tradeImport" :size="14" />
+        批量添加
+      </BaseButton>
+      <BaseButton
+        variant="ghost"
+        data-track="WATCHLIST_GROUP_CREATE_OPEN"
+        @click="onCreateGroupOpen"
+      >
+        <MenuIcon name="plus" :size="14" />
+        新建分组
+      </BaseButton>
     </div>
 
     <!-- 分组表格（撑满卡片剩余高度；表格容器必须是卡片的直接 flex 子项，
@@ -489,6 +495,25 @@ const onConfirmBatchAdd = (payload: BatchAddResolveResult): void => {
       </template>
       <BaseEmpty v-else text="还没有自选股，搜索代码或名称添加吧" />
     </BaseCard>
+
+    <!-- 新建分组弹窗（2026-10-22 王总指定：名称最多 8 个字，创建后切到新分组） -->
+    <BaseModal v-model:open="createGroupOpen" title="新建分组" max-width-class="max-w-sm">
+      <div class="space-y-2">
+        <BaseInput
+          v-model="newGroupName"
+          placeholder="分组名称"
+          maxlength="8"
+          aria-label="分组名称"
+          class="w-full"
+          @keyup.enter="onAddGroup"
+        />
+        <p class="text-xs text-text-tertiary">最多 8 个字</p>
+      </div>
+      <template #footer>
+        <BaseButton variant="ghost" @click="createGroupOpen = false">取消</BaseButton>
+        <BaseButton :disabled="newGroupName.trim() === ''" @click="onAddGroup">创建分组</BaseButton>
+      </template>
+    </BaseModal>
 
     <!-- 删除分组二次确认弹窗（antd Modal 风格） -->
     <BaseConfirmModal

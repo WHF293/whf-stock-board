@@ -686,14 +686,15 @@ const pctClass = (value: number | null): string =>
         </div>
       </BaseCard>
 
-      <!-- 右侧信息栏：报价头 + 五档盘口（不随图表周期切换），两卡为高光玻璃质感（王总 2026-10-16）。
+      <!-- 右侧信息栏：报价头 + 五档盘口（不随图表周期切换），两卡白底实色（王总 2026-10-22
+           指定，替代 2026-10-16 的高光玻璃——玻璃半透明底在红色主题下泛粉）。
            支持展开/收起（与左侧列表同款交互，会话级）：收起时列宽 w-44，
            报价头切 compact（高/低/开/收 两列）、五档盘口切 vertical（买盘上/卖盘下） -->
       <div
         class="flex shrink-0 flex-col gap-3 overflow-y-auto transition-all duration-200"
         :class="isInfoCollapsed ? 'w-44' : 'w-80'"
       >
-        <BaseCard glass class="shrink-0">
+        <BaseCard class="shrink-0">
           <!-- 展开/收起按钮（extra 槽，卡片头部右侧）：panelRight 面板形状（panelLeft 镜像，
                竖线靠右对应右栏位置） -->
           <template #extra>
@@ -713,7 +714,7 @@ const pctClass = (value: number | null): string =>
             :compact="isInfoCollapsed"
           />
         </BaseCard>
-        <BaseCard glass title="五档盘口" class="shrink-0">
+        <BaseCard title="五档盘口" class="shrink-0">
           <StockOrderBook :quote="quoteRef" :vertical="isInfoCollapsed" />
         </BaseCard>
       </div>

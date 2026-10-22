@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WHF 看板 · PC Islands 改版稿 v2（对照真实界面）</title>
+<!--
+  设计 token 对照（取自 DESIGN-PC.md，与现行主题变量同源）：
+  primary #0e9488 · canvas #f7f9fa · surface #ffffff · ink #1f2733 ·
+  ink-muted #5c6b80 · ink-subtle #98a2b3 · flat-weak #eef1f5 ·
+  up #e02020 · down #00b578 · 岛圆角 16（现行卡片 12 升级）
+-->
+<style>
+  :root{
+    --primary:#0e9488;
+    --primary-weak:#e6f5f3;
+    --canvas:#f7f9fa;
+    --surface:#ffffff;
+    --ink:#1f2733;
+    --ink-muted:#5c6b80;
+    --ink-subtle:#98a2b3;
+    --flat-weak:#eef1f5;
+    --up:#e02020;
+    --up-weak:#fdecec;
+    --down:#00b578;
+    --down-weak:#e6f7f1;
+    --font:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+    --shadow-island:0 4px 18px rgba(28,36,55,.07), 0 1px 3px rgba(28,36,55,.04);
+    --r-island:16px;
+    --r-ctl:8px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; color:var(--ink); font-family:var(--font); line-height:1.55;
+    background:linear-gradient(180deg,#f2f5f7 0,#eaeef2 100%);
+  }
+  .num{font-family:'SF Mono',Menlo,Consolas,'Segoe UI',monospace; font-variant-numeric:tabular-nums;}
+  .wrap{width:min(1560px,calc(100% - 48px)); margin:0 auto; padding:36px 0 80px;}
+  .up{color:var(--up);} .down{color:var(--down);}
+
+  .doc-head{display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:20px;}
+  .doc-head h1{margin:0; font-size:24px; font-weight:800;}
+  .doc-head p{margin:4px 0 0; color:var(--ink-muted); font-size:13px;}
+  .doc-tags{display:flex; gap:8px;}
+  .doc-tag{padding:4px 12px; border-radius:999px; background:var(--primary-weak); color:var(--primary); font-size:12px; font-weight:600;}
+  .doc-tag.gray{background:var(--flat-weak); color:var(--ink-muted);}
+
+  /* ---------- 应用外壳 ---------- */
+  .shell{
+    background:
+      radial-gradient(circle at 85% 0%, rgba(14,148,136,.05), transparent 30rem),
+      var(--canvas);
+    border-radius:20px; box-shadow:0 20px 60px rgba(28,36,55,.14); overflow:hidden;
+  }
+  .shell + .shell{margin-top:28px;}
+  .frame{display:grid; grid-template-columns:204px 1fr; grid-template-rows:1fr; gap:10px; padding:10px; height:876px;}
+  .frame.with-dock{grid-template-columns:204px 1fr 372px;}
+  .island{background:var(--surface); border-radius:var(--r-island); box-shadow:var(--shadow-island);}
+
+  /* 场景标题 */
+  .scene-tag{display:flex; align-items:center; gap:10px; margin:0 0 10px;}
+  .scene-tag h2{margin:0; font-size:16px; font-weight:800;}
+  .scene-tag span{color:var(--ink-muted); font-size:12px;}
+
+  /* ---------- 标题栏（保持现状：通栏平条，不岛化） ---------- */
+  .bar{display:flex; align-items:center; gap:12px; padding:0 14px; height:44px;
+    flex:0 0 44px; background:var(--surface);}
+  .shell > .bar{border-radius:20px 20px 0 0;}
+  .bar-brand{display:flex; align-items:center; gap:8px; font-weight:800; font-size:13px;}
+  .bar-logo{width:22px; height:22px; border-radius:7px; background:linear-gradient(135deg,var(--primary),#0aa08f);
+    display:grid; place-items:center; color:#fff; font-size:12px; font-weight:900;}
+  .bar-sep{width:1px; height:18px; background:var(--flat-weak);}
+  .bar-tools{margin-left:auto; display:flex; align-items:center; gap:8px;}
+  .tool-ic{width:28px; height:28px; border-radius:var(--r-ctl); display:grid; place-items:center;
+    color:var(--ink-muted); font-size:13px; cursor:pointer;}
+  .tool-ic:hover{background:var(--flat-weak);}
+  .tool-ic.on{background:var(--primary-weak); color:var(--primary);}
+  .pill{display:inline-flex; align-items:center; gap:6px; height:28px; padding:0 10px;
+    border-radius:999px; background:var(--flat-weak); color:var(--ink-muted); font-size:12px; font-weight:600;}
+  .pill.live{background:var(--up-weak); color:var(--up);}
+  .ticker{display:flex; align-items:center; gap:6px; font-size:12px; color:var(--ink-muted);}
+  .ticker b{color:var(--ink); font-weight:600;}
+
+  /* ---------- 侧栏岛 ---------- */
+  .side{display:flex; flex-direction:column; padding:10px; gap:2px; overflow:hidden;}
+  .side-group{margin:9px 6px 3px; color:var(--ink-subtle); font-size:10px; font-weight:800; letter-spacing:.08em; display:flex; justify-content:space-between;}
+  .side-group i{font-style:normal; font-size:9px;}
+  .nav{display:flex; align-items:center; gap:9px; height:33px; padding:0 10px; flex:0 0 33px;
+    border-radius:10px; color:var(--ink-muted); font-size:13px; font-weight:500; cursor:pointer;}
+  .nav .ic{width:18px; text-align:center; font-size:14px;}
+  .nav:hover{background:var(--flat-weak); color:var(--ink);}
+  .nav.on{background:var(--primary-weak); color:var(--primary); font-weight:600;}
+  .side-foot{margin-top:auto; border-top:1px solid var(--flat-weak); padding-top:8px;}
+
+  /* ---------- 主区 ---------- */
+  .main{display:flex; flex-direction:column; gap:10px; min-width:0; overflow:hidden;}
+  .page-head{display:flex; align-items:center; gap:10px; padding:0 16px; flex:0 0 50px;}
+  .page-head .back{width:26px; height:26px; border-radius:8px; display:grid; place-items:center; color:var(--ink-muted); cursor:pointer; font-size:13px;}
+  .page-head .back:hover{background:var(--flat-weak);}
+  .page-head h2{margin:0; font-size:16px; font-weight:600;}
+  .ph-actions{margin-left:auto;}
+  .btn{height:30px; padding:0 12px; border:none; border-radius:var(--r-ctl); font-size:12.5px;
+    font-weight:500; cursor:pointer; display:inline-flex; align-items:center; gap:6px;}
+  .btn.ghost{background:var(--flat-weak); color:var(--ink);}
+  .btn.primary{background:var(--primary); color:#fff;}
+
+  /* 概览岛 */
+  .ov{padding:14px 16px; flex:0 0 auto;}
+  .ov-head{display:flex; align-items:center; gap:10px; margin-bottom:10px;}
+  .ov-head h3{margin:0; font-size:14px; font-weight:700;}
+  .ov-head h3 small{color:var(--ink-subtle); font-weight:600; font-size:12px;}
+  .badge{margin-left:auto; padding:2px 10px; border-radius:999px; background:var(--up-weak); color:var(--up); font-size:11px; font-weight:600;}
+  .stat-grid{display:grid; grid-template-columns:1.2fr 1.2fr 1fr; gap:12px;}
+  .stat{background:var(--flat-weak); border-radius:12px; padding:10px 14px;}
+  .stat .lb{font-size:11px; color:var(--ink-muted); font-weight:600;}
+  .stat .vl{margin-top:2px; font-size:19px; font-weight:800;}
+  .stat .vl small{font-size:12px; font-weight:700; margin:0 2px;}
+
+  /* 筛选条岛 */
+  .filters{display:flex; align-items:center; gap:8px; padding:9px 14px; flex:0 0 auto; overflow:hidden;}
+  .fchip{padding:4px 12px; border-radius:999px; background:var(--flat-weak); color:var(--ink-muted);
+    font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;}
+  .fchip.on{background:var(--primary-weak); color:var(--primary);}
+  .fchip:hover{color:var(--ink);}
+
+  /* 图表岛 */
+  .chart-card{flex:1; min-height:0; display:flex; flex-direction:column; padding:12px 16px 8px; overflow:hidden;}
+  .chart-card .ch-head{display:flex; align-items:baseline; gap:8px;}
+  .chart-card .ch-head h4{margin:0; font-size:13px; font-weight:700;}
+  .chart-card .ch-head .v{font-size:15px; font-weight:800;}
+  .chart-card .ch-head .hint{margin-left:auto; color:var(--ink-subtle); font-size:11px;}
+  .chart-card .body{flex:1; min-height:0; margin-top:6px;}
+  .chart-card .body svg{display:block; width:100%; height:100%;}
+
+  /* 底部跑马灯岛 */
+  .tickerbar{display:flex; align-items:center; gap:22px; padding:0 16px; flex:0 0 34px; overflow:hidden;
+    color:var(--ink-muted); font-size:12px;}
+  .tickerbar b{color:var(--ink); font-weight:600;}
+
+  /* 表格岛（个股行情） */
+  .table-card{flex:1; display:flex; flex-direction:column; min-height:0; overflow:hidden;}
+  .tb-bar{display:flex; align-items:center; gap:8px; padding:10px 14px; flex:0 0 auto; flex-wrap:nowrap; overflow:hidden;}
+  .seg{display:flex; background:var(--flat-weak); border-radius:10px; padding:3px; gap:2px;}
+  .seg span{padding:4px 11px; border-radius:8px; font-size:12px; font-weight:600; color:var(--ink-muted); cursor:pointer; white-space:nowrap;}
+  .seg span.on{background:var(--surface); color:var(--ink); box-shadow:0 1px 4px rgba(28,36,55,.10);}
+  .scroll{flex:1; overflow:auto; padding:0 8px 8px;}
+  table{width:100%; border-collapse:collapse; font-size:12.5px;}
+  thead th{position:sticky; top:0; z-index:2; background:var(--surface); text-align:right; padding:7px 12px;
+    color:var(--ink-subtle); font-size:11px; font-weight:600; border-bottom:1px solid var(--flat-weak); white-space:nowrap;}
+  thead th:nth-child(-n+3){text-align:left;}
+  tbody td{padding:7.5px 12px; text-align:right; white-space:nowrap; border-bottom:1px solid #f6f8fa;}
+  tbody td:nth-child(-n+3){text-align:left;}
+  tbody tr{cursor:pointer;}
+  tbody tr:hover{background:var(--flat-weak);}
+  tbody tr.sel{background:var(--primary-weak);}
+  .rank{color:var(--ink-subtle); font-size:11.5px;}
+  .pager{display:flex; align-items:center; justify-content:flex-end; gap:10px; padding:8px 16px;
+    border-top:1px solid var(--flat-weak); color:var(--ink-muted); font-size:12px; flex:0 0 auto;}
+  .pgbtn{height:26px; padding:0 12px; border:none; border-radius:7px; background:var(--flat-weak);
+    color:var(--ink-muted); font-size:12px; font-weight:600; cursor:pointer;}
+  .pgbtn.on{background:var(--primary-weak); color:var(--primary);}
+
+  /* ---------- 详情停靠岛 ---------- */
+  .dock{display:flex; flex-direction:column; min-height:0; overflow:hidden;}
+  .dock-head{display:flex; align-items:center; gap:8px; padding:12px 14px 0;}
+  .dock-head .t{font-weight:800; font-size:14px;}
+  .dock-close{margin-left:auto; display:flex; gap:4px;}
+  .dk-title{padding:10px 14px 0; display:flex; align-items:flex-start; justify-content:space-between;}
+  .dk-title .nm{font-size:17px; font-weight:800;}
+  .dk-title .cd{color:var(--ink-subtle); font-size:11.5px; margin-left:6px;}
+  .addbtn{height:28px; padding:0 12px; border:none; border-radius:999px; background:var(--up-weak); color:var(--up);
+    font-size:12px; font-weight:700; cursor:pointer; display:inline-flex; align-items:center; gap:5px;}
+  .dq{padding:4px 14px 8px; border-bottom:1px solid var(--flat-weak);}
+  .dq .px{font-size:26px; font-weight:800;}
+  .dq .chg{display:flex; gap:10px; font-size:12px; font-weight:700; margin-top:1px;}
+  .dk-meta{display:grid; grid-template-columns:repeat(4,1fr); gap:6px 10px; padding:10px 14px;}
+  .dk-meta .m{display:flex; flex-direction:column;}
+  .dk-meta .m .k{font-size:10.5px; color:var(--ink-subtle);}
+  .dk-meta .m .w{font-size:12px; font-weight:700;}
+  .dock-tabs{display:flex; gap:2px; margin:0 10px; background:var(--flat-weak); border-radius:10px; padding:3px;}
+  .dock-tabs span{flex:1; text-align:center; padding:5px 0; border-radius:8px; font-size:12px; font-weight:600; color:var(--ink-muted); cursor:pointer;}
+  .dock-tabs span.on{background:var(--surface); color:var(--primary); box-shadow:0 1px 4px rgba(28,36,55,.10);}
+  .chart{margin:10px 14px 0; height:170px; border-radius:12px; background:var(--flat-weak); position:relative; overflow:hidden; flex:0 0 auto;}
+  .chart svg{display:block;}
+  .chart .legend{position:absolute; left:10px; top:8px; display:flex; gap:10px; font-size:10.5px; color:var(--ink-muted); font-weight:600;}
+  .wul{padding:8px 14px 0; flex:1; min-height:0; overflow:hidden;}
+  .wul h4{margin:0 0 6px; font-size:12px; font-weight:700; color:var(--ink-muted);}
+  .wcols{display:grid; grid-template-columns:1fr 1fr; gap:0 14px;}
+  .wcols .wh{display:grid; grid-template-columns:1fr 1fr 1fr; font-size:10.5px; color:var(--ink-subtle); padding:2px 6px;}
+  .wcols .wh span:first-child{text-align:left;} .wcols .wh span:nth-child(2){text-align:center;} .wcols .wh span:last-child{text-align:right;}
+  .wcols .wh.buy span{color:var(--up); font-weight:700;}
+  .wcols .wh.sell span{color:var(--down); font-weight:700;}
+  .wrow{display:grid; grid-template-columns:1fr 1fr 1fr; align-items:center; padding:3px 6px; border-radius:6px;
+    font-size:11.5px; position:relative; overflow:hidden;}
+  .wrow .bg{position:absolute; top:0; bottom:0; right:0; opacity:.5;}
+  .wrow.buy .bg{background:var(--up-weak);} .wrow.sell .bg{background:var(--down-weak);}
+  .wrow .l{text-align:left;} .wrow .m{text-align:center; color:var(--ink-muted);} .wrow .r{text-align:right;}
+
+  /* ---------- 标注 ---------- */
+  .pin{position:absolute; z-index:9; width:22px; height:22px; border-radius:50% 50% 50% 4px;
+    background:#ff2638; color:#fff; font-size:11px; font-weight:900; display:grid; place-items:center;
+    box-shadow:0 4px 10px rgba(255,38,56,.4); transform:rotate(-8deg);}
+  .shell{position:relative;}
+
+  .notes-grid{display:grid; grid-template-columns:repeat(2,1fr); gap:14px; margin-top:24px;}
+  .note{background:var(--surface); border-radius:16px; padding:18px 20px; box-shadow:0 3px 14px rgba(28,36,55,.06);}
+  .note .no{display:inline-grid; place-items:center; width:22px; height:22px; border-radius:50%;
+    background:#ff2638; color:#fff; font-size:11px; font-weight:900; margin-bottom:8px;}
+  .note h4{margin:0 0 6px; font-size:14px; font-weight:800;}
+  .note p{margin:0; color:var(--ink-muted); font-size:12.5px;}
+  .note p b{color:var(--ink);}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="doc-head">
+    <div>
+      <h1>WHF 看板 · PC Islands 改版稿 v2</h1>
+      <p>对照真实截图圈选范围重做：① 侧栏岛 ② 主内容区多岛 ③ 个股详情停靠岛 · 顶部 headerbar <b>保持现状、不岛化</b>（2026-10-22 确认）</p>
+    </div>
+    <div class="doc-tags">
+      <span class="doc-tag">PC Web / Tauri 桌面</span>
+      <span class="doc-tag gray">纯视觉稿 · 无埋点</span>
+      <span class="doc-tag gray">2026-10-22 · v2</span>
+    </div>
+  </div>
+
+  <!-- ============ 场景 A：市场广度指标（插件页，无详情面板） ============ -->
+  <div class="scene-tag"><h2>场景 A · 市场广度指标</h2><span>截图 1 圈选范围：侧栏 + 主区（插件页整页岛化）</span></div>
+  <div class="shell">
+    <span class="pin" style="left:96px; top:70px;">1</span>
+    <span class="pin" style="left:46%; top:70px;">2</span>
+    <!-- 标题栏：保持现状通栏，不岛化 -->
+    <div class="bar">
+      <div class="bar-brand"><span class="bar-logo">股</span>股票看板</div>
+      <div class="bar-sep"></div>
+      <div class="tool-ic" title="收起侧栏">☰</div>
+      <span class="pill live">👁 盯盘</span>
+      <div class="bar-tools">
+        <span class="ticker">半导体ET… <b class="num">0.58</b> <span class="num up">+0.17%</span></span>
+        <span class="tool-ic">◐</span>
+        <span class="tool-ic">⌕</span>
+        <span class="tool-ic">📖</span>
+        <span class="tool-ic">⤴</span>
+        <span class="tool-ic">⛶</span>
+        <div class="bar-sep"></div>
+        <span class="tool-ic">—</span><span class="tool-ic">▢</span><span class="tool-ic">✕</span>
+      </div>
+    </div>
+    <div class="frame">
+
+      <!-- ① 侧栏岛：条目照搬真实分组 -->
+      <div class="island side">
+        <div class="side-group">市场行情 <i>⌄</i></div>
+        <div class="nav"><span class="ic">⤴</span>板块资金流向</div>
+        <div class="nav on"><span class="ic">⇄</span>个股行情</div>
+        <div class="nav"><span class="ic">▤</span>市场榜单</div>
+        <div class="side-group">题材 <i>⌄</i></div>
+        <div class="nav"><span class="ic">◷</span>期货总览</div>
+        <div class="nav"><span class="ic">∿</span>机构行为</div>
+        <div class="side-group">热点资讯 <i>⌄</i></div>
+        <div class="nav"><span class="ic">📰</span>热点新闻</div>
+        <div class="nav"><span class="ic">◔</span>今天炒什么</div>
+        <div class="side-group">自选与账户 <i>⌄</i></div>
+        <div class="nav"><span class="ic">★</span>自选股</div>
+        <div class="nav"><span class="ic">▭</span>账户管理</div>
+        <div class="side-group">插件 <i>⌄</i></div>
+        <div class="nav"><span class="ic">⚙</span>插件工坊</div>
+        <div class="side-foot">
+          <div class="nav"><span class="ic">✎</span>速记</div>
+          <div class="nav"><span class="ic">⚙</span>设置</div>
+        </div>
+      </div>
+
+      <!-- ② 主区：页头岛 + 概览岛 + 筛选岛 + 两张图表岛 + 底部跑马灯岛 -->
+      <div class="main">
+        <div class="island page-head">
+          <span class="back">←</span>
+          <h2>市场广度指标</h2>
+          <div class="ph-actions"><button class="btn ghost">⚙ 插件设置</button></div>
+        </div>
+
+        <div class="island ov">
+          <div class="ov-head">
+            <h3>市场广度指标 <small>· 当日概览</small></h3>
+            <span class="badge">已积累 1 个交易日</span>
+          </div>
+          <div class="stat-grid">
+            <div class="stat"><div class="lb">上涨 / 平盘 / 下跌</div>
+              <div class="vl num"><span class="up">2,095</span><small>/</small><span style="color:var(--ink-muted)">1,128</span><small>/</small><span class="down">2,352</span></div></div>
+            <div class="stat"><div class="lb">上涨量 / 下跌量（手）</div>
+              <div class="vl num"><span class="up">12,414,924</span><small>/</small><span class="down">11,925,859</span></div></div>
+            <div class="stat"><div class="lb">ARMS 极值</div>
+              <div class="vl num">0.86 <small style="color:var(--up); font-size:11px">值强</small></div></div>
+          </div>
+        </div>
+
+        <div class="island filters">
+          <span class="fchip">近 60 日</span>
+          <span class="fchip">近 120 日</span>
+          <span class="fchip on">全部</span>
+          <span class="fchip">ADR/OBOS N=10 积累中 1/10</span>
+          <span class="fchip">ARMS MA21 积累中 1/21</span>
+          <span class="fchip">MCO 预热中 1/50</span>
+        </div>
+
+        <div class="island chart-card">
+          <div class="ch-head"><h4>ADL 落线值</h4><span class="v num" style="color:var(--ink)">-1.383</span>
+            <span class="hint">红上涨−下跌家数，起点为本地首批 bar（相对意义）；虚线为 MA10</span></div>
+          <div class="body">
+            <svg viewBox="0 0 1100 200" preserveAspectRatio="none">
+              <g stroke="#eef1f5" stroke-width="1">
+                <line x1="0" y1="30" x2="1100" y2="30"/><line x1="0" y1="70" x2="1100" y2="70"/>
+                <line x1="0" y1="110" x2="1100" y2="110"/><line x1="0" y1="150" x2="1100" y2="150"/>
+              </g>
+              <text x="8" y="26" font-size="11" fill="#98a2b3">-600</text>
+              <text x="8" y="66" font-size="11" fill="#98a2b3">-900</text>
+              <text x="8" y="106" font-size="11" fill="#98a2b3">-1,200</text>
+              <text x="8" y="146" font-size="11" fill="#98a2b3">-1,500</text>
+              <line x1="0" y1="100" x2="1100" y2="100" stroke="#e02020" stroke-width="1.2" stroke-dasharray="4 4"/>
+              <polyline fill="none" stroke="#0e9488" stroke-width="1.8"
+                points="0,118 90,124 180,112 270,128 360,120 450,134 540,126 630,140 720,132 810,144 900,138 1000,150 1100,144"/>
+              <text x="540" y="192" font-size="11" fill="#98a2b3">10-21</text>
+            </svg>
+          </div>
+        </div>
+
+        <div class="island chart-card">
+          <div class="ch-head"><h4>ADR 涨跌比率</h4><span class="v num">0.59</span>
+            <span class="hint">N=10；&gt;1.5 超买，&lt;0.5 超卖</span></div>
+          <div class="body">
+            <svg viewBox="0 0 1100 170" preserveAspectRatio="none">
+              <g stroke="#eef1f5" stroke-width="1">
+                <line x1="0" y1="24" x2="1100" y2="24"/><line x1="0" y1="54" x2="1100" y2="54"/>
+                <line x1="0" y1="84" x2="1100" y2="84"/><line x1="0" y1="114" x2="1100" y2="114"/>
+              </g>
+              <text x="8" y="20" font-size="11" fill="#98a2b3">0.9</text>
+              <text x="8" y="50" font-size="11" fill="#98a2b3">0.7</text>
+              <text x="8" y="80" font-size="11" fill="#98a2b3">0.5</text>
+              <text x="8" y="110" font-size="11" fill="#98a2b3">0.3</text>
+              <line x1="0" y1="84" x2="1100" y2="84" stroke="#e02020" stroke-width="1.2" stroke-dasharray="4 4"/>
+              <text x="1058" y="88" font-size="11" fill="#e02020">超</text>
+              <circle cx="620" cy="60" r="3" fill="#00b578"/>
+              <text x="540" y="162" font-size="11" fill="#98a2b3">10-21</text>
+            </svg>
+          </div>
+        </div>
+
+        <div class="island tickerbar">
+          <span>沪深京 <b class="num up">3,362.12 +0.45%</b></span>
+          <span>科创50ETF易方达 <b class="num">1.38 0.00%</b></span>
+          <span>上证50 <b class="num up">2,741.33 +0.36%</b></span>
+          <span>中证1000 <b class="num down">6,128.77 -0.52%</b></span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ============ 场景 B：个股行情 + 个股详情面板 ============ -->
+  <div class="scene-tag"><h2>场景 B · 个股行情 + 个股详情面板</h2><span>截图 2 圈选范围：侧栏 + 主区表格 + 右侧详情停靠岛</span></div>
+  <div class="shell">
+    <span class="pin" style="left:96px; top:70px;">1</span>
+    <span class="pin" style="left:42%; top:70px;">2</span>
+    <span class="pin" style="right:120px; top:70px;">3</span>
+    <!-- 标题栏：保持现状通栏，不岛化 -->
+    <div class="bar">
+      <div class="bar-brand"><span class="bar-logo">股</span>股票看板</div>
+      <div class="bar-sep"></div>
+      <div class="tool-ic">☰</div>
+      <span class="pill live">👁 盯盘</span>
+      <div class="bar-tools">
+        <span class="ticker">科创50ET… <b class="num">1.38</b> <span class="num">0.00%</span></span>
+        <span class="tool-ic">◐</span><span class="tool-ic">⌕</span><span class="tool-ic">📖</span>
+        <span class="tool-ic">⤴</span><span class="tool-ic">⛶</span>
+        <div class="bar-sep"></div>
+        <span class="tool-ic">—</span><span class="tool-ic">▢</span><span class="tool-ic">✕</span>
+      </div>
+    </div>
+    <div class="frame with-dock">
+
+      <!-- ① 侧栏岛 -->
+      <div class="island side">
+        <div class="side-group">市场行情 <i>⌄</i></div>
+        <div class="nav"><span class="ic">⤴</span>板块资金流向</div>
+        <div class="nav on"><span class="ic">⇄</span>个股行情</div>
+        <div class="nav"><span class="ic">▤</span>市场榜单</div>
+        <div class="side-group">题材 <i>⌄</i></div>
+        <div class="nav"><span class="ic">◷</span>期货总览</div>
+        <div class="nav"><span class="ic">∿</span>机构行为</div>
+        <div class="side-group">热点资讯 <i>⌄</i></div>
+        <div class="nav"><span class="ic">📰</span>热点新闻</div>
+        <div class="nav"><span class="ic">◔</span>今天炒什么</div>
+        <div class="side-group">自选与账户 <i>⌄</i></div>
+        <div class="nav"><span class="ic">★</span>自选股</div>
+        <div class="nav"><span class="ic">▭</span>账户管理</div>
+        <div class="side-group">插件 <i>⌄</i></div>
+        <div class="nav"><span class="ic">⚙</span>插件工坊</div>
+        <div class="side-foot">
+          <div class="nav"><span class="ic">✎</span>速记</div>
+          <div class="nav"><span class="ic">⚙</span>设置</div>
+        </div>
+      </div>
+
+      <!-- ② 主区：页头岛 + 表格岛 -->
+      <div class="main">
+        <div class="island page-head">
+          <span class="back">←</span>
+          <h2>个股行情</h2>
+          <div class="ph-actions"><button class="btn ghost">⚙ 插件设置</button></div>
+        </div>
+
+        <div class="island table-card">
+          <div class="tb-bar">
+            <div class="seg"><span>共 20 条 / 页 · 305 轮</span><span class="on">全部</span><span>沪市A股</span><span>深市A股</span><span>北交所</span><span>创业板</span><span>科创板</span></div>
+          </div>
+          <div class="scroll">
+            <table>
+              <thead><tr>
+                <th>序号</th><th>代码</th><th>名称</th><th>现价 ↓</th><th>涨幅% ↓</th><th>涨速% ↓</th><th>换手% ↓</th>
+              </tr></thead>
+              <tbody>
+                <tr class="sel">
+                  <td class="rank">1</td><td class="num">301718</td><td><b>N通耐</b></td>
+                  <td class="num up">78</td><td class="num up">190.18</td><td class="num up">51.12</td><td class="num up">4</td>
+                </tr>
+                <tr>
+                  <td class="rank">2</td><td class="num">688051</td><td>盛邦安全</td>
+                  <td class="num up">26.57</td><td class="num up">12.63</td><td class="num up">2.98</td><td class="num up">6.58</td>
+                </tr>
+                <tr>
+                  <td class="rank">3</td><td class="num">300839</td><td>博汇股份</td>
+                  <td class="num up">18.69</td><td class="num up">12.59</td><td class="num up">2.09</td><td class="num up">9.3</td>
+                </tr>
+                <tr>
+                  <td class="rank">4</td><td class="num">920706</td><td>铁拓机械</td>
+                  <td class="num up">16.2</td><td class="num up">10.66</td><td class="num up">1.56</td><td class="num up">10.66</td>
+                </tr>
+                <tr>
+                  <td class="rank">5</td><td class="num">002076</td><td>星光股份</td>
+                  <td class="num up">2.7</td><td class="num up">10.2</td><td class="num up">0.25</td><td class="num">0</td>
+                </tr>
+                <tr>
+                  <td class="rank">6</td><td class="num">600293</td><td>三峡新材</td>
+                  <td class="num up">5.23</td><td class="num up">10.11</td><td class="num up">0.48</td><td class="num">0.1</td>
+                </tr>
+                <tr>
+                  <td class="rank">7</td><td class="num">002307</td><td>北新路桥</td>
+                  <td class="num up">3.39</td><td class="num up">10.06</td><td class="num up">0.31</td><td class="num">0.4</td>
+                </tr>
+                <tr>
+                  <td class="rank">8</td><td class="num">603130</td><td>海量数据</td>
+                  <td class="num up">16.92</td><td class="num up">10.01</td><td class="num up">1.54</td><td class="num">0.6</td>
+                </tr>
+                <tr>
+                  <td class="rank">9</td><td class="num">002724</td><td>海洋王</td>
+                  <td class="num up">11.21</td><td class="num up">10.01</td><td class="num up">1.02</td><td class="num">0</td>
+                </tr>
+                <tr>
+                  <td class="rank">10</td><td class="num">001360</td><td>南矿集团</td>
+                  <td class="num up">18.58</td><td class="num up">10.01</td><td class="num up">1.69</td><td class="num">0.2</td>
+                </tr>
+                <tr>
+                  <td class="rank">11</td><td class="num">002388</td><td>新亚制程</td>
+                  <td class="num up">10.01</td><td class="num up">10</td><td class="num up">0.91</td><td class="num">2.2</td>
+                </tr>
+                <tr>
+                  <td class="rank">12</td><td class="num">002212</td><td>天融信</td>
+                  <td class="num up">7.71</td><td class="num up">9.99</td><td class="num up">0.7</td><td class="num">1.3</td>
+                </tr>
+                <tr>
+                  <td class="rank">13</td><td class="num">603278</td><td>大业股份</td>
+                  <td class="num up">14.5</td><td class="num up">9.93</td><td class="num down">-0.07</td><td class="num">4.8</td>
+                </tr>
+                <tr>
+                  <td class="rank">14</td><td class="num">603332</td><td>苏州龙杰</td>
+                  <td class="num up">13.93</td><td class="num up">9.77</td><td class="num down">-0.22</td><td class="num">0.4</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="pager">
+            <span>第 1 / 272 页</span>
+            <button class="pgbtn">上一页</button>
+            <button class="pgbtn on">下一页</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ③ 详情停靠岛 -->
+      <div class="island dock">
+        <div class="dock-head">
+          <span class="t">个股详情</span>
+          <div class="dock-close"><span class="tool-ic">⤢</span><span class="tool-ic">✕</span></div>
+        </div>
+        <div class="dk-title">
+          <div><span class="nm">N通耐康盛</span><span class="cd num">301718</span></div>
+          <button class="addbtn">＋ 自选</button>
+        </div>
+        <div class="dq">
+          <div class="px num up">78.00</div>
+          <div class="chg"><span class="up">+51.12</span><span class="up">+190.18%</span></div>
+        </div>
+        <div class="dk-meta">
+          <div class="m"><span class="k">量比</span><span class="w num">78.80</span></div>
+          <div class="m"><span class="k">市值</span><span class="w num">1137.70亿</span></div>
+          <div class="m"><span class="k">流通</span><span class="w num">26.96亿</span></div>
+          <div class="m"><span class="k">开</span><span class="w num">78.00</span></div>
+          <div class="m"><span class="k">量</span><span class="w num">1.24万手</span></div>
+          <div class="m"><span class="k">额</span><span class="w num">9644.00万</span></div>
+          <div class="m"><span class="k">换 3.6%</span><span class="w num">振 1.9%</span></div>
+          <div class="m"><span class="k">市率</span><span class="w num">73.25</span></div>
+        </div>
+        <div class="dock-tabs"><span class="on">分时</span><span>日K</span><span>周K</span><span>月K</span><span>5分</span><span>五日</span></div>
+        <div class="chart">
+          <div class="legend"><span>timeLine-1 · 1天</span><span>均价 n/a</span></div>
+          <svg viewBox="0 0 344 170" width="100%" height="170" preserveAspectRatio="none">
+            <line x1="0" y1="30" x2="344" y2="30" stroke="#e6e9ee" stroke-width="1"/>
+            <line x1="0" y1="85" x2="344" y2="85" stroke="#e6e9ee" stroke-width="1"/>
+            <line x1="0" y1="140" x2="344" y2="140" stroke="#e6e9ee" stroke-width="1"/>
+            <text x="4" y="26" font-size="10" fill="#98a2b3">292.22%</text>
+            <text x="4" y="81" font-size="10" fill="#98a2b3">0.00%</text>
+            <text x="4" y="136" font-size="10" fill="#98a2b3">-292.22%</text>
+            <polyline fill="none" stroke="#e02020" stroke-width="1.6"
+              points="0,166 20,160 40,152 60,138 80,120 100,98 120,80 140,62 160,48 180,40 200,34 220,30 240,28 260,26 280,25 344,24"/>
+            <circle cx="344" cy="24" r="3" fill="#e02020"/>
+            <text x="6" y="158" font-size="10" fill="#98a2b3">:30</text>
+            <text x="80" y="158" font-size="10" fill="#98a2b3">10:30</text>
+            <text x="160" y="158" font-size="10" fill="#98a2b3">11:30</text>
+            <text x="240" y="158" font-size="10" fill="#98a2b3">14:00</text>
+            <text x="316" y="158" font-size="10" fill="#98a2b3">15:0</text>
+          </svg>
+        </div>
+        <div class="wul">
+          <h4>五档盘口</h4>
+          <div class="wcols">
+            <div>
+              <div class="wh buy"><span>档位</span><span>价格</span><span>量</span></div>
+              <div class="wrow buy"><span class="bg" style="width:72%"></span><span class="l">买1</span><span class="m num up">78.04</span><span class="r num">1</span></div>
+              <div class="wrow buy"><span class="bg" style="width:56%"></span><span class="l">买2</span><span class="m num up">78.00</span><span class="r num">3</span></div>
+              <div class="wrow buy"><span class="bg" style="width:40%"></span><span class="l">买3</span><span class="m num up">77.60</span><span class="r num">2</span></div>
+              <div class="wrow buy"><span class="bg" style="width:30%"></span><span class="l">买4</span><span class="m num up">77.20</span><span class="r num">1</span></div>
+              <div class="wrow buy"><span class="bg" style="width:22%"></span><span class="l">买5</span><span class="m num up">76.88</span><span class="r num">1</span></div>
+            </div>
+            <div>
+              <div class="wh sell"><span>档位</span><span>价格</span><span>量</span></div>
+              <div class="wrow sell"><span class="bg" style="width:64%"></span><span class="l">卖1</span><span class="m num down">78.40</span><span class="r num">2</span></div>
+              <div class="wrow sell"><span class="bg" style="width:48%"></span><span class="l">卖2</span><span class="m num down">78.80</span><span class="r num">4</span></div>
+              <div class="wrow sell"><span class="bg" style="width:36%"></span><span class="l">卖3</span><span class="m num down">79.20</span><span class="r num">3</span></div>
+              <div class="wrow sell"><span class="bg" style="width:28%"></span><span class="l">卖4</span><span class="m num down">79.60</span><span class="r num">2</span></div>
+              <div class="wrow sell"><span class="bg" style="width:20%"></span><span class="l">卖5</span><span class="m num down">80.00</span><span class="r num">1</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ============ 标注 ============ -->
+  <div class="notes-grid">
+    <div class="note"><span class="no">1</span>
+      <h4>侧栏岛（截图圈选 ①）</h4>
+      <p>条目与分组照搬现状：<b>市场行情 / 题材 / 热点资讯 / 自选与账户 / 插件</b> 五组 + 底部速记、设置。岛化点：整栏变独立浮岛（16px 圆角 + 软阴影），组标题右侧保留折叠箭头；激活项按现行 <b>nav-active token</b>（primary-weak 底 + 主色字，若要跟截图的红底可走 data-trend 映射替换）。折叠态仍走 v1 变体 A 的图标小岛。</p>
+    </div>
+    <div class="note"><span class="no">2</span>
+      <h4>主内容区（截图圈选 ②）</h4>
+      <p>页头（← 标题 + 插件设置）独立成岛，下方内容按页拆岛：<b>场景 A</b> 拆「概览岛 → 筛选 chips 岛 → ADL 图表岛 → ADR 图表岛 → 底部跑马灯岛」，每张图表可独立滚动/折叠；<b>场景 B</b> 拆「页头岛 → 表格岛」，分页器固定表格岛底部（原贴在窗口最底）。岛间隙 10px 统一露出画布。</p>
+    </div>
+    <div class="note"><span class="no">3</span>
+      <h4>个股详情停靠岛（截图圈选 ③）</h4>
+      <p>结构照现状：标题行 → 名称/代码 + <b>＋自选</b> → 价格区 → 八格元数据 → 周期 tabs（分时/日K/周K/月K/5分/五日）→ 分时图 → 双列五档。岛化点：整面板变 372px 浮岛，与主区脱开；头部保留 ⤢ 放大与 ✕ 关闭；插件扩展区（ctx.stockDetail，如速记）落岛底部软底卡。选中行（tr.sel）与浮岛用同一 primary-weak 语义呼应。</p>
+    </div>
+    <div class="note"><span class="no">4</span>
+      <h4>与 v1 的差异 &amp; 落地</h4>
+      <p>v1 是通用示意，v2 全部对齐真实页面内容与圈选范围；<b>顶部 headerbar（TitleBar / 浏览器页头）保持现状通栏、不岛化</b>——壳内仅侧栏、主区各岛、详情面板参与岛化。布局改动集中在 <b>MainLayout 的 grid 骨架 + 各页容器拆分</b>，数据逻辑零改动。代价不变：岛间隙占 ~20px 横向空间，&lt;1280px 回落通栏；暗色/三套主题经 CSS 变量自动生效（岛面/画布/阴影各补一条暗色映射）。</p>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
