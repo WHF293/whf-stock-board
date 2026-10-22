@@ -5,7 +5,9 @@ import BaseCard from '../components/ui/BaseCard.vue';
 import BaseButton from '../components/ui/BaseButton.vue';
 import BaseEmpty from '../components/ui/BaseEmpty.vue';
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue';
-import BaseTag from '../components/ui/BaseTag.vue';
+import MenuIcon from '../components/ui/MenuIcon.vue';
+import NoticeBar from '../components/ui/NoticeBar.vue';
+import { usePageHeaderSlot, PAGE_HEADER_ACTIONS_TARGET } from '../../common/composables/use-page-header-slot';
 import FuturesFilterBar from '../components/business/futures/FuturesFilterBar.vue';
 import FuturesStatCards from '../components/business/futures/FuturesStatCards.vue';
 import type { FuturesStatCard } from '../components/business/futures/FuturesStatCards.vue';
@@ -434,10 +436,38 @@ watch(selectedMember, () => {
 const selectedPartial = computed(
   () => selectedAggregate.value?.isPartial ?? false,
 );
+
+/* -------------------- 页头刷新与来源公告条（2026-10-22 王总指定，对齐期货总览页） -------------------- */
+
+/** 页级动作挂载守卫：本页激活时才向 MainLayout 页头投射刷新按钮（KeepAlive 守卫） */
+const { active: headerSlotActive } = usePageHeaderSlot();
+
+/** 披露交易日（yyyy-MM-dd，数据未就绪为空串） */
+const resolvedDayText = computed(() =>
+  resolvedDay.value ? resolvedDay.value.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3') : '',
+);
+
+/** 数据来源公告条文案（NoticeBar 纯文本 prop，披露交易日随数据就绪拼接） */
+const sourceNoticeText = computed(() =>
+  resolvedDayText.value
+    ? `数据来源：中金所 CCPM · 披露交易日 ${resolvedDayText.value}`
+    : '数据来源：中金所 CCPM',
+);
 </script>
 
 <template>
   <div class="flex flex-col gap-3">
+    <!-- 刷新按钮上移 MainLayout 页头（Teleport 投射，本页激活时才挂载） -->
+    <Teleport v-if="headerSlotActive" :to="PAGE_HEADER_ACTIONS_TARGET">
+      <BaseButton variant="ghost" :disabled="loading" data-track="FUTURES_INSTITUTIONAL_REFRESH" @click="void loadDay(dayInput, false, true)">
+        <MenuIcon name="refresh" :size="14" />
+        {{ loading ? '刷新中…' : '刷新' }}
+      </BaseButton>
+    </Teleport>
+
+    <!-- 数据来源公告条（原底部披露行移除：来源改 NoticeBar、刷新上移页头） -->
+    <NoticeBar :text="sourceNoticeText" />
+
     <FuturesFilterBar
       v-model:product="product"
       v-model:scope="scope"
@@ -544,14 +574,6 @@ const selectedPartial = computed(
           <li v-for="line in FUTURES_PAGE_TEXT.risks" :key="line">{{ line }}</li>
         </ol>
       </BaseCard>
-
-      <div class="flex items-center justify-between px-1 text-xs text-text-tertiary">
-        <span>披露交易日 {{ resolvedDay.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3') }}</span>
-        <div class="flex items-center gap-2">
-          <BaseTag tone="flat">数据源：中金所 CCPM</BaseTag>
-          <BaseButton variant="ghost" @click="void loadDay(dayInput, false, true)">刷新</BaseButton>
-        </div>
-      </div>
     </template>
   </div>
 </template>

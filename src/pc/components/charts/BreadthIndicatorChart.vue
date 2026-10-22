@@ -72,17 +72,129 @@ const dateLabels = computed(() => series.dates.slice(startIndex.value).map((date
  */
 const sliceSeries = <T>(values: T[]): T[] => values.slice(startIndex.value);
 
+// ---------- tooltip 白话解读（2026-10-22 王总指定：非专业用户看不出数值好坏） ----------
+
+/** 解读行语义色档位 */
+type InterpretTone = 'up' | 'down' | 'flat';
+
+/**
+ * 指标当前值 → 一句白话（这个值说明今天市场是好是坏）
+ * @param value 主指标当前值
+ * @param ma 同一天的均线值（仅 ADL 用：与均线比强弱）
+ * @returns 解读文案 + 语义色；值为空返回 null
+ */
+const interpretValue = (
+  value: number | null,
+  ma?: number | null,
+): { text: string; tone: InterpretTone } | null => {
+  if (value === null || Number.isNaN(value)) {
+    return null;
+  }
+  switch (kind) {
+    case 'adl':
+      if (ma != null && !Number.isNaN(ma)) {
+        return value >= ma
+          ? { text: '高于均线：上涨家数累积占优，市场偏强', tone: 'up' }
+          : { text: '低于均线：下跌家数累积占优，市场偏弱', tone: 'down' };
+      }
+      return { text: '相对值：持续走高 = 上涨家数累积占优，市场偏强', tone: 'flat' };
+    case 'adr':
+      if (value >= BREADTH_ADR_OVERBOUGHT) {
+        return { text: `≥${BREADTH_ADR_OVERBOUGHT} 超买：短期涨势过热，提防回调`, tone: 'down' };
+      }
+      if (value <= BREADTH_ADR_OVERSOLD) {
+        return { text: `≤${BREADTH_ADR_OVERSOLD} 超卖：短期跌势过度，可能孕育反弹`, tone: 'up' };
+      }
+      if (value > 1) return { text: '大于 1：上涨家数占优，市场偏强', tone: 'up' };
+      if (value < 1) return { text: '小于 1：下跌家数占优，市场偏弱', tone: 'down' };
+      return { text: '多空均衡', tone: 'flat' };
+    case 'obos':
+      if (value > 0) return { text: '正值：近 10 日上涨家数多于下跌，多头偏强', tone: 'up' };
+      if (value < 0) return { text: '负值：近 10 日下跌家数多于上涨，空头偏强', tone: 'down' };
+      return { text: '多空均衡', tone: 'flat' };
+    case 'arms':
+      if (value < 0.8) return { text: '低于 0.8：多头强势（上涨放量）', tone: 'up' };
+      if (value > 1.2) return { text: '高于 1.2：空头占优（下跌放量）', tone: 'down' };
+      if (value < ARMS_NEUTRAL_LINE) return { text: '略低于 1：偏多头', tone: 'up' };
+      if (value > ARMS_NEUTRAL_LINE) return { text: '略高于 1：偏空头', tone: 'down' };
+      return { text: '多空均衡', tone: 'flat' };
+    case 'mco':
+      if (value >= BREADTH_MCO_OVERBOUGHT) {
+        return { text: '进入超买区：短线情绪过热，提防回落', tone: 'down' };
+      }
+      if (value <= BREADTH_MCO_OVERSOLD) {
+        return { text: '进入超卖区：短线情绪冰点，可能修复', tone: 'up' };
+      }
+      if (value > 0) return { text: '零轴上方：市场偏强', tone: 'up' };
+      if (value < 0) return { text: '零轴下方：市场偏弱', tone: 'down' };
+      return { text: '中性', tone: 'flat' };
+  }
+};
+
+/** 各指标主系列名（白话解读取该系列的值；ARMS 页的副系列家数差不参与解读） */
+const MAIN_SERIES_NAME: Record<BreadthIndicatorKind, string> = {
+  adl: 'ADL',
+  adr: 'ADR',
+  obos: 'OBOS',
+  arms: 'ARMS',
+  mco: 'MCO',
+};
+
+/**
+ * tooltip formatter 工厂：保留逐系列数值行，末尾追加主指标的白话解读
+ * （解读行颜色随涨跌配色主题；须在 option computed 内调用以取到当轮主题色）
+ * @param trendColors 当轮涨跌主题色
+ * @returns ECharts tooltip formatter
+ */
+const makeTooltipFormatter =
+  (trendColors: ReturnType<typeof readTrendColors>) =>
+  (params: unknown): string => {
+    const list = (Array.isArray(params) ? params : [params]) as Array<{
+      axisValue?: string | number;
+      seriesName?: string;
+      dataIndex?: number;
+      value?: number | string | null;
+      marker?: string;
+    }>;
+    const first = list[0];
+    if (!first) {
+      return '';
+    }
+    const lines: string[] = [`<div style="font-weight:600;margin-bottom:2px">${first.axisValue ?? ''}</div>`];
+    for (const item of list) {
+      const value = item.value;
+      const text =
+        value === null || value === undefined || value === '' || Number.isNaN(Number(value))
+          ? '--'
+          : Math.abs(Number(value)) >= 1000
+            ? Math.round(Number(value)).toLocaleString('zh-CN')
+            : Number(value).toFixed(2);
+      lines.push(`<div>${item.marker ?? ''} ${item.seriesName ?? ''}　<b>${text}</b></div>`);
+    }
+    const main = list.find((item) => item.seriesName === MAIN_SERIES_NAME[kind]) ?? first;
+    const mainValue = main.value === undefined || main.value === '' ? null : Number(main.value);
+    const ma = kind === 'adl' ? (sliceSeries(series.adlMa)[main.dataIndex ?? -1] ?? null) : undefined;
+    const tip = interpretValue(Number.isNaN(mainValue) ? null : mainValue, ma);
+    if (tip) {
+      const color =
+        tip.tone === 'up' ? trendColors.up : tip.tone === 'down' ? trendColors.down : trendColors.flat;
+      lines.push(`<div style="margin-top:4px;color:${color}">▸ ${tip.text}</div>`);
+    }
+    return lines.join('');
+  };
+
 const option = computed<EChartsCoreOption>(() => {
   void settingsStore.trendTheme;
   void isDark.value;
   const trend = readTrendColors();
 
-  /** 公共骨架：日期类 x 轴 + 单值 y 轴 + 轴触发 tooltip */
+  /** 公共骨架：日期类 x 轴 + 单值 y 轴 + 轴触发 tooltip（末行附白话解读） */
   const base = {
     grid: { left: 56, right: 14, top: 10, bottom: 20 },
     tooltip: {
       trigger: 'axis',
       axisPointer: { type: 'line' },
+      formatter: makeTooltipFormatter(trend),
     },
     xAxis: {
       type: 'category',

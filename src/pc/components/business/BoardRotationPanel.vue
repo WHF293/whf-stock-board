@@ -6,6 +6,7 @@ import BaseChart from '../charts/BaseChart.vue';
 import BaseEmpty from '../ui/BaseEmpty.vue';
 import BaseTabs from '../ui/BaseTabs.vue';
 import MenuIcon from '../ui/MenuIcon.vue';
+import NoticeBar from '../ui/NoticeBar.vue';
 import { useTheme } from '../../../common/composables/use-theme';
 import { useSettingsStore } from '../../../common/stores/settings';
 import {
@@ -417,10 +418,10 @@ const segmentStatus = (segment: RotationSegment): string => {
 
 <template>
   <div class="flex min-h-0 flex-1 flex-col gap-2">
-    <p class="shrink-0 text-xs text-text-tertiary" role="note">
-      一条线一个题材的名次轨迹：线爬顶 = 主线强化，断线 = 掉榜退潮（隔日重现开新线新色）；
-      悬停色点看当日龙头，点日期列看单日构成，点题材名看题材段生命周期。
-    </p>
+    <NoticeBar
+      class="shrink-0"
+      text="一条线一个题材的名次轨迹：线爬顶 = 主线强化，断线 = 掉榜退潮（隔日重现开新线新色）；悬停色点看当日龙头，点日期列看单日构成，点题材名看题材段生命周期。"
+    />
 
     <!-- 卡片一：控制行 + bump 图（默认撑满卡片宽度；窗口天数多到列宽不够时横向滚动） -->
     <div class="shrink-0 rounded-card bg-surface p-4 shadow-card">

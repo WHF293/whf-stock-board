@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from 'vue';
 import MenuIcon from '../components/ui/MenuIcon.vue';
+import NoticeBar from '../components/ui/NoticeBar.vue';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import {
   DAPANYUNTU_EMBED_URL,
@@ -73,23 +74,23 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="flex h-[calc(100dvh-6.5rem)] min-h-0 flex-col gap-2">
-    <!-- 来源提示条：声明第三方嵌入 + 原站跳转入口 -->
-    <div
-      class="flex shrink-0 items-center justify-between gap-3 rounded-lg bg-flat-weak px-3 py-1.5"
+    <!-- 来源提示条：声明第三方嵌入 + 原站跳转入口（NoticeBar 统一公告条样式） -->
+    <NoticeBar
+      text="本页为第三方站点「大盘云图」的嵌入展示（dapanyuntu.com），数据与交互均由原站提供"
+      class="shrink-0"
     >
-      <span class="truncate text-xs text-text-tertiary">
-        本页为第三方站点「大盘云图」的嵌入展示（dapanyuntu.com），数据与交互均由原站提供
-      </span>
-      <button
-        type="button"
-        class="flex shrink-0 items-center gap-1 text-xs font-medium text-primary hover:underline"
-        data-track="HEATMAP_OPEN_SITE"
-        @click="openSite"
-      >
-        访问原站
-        <MenuIcon name="expand" :size="12" />
-      </button>
-    </div>
+      <template #action>
+        <button
+          type="button"
+          class="flex shrink-0 items-center gap-1 self-start text-xs font-medium text-primary hover:underline"
+          data-track="HEATMAP_OPEN_SITE"
+          @click="openSite"
+        >
+          访问原站
+          <MenuIcon name="expand" :size="12" />
+        </button>
+      </template>
+    </NoticeBar>
 
     <!-- 云图 iframe：撑满剩余高度；load 兜底重发主题（防 ready 消息早于监听注册丢失） -->
     <div class="min-h-0 flex-1 overflow-hidden rounded-xl border border-flat-weak bg-surface">

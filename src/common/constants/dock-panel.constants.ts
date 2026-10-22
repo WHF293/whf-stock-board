@@ -26,3 +26,12 @@ export const DOCK_PANEL_WIDTH_MAX_RATIO = 0.6;
 
 /** 面板默认宽度（像素） */
 export const DOCK_PANEL_WIDTH_DEFAULT = 560;
+
+/**
+ * Islands 布局的画布留白（像素，2026-10-22 PC 布局岛化）
+ *
+ * MainLayout 内容行四周 p-2.5（10px）露出画布底色：停靠面板右缘不再贴视口右缘，
+ * 拖拽宽度换算「鼠标 X → 面板宽度」时须扣除这份留白，否则松手后左缘偏移 10px。
+ * 与 MainLayout 内容行的 p-2.5 / gap-2.5 必须同步改。
+ */
+export const DOCK_LAYOUT_CANVAS_PADDING = 10;

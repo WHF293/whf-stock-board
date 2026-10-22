@@ -5,6 +5,9 @@ import BaseCard from '../components/ui/BaseCard.vue';
 import BaseEmpty from '../components/ui/BaseEmpty.vue';
 import BaseModal from '../components/ui/BaseModal.vue';
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue';
+import MenuIcon from '../components/ui/MenuIcon.vue';
+import NoticeBar from '../components/ui/NoticeBar.vue';
+import { usePageHeaderSlot, PAGE_HEADER_ACTIONS_TARGET } from '../../common/composables/use-page-header-slot';
 import FuturesCapitalFlowChart from '../components/business/futures/FuturesCapitalFlowChart.vue';
 import FuturesPositionRateChart from '../components/business/futures/FuturesPositionRateChart.vue';
 import FuturesRankBoards from '../components/business/futures/FuturesRankBoards.vue';
@@ -123,19 +126,32 @@ const positionPreview = computed(() => [
   ...positionSorted.value.slice(0, POSITION_CHART_PREVIEW_COUNT),
   ...positionSorted.value.slice(-POSITION_CHART_PREVIEW_COUNT),
 ]);
+
+/* -------------------- 页头动作与来源公告条（2026-10-22 王总指定） -------------------- */
+
+/** 页级动作挂载守卫：本页激活时才向 MainLayout 页头投射刷新按钮（KeepAlive 守卫） */
+const { active: headerSlotActive } = usePageHeaderSlot();
+
+/** 数据来源公告条文案（NoticeBar 纯文本 prop，交易日随数据就绪拼接） */
+const sourceNoticeText = computed(() =>
+  lastDate.value
+    ? `数据来源：同花顺期货通（10jqka） · 交易日 ${lastDate.value}`
+    : '数据来源：同花顺期货通（10jqka）',
+);
 </script>
 
 <template>
   <div class="flex flex-col gap-3">
-    <div class="flex items-center justify-between gap-2">
-      <h2 class="text-sm font-semibold text-text">期货市场总览</h2>
-      <div class="flex items-center gap-2">
-        <span class="text-xs text-text-tertiary">数据来源：同花顺期货通（10jqka）<template v-if="lastDate"> · 交易日 {{ lastDate }}</template></span>
-        <BaseButton variant="ghost" :disabled="loading" @click="void loadAll(true)">
-          {{ loading ? '加载中…' : '刷新' }}
-        </BaseButton>
-      </div>
-    </div>
+    <!-- 刷新按钮上移 MainLayout 页头（2026-10-22 王总指定；Teleport 投射，本页激活时才挂载） -->
+    <Teleport v-if="headerSlotActive" :to="PAGE_HEADER_ACTIONS_TARGET">
+      <BaseButton variant="ghost" :disabled="loading" data-track="FUTURES_OVERVIEW_REFRESH" @click="void loadAll(true)">
+        <MenuIcon name="refresh" :size="14" />
+        {{ loading ? '刷新中…' : '刷新' }}
+      </BaseButton>
+    </Teleport>
+
+    <!-- 数据来源公告条（原「期货市场总览」标题行移除：标题与页头重复、来源改 NoticeBar、刷新上移页头） -->
+    <NoticeBar :text="sourceNoticeText" />
 
     <div v-if="loading" class="grid grid-cols-1 gap-3 xl:grid-cols-3">
       <BaseCard v-for="i in 3" :key="i"><BaseSkeleton class="h-56" /></BaseCard>
