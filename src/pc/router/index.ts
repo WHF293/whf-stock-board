@@ -14,11 +14,11 @@ import HotBoardView from '../views/HotBoardView.vue';
 import StockAccountView from '../views/StockAccountView.vue';
 import AgentAnalysisView from '../views/AgentAnalysisView.vue';
 import MarketRankView from '../views/MarketRankView.vue';
-import StockMarketView from '../views/StockMarketView.vue';
 import SectorFlowHistoryView from '../views/SectorFlowHistoryView.vue';
 import FuturesInstitutionalView from '../views/FuturesInstitutionalView.vue';
 import FuturesOverviewView from '../views/FuturesOverviewView.vue';
 import StockDetailView from '../views/StockDetailView.vue';
+import WideBaseEtfView from '../views/WideBaseEtfView.vue';
 import SystemLogView from '../views/SystemLogView.vue';
 import NotFoundView from '../views/NotFoundView.vue';
 import PluginLabView from '../views/PluginLabView.vue';
@@ -59,13 +59,14 @@ const routes = [
         component: PanoramaView,
         meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.PANORAMA] },
       },
-      // 大盘云图：原「行情全景-大盘云图」tab 独立成页（2026-10-13），dapanyuntu.com iframe 直嵌
+      // 大盘云图：原「行情全景-大盘云图」tab 独立成页（2026-10-13），dapanyuntu.com iframe 直嵌；
+      // 侧栏入口已移除（2026-10-22 王总指定），改由市场总览页头按钮进入，不入左侧导航
       {
         path: ROUTE_PATH.HEATMAP,
         component: HeatmapView,
-        meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.HEATMAP] },
+        meta: { title: '大盘云图' },
       },
-      // 板块资金流向：原「行情全景-最新板块资金」独立成页（2026-10-13）
+      // 资金流向（原「板块资金流向」）：原「行情全景-最新板块资金」独立成页（2026-10-13）
       {
         path: ROUTE_PATH.BOARD_FLOW,
         component: BoardFlowView,
@@ -88,7 +89,7 @@ const routes = [
         component: BoardCalendarDetailView,
         meta: { title: '板块详情' },
       },
-      // 市场异动已并入市场榜单（涨停 / 异动 / 龙虎榜 / 大宗为其页签）；
+      // 市场异动已并入盘面雷达（涨停 / 异动 / 龙虎榜 / 大宗为其页签）；
       // 历史合并产生的旧路径（/funds、/market-mood、/market-event、/dragon-tiger、
       // /trade-import、/settings）不再重定向，统一由 404 兜底页承接
       {
@@ -96,12 +97,8 @@ const routes = [
         component: MarketRankView,
         meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.MARKET_RANK] },
       },
-      // 个股行情：全市场列表（同花顺行情中心同源，服务端排序 + 翻页）
-      {
-        path: ROUTE_PATH.STOCK_MARKET,
-        component: StockMarketView,
-        meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.STOCK_MARKET] },
-      },
+      // 个股行情已并入行情全景「全部个股」子 tab（2026-10-22 王总指定），
+      // /stock-market 旧路径由 404 兜底页承接（同 market-mood 等历史合并先例）
       // 选股器已改为插件分发（dsh-stock-screener，路径 /screener 由插件注册）；
       // 未安装插件时旧路径由 404 兜底页承接
       {
@@ -155,6 +152,12 @@ const routes = [
         path: `${ROUTE_PATH.STOCK_DETAIL}/:symbol`,
         component: StockDetailView,
         meta: { title: '股票详情' },
+      },
+      // 宽基ETF：国家队（汇金系）核心操作宽基监控；市场总览页头按钮进入，不入左侧导航
+      {
+        path: ROUTE_PATH.WIDE_BASE_ETF,
+        component: WideBaseEtfView,
+        meta: { title: '宽基ETF' },
       },
     ],
   },

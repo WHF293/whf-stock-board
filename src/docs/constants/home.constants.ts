@@ -20,9 +20,15 @@ export const HOME_FEATURES: readonly HomeFeature[] = [
   },
   {
     icon: '▤',
-    title: '板块日历',
-    desc: '以「日期 × 板块」矩阵呈现各板块每日热度评分（赚钱效应），支持口径切换、板块筛选与下钻明细。',
+    title: '题材轮动',
+    desc: 'bump 图追板块名次连线、涨跌停矩阵看热度扩散、赚钱效应气泡图量当日强弱，主线与退潮一眼可辨。',
     chapterId: 'board-calendar',
+  },
+  {
+    icon: '≋',
+    title: '市场宽度',
+    desc: 'ADL / ADR / OBOS / ARMS / MCO 五大广度指标副图，每图带白话解读，判断大盘强弱与拐点。',
+    chapterId: 'market-breadth',
   },
   {
     icon: '⌕',
@@ -47,5 +53,11 @@ export const HOME_FEATURES: readonly HomeFeature[] = [
     title: '插件工坊',
     desc: '插件化架构：官方插件 zip 包安装、一键卸载；贡献点与宿主服务开放给第三方插件。',
     chapterId: 'plugins',
+  },
+  {
+    icon: '⚔',
+    title: '机构行为',
+    desc: '中金所 CCPM 席位持仓行为分析：净增减翻译成行为标签，席位画像快速识别主力方向。',
+    chapterId: 'futures-institutional',
   },
 ] as const;

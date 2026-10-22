@@ -1,3 +1,5 @@
+import type { BoardScoreWeights } from '../types/board-calendar.types.ts';
+
 /**
  * 题材轮动视图常量集中管理
  *
@@ -71,3 +73,18 @@ export const ROTATION_TIER_MID_STREAK = 2;
 
 /** 题材段成员股明细的最大展示条数 */
 export const ROTATION_MEMBER_LIMIT = 10;
+
+/**
+ * 权重管理器的分桶字段定义（顺序 = 弹窗展示序）
+ *
+ * 六桶互斥；权重取值边界与默认值见 board-calendar.constants.ts 的
+ * BOARD_SCORE_WEIGHT_RANGE / BOARD_SCORE_WEIGHTS_DEFAULT。
+ */
+export const ROTATION_WEIGHT_FIELDS = [
+  { key: 'limitUp', label: '涨停', hint: '涨跌停池口径' },
+  { key: 'gt5', label: '涨幅 > 5%', hint: '非涨停' },
+  { key: 'up05', label: '涨幅 0 ~ 5%', hint: '含 +5.00% 整点' },
+  { key: 'down05', label: '跌幅 0 ~ 5%', hint: '含 -5.00% 整点' },
+  { key: 'lt5', label: '跌幅 < -5%', hint: '非跌停' },
+  { key: 'limitDown', label: '跌停', hint: '涨跌停池口径' },
+] as const satisfies ReadonlyArray<{ key: keyof BoardScoreWeights; label: string; hint: string }>;

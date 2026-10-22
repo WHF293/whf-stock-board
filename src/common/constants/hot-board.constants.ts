@@ -10,6 +10,15 @@
 /** 热股平台（设置弹窗里可勾选 / 拖拽排序的粒度，即卡片粒度） */
 export type BoardSource = 'ths' | 'em' | 'cls' | 'tdx' | 'xq';
 
+/** 今天炒什么页的视图模式（'stock' = 股票热榜 / 'etf' = ETF 热榜） */
+export type HotBoardMode = 'stock' | 'etf';
+
+/** 视图模式切换 tab 选项（BaseTabs 消费，数组顺序 = 渲染顺序） */
+export const HOT_BOARD_MODE_TAB_OPTIONS: readonly { value: HotBoardMode; label: string }[] = [
+  { value: 'stock', label: '股票热榜' },
+  { value: 'etf', label: 'ETF 热榜' },
+];
+
 /** 分组切换控件的通用选项形态（分组值 + 展示名） */
 export interface BoardGroupOption {
   /** 分组值（取数函数按它路由到对应上游参数） */

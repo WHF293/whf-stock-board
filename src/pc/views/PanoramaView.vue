@@ -8,6 +8,7 @@ import { useTabConfig } from '../../common/composables/use-tab-config';
 import PanoramaCnBoard from '../components/business/PanoramaCnBoard.vue';
 import PanoramaIpoBoard from '../components/business/PanoramaIpoBoard.vue';
 import PanoramaReviewBoard from '../components/business/panorama-review/PanoramaReviewBoard.vue';
+import StockMarketView from './StockMarketView.vue';
 import {
   fetchGlobalFuturesPanorama,
   fetchGlobalIndexPanorama,
@@ -25,20 +26,22 @@ import { usePolling } from '../../common/composables/use-polling';
 import { POLLING_INTERVAL } from '../../common/constants/polling.constants.ts';
 
 /**
- * 行情全景：A股全景（板块排行，含行业/概念/筛选/成分股）/ 新股次新股 / 美股全景 /
- * 全球宏观 / 历史复盘（牛熊模式库）
+ * 行情全景：A股全景（板块排行，含行业/概念/筛选/成分股）/ 全部个股（原侧栏「个股行情」页并入，
+ * 2026-10-22 王总指定）/ 新股次新股 / 美股全景 / 全球宏观 / 历史复盘（牛熊模式库）
  *
- * 注：原「最新板块资金」模块已于 2026-10-13 独立成页（/board-flow 板块资金流向）；
- * 原「大盘云图」tab 已于 2026-10-13 独立成页（/heatmap 大盘云图）
+ * 注：原「最新板块资金」模块已于 2026-10-13 独立成页（/board-flow 资金流向）；
+ * 原「大盘云图」tab 已于 2026-10-13 独立成页（/heatmap 大盘云图，侧栏入口 2026-10-22 移除，
+ * 改由市场总览页头按钮进入）
  *
  * 美股与全球宏观只展示名称 + 涨跌幅（网格卡片）；进入页面串行错峰拉取一次
  * （不参与轮询）；数据先取内存快照秒出 UI，接口成功后写回快照并刷新；
- * A股全景 / 新股次新股 / 历史复盘由各自组件自管数据（历史复盘快照落 appStorage，重进零联网）
+ * A股全景 / 全部个股 / 新股次新股 / 历史复盘由各自组件自管数据（历史复盘快照落 appStorage，重进零联网）
  */
 
 /** 模块 tab 选项 */
 const MODULE_TABS = [
   { label: 'A股全景', value: 'cn' },
+  { label: '全部个股', value: 'stocks' },
   { label: '新股次新股', value: 'ipo' },
   { label: '美股全景', value: 'us' },
   { label: '全球宏观', value: 'macro' },
@@ -54,10 +57,11 @@ const { visibleOptions: moduleTabOptions, activeValue: activeModule } = useTabCo
   MODULE_TABS,
 );
 
-/** 是否处于组件自管数据的模块（A股 / 新股次新股 / 历史复盘：宿主不拉数据，无骨架 / 空态逻辑） */
+/** 是否处于组件自管数据的模块（A股 / 全部个股 / 新股次新股 / 历史复盘：宿主不拉数据，无骨架 / 空态逻辑） */
 const isSelfManagedModule = computed(
   () =>
     activeModule.value === 'cn' ||
+    activeModule.value === 'stocks' ||
     activeModule.value === 'ipo' ||
     activeModule.value === 'review',
 );
@@ -223,6 +227,12 @@ const isEmpty = computed(
 
     <!-- A股全景：板块排行组件（数据自管；撑满剩余高度，表格尽量高） -->
     <PanoramaCnBoard v-else-if="activeModule === 'cn'" class="min-h-0 flex-1" />
+
+    <!-- 全部个股：原侧栏「个股行情」页整卡并入（数据 / 轮询 / 翻页自管，v-if 挂载即启停轮询）；
+         外层滚动容器兜底卡内容超高（.table-scroll 自带 560px 内滚） -->
+    <div v-else-if="activeModule === 'stocks'" class="min-h-0 flex-1 overflow-y-auto">
+      <StockMarketView />
+    </div>
 
     <PanoramaIpoBoard v-else-if="activeModule === 'ipo'" class="min-h-0 flex-1" />
 

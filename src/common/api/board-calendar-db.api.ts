@@ -7,6 +7,7 @@ import type {
   BoardDailyRow,
   BoardLimitStock,
   BoardProfile,
+  BoardScoreBuckets,
   BoardSyncStateKey,
   TradingDatesCache,
 } from '../types/board-calendar.types.ts';
@@ -146,6 +147,36 @@ const toProfile = (r: Row): BoardProfile => ({
 });
 
 /**
+ * board_daily 行的分桶列 → BoardScoreBuckets
+ *
+ * 六列为一个原子口径：全部为 NULL = 该行无分桶数据（旧版本行 / 回补日 / 盘中未覆盖板块），
+ * 返回 null（读取侧回退落库默认口径得分）；部分为 NULL 视为坏数据，缺失键按 0 兜底。
+ * @param r DB 原始行
+ * @returns 分桶或 null
+ */
+const toBuckets = (r: Row): BoardScoreBuckets | null => {
+  const values = [
+    numOrNull(r.bucket_limit_up),
+    numOrNull(r.bucket_gt5),
+    numOrNull(r.bucket_up_05),
+    numOrNull(r.bucket_down_05),
+    numOrNull(r.bucket_lt_5),
+    numOrNull(r.bucket_limit_down),
+  ];
+  if (values.every((value) => value === null)) {
+    return null;
+  }
+  return {
+    limitUp: values[0] ?? 0,
+    gt5: values[1] ?? 0,
+    up05: values[2] ?? 0,
+    down05: values[3] ?? 0,
+    lt5: values[4] ?? 0,
+    limitDown: values[5] ?? 0,
+  };
+};
+
+/**
  * board_daily 行 → BoardDailyRow
  * @param r DB 原始行
  * @returns 板块日聚合
@@ -164,6 +195,7 @@ const toDaily = (r: Row): BoardDailyRow => ({
   consCount: num(r.cons_count),
   score: num(r.score),
   scoreRate: num(r.score_rate),
+  buckets: toBuckets(r),
   dataLevel: num(r.data_level),
   snapshotAt: num(r.snapshot_at),
   isFinal: bool(r.is_final),
@@ -375,13 +407,17 @@ export const upsertBoardDaily = async (rows: BoardDailyRow[]): Promise<void> => 
   const sql =
     `INSERT INTO board_daily (trade_date, board_code, board_name, change_percent, amount, ` +
     `limit_up, limit_down, up_count, down_count, flat_count, cons_count, score, score_rate, ` +
-    `data_level, snapshot_at, is_final) VALUES ${buildValuesClause(rows.length, 16)} ` +
+    `bucket_limit_up, bucket_gt5, bucket_up_05, bucket_down_05, bucket_lt_5, bucket_limit_down, ` +
+    `data_level, snapshot_at, is_final) VALUES ${buildValuesClause(rows.length, 22)} ` +
     `ON CONFLICT(trade_date, board_code) DO UPDATE SET board_name = excluded.board_name, ` +
     `change_percent = excluded.change_percent, amount = excluded.amount, ` +
     `limit_up = excluded.limit_up, limit_down = excluded.limit_down, ` +
     `up_count = excluded.up_count, down_count = excluded.down_count, ` +
     `flat_count = excluded.flat_count, cons_count = excluded.cons_count, ` +
     `score = excluded.score, score_rate = excluded.score_rate, ` +
+    `bucket_limit_up = excluded.bucket_limit_up, bucket_gt5 = excluded.bucket_gt5, ` +
+    `bucket_up_05 = excluded.bucket_up_05, bucket_down_05 = excluded.bucket_down_05, ` +
+    `bucket_lt_5 = excluded.bucket_lt_5, bucket_limit_down = excluded.bucket_limit_down, ` +
     `data_level = excluded.data_level, snapshot_at = excluded.snapshot_at, ` +
     `is_final = excluded.is_final`;
   const params = rows.flatMap((row) => [
@@ -398,6 +434,12 @@ export const upsertBoardDaily = async (rows: BoardDailyRow[]): Promise<void> => 
     row.consCount,
     row.score,
     row.scoreRate,
+    row.buckets?.limitUp ?? null,
+    row.buckets?.gt5 ?? null,
+    row.buckets?.up05 ?? null,
+    row.buckets?.down05 ?? null,
+    row.buckets?.lt5 ?? null,
+    row.buckets?.limitDown ?? null,
     row.dataLevel,
     row.snapshotAt,
     row.isFinal ? 1 : 0,

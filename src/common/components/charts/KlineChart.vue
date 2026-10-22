@@ -71,6 +71,11 @@ const props = defineProps<{
   /** 高度自适应：容器 h-full 由父级 flex 布局决定实际高度（默认定高 420px） */
   autoHeight?: boolean;
   /**
+   * 定高模式的图表高度（px），不传用默认 420（与历史行为一致）。
+   * 宽基ETF 等栅格小卡场景用更矮的定高（主图 + 成交量副图）
+   */
+  height?: number;
+  /**
    * 蜡烛模式主图指标清单（klinecharts 指标名，如 ['MA','BOLL']）；
    * 不传用固定默认（MA + VOL + MACD_KDJ，与历史行为一致）。timeline 模式忽略
    */
@@ -110,6 +115,19 @@ const containerRef = ref<HTMLDivElement>();
 const chartRef = ref<Chart | null>(null);
 /** 触发 loader 重新加载的自增序号（setSymbol 仅在变化时触发 init 加载） */
 let loadSeq = 0;
+
+/** 图表默认高度（px）：定高模式未传 height 时的兜底，与历史模板行为一致 */
+const DEFAULT_CHART_HEIGHT_PX = 420;
+
+/**
+ * 容器高度样式：autoHeight 走 h-full + min-height（父级 flex 决定实际高）；
+ * 定高模式用 height prop（默认 420）
+ */
+const containerStyle = computed(() =>
+  props.autoHeight
+    ? { height: '100%', minHeight: `${DEFAULT_CHART_HEIGHT_PX}px` }
+    : { height: `${props.height ?? DEFAULT_CHART_HEIGHT_PX}px` },
+);
 
 /** 主图蜡烛面板 id（klinecharts 内置约定） */
 const CANDLE_PANE_ID = 'candle_pane';
@@ -853,9 +871,6 @@ defineExpose({
 </script>
 
 <template>
-  <!-- 容器始终保留 ≥ 480px 高度；KLineChart canvas 内部会铺满父级可见区域 -->
-  <div
-    ref="containerRef"
-    :class="autoHeight ? 'h-full min-h-[420px] w-full' : 'h-[420px] w-full'"
-  />
+  <!-- KLineChart canvas 内部会铺满父级可见区域；高度由 containerStyle 决定（默认 420px） -->
+  <div ref="containerRef" class="w-full" :style="containerStyle" />
 </template>

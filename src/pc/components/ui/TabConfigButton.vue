@@ -34,6 +34,45 @@ const draftOrder = ref<string[]>([]);
 /** 草稿未勾选项（不可见 tab） */
 const draftHidden = ref<string[]>([]);
 
+/** 分组草稿（仅 hasGroups 时使用：每组一个可拖拽列表，组间顺序固定按声明） */
+interface DraftGroup {
+  /** 分组名（与页签条 chip 同文案；首个无 groupStart 的散项归空名组） */
+  label: string;
+  /** 组内 tab value（顺序即展示顺序） */
+  values: string[];
+}
+const draftGroups = ref<DraftGroup[]>([]);
+
+/** 选项是否声明了分组（任一项带 groupStart 即进入分组模式） */
+const hasGroups = computed(() => props.options.some((option) => option.groupStart === true));
+
+/**
+ * 按声明分组把扁平顺序拆成组草稿（组员资格由 options 声明决定，拖拽只改组内序）
+ * @param order 扁平顺序
+ */
+const buildDraftGroups = (order: string[]): void => {
+  const optionByValue = new Map(props.options.map((option) => [option.value, option]));
+  const groups: DraftGroup[] = [];
+  for (const value of order) {
+    const option = optionByValue.get(value);
+    if (option?.groupStart || groups.length === 0) {
+      groups.push({ label: option?.groupName ?? '', values: [] });
+    }
+    groups[groups.length - 1]!.values.push(value);
+  }
+  draftGroups.value = groups;
+};
+
+// 分组模式：组内拖拽改写 draftGroups 后，同步回扁平 draftOrder（提交 / 勾选过滤共用）
+watch(
+  draftGroups,
+  (groups) => {
+    if (!hasGroups.value) return;
+    draftOrder.value = groups.flatMap((group) => group.values);
+  },
+  { deep: true },
+);
+
 /** value -> 选项（展示名称用） */
 const optionByValue = computed(
   () => new Map(props.options.map((option) => [option.value, option])),
@@ -53,6 +92,7 @@ watch(open, (isOpen) => {
     : normalizeTabConfig([], [], props.options);
   draftOrder.value = normalized.order;
   draftHidden.value = normalized.hidden;
+  buildDraftGroups(normalized.order);
 });
 
 /**
@@ -75,6 +115,7 @@ const onToggle = (value: string, event: Event): void => {
 const onResetDefault = (): void => {
   draftOrder.value = props.options.map((option) => option.value);
   draftHidden.value = [];
+  buildDraftGroups(draftOrder.value);
 };
 
 /** 确认：提交草稿并关闭 */
@@ -99,11 +140,14 @@ const onConfirm = (): void => {
 
   <BaseModal v-model:open="open" title="页签配置" max-width-class="max-w-sm">
     <p class="mb-3 text-xs text-text-tertiary">
-      勾选要显示的页签，拖拽手柄调整顺序；点击「确认」保存并记住。
+      {{ hasGroups
+        ? '勾选要显示的页签，拖拽手柄调整组内顺序（分组固定）；点击「确认」保存并记住。'
+        : '勾选要显示的页签，拖拽手柄调整顺序；点击「确认」保存并记住。' }}
     </p>
 
-    <!-- 勾选 + 拖拽列表 -->
+    <!-- 无分组页（行情全景等）：扁平列表，拖拽全局排序 -->
     <VueDraggable
+      v-if="!hasGroups"
       v-model="draftOrder"
       tag="ul"
       :animation="150"
@@ -140,6 +184,55 @@ const onConfirm = (): void => {
         </label>
       </li>
     </VueDraggable>
+
+    <!-- 分组页（盘面雷达等）：组名标题 + 组内可拖拽，组间顺序固定按声明（与页签条分组一致） -->
+    <div v-else class="space-y-3">
+      <div v-for="(group, groupIndex) in draftGroups" :key="groupIndex">
+        <p
+          v-if="group.label"
+          class="mb-1 flex items-center gap-1.5 text-xs font-medium text-text-tertiary"
+        >
+          {{ group.label }}
+        </p>
+        <VueDraggable
+          v-model="group.values"
+          tag="ul"
+          :animation="150"
+          handle=".tab-config-handle"
+          :force-fallback="true"
+          fallback-class="sortable-fallback"
+          ghost-class="opacity-40"
+          chosen-class="bg-flat-weak"
+          class="space-y-1"
+        >
+          <li
+            v-for="value in group.values"
+            :key="value"
+            class="flex select-none items-center gap-2.5 rounded-lg border border-flat-weak px-2.5 py-1.5 text-sm"
+          >
+            <MenuIcon
+              name="grip"
+              :size="16"
+              class="tab-config-handle shrink-0 cursor-grab text-text-tertiary active:cursor-grabbing"
+            />
+            <label class="flex min-w-0 flex-1 cursor-pointer items-center gap-2">
+              <input
+                :checked="!draftHidden.includes(value)"
+                type="checkbox"
+                class="h-4 w-4 shrink-0 cursor-pointer rounded border-flat-weak accent-primary"
+                @change="onToggle(value, $event)"
+              />
+              <span
+                class="truncate"
+                :class="draftHidden.includes(value) ? 'text-text-tertiary line-through' : 'text-text'"
+              >
+                {{ optionByValue.get(value)?.label ?? value }}
+              </span>
+            </label>
+          </li>
+        </VueDraggable>
+      </div>
+    </div>
 
     <p v-if="checkedCount === 0" class="mt-3 text-xs text-down">
       至少需要保留一个页签。

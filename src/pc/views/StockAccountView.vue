@@ -124,7 +124,7 @@ const onTradeImportConfirm = async (payload: TradeImportPayload): Promise<void> 
 </script>
 
 <template>
-  <!-- 定高 flex 列（与市场榜单等整页单表页同款高度链）：
+  <!-- 定高 flex 列（与盘面雷达等整页单表页同款高度链）：
        NoticeBar / tab 条保持内容高，卡片吃剩余高度，表格滚动不外溢到 main -->
   <div class="flex h-[calc(100dvh-6.5rem)] min-h-0 flex-col gap-4">
     <NoticeBar

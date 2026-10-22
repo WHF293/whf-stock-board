@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
+import BaseButton from '../components/ui/BaseButton.vue';
 import BaseCard from '../components/ui/BaseCard.vue';
 import BaseEmpty from '../components/ui/BaseEmpty.vue';
+import BaseModal from '../components/ui/BaseModal.vue';
 import BaseTabs from '../components/ui/BaseTabs.vue';
 import BaseTextTip from '../components/ui/BaseTextTip.vue';
 import MenuIcon from '../components/ui/MenuIcon.vue';
+import TabConfigButton from '../components/ui/TabConfigButton.vue';
 import BreadthIndicatorChart from '../components/charts/BreadthIndicatorChart.vue';
 import {
   BREADTH_ADL_MA_PERIOD,
@@ -22,13 +25,16 @@ import { fetchAllMarketQuotes } from '../../common/api/quotes.api.ts';
 import { ingestBreadthSnapshot, readBreadthBars, readBreadthDay } from '../../common/api/market-breadth-db.api';
 import { computeBreadthIndicatorSeries } from '../../common/utils/compute-breadth-indicators';
 import { classifyArms, type ArmsStateResult } from '../../common/utils/classify-arms';
+import { interpretBreadthValue } from '../../common/utils/interpret-breadth';
 import { toDayKey } from '../../common/utils/to-day-key';
 import { usePolling } from '../../common/composables/use-polling';
+import { usePageHeaderSlot, PAGE_HEADER_ACTIONS_TARGET } from '../../common/composables/use-page-header-slot';
+import { useTabConfig, type TabOption } from '../../common/composables/use-tab-config';
 
 /**
- * 市场广度指标页（PC）
+ * 市场宽度页（PC，2026-10-22 由「市场广度指标」改名）
  *
- * 五大市场广度指标副图组（ADL / ADR / OBOS / ARMS / MCO），基于本地积累的
+ * 五大市场宽度指标副图组（ADL / ADR / OBOS / ARMS / MCO），基于本地积累的
  * 日 bar（readBreadthBars）经 computeBreadthIndicatorSeries 离线计算。
  * 数据生产：本页自带一路与市场总览同规格的全市场快照轮询（tradingAware，
  * 挂载必跑一次）——页面切走时总览轮询因 KeepAlive 暂停，若本页只读不产，
@@ -37,6 +43,12 @@ import { usePolling } from '../../common/composables/use-polling';
  */
 /** MCO 趋稳所需参考积累天数（EMA39 + 信号线预热） */
 const MCO_READY_DAYS = 50;
+
+/** 页头动作挂载守卫（「当日总结」按钮 Teleport 到 MainLayout 页头，本页激活时才挂载） */
+const { active: headerSlotActive } = usePageHeaderSlot();
+
+/** 「当日总结」弹窗开关（2026-10-22 王总指定） */
+const summaryOpen = ref(false);
 
 /** 视图档位（近 60 / 120 日 / 全部积累） */
 const view = ref<BreadthIndicatorViewKey>(BREADTH_INDICATOR_VIEW.ALL);
@@ -124,6 +136,48 @@ const fmt = (value: number | null, digits = 2): string =>
       ? value.toLocaleString('zh-CN', { maximumFractionDigits: 0 })
       : value.toFixed(digits);
 
+/** 「当日总结」弹窗条目：指标名 / 最新值 / 白话解读（与副图 hover 同一解读口径） */
+const summaryItems = computed(() => {
+  const s = series.value;
+  /**
+   * 序列末位取值（最新交易日；空序列 null）
+   * @param values 指标序列
+   * @returns 末位值；全空为 null
+   */
+  const at = (values: ReadonlyArray<number | null>): number | null =>
+    s.dates.length === 0 ? null : (values[s.dates.length - 1] ?? null);
+  const build = (
+    kind: BreadthIndicatorKind,
+    label: string,
+    value: number | null,
+    digits: number,
+    ma?: number | null,
+  ) => ({
+    kind,
+    label,
+    display: value === null ? '--' : Math.abs(value) >= 1000 ? value.toLocaleString('zh-CN', { maximumFractionDigits: 0 }) : value.toFixed(digits),
+    interpret: interpretBreadthValue(kind, value, ma),
+  });
+  return [
+    build('adl', 'ADL 腾落线', at(s.adl), 0, at(s.adlMa)),
+    build('adr', 'ADR 涨跌比率', at(s.adr), 2),
+    build('obos', 'OBOS 超买超卖', at(s.obos), 0),
+    build('arms', 'TRIN 阿姆氏（ARMS）', at(s.armsMa), 2),
+    build('mco', '麦克莱伦震荡（MCO）', at(s.mco), 1),
+  ];
+});
+
+/** 总结弹窗副标题：最新交易日（MM-DD） */
+const summaryDateLabel = computed(() => series.value.dates.at(-1)?.slice(5) ?? '--');
+
+/**
+ * 解读行语义色（跟随涨跌配色主题的 CSS 变量类）
+ * @param tone 语义档位
+ * @returns Tailwind 文字色类
+ */
+const toneClass = (tone: 'up' | 'down' | 'flat'): string =>
+  tone === 'up' ? 'text-up' : tone === 'down' ? 'text-down' : 'text-text';
+
 /** ADR/OBOS 是否达标准口径周期 */
 const adrReady = computed(() => accumDays.value >= 10);
 
@@ -152,11 +206,87 @@ const readinessBadges = computed(() => [
   { label: `ARMS MA${BREADTH_ARMS_MA_PERIOD} ${armsMaReady.value ? '已就绪' : `积累中 ${accumDays.value}/${BREADTH_ARMS_MA_PERIOD}`}`, ok: armsMaReady.value },
   { label: `MCO ${mcoReady.value ? '已趋稳' : `预热中 ${accumDays.value}/${MCO_READY_DAYS}`}`, ok: mcoReady.value },
 ]);
+
+/**
+ * 五指标副图卡配置（声明顺序 = 默认展示顺序）
+ *
+ * 2026-10-22 王总指定：参考盘面雷达加排序入口（TabConfigButton），显隐与
+ * 顺序经 useTabConfig 持久化（pageId = market-breadth）。
+ */
+const INDICATOR_CARDS: readonly {
+  /** 指标 kind（同时也是页签 value 与 BreadthIndicatorChart 的 kind） */
+  key: BreadthIndicatorKind;
+  /** 最新值在 latest computed 里的键（ARMS 用平滑均线值，键名不同） */
+  latestKey: 'adl' | 'adr' | 'obos' | 'armsMa' | 'mco';
+  /** 卡标题 */
+  label: string;
+  /** 标题行右侧口径说明 */
+  subtitle: string;
+  /** 最新值小数位 */
+  digits: number;
+}[] = [
+  {
+    key: BREADTH_INDICATOR_KIND.ADL,
+    latestKey: 'adl',
+    label: 'ADL 腾落线',
+    digits: 0,
+    subtitle: `Σ(上涨−下跌家数)，起点为本地首条 bar（相对意义）；虚线为 MA${BREADTH_ADL_MA_PERIOD}`,
+  },
+  {
+    key: BREADTH_INDICATOR_KIND.ADR,
+    latestKey: 'adr',
+    label: 'ADR 涨跌比率',
+    digits: 2,
+    subtitle: 'N=10；＞1.5 超买，＜0.5 超卖',
+  },
+  {
+    key: BREADTH_INDICATOR_KIND.OBOS,
+    latestKey: 'obos',
+    label: 'OBOS 超买超卖',
+    digits: 0,
+    subtitle: 'N=10 净差（家）；正值多头占优',
+  },
+  {
+    key: BREADTH_INDICATOR_KIND.ARMS,
+    latestKey: 'armsMa',
+    label: 'TRIN 阿姆氏（ARMS）',
+    digits: 2,
+    subtitle: `日线 + MA${BREADTH_ARMS_MA_PERIOD}；＜1 多头强，＞1 空头强`,
+  },
+  {
+    key: BREADTH_INDICATOR_KIND.MCO,
+    latestKey: 'mco',
+    label: '麦克莱伦震荡（MCO）',
+    digits: 1,
+    subtitle: 'EMA19−EMA39；±25~35 为超买超卖区',
+  },
+];
+
+/** 排序弹窗页签项（value = 指标 kind） */
+const INDICATOR_CARD_TABS: readonly TabOption<BreadthIndicatorKind>[] = INDICATOR_CARDS.map(
+  (card) => ({ label: card.label, value: card.key }),
+);
+
+/** kind → 卡配置（渲染按 useTabConfig 归一化后的顺序查这张表） */
+const cardMetaByKey = new Map(INDICATOR_CARDS.map((card) => [card.key, card]));
+
+/** 指标卡显隐 + 顺序（持久化；全部隐藏时兜底默认全显，激活值概念不适用故只取 visibleOptions） */
+const { visibleOptions: indicatorCardOptions } = useTabConfig<BreadthIndicatorKind>(
+  'market-breadth',
+  INDICATOR_CARD_TABS,
+);
 </script>
 
 <template>
   <div class="flex flex-col gap-3">
-    <BaseCard title="市场广度指标 · 当日概览">
+    <!-- 「当日总结」按钮上移 MainLayout 页头（Teleport 投射，本页激活时才挂载） -->
+    <Teleport v-if="headerSlotActive" :to="PAGE_HEADER_ACTIONS_TARGET">
+      <BaseButton variant="ghost" data-track="MARKET_BREADTH_SUMMARY" @click="summaryOpen = true">
+        当日总结
+      </BaseButton>
+    </Teleport>
+
+    <BaseCard title="市场宽度 · 当日概览">
       <template #extra>
         <span
           class="rounded-full px-2.5 py-1 text-xs font-bold"
@@ -239,73 +369,55 @@ const readinessBadges = computed(() => [
         >
           {{ badge.label }}
         </span>
+        <!-- 指标卡显隐 + 排序入口（同盘面雷达 TabConfigButton 交互，2026-10-22 王总指定） -->
+        <TabConfigButton class="ml-auto" page-id="market-breadth" :options="INDICATOR_CARD_TABS" />
       </div>
 
-      <!-- 五指标副图：宽容器一行两列、窄容器单列（主区已开 @container，
-           侧栏折叠 / 详情停靠面板开合都会实时响应；2026-10-22 王总指定） -->
+      <!-- 指标副图：顺序与显隐按 useTabConfig 配置渲染；宽容器一行两列、窄容器单列
+           （主区已开 @container，侧栏折叠 / 详情停靠面板开合都会实时响应） -->
       <div class="grid grid-cols-1 gap-3 @3xl:grid-cols-2">
-        <BaseCard>
+        <BaseCard v-for="option in indicatorCardOptions" :key="option.value">
           <div class="mb-2 flex items-center gap-1.5">
-            <h2 class="text-sm font-semibold text-text">ADL 腾落线</h2>
-            <BaseTextTip as="span" class="cursor-help" :text="infoText(BREADTH_INDICATOR_KIND.ADL)" placement="top">
+            <h2 class="text-sm font-semibold text-text">{{ cardMetaByKey.get(option.value)?.label }}</h2>
+            <BaseTextTip as="span" class="cursor-help" :text="infoText(option.value)" placement="top">
               <MenuIcon name="help" :size="14" class="text-text-tertiary transition-colors hover:text-primary" />
             </BaseTextTip>
-            <span class="text-sm font-bold tabular-nums">{{ fmt(latest.adl, 0) }}</span>
+            <span class="text-sm font-bold tabular-nums">
+              {{ fmt(latest[cardMetaByKey.get(option.value)!.latestKey], cardMetaByKey.get(option.value)!.digits) }}
+            </span>
             <span class="ml-auto truncate pl-3 text-xs text-text-tertiary">
-              Σ(上涨−下跌家数)，起点为本地首条 bar（相对意义）；虚线为 MA{{ BREADTH_ADL_MA_PERIOD }}
+              {{ cardMetaByKey.get(option.value)?.subtitle }}
             </span>
           </div>
-          <BreadthIndicatorChart kind="adl" :view="view" :bars="bars" :series="series" />
-        </BaseCard>
-
-        <BaseCard>
-          <div class="mb-2 flex items-center gap-1.5">
-            <h2 class="text-sm font-semibold text-text">ADR 涨跌比率</h2>
-            <BaseTextTip as="span" class="cursor-help" :text="infoText(BREADTH_INDICATOR_KIND.ADR)" placement="top">
-              <MenuIcon name="help" :size="14" class="text-text-tertiary transition-colors hover:text-primary" />
-            </BaseTextTip>
-            <span class="text-sm font-bold tabular-nums">{{ fmt(latest.adr) }}</span>
-            <span class="ml-auto truncate pl-3 text-xs text-text-tertiary">N=10；＞1.5 超买，＜0.5 超卖</span>
-          </div>
-          <BreadthIndicatorChart kind="adr" :view="view" :bars="bars" :series="series" />
-        </BaseCard>
-
-        <BaseCard>
-          <div class="mb-2 flex items-center gap-1.5">
-            <h2 class="text-sm font-semibold text-text">OBOS 超买超卖</h2>
-            <BaseTextTip as="span" class="cursor-help" :text="infoText(BREADTH_INDICATOR_KIND.OBOS)" placement="top">
-              <MenuIcon name="help" :size="14" class="text-text-tertiary transition-colors hover:text-primary" />
-            </BaseTextTip>
-            <span class="text-sm font-bold tabular-nums">{{ fmt(latest.obos, 0) }}</span>
-            <span class="ml-auto truncate pl-3 text-xs text-text-tertiary">N=10 净差（家）；正值多头占优</span>
-          </div>
-          <BreadthIndicatorChart kind="obos" :view="view" :bars="bars" :series="series" />
-        </BaseCard>
-
-        <BaseCard>
-          <div class="mb-2 flex items-center gap-1.5">
-            <h2 class="text-sm font-semibold text-text">TRIN 阿姆氏（ARMS）</h2>
-            <BaseTextTip as="span" class="cursor-help" :text="infoText(BREADTH_INDICATOR_KIND.ARMS)" placement="top">
-              <MenuIcon name="help" :size="14" class="text-text-tertiary transition-colors hover:text-primary" />
-            </BaseTextTip>
-            <span class="text-sm font-bold tabular-nums">{{ fmt(latest.armsMa) }}</span>
-            <span class="ml-auto truncate pl-3 text-xs text-text-tertiary">日线 + MA{{ BREADTH_ARMS_MA_PERIOD }}；＜1 多头强，＞1 空头强</span>
-          </div>
-          <BreadthIndicatorChart kind="arms" :view="view" :bars="bars" :series="series" />
-        </BaseCard>
-
-        <BaseCard>
-          <div class="mb-2 flex items-center gap-1.5">
-            <h2 class="text-sm font-semibold text-text">麦克莱伦震荡（MCO）</h2>
-            <BaseTextTip as="span" class="cursor-help" :text="infoText(BREADTH_INDICATOR_KIND.MCO)" placement="top">
-              <MenuIcon name="help" :size="14" class="text-text-tertiary transition-colors hover:text-primary" />
-            </BaseTextTip>
-            <span class="text-sm font-bold tabular-nums">{{ fmt(latest.mco, 1) }}</span>
-            <span class="ml-auto truncate pl-3 text-xs text-text-tertiary">EMA19−EMA39；±25~35 为超买超卖区</span>
-          </div>
-          <BreadthIndicatorChart kind="mco" :view="view" :bars="bars" :series="series" />
+          <BreadthIndicatorChart :kind="option.value" :view="view" :bars="bars" :series="series" />
         </BaseCard>
       </div>
     </template>
+
+    <!-- 当日总结弹窗：五指标最新日期的值 + 白话解读（与副图 tooltip hover 同一解读口径，
+         2026-10-22 王总指定；解读函数单源 common/utils/interpret-breadth.ts） -->
+    <BaseModal v-model:open="summaryOpen" title="当日总结" max-width-class="max-w-lg">
+      <p class="mb-3 text-xs text-text-tertiary">
+        五大指标截至 {{ summaryDateLabel }} 的最新解读，按指标逐条罗列
+      </p>
+      <ul class="space-y-2">
+        <li
+          v-for="item in summaryItems"
+          :key="item.kind"
+          class="rounded-lg bg-flat-weak px-3 py-2"
+        >
+          <div class="flex items-center justify-between gap-3">
+            <span class="text-xs font-medium text-text-secondary">{{ item.label }}</span>
+            <b class="text-sm tabular-nums text-text">{{ item.display }}</b>
+          </div>
+          <p
+            class="mt-0.5 text-xs"
+            :class="item.interpret ? toneClass(item.interpret.tone) : 'text-text-tertiary'"
+          >
+            {{ item.interpret ? `▸ ${item.interpret.text}` : '暂无数据（指标积累中）' }}
+          </p>
+        </li>
+      </ul>
+    </BaseModal>
   </div>
 </template>

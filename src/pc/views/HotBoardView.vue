@@ -7,6 +7,8 @@ import MenuIcon from '../components/ui/MenuIcon.vue';
 import HotBoardCard from '../components/hot-board/HotBoardCard.vue';
 import HotBoardList from '../components/hot-board/HotBoardList.vue';
 import HotBoardSourceModal from '../components/hot-board/HotBoardSourceModal.vue';
+import BaseTabs from '../components/ui/BaseTabs.vue';
+import EtfHotBoard from '../components/etf-hot/EtfHotBoard.vue';
 import HotNewsChannelBar from '../components/news/HotNewsChannelBar.vue';
 import { fetchHotBoard } from '../../common/api/hot-board.api.ts';
 import type { HotBoardItem } from '../../common/types/hot-board.types.ts';
@@ -17,7 +19,7 @@ import { useNotificationsStore } from '../../common/stores/notifications';
 import { DATA_CACHE_KEY } from '../../common/constants/data-cache.constants.ts';
 import { HOST_HEADER_ITEM } from '../../common/constants/header.constants.ts';
 import { NOTIFY_TONE } from '../../common/constants/notify.constants.ts';
-import { STORAGE_NS_HOT_BOARD_FILTER } from '../../common/constants/storage-key.constants.ts';
+import { STORAGE_NS_HOT_BOARD_FILTER, STORAGE_NS_HOT_BOARD_MODE } from '../../common/constants/storage-key.constants.ts';
 import { usePageHeaderSlot, PAGE_HEADER_ACTIONS_TARGET } from '../../common/composables/use-page-header-slot';
 import { ROUTE_PATH } from '../../common/constants/router-meta.constants.ts';
 import {
@@ -26,7 +28,9 @@ import {
   BOARD_SOURCE_LABELS,
   BOARD_SOURCE_LOGOS,
   BOARD_SOURCE_ORDER,
+  HOT_BOARD_MODE_TAB_OPTIONS,
   type BoardSource,
+  type HotBoardMode,
 } from '../../common/constants/hot-board.constants.ts';
 import { appStorage } from '../../common/utils/app-local-storage';
 import { buildHotBoardPrompt, type BoardPromptSection } from '../../common/utils/build-hot-board-prompt';
@@ -34,14 +38,39 @@ import { requestAgentAnalysis } from '../agent/agent-bridge';
 import { useSettingsStore } from '../../common/stores/settings';
 
 /**
- * 今天炒什么：五平台热股榜单聚合页
+ * 今天炒什么：热榜聚合页（双模式）
  *
- * 每平台一张 375px 横向卡片（同花顺 / 东财 / 财联社 / 通达信 / 雪球），
- * 卡片内保留该平台自己的榜单分组（chips 切换，A 股口径）；
- * 各分组均为单页快照（无翻页），数据经 30 分钟 TTL 缓存跨页复用；
- * 点击榜单行打开个股详情停靠面板；顶部「AI 分析」把当前启用平台的
- * 榜单清单投递 Agent 窗口；「平台设置」弹窗勾选显隐 + 拖拽排序（草稿模式）
+ * 「股票热榜」= 五平台热股榜单聚合（每平台一张 375px 横向卡片，卡片内
+ * chips 切换分组，A 股口径）；「ETF 热榜」= 同花顺四 ETF 榜单聚合
+ * （热度 / 自选 / 补涨 / T+0，一个榜单单独一列）；页头切换条切换两种视图，
+ * 模式持久化到 appStorage；各通道 30 分钟 TTL 缓存跨页复用；
+ * 点击榜单行打开个股详情停靠面板；「AI 分析」把当前模式的榜单清单投递
+ * Agent 窗口；「平台设置」弹窗勾选显隐 + 拖拽排序（草稿模式，仅股票热榜）
  */
+
+// ---------- 视图模式（股票热榜 / ETF 热榜） ----------
+
+/**
+ * 从 appStorage 加载视图模式（非法值回落股票热榜）
+ * @returns 当前模式
+ */
+const loadMode = (): HotBoardMode =>
+  appStorage.getItem(STORAGE_NS_HOT_BOARD_MODE) === 'etf' ? 'etf' : 'stock';
+
+/** 当前视图模式（持久化到 appStorage，下次进入沿用） */
+const mode = ref<HotBoardMode>(loadMode());
+
+/** BaseTabs 的 string v-model 与强类型 mode 的双向适配 */
+const modeValue = computed({
+  get: () => mode.value,
+  set: (value: string) => {
+    mode.value = value === 'etf' ? 'etf' : 'stock';
+  },
+});
+
+watch(mode, (value) => {
+  appStorage.setItem(STORAGE_NS_HOT_BOARD_MODE, value);
+});
 
 /** 单平台单分组的加载状态（通道键 = `source#group`） */
 interface BoardState {
@@ -439,23 +468,27 @@ const runBoardAnalysis = async (scope?: BoardSource): Promise<void> => {
 
 <template>
   <!-- 单根容器：MainLayout 通过 :class="pageAnim" 下发页面进入动画类名，
-         而多根组件无法继承 attrs（会丢动画并刷 Vue warn），故统一包一层 -->
-  <div>
-    <!-- 页级动作上移 MainLayout 页头：启用计数 + AI 分析 + 平台设置
-         （Teleport 投射，本页激活时才挂载；「平台设置」弹窗仍留在页内） -->
+         而多根组件无法继承 attrs（会丢动画并刷 Vue warn），故统一包一层；
+         高度用 100dvh - 6.5rem（扣除 MainLayout 头部与主区内边距，与热点新闻页口径一致），
+         tab 行 shrink-0，两种模式的内容区各撑满剩余高度 -->
+  <div class="flex h-[calc(100dvh-6.5rem)] min-h-0 flex-col gap-4">
+    <!-- 页级动作上移 MainLayout 页头：股票热榜专属
+         （启用计数 / AI 分析 / 平台设置；ETF 模式的页头动作由 EtfHotBoard 自行投射） -->
     <Teleport v-if="headerSlotActive" :to="PAGE_HEADER_ACTIONS_TARGET">
       <div class="flex items-center gap-3">
-        <span class="text-xs text-text-tertiary">
-          已启用 {{ visibleSources.length }} / {{ sourceItems.length }} 个平台
-        </span>
-        <BaseButton v-if="agentEntryVisible" variant="ghost" :disabled="aiRunning" @click="runBoardAnalysis()">
-          <MenuIcon name="agent" :size="14" />
-          {{ aiRunning ? '分析中...' : 'AI 分析' }}
-        </BaseButton>
-        <BaseButton variant="ghost" @click="sourceModalOpen = true">
-          <MenuIcon name="settings" :size="14" />
-          平台设置
-        </BaseButton>
+        <template v-if="mode === 'stock'">
+          <span class="text-xs text-text-tertiary">
+            已启用 {{ visibleSources.length }} / {{ sourceItems.length }} 个平台
+          </span>
+          <BaseButton v-if="agentEntryVisible" variant="ghost" :disabled="aiRunning" @click="runBoardAnalysis()">
+            <MenuIcon name="agent" :size="14" />
+            {{ aiRunning ? '分析中...' : 'AI 分析' }}
+          </BaseButton>
+          <BaseButton variant="ghost" @click="sourceModalOpen = true">
+            <MenuIcon name="settings" :size="14" />
+            平台设置
+          </BaseButton>
+        </template>
       </div>
     </Teleport>
 
@@ -497,10 +530,16 @@ const runBoardAnalysis = async (scope?: BoardSource): Promise<void> => {
       </template>
     </BaseModal>
 
-    <!-- 横向卡片流：每平台一张 375px 卡片，超出页面横向滚动 -->
-    <!-- 高度用 100dvh - 6.5rem：扣除 MainLayout 头部 h-14(56px) + main 内部 div 的 p-6 上下(48px)
-         （页级动作工具条已上移页头，不再为其预留高度；与热点新闻页口径一致） -->
-    <div class="flex h-[calc(100dvh-6.5rem)] min-h-0 gap-4 overflow-x-auto p-4">
+    <!-- 视图模式 tab 行（underline 变体，行情全景页同款；两模式常驻） -->
+    <div class="shrink-0">
+      <BaseTabs v-model="modeValue" :options="HOT_BOARD_MODE_TAB_OPTIONS" variant="underline" />
+    </div>
+
+    <!-- ETF 热榜模式：同花顺四 ETF 榜单聚合（组件内自带首屏 / 缓存 / 放大弹窗） -->
+    <EtfHotBoard v-if="mode === 'etf'" class="min-h-0 flex-1" />
+
+    <!-- 股票热榜模式：横向卡片流，每平台一张 375px 卡片，超出页面横向滚动（撑满 tab 行以下剩余高度） -->
+    <div v-else class="flex min-h-0 flex-1 gap-4 overflow-x-auto">
       <HotBoardCard
         v-for="card in cardViews"
         :key="card.source"

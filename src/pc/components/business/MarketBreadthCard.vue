@@ -83,7 +83,7 @@ const adText = computed(() => (breadth?.ad === null || breadth === null ? '--' :
           style="color: var(--color-primary); background: var(--color-primary-weak)"
           @click="gotoBreadthPage"
         >
-          广度指标详情
+          市场宽度详情
         </button>
         <span
           class="rounded-full px-2.5 py-1 text-xs font-bold"

@@ -32,8 +32,8 @@ import { MARKET_STATUS_REFRESH_INTERVAL_MS } from "../../common/constants/pollin
 import { HOST_HEADER_ITEM, HOST_HEADER_ITEMS, HEADER_PLUGIN_LEAD_KEY } from "../../common/constants/header.constants.ts";
 import { WATCH_WIDGET_EVENTS } from "../plugins/watch-widget/constants.ts";
 import { openInNewWindow } from "../../common/utils/open-in-new-window";
+import { openSiteDocsInApp, openSiteDocsInBrowser } from "../../common/utils/open-site-docs";
 import { MENU_ITEMS, ROUTE_PATH } from "../../common/constants/router-meta.constants.ts";
-import { SITE_URL } from "../../common/constants/app-info.constants.ts";
 import { openAgentAnalysisWindow } from "../../common/utils/agent-window";
 import {
   flattenSidebarMenuGroups,
@@ -116,13 +116,6 @@ const openAgentAnalysis = (): void => {
   void openAgentAnalysisWindow().then((opened) => {
     if (!opened) void router.push(ROUTE_PATH.AGENT_WINDOW);
   });
-};
-
-/**
- * 打开官网「软件文档」页（白皮书已迁至官网，顶栏书本图标改为外链）
- */
-const openSiteDocs = (): void => {
-  window.open(`${SITE_URL}#/docs`, "_blank", "noopener");
 };
 
 // 暗色 class / data-theme / data-trend 的落 <html> 已上提到 App.vue 的
@@ -665,7 +658,8 @@ void marketStatusStore.refresh();
           @toggle-theme="toggleDark()"
           @open-search="commandPaletteOpen = true"
           @open-agent="openAgentAnalysis"
-          @open-site-docs="openSiteDocs"
+          @open-site-docs-in-app="openSiteDocsInApp"
+          @open-site-docs-in-browser="openSiteDocsInBrowser"
         />
       </template>
       <template #tools>
@@ -675,7 +669,8 @@ void marketStatusStore.refresh();
           @toggle-theme="toggleDark()"
           @open-search="commandPaletteOpen = true"
           @open-agent="openAgentAnalysis"
-          @open-site-docs="openSiteDocs"
+          @open-site-docs-in-app="openSiteDocsInApp"
+          @open-site-docs-in-browser="openSiteDocsInBrowser"
         />
         <!-- 页面全屏：全局入口（王总 2026-10-17 指定移到顶栏，任意页面可用；
              置位后 MainLayout 隐藏侧栏 / 页内页头 / 停靠面板，页面根由
@@ -739,7 +734,7 @@ void marketStatusStore.refresh();
              （fixed 定位），不受此裁剪影响 -->
         <nav
           ref="navRef"
-          class="relative flex-1 space-y-1 overflow-x-clip overflow-y-auto px-2"
+          class="no-scrollbar relative flex-1 space-y-1 overflow-x-clip overflow-y-auto px-2"
           :class="desktopChrome ? 'pt-3' : ''"
         >
           <!-- 滑动玻璃气泡：菜单选中态底座，切换路由时按移动端同款动画滑到新项 -->
@@ -900,7 +895,8 @@ void marketStatusStore.refresh();
               @toggle-theme="toggleDark()"
               @open-search="commandPaletteOpen = true"
               @open-agent="openAgentAnalysis"
-              @open-site-docs="openSiteDocs"
+              @open-site-docs-in-app="openSiteDocsInApp"
+              @open-site-docs-in-browser="openSiteDocsInBrowser"
             />
             <!-- 页级动作挂载点：当前激活页面经 Teleport 投射自己的动作按钮
                  （AI 分析 / 导出 Excel / 新闻源设置等，守卫见 use-page-header-slot） -->
@@ -922,8 +918,10 @@ void marketStatusStore.refresh();
           <!-- 内容上限 1600px：报价卡片栅格（quote-card-grid）在上限内按列宽公式排布。
                页面全屏（详情页铺满）时改为撑满视口高度的 flex 列 + 小留白，
                详情页据此用 flex-1 拉伸主区（见 StockDetailView 的分模式高度） -->
-          <!-- 顶部留白由内容列的 gap-2.5 承接（与岛间隙一致）；横向不留 padding，
-               与页头岛共用 max-w-[1600px] 居中约束（对齐在页头岛类上），左右缘严格一致 -->
+          <!-- 顶部留白 = 内容列 gap-2.5（2026-10-22 二次调整：曾按王总要求加 pt-3 加大，
+               后王总反馈所有页面页头岛与内容间隔太大，撤回 pt-3 回落 10px）；
+               横向不留 padding，与页头岛共用 max-w-[1600px] 居中约束（对齐在页头岛类上），
+               左右缘严格一致 -->
           <div
             class="@container w-full"
             :class="pageFullscreen ? 'pc-page-fs flex h-full min-h-0 flex-col p-3' : 'mx-auto max-w-[1600px] pb-6'"

@@ -708,6 +708,24 @@ CREATE TABLE IF NOT EXISTS ccpm_day_cache (
 );
 ";
 
+/// stock-board.db v10：board_daily 得分分桶列（题材轮动权重管理器，王总 2026-10-22）
+///
+/// 六桶互斥：bucket_limit_up（涨停，池口径）/ bucket_gt5（涨幅>5%，非涨停）/
+/// bucket_up_05（涨幅 0~5%）/ bucket_down_05（跌幅 0~5%，含 -5.00% 整点）/
+/// bucket_lt_5（跌幅<-5%，非跌停）/ bucket_limit_down（跌停，池口径）。
+/// 可空（NULL = 无分桶数据：旧版本行 / 回补日 / 盘中未覆盖板块），
+/// 全 NULL 时前端读取侧回退 score 列的净额口径得分；score / score_rate 一律按净额口径
+/// （BOARD_SCORE_WEIGHT，5/-5）落库作为固定基准，前端展示得分由分桶 × 用户权重现算
+/// （默认强桶 ±7 与净额口径不恒等），不回写这两列。
+const STOCK_BOARD_DB_V10: &str = "
+ALTER TABLE board_daily ADD COLUMN bucket_limit_up   REAL;
+ALTER TABLE board_daily ADD COLUMN bucket_gt5        REAL;
+ALTER TABLE board_daily ADD COLUMN bucket_up_05      REAL;
+ALTER TABLE board_daily ADD COLUMN bucket_down_05    REAL;
+ALTER TABLE board_daily ADD COLUMN bucket_lt_5       REAL;
+ALTER TABLE board_daily ADD COLUMN bucket_limit_down REAL;
+";
+
 /// weblog.db v1：系统日志（报错日志 + 行为日志）
 ///
 /// 独立成库的理由：日志是高频写入 + 按保留期整段删除的「滚动数据」，
@@ -836,6 +854,12 @@ fn stock_board_db_migrations() -> Vec<Migration> {
       version: 9,
       description: "create_ccpm_day_cache",
       sql: STOCK_BOARD_DB_V9,
+      kind: MigrationKind::Up,
+    },
+    Migration {
+      version: 10,
+      description: "add_board_daily_score_buckets",
+      sql: STOCK_BOARD_DB_V10,
       kind: MigrationKind::Up,
     },
   ]

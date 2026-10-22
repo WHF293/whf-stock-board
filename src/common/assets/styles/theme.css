@@ -233,7 +233,7 @@ body {
 }
 
 /*
- * 填满容器高度的表格滚动容器（整页单表页：市场榜单 / A股全景）
+ * 填满容器高度的表格滚动容器（整页单表页：盘面雷达 / A股全景）
  *
  * 与前三个类的区别：那些是「固定 max-height 截断」，本类是「按容器剩余空间撑开」。
  * 高度分配链（缺一环就退化成内容撑开、滚动条跑到页面上）：
@@ -302,6 +302,11 @@ body {
 .row-clamp {
   overflow: hidden;
   overflow: clip;
+  /* 底部阴影呼吸位：裁剪按卡片 border-box 下缘进行，会把 --shadow-card 的下阴影
+     拦腰切断（2026-10-22 王总反馈「卡片底部被遮挡」）。这里留 12px 给阴影，
+     由 use-row-clamp 的 CLIP_BOTTOM_ALLOWANCE_PX 加进可见高度（两处必须同步改）；
+     取值 ≤ 行间隙 1rem，收起态多露的带子里只有间隙，不会露出第二行卡片 */
+  padding-bottom: 12px;
   transition: height 320ms cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 
@@ -309,6 +314,17 @@ body {
   .row-clamp {
     transition: none;
   }
+}
+
+/*
+ * 隐藏滚动条但保留滚动能力（PC 侧栏 nav 等；不依赖 Tailwind 任意变体，
+ * 2026-10-22 验证任意变体形态在构建产物中未生效，改全局类一锤定音）
+ */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }
 
 /*

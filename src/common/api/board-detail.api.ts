@@ -8,7 +8,7 @@ import {
   BOARD_DETAIL_MAX_CONSTITUENTS,
   BOARD_DETAIL_SERIES_TTL_MS,
 } from '../constants/board-detail.constants.ts';
-import type { BoardConstituent } from '../types/board-calendar.types.ts';
+import type { BoardConstituent, BoardScoreBuckets } from '../types/board-calendar.types.ts';
 import type {
   BoardConstituentDayStats,
   BoardDetailLoadResult,
@@ -16,6 +16,7 @@ import type {
   DailyCloseBar,
 } from '../types/board-detail.types.ts';
 import { calcWindowChangePercents } from '../utils/calc-window-change-percents';
+import { addBoardScoreBucket } from '../utils/add-board-score-bucket';
 import { mapWithConcurrency } from '../utils/map-with-concurrency';
 import { normalizeAShareCode } from '../utils/normalize-a-share-code';
 import { fetchBoardConstituents, getLocalDateString } from './board-calendar.api.ts';
@@ -264,7 +265,7 @@ export const loadBoardDetailMatrix = async (
 };
 
 /**
- * 按「个股 → 板块」聚合出某板块在指定交易日的涨跌家数与成交额（日 K 推导）
+ * 按「个股 → 板块」聚合出某板块在指定交易日的涨跌家数、成交额与得分分桶（日 K 推导）
  *
  * 板块日历补历史链路专用（板块级涨跌家数无历史接口，只能从成分股日 K 聚合）。
  * 单票序列会话内缓存共享（{@link getDailyBars}），因此「补 1 天」与「补多天」
@@ -273,6 +274,8 @@ export const loadBoardDetailMatrix = async (
  * @param dates 需要统计的交易日（**降序**，与详情矩阵列序一致）
  * @param onProgress 进度回调（每完成一只票一次）
  * @param signal 中断信号
+ * @param limitSymbolsByDate 交易日 → 当日涨跌停池符号集（涨跌停桶的判定依据；
+ *   缺日期 / 缺键视为该日无涨跌停——中间桶不受影响，涨跌停桶按 0 计）
  * @returns 交易日 → 聚合统计（该日整板块无行情的票不计入；缺日期不在 Map 中）
  * @throws Error 成分股取不到、或取数被 abort 时抛出
  */
@@ -281,6 +284,7 @@ export const loadBoardConstituentDayStats = async (
   dates: string[],
   onProgress?: (completed: number, total: number) => void,
   signal?: AbortSignal,
+  limitSymbolsByDate?: ReadonlyMap<string, { up: ReadonlySet<string>; down: ReadonlySet<string> }>,
 ): Promise<Map<string, BoardConstituentDayStats>> => {
   const statsByDate = new Map<string, BoardConstituentDayStats>();
   if (dates.length === 0) {
@@ -321,7 +325,15 @@ export const loadBoardConstituentDayStats = async (
           flatCount: 0,
           consCount: 0,
           amount: 0,
+          buckets: { limitUp: 0, gt5: 0, up05: 0, down05: 0, lt5: 0, limitDown: 0 } as BoardScoreBuckets,
         };
+        const limitSymbols = limitSymbolsByDate?.get(date);
+        addBoardScoreBucket(
+          stats.buckets,
+          change,
+          limitSymbols?.up.has(item.symbol) ?? false,
+          limitSymbols?.down.has(item.symbol) ?? false,
+        );
         if (change > 0) {
           stats.upCount += 1;
         } else if (change < 0) {

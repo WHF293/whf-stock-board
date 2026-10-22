@@ -161,7 +161,7 @@ const boardChangeColumns: TableColumn<BoardChangeItem>[] = [
   { key: 'topStockName', label: '最频繁个股' },
 ];
 
-// ---------- 榜单数据出口（父级市场榜单页 AI 分析 / 导出 Excel 消费） ----------
+// ---------- 榜单数据出口（父级盘面雷达页 AI 分析 / 导出 Excel 消费） ----------
 
 /** 股池导出列（表格列 + 代码；封单为原始元值，导出与 AI 分析共用） */
 const poolExportColumns: { label: string; key: string }[] = [

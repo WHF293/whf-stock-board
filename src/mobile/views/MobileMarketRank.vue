@@ -1,9 +1,9 @@
 <script setup lang="ts">
 /**
- * 市场榜单（v2 二期二级页，稿：market-modules-v2 R0-R1；规范：DESIGN-MOBILE.md §5.2）
+ * 盘面雷达（原市场榜单，v2 二期二级页，稿：market-modules-v2 R0-R1；规范：DESIGN-MOBILE.md §5.2）
  *
  * 双模式（v4.2.1 起）：
- * - 市场榜单页 /market-rank：6 榜 chips（主力/大宗/涨幅/跌幅/成交额/换手率）；
+ * - 盘面雷达页 /market-rank：6 榜 chips（主力/大宗/涨幅/跌幅/成交额/换手率）；
  * - 独立榜页 /rank/:rank（连板 event / 异动 events / 龙虎榜 dragon-tiger，入口在首页金刚区）：
  *   无 chips、navbar 标题为榜名，只渲染该榜。
  *
@@ -33,7 +33,7 @@ import { toFullSymbol } from '../../common/utils/to-full-symbol';
 const router = useRouter();
 const route = useRoute();
 
-/** 拆分为独立页的 3 榜（入口在首页金刚区，路由 /rank/:rank；不再作为市场榜单 chips 子项） */
+/** 拆分为独立页的 3 榜（入口在首页金刚区，路由 /rank/:rank；不再作为盘面雷达 chips 子项） */
 const STANDALONE_RANKS = {
   event: '连板',
   events: '异动',
@@ -47,7 +47,7 @@ type StandaloneKey = keyof typeof STANDALONE_RANKS;
  */
 const EVENT_BOARD_KEY = 'event-board';
 
-/** 市场榜单页 chips（6 榜；连板 / 异动 / 龙虎榜已拆为独立页） */
+/** 盘面雷达页 chips（6 榜；连板 / 异动 / 龙虎榜已拆为独立页） */
 const RANKS = [
   { key: 'stock', label: '主力' },
   { key: 'block-trade', label: '大宗' },
@@ -58,7 +58,7 @@ const RANKS = [
 ] as const;
 type RankKey = (typeof RANKS)[number]['key'] | StandaloneKey | typeof EVENT_BOARD_KEY;
 
-/** 异动独立页顶部双 Tab（盘口异动 / 板块异动；对齐 PC 市场榜单-异动页签） */
+/** 异动独立页顶部双 Tab（盘口异动 / 板块异动；对齐 PC 盘面雷达-异动页签） */
 const EVENT_TABS = [
   { key: 'events', label: '盘口异动' },
   { key: EVENT_BOARD_KEY, label: '板块异动' },
@@ -127,9 +127,9 @@ const standaloneRank = computed<StandaloneKey | null>(() => {
   return typeof rank === 'string' && rank in STANDALONE_RANKS ? (rank as StandaloneKey) : null;
 });
 
-/** navbar 标题：独立页为榜名，市场榜单页为「市场榜单」 */
+/** navbar 标题：独立页为榜名，盘面雷达页为「盘面雷达」 */
 const pageTitle = computed(() =>
-  standaloneRank.value ? STANDALONE_RANKS[standaloneRank.value] : '市场榜单',
+  standaloneRank.value ? STANDALONE_RANKS[standaloneRank.value] : '盘面雷达',
 );
 
 /** 报价榜的排序键 */
@@ -398,7 +398,7 @@ const onRefresh = async (): Promise<void> => {
   }
 };
 
-// 独立页模式锁定对应榜（进入即装载）；市场榜单页保持默认主力榜
+// 独立页模式锁定对应榜（进入即装载）；盘面雷达页保持默认主力榜
 watch(standaloneRank, (rank) => {
   if (rank) {
     resetSort();
@@ -436,7 +436,7 @@ useMobilePolling(() => {
       <van-tab v-for="r in RANKS" :key="r.key" :title="r.label" />
     </van-tabs>
 
-    <!-- 异动独立页双 Tab：盘口异动 / 板块异动（对齐 PC 市场榜单-异动页签的双列表） -->
+    <!-- 异动独立页双 Tab：盘口异动 / 板块异动（对齐 PC 盘面雷达-异动页签的双列表） -->
     <van-tabs
       v-if="isEventStandalone"
       v-model:active="activeEventTabIndex"
