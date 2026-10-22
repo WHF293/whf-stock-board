@@ -185,10 +185,10 @@ const TOOL_BTN_CLASS =
           <span
             class="truncate"
             :class="draftHidden.includes(code) ? 'text-text-tertiary line-through' : 'text-text'"
+            :title="boardByCode.get(code)?.name ?? code"
           >
             {{ boardByCode.get(code)?.name ?? code }}
           </span>
-          <span class="shrink-0 text-[10px] text-text-tertiary">{{ code }}</span>
         </label>
         <span class="shrink-0 text-[10px] tabular-nums text-text-tertiary">
           {{ heatValues[code] ?? 0 }}

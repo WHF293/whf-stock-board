@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import type { EChartsCoreOption } from 'echarts/core';
 import BaseButton from '../ui/BaseButton.vue';
 import BaseChart from '../charts/BaseChart.vue';
 import BaseEmpty from '../ui/BaseEmpty.vue';
 import BaseTabs from '../ui/BaseTabs.vue';
+import BoardScoreWeightModal from './BoardScoreWeightModal.vue';
 import MenuIcon from '../ui/MenuIcon.vue';
 import NoticeBar from '../ui/NoticeBar.vue';
 import { useTheme } from '../../../common/composables/use-theme';
@@ -70,8 +71,13 @@ const settingsStore = useSettingsStore();
 
 /* --------------------------------- 视图状态 --------------------------------- */
 
-/** 展示范围（交易日数；BaseTabs value 为字符串） */
-const range = ref<string>(String(ROTATION_DEFAULT_RANGE));
+/**
+ * 展示范围（交易日数；BaseTabs value 为字符串）
+ *
+ * v-model 由页面持有（2026-10-22 王总指定）：题材轮动的近 10/20/30 日
+ * 同时驱动页面下方「板块Top」子模块的日期列范围
+ */
+const range = defineModel<string>('range', { default: String(ROTATION_DEFAULT_RANGE) });
 /** 主线宽度 TopN（字符串档位，建模时转数字） */
 const topN = ref<string>(String(ROTATION_TOP_N));
 /** 选中的交易日（'' = 最新） */
@@ -80,6 +86,8 @@ const selectedDate = ref('');
 const activeSegmentKey = ref<string | null>(null);
 /** 图例气泡开关 */
 const legendOpen = ref(false);
+/** 权重管理器弹窗开关（板块得分自定义权重，王总 2026-10-22） */
+const weightOpen = ref(false);
 
 /** 范围切换选项 */
 const rangeOptions = ROTATION_RANGES.map((value) => ({ label: `近${value}日`, value: String(value) }));
@@ -204,6 +212,25 @@ const formatSealTime = (sealTime: string | null): string =>
 /** 图表总宽（列宽固定不压缩，30 日超出容器横向滚动） */
 const chartWidth = computed<number>(
   () => 46 + windowDays.value.length * ROTATION_COL_WIDTH + 120,
+);
+
+/* ---------------- bump 图视口：默认滚动到最右（最新交易日） ---------------- */
+
+/** bump 图横向滚动容器 */
+const bumpScrollRef = ref<HTMLDivElement | null>(null);
+
+/** 把 bump 图视口滚到最右（x 轴左旧右新，最右列 = 最新交易日） */
+const scrollBumpToEnd = (): void => {
+  const el = bumpScrollRef.value;
+  if (el) el.scrollLeft = el.scrollWidth;
+};
+
+onMounted(() => void nextTick(scrollBumpToEnd));
+
+/** 最新交易日变化 / 展示范围或 TopN 切换后重滚到最右；盘中普通数据刷新不回拽用户视口 */
+watch(
+  () => [props.dates.at(-1), range.value, topN.value] as const,
+  () => void nextTick(scrollBumpToEnd),
 );
 
 const chartOptions = computed<EChartsCoreOption>(() => {
@@ -417,10 +444,10 @@ const segmentStatus = (segment: RotationSegment): string => {
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-1 flex-col gap-2">
+  <div class="flex flex-col gap-2">
     <NoticeBar
       class="shrink-0"
-      text="一条线一个题材的名次轨迹：线爬顶 = 主线强化，断线 = 掉榜退潮（隔日重现开新线新色）；悬停色点看当日龙头，点日期列看单日构成，点题材名看题材段生命周期。"
+      text="一条线一个题材的名次轨迹：线爬顶 = 主线强化，断线 = 掉榜退潮（隔日重现开新线新色）；悬停色点看当日龙头，点日期列看单日构成，点题材名看题材段生命周期。控制行「权重」按钮可自定义板块得分的分桶权重。"
     />
 
     <!-- 卡片一：控制行 + bump 图（默认撑满卡片宽度；窗口天数多到列宽不够时横向滚动） -->
@@ -428,6 +455,15 @@ const segmentStatus = (segment: RotationSegment): string => {
       <div class="mb-2 flex flex-wrap items-center gap-2">
         <BaseTabs v-model="range" :options="rangeOptions" />
         <BaseTabs v-model="topN" :options="topNOptions" />
+        <BaseButton
+          variant="ghost"
+          class="!px-2 !py-1 text-xs"
+          title="权重管理器：自定义板块得分的分桶权重"
+          @click="weightOpen = true"
+        >
+          <MenuIcon name="sliders" :size="12" />
+          权重
+        </BaseButton>
         <div class="relative ml-auto">
           <button
             type="button"
@@ -469,15 +505,15 @@ const segmentStatus = (segment: RotationSegment): string => {
           </div>
         </div>
       </div>
-      <div class="overflow-x-auto overflow-y-hidden">
+      <div ref="bumpScrollRef" class="overflow-x-auto overflow-y-hidden">
         <div :style="{ width: '100%', minWidth: `${chartWidth}px`, height: `${ROTATION_CHART_HEIGHT}px` }">
           <BaseChart :options="chartOptions" not-merge @chart-click="onChartClick" />
         </div>
       </div>
     </div>
 
-    <!-- 下栏：详情区（无弹窗，两个内容态；卡片样式包裹） -->
-    <div class="board-calendar-fill min-h-0 flex-1 overflow-y-auto">
+    <!-- 下栏：详情区（无弹窗，两个内容态；卡片样式包裹；自然高度随内容展开，滚动交给外层页面） -->
+    <div>
       <BaseEmpty
         v-if="!currentDay"
         text="当前窗口内暂无题材轮动数据，请先在其他视图同步板块数据"
@@ -696,5 +732,8 @@ const segmentStatus = (segment: RotationSegment): string => {
         </div>
       </div>
     </div>
+
+    <!-- 板块得分权重管理器（保存需二次确认；权重持久化于 settings store，四路视图共用） -->
+    <BoardScoreWeightModal v-model:open="weightOpen" />
   </div>
 </template>

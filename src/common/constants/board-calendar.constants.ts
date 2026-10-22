@@ -5,6 +5,11 @@
  * `.ai/开发方案/2026-09-14-板块日历与赚钱效应开发方案.md`
  */
 
+import type {
+  BoardScoreBuckets,
+  BoardScoreWeights,
+} from '../types/board-calendar.types.ts';
+
 /* --------------------------------- 上游接口 --------------------------------- */
 
 /**
@@ -205,6 +210,54 @@ export const calcBoardScore = (input: {
   input.limitUp * BOARD_SCORE_WEIGHT.LIMIT_UP +
   input.limitDown * BOARD_SCORE_WEIGHT.LIMIT_DOWN;
 
+/* ------------------------------ 得分分桶与自定义权重 ------------------------------ */
+
+/** 分桶边界（%）：涨幅高于该值进强势桶、跌幅低于负值进弱势桶（±5.00% 整点计入温和桶） */
+export const BOARD_SCORE_BUCKET_THRESHOLD = 5;
+
+/** 用户自定义权重的取值边界（题材轮动权重管理器约束，王总 2026-10-22 指定 -10 ~ 10） */
+export const BOARD_SCORE_WEIGHT_RANGE = { MIN: -10, MAX: 10 } as const;
+
+/** 用户自定义权重的滑动条步长（整数步进） */
+export const BOARD_SCORE_WEIGHT_STEP = 1;
+
+/**
+ * 分桶默认权重（王总 2026-10-22 截图定稿：强桶 ±7，温和桶 ±5）
+ *
+ * ⚠️ 与净额口径**不再恒等**：恒等式要求强桶与温和桶同权（gt5 = up05、lt5 = down05），
+ * 王总把强桶加到 7 / -7 后，Σ 分桶 × 默认权重 ≠ calcBoardScore——
+ * 默认权重下渲染层也会走分桶重算，只有**无分桶的旧行**继续沿用净额口径的落库 score
+ * （回退口径，刷一遍历史后全量切换到分桶口径）。
+ */
+export const BOARD_SCORE_WEIGHTS_DEFAULT: BoardScoreWeights = {
+  limitUp: 10,
+  gt5: 7,
+  up05: 5,
+  down05: -5,
+  lt5: -7,
+  limitDown: -10,
+};
+
+/**
+ * 分桶得分：Σ 分桶家数 × 对应权重
+ * @param buckets 得分分桶（六桶互斥家数）
+ * @param weights 权重（键与分桶同构）
+ * @returns 得分
+ */
+export const calcBoardScoreFromBuckets = (
+  buckets: BoardScoreBuckets,
+  weights: BoardScoreWeights,
+): number =>
+  buckets.limitUp * weights.limitUp +
+  buckets.gt5 * weights.gt5 +
+  buckets.up05 * weights.up05 +
+  buckets.down05 * weights.down05 +
+  buckets.lt5 * weights.lt5 +
+  buckets.limitDown * weights.limitDown;
+
+/** 成分股涨跌幅批量查询字段码（f12 = 6 位代码，f3 = 涨跌幅%；分桶采集专用） */
+export const BOARD_BUCKET_QUOTE_FIELDS = 'f12,f3';
+
 /* ---------------------------------- 色阶 ---------------------------------- */
 
 /**
@@ -379,12 +432,17 @@ export const BOARD_CALENDAR_VIEW = {
 /** 主区视图默认值（页面即题材轮动页，默认进新视图） */
 export const BOARD_CALENDAR_VIEW_DEFAULT = BOARD_CALENDAR_VIEW.ROTATION;
 
-/** 主区视图选项（BaseTabs，顺序 = 页面 Tab 顺序） */
+/**
+ * 主区视图选项（BaseTabs，顺序 = 页面 Tab 顺序）
+ *
+ * 2026-10-22 王总指定：板块Top 不再作为独立 Tab，移入题材轮动 Tab 下方作子模块
+ * （按当日成交额取每日 Top N，范围与题材轮动的近 10/20/30 日同步）；
+ * MAINLINE key 保留（类型与持久化兼容），仅从选项中移除。
+ */
 export const BOARD_CALENDAR_VIEW_OPTIONS = [
   { label: '题材轮动', value: BOARD_CALENDAR_VIEW.ROTATION },
   { label: '板块日历', value: BOARD_CALENDAR_VIEW.LIST },
   { label: '赚钱效应', value: BOARD_CALENDAR_VIEW.BUBBLE },
-  { label: '板块Top', value: BOARD_CALENDAR_VIEW.MAINLINE },
 ] as const;
 
 /** 板块分析：每日按得分绝对值取前 N 名（横看同一板块是否连续在榜 = 资金集中，跳来跳去 = 快速轮动；多空由色阶区分） */

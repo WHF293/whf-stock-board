@@ -437,7 +437,7 @@ const chartCards = computed(() => [
 <template>
   <div class="m-page-flex">
     <van-nav-bar
-      title="广度指标"
+      title="市场宽度"
       class="m-nav"
       safe-area-inset-top
       left-arrow

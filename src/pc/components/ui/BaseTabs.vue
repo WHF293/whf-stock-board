@@ -12,8 +12,13 @@ import { useSlidingThumb } from "../../../common/composables/use-sliding-thumb";
  */
 const props = withDefaults(
   defineProps<{
-    /** 选项列表（value 需唯一） */
-    options: readonly { label: string; value: string }[];
+    /** 选项列表（value 需唯一；groupStart 标记分组首项，在其前渲染组名标签与组间分隔线） */
+    options: readonly {
+      label: string;
+      value: string;
+      groupStart?: boolean;
+      groupName?: string;
+    }[];
     /** 视觉变体：segmented 胶囊 / underline 下划线（antd 风格） */
     variant?: "segmented" | "underline";
   }>(),
@@ -56,6 +61,18 @@ const containerClass = computed(() => {
 });
 
 /**
+ * 组名标签类名（分组首项前的小标签）
+ *
+ * underline 容器透明，标签加 bg-flat-weak 底色成 chip；segmented 容器本身
+ * 就是 bg-flat-weak，标签只用文字色区分。
+ * @returns 组名标签类名
+ */
+const groupLabelClass = (): string =>
+  props.variant === "underline"
+    ? "shrink-0 self-center whitespace-nowrap rounded bg-flat-weak px-1.5 py-0.5 text-xs text-text-tertiary"
+    : "shrink-0 self-center whitespace-nowrap px-1 text-xs text-text-tertiary";
+
+/**
  * tab 按钮类名
  * @param active 是否激活
  * @returns 类名数组
@@ -88,16 +105,29 @@ const tabClass = (active: boolean): string[] => {
       class="pc-nav-bubble pointer-events-none absolute left-0 top-0 z-0 rounded-md"
       :style="thumbStyle"
     ></span>
-    <button
-      v-for="option in options"
-      :key="option.value"
-      type="button"
-      role="tab"
-      :aria-selected="model === option.value"
-      :class="tabClass(model === option.value)"
-      @click="model = option.value"
-    >
-      {{ option.label }}
-    </button>
+    <!-- 分组首项：组名标签（groupName 有值时）+ 组间分隔竖线（首项无线）。
+         用 span 而非 button——useSlidingThumb 按 ':scope > button' 取项集，
+         非 button 节点不进索引，气泡几何量测不受影响 -->
+    <template v-for="(option, index) in options" :key="option.value">
+      <template v-if="option.groupStart">
+        <span
+          v-if="index > 0"
+          class="mx-1 h-4 w-px shrink-0 self-center bg-flat-weak"
+          aria-hidden="true"
+        />
+        <span v-if="option.groupName" :class="groupLabelClass()">
+          {{ option.groupName }}
+        </span>
+      </template>
+      <button
+        type="button"
+        role="tab"
+        :aria-selected="model === option.value"
+        :class="tabClass(model === option.value)"
+        @click="model = option.value"
+      >
+        {{ option.label }}
+      </button>
+    </template>
   </div>
 </template>

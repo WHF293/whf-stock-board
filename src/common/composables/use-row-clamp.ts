@@ -10,6 +10,17 @@ import {
 const ROW_TOLERANCE_PX = 4;
 
 /**
+ * 裁剪窗口的底部阴影呼吸位（px）
+ *
+ * 裁剪容器按卡片 border-box 下缘裁切，会把卡片 `--shadow-card`
+ * （0 4px 16px，下探约 20px）的下阴影拦腰切断，视觉上卡片底部像被遮挡
+ * （2026-10-22 王总反馈）。这里给可见高度统一加一份余量，配合 `.row-clamp`
+ * 的 `padding-bottom`（两处必须同步改）把这 12px 留给阴影；
+ * 取值 ≤ 栅格行间隙 1rem（16px），收起态多露的带子里只有间隙，不会露出第二行卡片
+ */
+const CLIP_BOTTOM_ALLOWANCE_PX = 12;
+
+/**
  * 栅格「首行裁剪」：收起态只露第一行，展开态露全部，两者之间做高度过渡动画
  *
  * 设计要点：
@@ -36,9 +47,11 @@ export const useRowClamp = () => {
   /** 首行之外是否真的还有卡片（没有则不必裁剪，也不显示展开开关） */
   const hasOverflow = computed<boolean>(() => fullHeight.value - rowHeight.value > 1);
 
-  /** 容器高度：收起露首行 / 展开露全部 */
+  /** 容器高度：收起露首行 / 展开露全部（均含底部阴影呼吸位，见 CLIP_BOTTOM_ALLOWANCE_PX） */
   const visibleHeight = computed<number>(() =>
-    isExpanded.value ? fullHeight.value : rowHeight.value,
+    isExpanded.value
+      ? fullHeight.value + CLIP_BOTTOM_ALLOWANCE_PX
+      : rowHeight.value + CLIP_BOTTOM_ALLOWANCE_PX,
   );
 
   /** 裁剪容器内联高度；首帧尚未实测时不写死高度，避免从 0 高跳一下 */

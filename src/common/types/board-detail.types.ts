@@ -2,6 +2,7 @@ import type {
   BOARD_DETAIL_RANGE,
   BOARD_DETAIL_SORT,
 } from '../constants/board-detail.constants.ts';
+import type { BoardScoreBuckets } from './board-calendar.types.ts';
 
 /**
  * 板块日历详情页（板块成分股 × 交易日 涨跌幅矩阵）类型
@@ -95,6 +96,12 @@ export interface BoardConstituentDayStats {
   consCount: number;
   /** 成分股成交额合计（元；单票缺失按 0 计，为近似口径） */
   amount: number;
+  /**
+   * 得分分桶（六桶互斥；涨停 / 跌停桶按调用方传入的池符号集判定，
+   * 中间四桶按日 K 涨跌幅划分）。与 up/down/flat 同一循环同一容错口径：
+   * 无日 K / 无前收盘的票该日不计入任何桶。
+   */
+  buckets: BoardScoreBuckets;
 }
 
 /**

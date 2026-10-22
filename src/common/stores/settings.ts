@@ -5,6 +5,7 @@ import {
   BOARD_CALENDAR_HEAT_BASIS_DEFAULT,
   BOARD_CALENDAR_RANGE,
   BOARD_CALENDAR_RANGE_DEFAULT,
+  BOARD_SCORE_WEIGHTS_DEFAULT,
 } from '../constants/board-calendar.constants.ts';
 import { BOARD_DETAIL_RANGE_DEFAULT } from '../constants/board-detail.constants.ts';
 import { STORAGE_NS_SETTINGS } from '../constants/storage-key.constants.ts';
@@ -43,12 +44,13 @@ import {
 import { CHART_PERIOD_DEFAULT, type ChartPeriod } from '../constants/stock-detail.constants.ts';
 import type { HeatmapViewMode } from '../types/heatmap.types.ts';
 import type { PanoramaCnViewMode } from '../constants/panorama.constants.ts';
-import type { BoardCalendarHeatBasis, BoardCalendarRange } from '../types/board-calendar.types.ts';
+import type { BoardCalendarHeatBasis, BoardCalendarRange, BoardScoreWeights } from '../types/board-calendar.types.ts';
 import type { BoardDetailRange } from '../types/board-detail.types.ts';
 import type { WatchWidgetSettings } from '../types/watch-widget.types.ts';
 import { BOARD_DEFAULT_ORDER, normalizeBoardHidden, normalizeBoardOrder } from '../utils/board-order';
 import { migrateWatchWidgetSettings } from '../utils/migrate-watch-widget-settings';
 import { mergeMenuGroupOrder } from '../utils/order-sidebar-menu.ts';
+import { normalizeBoardScoreWeights } from '../utils/normalize-board-score-weights';
 
 /**
  * 初始设置引导的默认完成态
@@ -110,6 +112,8 @@ interface SettingsState {
   boardCalendarHidden: string[];
   /** 板块日历详情 · 展示范围（交易日列数；与看板页的范围各自独立） */
   boardDetailRange: BoardDetailRange;
+  /** 板块得分 · 自定义权重（题材轮动权重管理器；六键与得分分桶同构，[-10, 10]） */
+  boardScoreWeights: BoardScoreWeights;
   /** 股票详情 · 蜡烛模式主图指标清单（如 ['MA']，klinecharts 指标名） */
   chartMainIndicators: string[];
   /** 股票详情 · 蜡烛模式副图指标清单（如 ['VOL', 'MACD_KDJ']，每项独立面板） */
@@ -160,6 +164,7 @@ export const useSettingsStore = defineStore('settings', {
     boardCalendarOrder: [...BOARD_DEFAULT_ORDER],
     boardCalendarHidden: [],
     boardDetailRange: BOARD_DETAIL_RANGE_DEFAULT,
+    boardScoreWeights: { ...BOARD_SCORE_WEIGHTS_DEFAULT },
     chartMainIndicators: [...CHART_MAIN_INDICATORS_DEFAULT],
     chartSubIndicators: [...CHART_SUB_INDICATORS_DEFAULT],
     detailChartPeriod: CHART_PERIOD_DEFAULT,
@@ -399,6 +404,14 @@ export const useSettingsStore = defineStore('settings', {
     },
 
     /**
+     * 设置板块得分 · 自定义权重（题材轮动权重管理器保存入口；持久化）
+     * @param weights 用户输入的权重（入库前归一化：缺键补默认、越界收敛到 [-10, 10]）
+     */
+    setBoardScoreWeights(weights: BoardScoreWeights): void {
+      this.boardScoreWeights = normalizeBoardScoreWeights(weights);
+    },
+
+    /**
      * 设置板块日历 · 板块列（顺序 + 未勾选项）
      *
      * 顺序等于默认序时表示未自定义行序，表格回到「按热门口径自动排序」。
@@ -500,6 +513,8 @@ export const useSettingsStore = defineStore('settings', {
         context.store.menuGroupOrder,
         SIDEBAR_MENU_GROUP_DEFAULT_ORDER,
       );
+      // 板块得分权重坏数据兜底：缺键 / 非数值 / 越界一律归一化（非法值会让得分失真）
+      context.store.boardScoreWeights = normalizeBoardScoreWeights(context.store.boardScoreWeights);
       // 板块日历展示范围缩编（10/20/60/180 → 15/30/全部，2026-10-17）：
       // 旧持久化值不在新值集合时回落默认，否则 BaseTabs 无选中态、范围文案为空
       if (!Object.values(BOARD_CALENDAR_RANGE).includes(context.store.boardCalendarRange)) {

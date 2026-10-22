@@ -2,7 +2,7 @@
 /**
  * 行情（2026-10-20 新增主 Tab）：参考同花顺行情页结构——
  * 指数模块自首页整体迁入（A 股指数条 + 全球指数展开区，数据口径不变），
- * 指数模块下方为金刚区快捷入口五项（今天炒什么 / 市场榜单 / 连板 / 异动 / 龙虎榜，
+ * 指数模块下方为金刚区快捷入口五项（今天炒什么 / 盘面雷达 / 连板 / 异动 / 龙虎榜，
  * 自首页金刚区迁出）。首页仍保留成交额 / 分布 / 情绪等模块，不受影响。
  * - 指数：fetchFullQuotes（东财，30s TTL）+ fetchGlobalIndexQuotes（展开时拉取）
  * - 金刚区四项下方平铺两卡（2026-10-20 王总指定，自首页迁入）：
@@ -118,10 +118,10 @@ interface QuoteKingItem {
   /** icon 固定彩色（与首页金刚区同一套，不随主题） */
   color: string;
 }
-/** 行情页金刚区五项（2026-10-20 王总指定：今天炒什么 / 连板 / 异动 / 龙虎榜；市场榜单同日自首页金刚区迁入） */
+/** 行情页金刚区五项（2026-10-20 王总指定：今天炒什么 / 连板 / 异动 / 龙虎榜；盘面雷达（原市场榜单）同日自首页金刚区迁入） */
 const QUOTE_KING_ITEMS: readonly QuoteKingItem[] = [
   { icon: 'fire-o', label: '今天炒什么', to: '/board', color: '#f97316' },
-  { icon: 'chart-trending-o', label: '市场榜单', to: '/market-rank', color: '#8b5cf6' },
+  { icon: 'chart-trending-o', label: '盘面雷达', to: '/market-rank', color: '#8b5cf6' },
   { icon: 'medal-o', label: '连板', to: '/rank/event', color: '#f59e0b' },
   { icon: 'bell', label: '异动', to: '/rank/events', color: '#ef4444' },
   { icon: 'flag-o', label: '龙虎榜', to: '/rank/dragon-tiger', color: '#ec4899' },
@@ -421,7 +421,7 @@ onMounted(() => {
         <van-icon name="arrow-down" />
       </button>
 
-      <!-- 2. 金刚区快捷入口（今天炒什么 / 市场榜单 / 连板 / 异动 / 龙虎榜，自首页金刚区迁入；
+      <!-- 2. 金刚区快捷入口（今天炒什么 / 盘面雷达 / 连板 / 异动 / 龙虎榜，自首页金刚区迁入；
            长按任意 tile 弹出入口设置，显隐 + 拖拽排序，交互与首页一致） -->
       <div class="m-home-king m-quote-king">
         <div

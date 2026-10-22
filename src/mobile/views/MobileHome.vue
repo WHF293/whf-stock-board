@@ -8,7 +8,7 @@
  * （MobileQuote，/quote）；资金流向自 TabBar 移出改入金刚区；大盘评级与今天炒什么
  * 两卡迁至行情页平铺，板块热力自行情页迁回（王总指定两模块互换）。
  * - 金刚区：行情全景/板块日历/历史牛熊/(次)新股/个股行情/资金流向（显隐排序可设置；
- *   2026-10-20 市场榜单亦迁至行情页金刚区）
+ *   2026-10-20 盘面雷达（原市场榜单）亦迁至行情页金刚区）
  * - 成交额：fetchMarketTurnover 重接口拉一次 + 快照缓存；30/60/180 交易日本地切片；
  *   自研 SVG 折线（两市总额面积线 + 上证/深证），仿 MobilePanorama 轻量方案
  * - 涨跌分布·情绪：fetchAllMarketQuotes→countDistribution（8 桶）；
@@ -87,7 +87,7 @@ const KING_ITEMS: readonly KingItem[] = [
   // 机构行为（2026-10-20 新增；PC FuturesInstitutionalView 移动精简版，CCPM 席位做多/做空/对冲标注）
   { icon: 'cluster-o', label: '机构行为', to: '/futures-institutional', color: '#6366f1' },
   // 广度指标（2026-10-21 新增；PC MarketBreadthView 移动版，ADL/ADR/OBOS/ARMS/MCO 五副图）
-  { icon: 'bar-chart-o', label: '广度指标', to: '/market-breadth', color: '#f97316' },
+  { icon: 'bar-chart-o', label: '市场宽度', to: '/market-breadth', color: '#f97316' },
 ];
 /** to → 定义（设置弹窗行渲染 / 持久化序回填用） */
 const KING_BY_TO = new Map(KING_ITEMS.map((item) => [item.to, item]));

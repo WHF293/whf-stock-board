@@ -80,6 +80,33 @@ export interface BoardConstituent {
 }
 
 /**
+ * 板块得分分桶（board_daily 分桶列；六桶互斥，平盘不计权重）
+ *
+ * 涨停 / 跌停两桶以涨跌停池口径为准（不看涨跌幅阈值），
+ * 中间四桶按当日涨跌幅划分，边界归属：> 5% 与 < -5% 为严格开区间，
+ * (0, 5%] 与 [-5%, 0) 含整点（±5.00% 计入温和桶）。
+ */
+export interface BoardScoreBuckets {
+  /** 涨停家数（涨跌停池口径） */
+  limitUp: number;
+  /** 涨幅 > 5% 家数（非涨停） */
+  gt5: number;
+  /** 涨幅 (0, 5%] 家数 */
+  up05: number;
+  /** 跌幅 [-5%, 0) 家数 */
+  down05: number;
+  /** 跌幅 < -5% 家数（非跌停） */
+  lt5: number;
+  /** 跌停家数（涨跌停池口径） */
+  limitDown: number;
+}
+
+/**
+ * 板块得分权重（与分桶同构：得分 = Σ 分桶家数 × 对应权重；取值范围 [-10, 10]）
+ */
+export type BoardScoreWeights = BoardScoreBuckets;
+
+/**
  * 板块 × 交易日聚合（board_daily 行）
  */
 export interface BoardDailyRow {
@@ -109,6 +136,8 @@ export interface BoardDailyRow {
   score: number;
   /** 得分率 = score ÷ consCount */
   scoreRate: number;
+  /** 得分分桶（六桶互斥；null = 该行无分桶数据：旧版本行 / 回补日 / 盘中未覆盖板块） */
+  buckets: BoardScoreBuckets | null;
   /** 数据级别：1 = 完整快照，0 = 仅回补到涨跌停 */
   dataLevel: number;
   /** 采集时间戳（毫秒） */
@@ -329,7 +358,7 @@ export interface BoardColumnSelection {
 }
 
 /**
- * 主线分析单元格（视图模型：某交易日得分第 N 名的板块）
+ * 主线分析单元格（视图模型：某交易日按指定口径第 N 名的板块）
  */
 export interface BoardMainlineCell {
   /** 交易日 YYYY-MM-DD */
@@ -338,6 +367,8 @@ export interface BoardMainlineCell {
   boardCode: string;
   /** 板块名称 */
   boardName: string;
+  /** 当日成交额（元；amount 口径进榜依据，null = 上游缺额） */
+  amount: number | null;
   /** 涨停家数 */
   limitUp: number;
   /** 跌停家数 */

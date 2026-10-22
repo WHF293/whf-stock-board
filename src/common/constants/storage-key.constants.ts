@@ -30,6 +30,9 @@ export const STORAGE_NS_HOT_NEWS_FILTER = 'hotNews.filter';
 /** 今天炒什么页 - 平台勾选状态命名空间（用户启用哪些热榜平台） */
 export const STORAGE_NS_HOT_BOARD_FILTER = 'hotBoard.filter';
 
+/** 今天炒什么页 - 视图模式命名空间（股票热榜 / ETF 热榜，'stock' | 'etf'） */
+export const STORAGE_NS_HOT_BOARD_MODE = 'hotBoard.mode';
+
 /** 标的搜索历史命名空间（用户确认过的标的，最新在前，最多 SEARCH_HISTORY_MAX 条） */
 export const STORAGE_NS_STOCK_SEARCH = 'stockSearch';
 
@@ -51,7 +54,7 @@ export const STORAGE_NS_PANORAMA_REVIEW = 'panorama.review';
 /** 用户安装插件命名空间（应用内安装的插件代码持久化） */
 export const STORAGE_NS_USER_PLUGINS = 'plugin.user';
 
-/** 市场榜单页 - 板块历史净流入独立存储 key（不走 whf:app 整包：历史数据量随使用增长，避免整包写放大） */
+/** 盘面雷达页（原市场榜单）- 板块历史净流入独立存储 key（不走 whf:app 整包：历史数据量随使用增长，避免整包写放大） */
 export const STORAGE_KEY_SECTOR_FLOW_HISTORY = 'whf:sector-flow-history';
 
 /** ETF 持仓股缓存命名空间（详情页 ETF 持仓 Tab，按 ETF 代码整包存取） */

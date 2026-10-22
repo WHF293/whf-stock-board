@@ -536,7 +536,7 @@ body {
   background: var(--color-surface);
 }
 
-/* 选择器式 Tabs（二级页顶部分组切换：个股行情 / 行情全景 / 市场榜单 / 板块日历）：
+/* 选择器式 Tabs（二级页顶部分组切换：个股行情 / 行情全景 / 盘面雷达 / 板块日历）：
    空 van-tab 只当分段选择器，内容面板不在此组件内——不吃主 Tab 版的 flex:1，
    自身固定高度，内容滚动仍由下方 .m-sub-scroll 承担 */
 .m-page-flex .m-tabs--selector {
@@ -1057,7 +1057,7 @@ body {
 .m-sub-scroll > * { flex-shrink: 0; }
 /* van-pull-refresh 必须「自然高度」：拉伸（flex:1）会让 vant track 自带的 overflow:hidden
    把列表裁在视口高里，外层 .m-sub-scroll 拿不到滚动量 → 整页滚不动（v4.2.1 修复：
-   行情全景 / 市场榜单不可下滑即此因）。内容不足一屏的下拉手势不受影响（手势监听不依赖高度） */
+   行情全景 / 盘面雷达不可下滑即此因）。内容不足一屏的下拉手势不受影响（手势监听不依赖高度） */
 .m-sub-scroll .van-pull-refresh { flex: 0 0 auto; display: flex; flex-direction: column; }
 .m-sub-scroll .van-pull-refresh__track { flex: 0 0 auto; display: flex; flex-direction: column; }
 .m-sub-scroll .van-pull-refresh__track > * { flex-shrink: 0; width: auto; }

@@ -522,7 +522,7 @@ const POLLING_DETAIL_ROWS: PollingDetailRow[] = [
   { page: "行情全景 · A 股", target: "行业 / 概念板块排行", interval: `${BREADTH_SEC} 秒`, window: "A 股交易时段" },
   { page: "行情全景 · 美股", target: "美股板块行情", interval: `${US_SEC} 秒`, window: "美股交易时段" },
   { page: "资金动向", target: "全市场榜单（涨幅 / 成交额 / 换手率）", interval: `${BREADTH_SEC} 秒`, window: "A 股交易时段" },
-  { page: "市场榜单 · 异动", target: "盘口 / 板块异动（含涨停股池）", interval: "跟随设置的刷新间隔", window: "A 股交易时段" },
+  { page: "盘面雷达 · 异动", target: "盘口 / 板块异动（含涨停股池）", interval: "跟随设置的刷新间隔", window: "A 股交易时段" },
   { page: "板块日历", target: "当日数据采集 + 重读", interval: `${BREADTH_SEC} 秒`, window: "A 股交易时段" },
   { page: "个股详情（页面 / 停靠面板）", target: "单票报价", interval: `${QUOTES_SEC} 秒`, window: "A 股交易时段" },
   { page: "侧栏自选面板", target: "自选行情", interval: `${QUOTES_SEC} 秒`, window: "A 股交易时段" },

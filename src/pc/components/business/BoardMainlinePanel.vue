@@ -80,14 +80,14 @@ const cellTitle = (cell: BoardMainlineCell): string =>
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-1 flex-col gap-2">
+  <div class="flex flex-col gap-2">
     <p class="shrink-0 text-xs text-text-tertiary" role="note">
       每个交易日按得分绝对值取前 {{ BOARD_MAINLINE_TOP_N }} 名（无论多空，强弱由颜色区分），
       行 = 名次、列 = 日期（最近在左）；单元格 =「板块名-涨停数/跌停数」。
       同一板块连续在榜说明资金集中，各日频繁换名说明在快速轮动。点击单元格进板块详情。
     </p>
-    <!-- 撑满卡片剩余高度：高度链由 theme.css 的 .board-calendar-fill 提供（flex 链上每层已 min-h-0） -->
-    <div class="board-calendar-fill">
+    <!-- 自然高度展开、超出 760px 内部滚动（复用 board-calendar-scroll；吸顶表头 / 吸左名次列不变） -->
+    <div class="board-calendar-scroll">
       <!-- 表头行：吸顶；名次列吸左（左上角双向固定） -->
       <div class="flex min-w-max border-b border-flat-weak">
         <div

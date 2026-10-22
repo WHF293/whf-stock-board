@@ -40,7 +40,10 @@ import {
   CALENDAR_BOARDS,
   HEAT_STREAK_WINDOW,
 } from '../../common/constants/board-calendar.constants.ts';
-import { ROTATION_RANGES } from '../../common/constants/board-rotation.constants.ts';
+import {
+  ROTATION_DEFAULT_RANGE,
+  ROTATION_RANGES,
+} from '../../common/constants/board-rotation.constants.ts';
 import { DATA_CACHE_KEY } from '../../common/constants/data-cache.constants.ts';
 import { POLLING_INTERVAL } from '../../common/constants/polling.constants.ts';
 import { ROUTE_PATH } from '../../common/constants/router-meta.constants.ts';
@@ -66,6 +69,7 @@ import {
   normalizeBoardHidden,
   normalizeBoardOrder,
 } from '../../common/utils/board-order';
+import { applyBoardScoreWeights } from '../../common/utils/apply-board-score-weights';
 import { buildBoardMainlineMatrix } from '../../common/utils/build-board-mainline-matrix';
 import {
   getBoardBucketBackground,
@@ -126,14 +130,18 @@ const legendOpen = ref(false);
 
 /** 页头动作挂载守卫：只有本页激活时按钮才出现在页头（KeepAlive 缓存页切走不残留） */
 const { active: headerSlotActive } = usePageHeaderSlot();
-/** 主区视图：题材轮动（bump 图，默认）/ 板块日历（涨跌停矩阵）/ 赚钱效应 / 板块Top */
+/** 主区视图：题材轮动（bump 图，默认）/ 板块日历（涨跌停矩阵）/ 赚钱效应 */
 const calendarView = ref<BoardCalendarViewMode>(BOARD_CALENDAR_VIEW_DEFAULT);
+/** 题材轮动展示范围（近 10/20/30 日，双向绑定给 BoardRotationPanel；同时驱动板块Top 子模块日期列） */
+const rotationRange = ref<string>(String(ROTATION_DEFAULT_RANGE));
 /** 弹窗状态 */
 const modalOpen = ref(false);
 const activeRow = ref<BoardCalendarRow | null>(null);
 const activeCell = ref<BoardCalendarCell | null>(null);
 const activeDate = ref('');
 const activeProfileConsCount = ref(0);
+/** 赚钱效应气泡图聚焦交易日（null = 最新完整快照日；由板块日历明细弹窗「查看当日赚钱效应」设置） */
+const bubbleFocusDate = ref<string | null>(null);
 
 // 会话缓存播种：切页回来立即有内容，随后由轮询任务覆盖刷新
 const cachedRows = dataCache.get<BoardDailyRow[]>(DATA_CACHE_KEY.BOARD_CALENDAR_MATRIX);
@@ -144,6 +152,17 @@ const cachedDates = dataCache.get<string[]>(DATA_CACHE_KEY.BOARD_CALENDAR_DATES)
 if (cachedDates && cachedDates.length > 0) {
   tradingDates.value = cachedDates;
 }
+
+/**
+ * 应用自定义权重后的板块日聚合（板块日历矩阵 / 赚钱效应 / 板块Top / 题材轮动共用）
+ *
+ * 有分桶的行按 settingsStore.boardScoreWeights 重算 score / scoreRate，
+ * 无分桶的行（旧版本行 / 回补日 / 盘中未覆盖板块）保持落库默认口径得分。
+ * 权重等于默认时为原数组浅拷贝，零开销直通。
+ */
+const weightedDailyRows = computed<BoardDailyRow[]>(() =>
+  applyBoardScoreWeights(dailyRows.value, settingsStore.boardScoreWeights),
+);
 
 /** 当前范围对应的列数（null = 全部） */
 const rangeLimit = computed<number | null>(() => {
@@ -280,7 +299,7 @@ const matrixDates = computed<string[]>(() =>
 const matrix = computed<BoardCalendarMatrix>(() => {
   const dates = matrixDates.value;
   const byKey = new Map<string, BoardDailyRow>();
-  for (const row of dailyRows.value) {
+  for (const row of weightedDailyRows.value) {
     byKey.set(`${row.tradeDate}|${row.boardCode}`, row);
   }
 
@@ -343,7 +362,7 @@ const profitSnapshot = computed<{
   isFullSnapshot: boolean;
 }>(() => {
   const byDate = new Map<string, BoardDailyRow[]>();
-  for (const row of dailyRows.value) {
+  for (const row of weightedDailyRows.value) {
     const list = byDate.get(row.tradeDate);
     if (list) {
       list.push(row);
@@ -371,14 +390,72 @@ const profitSnapshot = computed<{
   };
 });
 
+/** 本地有日聚合数据的交易日集合（气泡图日期选择器的可用项判定；不在集合内的日期置灰） */
+const datesWithData = computed<Set<string>>(
+  () => new Set(dailyRows.value.map((row) => row.tradeDate)),
+);
+
 /**
- * 板块分析矩阵：每个交易日按得分绝对值取前 N 名转置成「行 = 名次、列 = 日期」
+ * 赚钱效应气泡图实际渲染的数据：聚焦日优先，未聚焦回落最新完整快照日
  *
- * 与日历矩阵共用同一份 dailyRows 与展示范围（板块过滤器不影响——
- * 分析看的是全市场在做什么，隐藏个别板块不改变市场结构）。
+ * 聚焦日由气泡图日期选择器或板块日历明细弹窗的「查看当日赚钱效应」设置
+ * （矩阵 cell → 弹窗 → 气泡图），让「板块 × 单日」明细与「全市场 × 当日」
+ * 可视化连成一条叙事；聚焦仅在本会话内有效，选回最新快照或点「回到最新快照」清除。
+ * 聚焦日不在当前读取窗口时 rows 为空数组，气泡图自身兜底空态。
  */
+const profitView = computed<{ tradeDate: string; rows: BoardDailyRow[]; isFullSnapshot: boolean }>(
+  () => {
+    const focus = bubbleFocusDate.value;
+    if (focus === null) {
+      return profitSnapshot.value;
+    }
+    const rows = weightedDailyRows.value.filter((row) => row.tradeDate === focus);
+    return {
+      tradeDate: focus,
+      rows,
+      isFullSnapshot: rows.length > 0 && rows.every((row) => row.dataLevel === BOARD_DATA_LEVEL.FULL),
+    };
+  },
+);
+
+/**
+ * 明细弹窗「查看当日赚钱效应」：记录聚焦日 → 切到赚钱效应视图 → 关弹窗
+ * @param tradeDate 弹窗对应的交易日
+ */
+const onCellProfitClick = (tradeDate: string): void => {
+  bubbleFocusDate.value = tradeDate;
+  calendarView.value = BOARD_CALENDAR_VIEW.BUBBLE;
+  modalOpen.value = false;
+};
+
+/**
+ * 清除气泡图聚焦日，回到最新完整快照日
+ */
+const onBubbleFocusReset = (): void => {
+  bubbleFocusDate.value = null;
+};
+
+/**
+ * 气泡图日期选择器：切换聚焦交易日
+ * @param event select change 事件
+ */
+const onBubbleDateSelect = (event: Event): void => {
+  bubbleFocusDate.value = (event.target as HTMLSelectElement).value;
+};
+
+/**
+ * 板块Top 矩阵（题材轮动 Tab 子模块，2026-10-22 王总指定）：
+ * - 排序口径固定为**当日成交额**降序取每日前 N 名（不再使用得分绝对值口径）；
+ * - 日期列范围与题材轮动 bump 图的近 10/20/30 日切换**同步**
+ *   （rotationRange 由 BoardRotationPanel 的范围 Tabs 双向绑定）；
+ * - 板块过滤器不影响——分析看的是全市场在做什么，隐藏个别板块不改变市场结构。
+ */
+const mainlineDates = computed<string[]>(() =>
+  [...tradingDates.value].reverse().slice(0, Number(rotationRange.value)),
+);
+
 const mainlineMatrix = computed(() =>
-  buildBoardMainlineMatrix(dailyRows.value, matrixDates.value, BOARD_MAINLINE_TOP_N),
+  buildBoardMainlineMatrix(weightedDailyRows.value, mainlineDates.value, BOARD_MAINLINE_TOP_N, 'amount'),
 );
 
 /** 题材轮动取数窗口（交易日数）：覆盖轮动最大档位，不随日历范围档位缩水 */
@@ -610,8 +687,9 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
       </div>
     </div>
 
-    <!-- 控制条：热门口径 / 范围 / 恢复排序（仅板块日历 / 板块Top 需要，题材轮动与赚钱效应不显示） -->
-    <div v-if="calendarView !== BOARD_CALENDAR_VIEW.ROTATION && calendarView !== BOARD_CALENDAR_VIEW.BUBBLE" class="flex shrink-0 flex-wrap items-center gap-2">
+    <!-- 控制条：热门口径 / 范围 / 恢复排序（仅板块日历需要；板块Top 已并入题材轮动子模块，
+         范围随题材轮动的 Tabs 走，赚钱效应不显示） -->
+    <div v-if="calendarView === BOARD_CALENDAR_VIEW.LIST" class="flex shrink-0 flex-wrap items-center gap-2">
       <BaseTabs
         :model-value="settingsStore.boardCalendarHeatBasis"
         :options="BOARD_CALENDAR_HEAT_OPTIONS"
@@ -716,54 +794,71 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
       />
     </BaseCard>
 
-    <!-- 题材轮动：面板自带上下两张卡片，外层不再套背景卡（避免双层卡片左右露底色带） -->
+    <!-- 题材轮动：面板（bump 图 + 单日详情）+ 板块Top 子模块，外层纵向滚动
+         （页面根为满高 flex，三卡超一屏时内滚，避免 flex 压缩把 bump 图挤出卡片重叠） -->
     <template v-else-if="calendarView === BOARD_CALENDAR_VIEW.ROTATION">
-      <BaseCard v-if="isLoading && dailyRows.length === 0" fill class="min-h-0 flex-1">
-        <BaseSkeleton />
-      </BaseCard>
-      <BaseCard v-else-if="dailyRows.length === 0" fill class="min-h-0 flex-1">
-        <BaseEmpty text="暂无板块日历数据，请点击右上角「刷新」采集" />
-      </BaseCard>
-      <BoardRotationPanel
-        v-else
-        :dates="tradingDates"
-        :daily-rows="dailyRows"
-        :limit-rows="limitRows"
-        :meta-rows="metaRows"
-        @stock-click="onRotationStockClick"
-        @board-click="onRotationBoardClick"
-      />
+      <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
+        <BaseCard v-if="isLoading && dailyRows.length === 0" class="shrink-0">
+          <BaseSkeleton class="h-96" />
+        </BaseCard>
+        <BaseCard v-else-if="dailyRows.length === 0" class="shrink-0">
+          <BaseEmpty text="暂无板块日历数据，请点击右上角「刷新」采集" />
+        </BaseCard>
+        <template v-else>
+          <BoardRotationPanel
+            v-model:range="rotationRange"
+            :dates="tradingDates"
+            :daily-rows="weightedDailyRows"
+            :limit-rows="limitRows"
+            :meta-rows="metaRows"
+            @stock-click="onRotationStockClick"
+            @board-click="onRotationBoardClick"
+          />
+
+          <!-- 板块Top 子模块（2026-10-22 王总指定）：不再作为独立 Tab，挂在题材轮动下方；
+               口径固定按当日成交额取每日 Top N，日期列范围随上方范围 Tabs 同步 -->
+          <BaseCard title="板块Top" class="shrink-0">
+            <BoardMainlinePanel :matrix="mainlineMatrix" @cell-click="onMainlineCellClick" />
+          </BaseCard>
+        </template>
+      </div>
     </template>
 
-    <!-- 板块Top卡片：每日得分绝对值 Top10 的「名次 × 日期」转置表（原板块分析） -->
-    <BaseCard
-      v-else-if="calendarView === BOARD_CALENDAR_VIEW.MAINLINE"
-      fill
-      class="min-h-0 flex-1"
-      title="板块Top"
-    >
-      <BaseSkeleton v-if="isLoading && dailyRows.length === 0" />
-      <BaseEmpty
-        v-else-if="dailyRows.length === 0"
-        text="暂无板块日历数据，请点击右上角「刷新」采集"
-      />
-      <div v-else class="min-h-0 flex-1">
-        <BoardMainlinePanel :matrix="mainlineMatrix" @cell-click="onMainlineCellClick" />
-      </div>
-    </BaseCard>
-
-    <!-- 赚钱效应气泡图卡片（原「查看赚钱效应」弹窗内容内嵌为主区视图） -->
+    <!-- 赚钱效应气泡图卡片（原「查看赚钱效应」弹窗内容内嵌为主区视图）；
+         extra 槽 = 日期选择器（本地无数据的交易日置灰不可选）+ 聚焦时「回到最新快照」 -->
     <BaseCard
       v-else
       fill
       class="min-h-0 flex-1"
-      title="赚钱效应"
+      :title="`赚钱效应 · ${profitView.tradeDate}`"
     >
+      <template #extra>
+        <div class="flex items-center gap-2">
+          <select
+            :value="bubbleFocusDate ?? profitSnapshot.tradeDate"
+            class="h-7 rounded-lg border border-flat-weak bg-surface px-2 text-xs text-text"
+            aria-label="选择交易日"
+            @change="onBubbleDateSelect"
+          >
+            <option
+              v-for="date in selectedDates"
+              :key="date"
+              :value="date"
+              :disabled="!datesWithData.has(date)"
+            >
+              {{ date }}{{ datesWithData.has(date) ? '' : '（无数据）' }}
+            </option>
+          </select>
+          <BaseButton v-if="bubbleFocusDate !== null" variant="ghost" @click="onBubbleFocusReset">
+            回到最新快照
+          </BaseButton>
+        </div>
+      </template>
       <div class="min-h-0 flex-1">
         <BoardProfitBubblePanel
-          :rows="profitSnapshot.rows"
-          :trade-date="profitSnapshot.tradeDate"
-          :is-full-snapshot="profitSnapshot.isFullSnapshot"
+          :rows="profitView.rows"
+          :trade-date="profitView.tradeDate"
+          :is-full-snapshot="profitView.isFullSnapshot"
         />
       </div>
     </BaseCard>
@@ -783,6 +878,7 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
       :cell="activeCell"
       :trade-date="activeDate"
       :profile-cons-count="activeProfileConsCount"
+      @profit-click="onCellProfitClick"
     />
   </div>
 </template>

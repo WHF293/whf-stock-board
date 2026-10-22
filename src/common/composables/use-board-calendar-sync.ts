@@ -1,5 +1,6 @@
 import {
   fetchBoardConstituents,
+  fetchBoardConstituentChangePct,
   fetchBoardSnapshot,
   fetchLimitPool,
   fetchTradingDates,
@@ -53,6 +54,7 @@ import {
   ZT_BACKFILL_DAYS,
   calcBoardScore,
 } from '../constants/board-calendar.constants.ts';
+import { ROTATION_MIN_LIMIT_UP } from '../constants/board-rotation.constants.ts';
 import type {
   BoardCalendarMeta,
   BoardDailyRow,
@@ -60,12 +62,14 @@ import type {
   BoardLimitStock,
   BoardManualFetchResult,
   BoardProfile,
+  BoardScoreBuckets,
   BoardSyncResult,
   LimitPoolStock,
   TradingDatesCache,
 } from '../types/board-calendar.types.ts';
 import { delay } from '../utils/delay';
 import { handleSdkError } from '../utils/handle-sdk-error';
+import { addBoardScoreBucket } from '../utils/add-board-score-bucket';
 import { mapWithConcurrency } from '../utils/map-with-concurrency';
 
 /**
@@ -432,6 +436,33 @@ const buildDailySnapshot = async (
   const limitRows: BoardLimitStock[] = [];
   const profiles: BoardProfile[] = [];
 
+  /* -- 得分分桶采集（权重管理器数据源，2026-10-22）： --
+   * 定稿轮（15:00 后）全板块覆盖；盘中只为「涨停 ≥ 上榜阈值」的候选板块取数
+   * （轮动榜与色阶只有候选板块用得到自定义得分，长尾板块回退落库默认口径）。
+   * 请求节奏：逐板块串行 + 300ms 错峰，单板块 ≈ ceil(成分股数 / 100) 页；
+   * 单板块失败仅该板块无分桶（buckets = null 回退），不阻断整轮采集。 */
+  const quotesByBoard = new Map<string, Map<string, number>>();
+  const limitSymbolsByBoard = new Map<string, { up: Set<string>; down: Set<string> }>();
+  for (const board of CALENDAR_BOARDS) {
+    const ups = upGroup.groups.get(board.code) ?? [];
+    const downs = downGroup.groups.get(board.code) ?? [];
+    if (!isFinal && ups.length < ROTATION_MIN_LIMIT_UP) {
+      continue;
+    }
+    limitSymbolsByBoard.set(board.code, {
+      up: new Set(ups.map((stock) => stock.symbol)),
+      down: new Set(downs.map((stock) => stock.symbol)),
+    });
+    await delay(BOARD_REQUEST_GAP_MS);
+    try {
+      quotesByBoard.set(board.code, await fetchBoardConstituentChangePct(board.code));
+    } catch (error) {
+      console.warn(
+        `[board-calendar] ${board.name} 成分股涨跌幅取数失败，该板块无分桶：${toErrorMessage(error)}`,
+      );
+    }
+  }
+
   CALENDAR_BOARDS.forEach((board, index) => {
     const item = snapshot.get(board.code);
     if (!item) return;
@@ -444,6 +475,16 @@ const buildDailySnapshot = async (
       upCount: item.upCount,
       downCount: item.downCount,
     });
+    // 分桶：涨跌停桶按池口径（与 limitUp / limitDown 家数同源），中间桶按实时涨跌幅
+    const quotes = quotesByBoard.get(board.code);
+    const limitSymbols = limitSymbolsByBoard.get(board.code);
+    let buckets: BoardScoreBuckets | null = null;
+    if (quotes && limitSymbols) {
+      buckets = { limitUp: 0, gt5: 0, up05: 0, down05: 0, lt5: 0, limitDown: 0 };
+      for (const [symbol, change] of quotes) {
+        addBoardScoreBucket(buckets, change, limitSymbols.up.has(symbol), limitSymbols.down.has(symbol));
+      }
+    }
     rows.push({
       tradeDate,
       boardCode: board.code,
@@ -458,6 +499,7 @@ const buildDailySnapshot = async (
       consCount,
       score,
       scoreRate: consCount > 0 ? score / consCount : 0,
+      buckets,
       dataLevel: BOARD_DATA_LEVEL.FULL,
       snapshotAt: now,
       isFinal,
@@ -665,6 +707,8 @@ const buildBackfillDay = (
         downCount: downs.length,
       }),
       scoreRate: 0,
+      // 回补日无涨跌家数（更无逐股涨跌幅），六桶残缺 → 不落分桶，读取侧回退默认口径
+      buckets: null,
       dataLevel: BOARD_DATA_LEVEL.PARTIAL,
       snapshotAt: now,
       isFinal: true,
@@ -952,6 +996,14 @@ export const upgradeBoardDailyFromKline = async (
     }
 
     const statsByBoard = new Map<string, Awaited<ReturnType<typeof loadBoardConstituentDayStats>>>();
+    // 涨跌停池符号集（分桶的涨跌停桶判定依据）：阶段一探测结果按日汇总，逐板块日 K 聚合时逐票比对
+    const limitSymbolsByDate = new Map<string, { up: Set<string>; down: Set<string> }>();
+    for (const [tradeDate, pool] of poolByDate) {
+      limitSymbolsByDate.set(tradeDate, {
+        up: new Set(pool.limitUp.map((stock) => stock.symbol)),
+        down: new Set(pool.limitDown.map((stock) => stock.symbol)),
+      });
+    }
     let klineDone = 0;
     for (const board of CALENDAR_BOARDS) {
       if (signal?.aborted) {
@@ -967,6 +1019,7 @@ export const upgradeBoardDailyFromKline = async (
           onProgress?.({ stage: 'kline', completed: klineDone, total: klineTotal, detail: board.name });
         },
         signal,
+        limitSymbolsByDate,
       );
       statsByBoard.set(board.code, stats);
     }
@@ -1014,6 +1067,7 @@ export const upgradeBoardDailyFromKline = async (
           consCount,
           score,
           scoreRate: consCount > 0 ? score / consCount : 0,
+          buckets: stats?.buckets ?? existing?.buckets ?? null,
           dataLevel: BOARD_DATA_LEVEL.FULL,
           snapshotAt: now,
           isFinal: true,

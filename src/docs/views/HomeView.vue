@@ -12,9 +12,11 @@ import { formatDateIso } from '../utils/format.utils';
 
 // 截图素材来自仓库 docs/screenshots（与 README 同源），构建期打包进官网产物
 import agentAnalysisShot from '../../../docs/screenshots/agent-analysis.png';
-import boardCalendarShot from '../../../docs/screenshots/board-calendar.png';
+import boardRotationShot from '../../../docs/screenshots/board-rotation.png';
+import futuresInstitutionalShot from '../../../docs/screenshots/futures-institutional.png';
 import hotBoardShot from '../../../docs/screenshots/hot-board.png';
 import hotNewsShot from '../../../docs/screenshots/hot-news.png';
+import marketBreadthShot from '../../../docs/screenshots/market-breadth.png';
 import marketOverviewShot from '../../../docs/screenshots/market-overview.png';
 import pluginWorkshopShot from '../../../docs/screenshots/plugin-workshop.png';
 
@@ -24,9 +26,11 @@ interface ShotItem {
   caption: string;
 }
 
-/** 主视觉 + 截图墙（README 六模块截图） */
+/** 主视觉 + 截图墙（README 模块截图） */
 const SHOT_ITEMS: ShotItem[] = [
-  { src: boardCalendarShot, caption: '板块日历' },
+  { src: boardRotationShot, caption: '题材轮动' },
+  { src: marketBreadthShot, caption: '市场宽度' },
+  { src: futuresInstitutionalShot, caption: '机构行为' },
   { src: hotNewsShot, caption: '热点新闻' },
   { src: hotBoardShot, caption: '今天炒什么' },
   { src: agentAnalysisShot, caption: 'Agent 分析' },
@@ -80,7 +84,7 @@ onMounted(async () => {
           A 股行情看板，<br>本机运行更安心
         </h1>
         <p class="mt-3 max-w-xl text-[13px] leading-relaxed text-text-secondary">
-          行情总览 / 自选股 / 行情全景 / 资金动向 / 涨停异动 / 龙虎榜·大宗 / 今天炒什么，一站式桌面看板。
+          题材轮动 / 市场宽度 / 盘面雷达 / 行情全景 / 资金流向 / 期货机构行为 / 今天炒什么 / AI Agent，一站式桌面看板。
           数据经本机直连腾讯与东方财富公开接口，无自建服务器，自选与设置只存在你自己的电脑里。
         </p>
         <div class="mt-5 flex flex-wrap items-center gap-2.5">
@@ -135,7 +139,7 @@ onMounted(async () => {
     <!-- 截图墙 -->
     <section class="mx-auto max-w-6xl px-5 pb-4">
       <h4 class="mb-2.5 text-sm font-bold text-text">软件截图（来自 README · 点击放大）</h4>
-      <div class="grid grid-cols-2 gap-2.5 md:grid-cols-5">
+      <div class="grid grid-cols-2 gap-2.5 md:grid-cols-4">
         <figure
           v-for="shot in SHOT_ITEMS"
           :key="shot.caption"
