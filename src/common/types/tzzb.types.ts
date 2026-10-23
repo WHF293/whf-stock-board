@@ -220,6 +220,9 @@ export const TZZB_INDEX_NAME: Record<string, string> = {
   HSI: '恒生指数',
 };
 
+/** 投资账本官网地址（系统浏览器打开入口用；正式域名，王总 2026-10-23 提供） */
+export const TZZB_OFFICIAL_SITE_URL = 'https://tzzb.10jqka.com.cn/pc/index.html';
+
 /** 资产曲线区间选项（value 与 queryPnlSummary 的区间参数口径对齐；custom = 自定义起止日） */
 export const TZZB_RANGE_OPTIONS = [
   { label: '本月', value: 'm1' },

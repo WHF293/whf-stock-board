@@ -797,26 +797,36 @@ void marketStatusStore.refresh();
             </div>
           </template>
 
-          <!-- 收起态（64px 图标栏）：不分组，纯扁平图标流 + tooltip；
-               顺序与展开态同源（按组序展开），不能用扁平 menuItems，否则两态顺序不一致 -->
+          <!-- 收起态（64px 图标栏）：按分组渲染 + 组间短横线分隔（用户指定，2026-10-23）；
+               顺序与展开态同源（按组序展开），不能用扁平 menuItems，否则两态顺序不一致。
+               分隔线不带 data-nav-item 锚点，DOM 序列仍与 collapsedFlatItems 一一对应，
+               滑动气泡按锚点序号取元素不受影响 -->
           <template v-else>
-            <RouterLink
-              v-for="item in collapsedFlatItems"
-              :key="item.path"
-              :to="item.path"
-              data-nav-item
-              data-track="NAV_MENU_CLICK"
-              :data-track-detail="item.title"
-              class="group relative pressable flex items-center justify-center gap-3 rounded-lg px-2 py-2 text-sm active:scale-[0.98]"
-              :class="
-                isActive(item.path)
-                  ? 'font-medium text-primary'
-                  : 'text-text-secondary hover:bg-flat-weak'
-              "
-            >
-              <MenuIcon :name="item.icon" :size="16" />
-              <BaseTooltip :text="item.title" />
-            </RouterLink>
+            <template v-for="(group, groupIndex) in menuGroups" :key="group.id">
+              <div
+                v-if="groupIndex > 0"
+                role="separator"
+                class="mx-auto my-1 h-px w-6 bg-flat-weak"
+              ></div>
+              <RouterLink
+                v-for="item in group.items"
+                :key="item.path"
+                :to="item.path"
+                data-nav-item
+                data-track="NAV_MENU_CLICK"
+                :data-track-detail="item.title"
+                class="group relative pressable flex items-center justify-center gap-3 rounded-lg px-2 py-2 text-sm active:scale-[0.98]"
+                :class="
+                  isActive(item.path)
+                    ? 'font-medium text-primary'
+                    : 'text-text-secondary hover:bg-flat-weak'
+                "
+              >
+                <MenuIcon :name="item.icon" :size="16" />
+                <!-- 收起态无组头可读，tooltip 带「分组名-页面名」标明归属（用户指定 2026-10-23） -->
+                <BaseTooltip :text="`${group.title}-${item.title}`" />
+              </RouterLink>
+            </template>
           </template>
 
           <!-- 插件贡献：导航区面板（inline 直接渲染 / drawer 只放入口） -->
@@ -845,15 +855,16 @@ void marketStatusStore.refresh();
             :panel="panel"
             :collapsed="effectiveCollapsed"
           />
+          <!-- 设置入口：点击/hover 热区与上方菜单条目完全同形（px-3 py-2 text-sm 圆角块，用户指定 2026-10-23） -->
           <button
             type="button"
-            class="group relative pressable flex items-center gap-2 rounded-lg py-1 text-xs active:scale-[0.98] text-text-secondary hover:text-text"
-            :class="effectiveCollapsed ? 'justify-center px-1' : 'px-1'"
+            class="group relative pressable flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm active:scale-[0.98] text-text-secondary hover:bg-flat-weak hover:text-text"
+            :class="effectiveCollapsed ? 'justify-center px-2' : ''"
             aria-label="打开设置"
             data-track="NAV_SETTINGS_OPEN"
             @click="settingsOpen = true"
           >
-            <MenuIcon name="settings" :size="14" />
+            <MenuIcon name="settings" :size="16" />
             <span v-if="!effectiveCollapsed">设置</span>
             <BaseTooltip v-if="effectiveCollapsed" text="设置" />
           </button>
