@@ -102,6 +102,8 @@ export interface RotationOptions {
   topN?: number;
   /** 板块上榜涨停家数下限（默认 2） */
   minLimitUp?: number;
+  /** 板块上榜最低得分率（默认 5，王总 2026-10-23 定稿；低于该值的板块无上榜资格） */
+  minScoreRate?: number;
   /** 主线判定阈值（默认 5） */
   mainlineMin?: number;
   /** 全市场缩量阈值（默认 60） */

@@ -427,6 +427,7 @@ export const BOARD_CALENDAR_VIEW = {
   LIST: 'list',
   BUBBLE: 'bubble',
   MAINLINE: 'mainline',
+  SEESAW: 'seesaw',
 } as const;
 
 /** 主区视图默认值（页面即题材轮动页，默认进新视图） */
@@ -443,6 +444,7 @@ export const BOARD_CALENDAR_VIEW_OPTIONS = [
   { label: '题材轮动', value: BOARD_CALENDAR_VIEW.ROTATION },
   { label: '板块日历', value: BOARD_CALENDAR_VIEW.LIST },
   { label: '赚钱效应', value: BOARD_CALENDAR_VIEW.BUBBLE },
+  { label: '风格跷跷板', value: BOARD_CALENDAR_VIEW.SEESAW },
 ] as const;
 
 /** 板块分析：每日按得分绝对值取前 N 名（横看同一板块是否连续在榜 = 资金集中，跳来跳去 = 快速轮动；多空由色阶区分） */

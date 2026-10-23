@@ -8,6 +8,7 @@ import BoardFilterModal from '../components/business/BoardFilterModal.vue';
 import BoardMainlinePanel from '../components/business/BoardMainlinePanel.vue';
 import BoardProfitBubblePanel from '../components/business/BoardProfitBubblePanel.vue';
 import BoardRotationPanel from '../components/business/BoardRotationPanel.vue';
+import StyleSeesawPanel from '../components/business/StyleSeesawPanel.vue';
 import BaseButton from '../components/ui/BaseButton.vue';
 import BaseCard from '../components/ui/BaseCard.vue';
 import BaseEmpty from '../components/ui/BaseEmpty.vue';
@@ -821,6 +822,24 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
             <BoardMainlinePanel :matrix="mainlineMatrix" @cell-click="onMainlineCellClick" />
           </BaseCard>
         </template>
+      </div>
+    </template>
+
+    <!-- 风格跷跷板：两桶（高情绪抱团 vs 高股息红利）逐日聚合，跷跷板横幅 +
+         剪刀差曲线 + 两端行业热度榜；数据复用 weightedDailyRows，零新增取数 -->
+    <template v-else-if="calendarView === BOARD_CALENDAR_VIEW.SEESAW">
+      <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
+        <BaseCard v-if="isLoading && dailyRows.length === 0" class="shrink-0">
+          <BaseSkeleton class="h-96" />
+        </BaseCard>
+        <BaseCard v-else-if="dailyRows.length === 0" class="shrink-0">
+          <BaseEmpty text="暂无板块日历数据，请点击右上角「刷新」采集" />
+        </BaseCard>
+        <StyleSeesawPanel
+          v-else
+          :daily-rows="weightedDailyRows"
+          @board-click="onRotationBoardClick"
+        />
       </div>
     </template>
 

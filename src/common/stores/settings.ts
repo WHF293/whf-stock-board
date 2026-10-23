@@ -51,6 +51,8 @@ import { BOARD_DEFAULT_ORDER, normalizeBoardHidden, normalizeBoardOrder } from '
 import { migrateWatchWidgetSettings } from '../utils/migrate-watch-widget-settings';
 import { mergeMenuGroupOrder } from '../utils/order-sidebar-menu.ts';
 import { normalizeBoardScoreWeights } from '../utils/normalize-board-score-weights';
+import { normalizeRotationMinScoreRate } from '../utils/normalize-rotation-min-score-rate';
+import { ROTATION_MIN_SCORE_RATE_DEFAULT } from '../constants/board-rotation.constants.ts';
 
 /**
  * 初始设置引导的默认完成态
@@ -114,6 +116,8 @@ interface SettingsState {
   boardDetailRange: BoardDetailRange;
   /** 板块得分 · 自定义权重（题材轮动权重管理器；六键与得分分桶同构，[-10, 10]） */
   boardScoreWeights: BoardScoreWeights;
+  /** 题材轮动 · 上榜最低得分率（低于该值的板块无上榜资格；[-10, 10]，默认 5，王总 2026-10-23 定稿） */
+  rotationMinScoreRate: number;
   /** 股票详情 · 蜡烛模式主图指标清单（如 ['MA']，klinecharts 指标名） */
   chartMainIndicators: string[];
   /** 股票详情 · 蜡烛模式副图指标清单（如 ['VOL', 'MACD_KDJ']，每项独立面板） */
@@ -165,6 +169,7 @@ export const useSettingsStore = defineStore('settings', {
     boardCalendarHidden: [],
     boardDetailRange: BOARD_DETAIL_RANGE_DEFAULT,
     boardScoreWeights: { ...BOARD_SCORE_WEIGHTS_DEFAULT },
+    rotationMinScoreRate: ROTATION_MIN_SCORE_RATE_DEFAULT,
     chartMainIndicators: [...CHART_MAIN_INDICATORS_DEFAULT],
     chartSubIndicators: [...CHART_SUB_INDICATORS_DEFAULT],
     detailChartPeriod: CHART_PERIOD_DEFAULT,
@@ -412,6 +417,14 @@ export const useSettingsStore = defineStore('settings', {
     },
 
     /**
+     * 设置题材轮动 · 上榜最低得分率（控制行「设置」弹窗保存入口；持久化）
+     * @param value 用户输入值（入库前归一化：非数值回落默认、越界钳位到 [-10, 10]）
+     */
+    setRotationMinScoreRate(value: number): void {
+      this.rotationMinScoreRate = normalizeRotationMinScoreRate(value);
+    },
+
+    /**
      * 设置板块日历 · 板块列（顺序 + 未勾选项）
      *
      * 顺序等于默认序时表示未自定义行序，表格回到「按热门口径自动排序」。
@@ -515,6 +528,10 @@ export const useSettingsStore = defineStore('settings', {
       );
       // 板块得分权重坏数据兜底：缺键 / 非数值 / 越界一律归一化（非法值会让得分失真）
       context.store.boardScoreWeights = normalizeBoardScoreWeights(context.store.boardScoreWeights);
+      // 题材轮动上榜门槛坏数据兜底：非数值 / 越界归一化（非法值会让 bump 图候选过滤失真）
+      context.store.rotationMinScoreRate = normalizeRotationMinScoreRate(
+        context.store.rotationMinScoreRate,
+      );
       // 板块日历展示范围缩编（10/20/60/180 → 15/30/全部，2026-10-17）：
       // 旧持久化值不在新值集合时回落默认，否则 BaseTabs 无选中态、范围文案为空
       if (!Object.values(BOARD_CALENDAR_RANGE).includes(context.store.boardCalendarRange)) {

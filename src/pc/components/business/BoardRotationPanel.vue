@@ -6,6 +6,7 @@ import BaseChart from '../charts/BaseChart.vue';
 import BaseEmpty from '../ui/BaseEmpty.vue';
 import BaseTabs from '../ui/BaseTabs.vue';
 import BoardScoreWeightModal from './BoardScoreWeightModal.vue';
+import BoardRotationSettingsModal from './BoardRotationSettingsModal.vue';
 import MenuIcon from '../ui/MenuIcon.vue';
 import NoticeBar from '../ui/NoticeBar.vue';
 import { useTheme } from '../../../common/composables/use-theme';
@@ -88,6 +89,8 @@ const activeSegmentKey = ref<string | null>(null);
 const legendOpen = ref(false);
 /** 权重管理器弹窗开关（板块得分自定义权重，王总 2026-10-22） */
 const weightOpen = ref(false);
+/** 题材轮动设置弹窗开关（上榜最低得分率，王总 2026-10-23） */
+const settingsOpen = ref(false);
 
 /** 范围切换选项 */
 const rangeOptions = ROTATION_RANGES.map((value) => ({ label: `近${value}日`, value: String(value) }));
@@ -97,7 +100,10 @@ const topNOptions = ROTATION_TOP_N_OPTIONS.map((value) => ({ label: `Top${value}
 /* --------------------------------- 模型构建 --------------------------------- */
 
 const fullModel = computed<RotationModel>(() =>
-  buildBoardRotation(props.dailyRows, props.limitRows, props.metaRows, { topN: Number(topN.value) }),
+  buildBoardRotation(props.dailyRows, props.limitRows, props.metaRows, {
+    topN: Number(topN.value),
+    minScoreRate: settingsStore.rotationMinScoreRate,
+  }),
 );
 
 /** 当前展示窗口内的交易日（模型日期末尾 N 个，升序） */
@@ -447,7 +453,7 @@ const segmentStatus = (segment: RotationSegment): string => {
   <div class="flex flex-col gap-2">
     <NoticeBar
       class="shrink-0"
-      text="一条线一个题材的名次轨迹：线爬顶 = 主线强化，断线 = 掉榜退潮（隔日重现开新线新色）；悬停色点看当日龙头，点日期列看单日构成，点题材名看题材段生命周期。控制行「权重」按钮可自定义板块得分的分桶权重。"
+      text="一条线一个题材的名次轨迹：线爬顶 = 主线强化，断线 = 掉榜退潮（隔日重现开新线新色）；悬停色点看当日龙头，点日期列看单日构成，点题材名看题材段生命周期。控制行「权重」按钮可自定义板块得分的分桶权重，「设置」按钮可调整上榜最低得分率（过滤弱板块上榜）。"
     />
 
     <!-- 卡片一：控制行 + bump 图（默认撑满卡片宽度；窗口天数多到列宽不够时横向滚动） -->
@@ -463,6 +469,15 @@ const segmentStatus = (segment: RotationSegment): string => {
         >
           <MenuIcon name="sliders" :size="12" />
           权重
+        </BaseButton>
+        <BaseButton
+          variant="ghost"
+          class="!px-2 !py-1 text-xs"
+          title="题材轮动设置：上榜最低得分率（过滤弱板块上榜）"
+          @click="settingsOpen = true"
+        >
+          <MenuIcon name="settings" :size="12" />
+          设置
         </BaseButton>
         <div class="relative ml-auto">
           <button
@@ -735,5 +750,8 @@ const segmentStatus = (segment: RotationSegment): string => {
 
     <!-- 板块得分权重管理器（保存需二次确认；权重持久化于 settings store，四路视图共用） -->
     <BoardScoreWeightModal v-model:open="weightOpen" />
+
+    <!-- 题材轮动设置（上榜最低得分率；保存需二次确认，持久化于 settings store） -->
+    <BoardRotationSettingsModal v-model:open="settingsOpen" />
   </div>
 </template>
