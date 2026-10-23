@@ -4,6 +4,7 @@ import {
   ROTATION_MAINLINE_MIN,
   ROTATION_MEMBER_LIMIT,
   ROTATION_MIN_LIMIT_UP,
+  ROTATION_MIN_SCORE_RATE_DEFAULT,
   ROTATION_PALETTE,
   ROTATION_TOP_N,
 } from '../constants/board-rotation.constants.ts';
@@ -27,7 +28,9 @@ import type {
  * 输出 bump 图与详情区所需的全部视图模型，单测可直接对输入输出写，不碰 Vue。
  *
  * 口径（2026-10-21 王总逐项定稿，详见 .ai/开发方案/2026-10-21-前端-题材轮动页面开发方案.md）：
- * - 每日候选：板块涨停家数 ≥ minLimitUp，按 (涨停数 desc, 得分 desc) 取前 topN；
+ * - 每日候选：板块涨停家数 ≥ minLimitUp 且 得分率 ≥ minScoreRate（2026-10-23 追加上榜门槛：
+ *   全军覆没日不得强行取前三，如当日 Top1 得分率 -2.86 的冰点日仍被画上 bump 图），
+ *   按 (涨停数 desc, 得分 desc) 取前 topN；
  * - 名次 = 候选排序位（1 起），掉榜日记 null（bump 线在此断开）；
  * - 段构建：日期升序扫描，同板块「今日在榜且昨日在榜」延段，否则开新段（隔日重现开新段新色，不做合并）；
  * - 段色：调色板按段序循环取用；
@@ -106,6 +109,7 @@ export const buildBoardRotation = (
 ): RotationModel => {
   const topN = options.topN ?? ROTATION_TOP_N;
   const minLimitUp = options.minLimitUp ?? ROTATION_MIN_LIMIT_UP;
+  const minScoreRate = options.minScoreRate ?? ROTATION_MIN_SCORE_RATE_DEFAULT;
   const mainlineMin = options.mainlineMin ?? ROTATION_MAINLINE_MIN;
   const lowVolumeLimit = options.lowVolumeLimit ?? ROTATION_LOW_VOLUME_LIMIT;
 
@@ -170,9 +174,9 @@ export const buildBoardRotation = (
       downCount += row.downCount;
     }
 
-    // 候选：涨停 ≥ 阈值，按 (涨停数 desc, 得分 desc)
+    // 候选：涨停 ≥ 阈值且得分率 ≥ 上榜门槛（过滤负得分率板块），按 (涨停数 desc, 得分 desc)
     const candidates = dayRows
-      .filter((row) => row.limitUp >= minLimitUp)
+      .filter((row) => row.limitUp >= minLimitUp && row.scoreRate >= minScoreRate)
       .sort((a, b) => b.limitUp - a.limitUp || b.score - a.score || a.boardCode.localeCompare(b.boardCode))
       .slice(0, topN);
 

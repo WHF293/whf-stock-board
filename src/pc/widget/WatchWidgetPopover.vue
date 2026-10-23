@@ -29,6 +29,7 @@ import { getTrendColorCss } from '../../common/utils/trend-colors';
 import { squarifyLayout } from './watch-heatmap-layout';
 import type { TreemapRect } from './watch-heatmap-layout';
 import type {
+  WatchWidgetAlertPayload,
   WatchWidgetBoardPayload,
   WatchWidgetColorPayload,
   WatchWidgetHeatmapPayload,
@@ -58,6 +59,8 @@ import type {
  * - 新闻标题单击走与热点新闻页一致的窗口逻辑打开原文（open-url 事件交主窗口执行）；
  * - 热榜行与候选行单击同样跳个股详情（open-stock）；
  *   单击行首分类颜色圆点 → 循环切换颜色并上报主窗口持久化；
+ *   单击行尾阈值铃铛 → 行下展开内联阈值编辑器，保存 / 清除经 set-alert 事件交
+ *   主窗口写候选仓储（与顶栏盯盘面板同一份候选，两端口径天然同步）；
  *   「收起」按钮走与迷你条单击相同的切换事件（展开态下即隐藏）。
  */
 
@@ -278,6 +281,93 @@ const onCycleColor = (row: WatchWidgetRow): void => {
   } satisfies WatchWidgetColorPayload);
 };
 
+// ---------- 阈值提醒编辑（set-alert：气泡端编辑，主窗口写候选仓储后随 lines 回推） ----------
+
+/** 正在编辑阈值的候选符号（null = 编辑器收起；同时只编辑一个） */
+const editingAlertSymbol = ref<string | null>(null);
+
+/** 编辑中的阈值类型（价格 / 涨跌幅；与面板端 AlertEditor 同语义，清除走单独按钮） */
+const alertKind = ref<'price' | 'change'>('price');
+
+/** 编辑中的比较方向（true = 涨到 / 涨幅达到） */
+const alertAbove = ref(true);
+
+/** 阈值数值的输入原文（字符串承接，避免输入中途被 Number 吃掉小数点） */
+const alertValueText = ref('');
+
+/**
+ * 打开某行的阈值编辑器并用行载荷播种（旧载荷缺字段时按默认值起算）
+ * @param row 被点铃铛的候选行
+ */
+const openAlertEditor = (row: WatchWidgetRow): void => {
+  editingAlertSymbol.value = row.symbol;
+  alertKind.value = row.alertKind === 'change' ? 'change' : 'price';
+  alertAbove.value = row.alertAbove !== false;
+  alertValueText.value = row.alertValue == null ? '' : String(row.alertValue);
+};
+
+/** 编辑中的阈值是否为价格型 */
+const isPriceKind = computed(() => alertKind.value === 'price');
+
+/** 方向选项文案（随阈值类型变化：价格说「涨到 / 跌到」、涨跌幅说「涨幅达到 / 跌幅达到」） */
+const alertDirectionLabels = computed(() =>
+  isPriceKind.value
+    ? { above: '涨到', below: '跌到' }
+    : { above: '涨幅达到', below: '跌幅达到' },
+);
+
+/** 数值输入框占位文案 */
+const alertValuePlaceholder = computed(() =>
+  isPriceKind.value ? '如 1700.00' : '如 5.00',
+);
+
+/**
+ * 全角数字 / 全角小数点归一为半角（中文输入法下打出来的「１０」也能识别）
+ * @param text 输入框原文
+ * @returns 归一后的半角文本
+ */
+const normalizeHalfWidth = (text: string): string =>
+  text.replace(/[０-９．]/g, (ch) =>
+    ch === '．' ? '.' : String.fromCharCode(ch.charCodeAt(0) - 0xfee0),
+  );
+
+/** 输入解析出的数值（必须为正数；非法为 null，主窗口侧还会再校验一次） */
+const alertParsedValue = computed<number | null>(() => {
+  const trimmed = normalizeHalfWidth(alertValueText.value).trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+});
+
+/** 保存按钮可用性 */
+const alertCanSave = computed(() => alertParsedValue.value !== null);
+
+/**
+ * 保存阈值：经 set-alert 交主窗口写候选仓储（armed 由引擎复位，气泡不必关心）
+ */
+const onSaveAlert = (): void => {
+  const symbol = editingAlertSymbol.value;
+  const value = alertParsedValue.value;
+  if (!symbol || value === null) return;
+  void emit(WATCH_WIDGET_EVENTS.SET_ALERT, {
+    symbol,
+    kind: alertKind.value,
+    above: alertAbove.value,
+    value,
+  } satisfies WatchWidgetAlertPayload);
+  editingAlertSymbol.value = null;
+};
+
+/**
+ * 清除阈值（编辑器随之收起）
+ */
+const onClearAlert = (): void => {
+  const symbol = editingAlertSymbol.value;
+  if (!symbol) return;
+  void emit(WATCH_WIDGET_EVENTS.SET_ALERT, { symbol, clear: true } satisfies WatchWidgetAlertPayload);
+  editingAlertSymbol.value = null;
+};
+
 /** 收起气泡（走切换事件：展开态下即隐藏） */
 const onClose = (): void => {
   void emit(WATCH_WIDGET_EVENTS.POPOVER_TOGGLE);
@@ -386,28 +476,98 @@ const heatTiles = computed<HeatTile[]>(() => {
           <span class="shrink-0 tabular-nums">· {{ group.rows.length }}</span>
         </button>
         <template v-if="!isCollapsed(group.id)">
-          <button
-            v-for="row in group.rows"
-            :key="row.symbol"
-            class="pressable flex w-full items-center gap-2 px-3 hover:bg-flat-weak/60"
-            :style="rowStyle"
-            :title="`${row.name} 单击打开详情页`"
-            @click="onPickStock(row.symbol)"
-          >
-            <span v-if="row.fired" class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
-            <!-- 分类颜色圆点：点击循环切换（白 → 红 → 橙 → 黄 → 蓝 → 绿 → 紫 → 粉），不触发行点击 -->
-            <span
-              class="h-2 w-2 shrink-0 cursor-pointer rounded-full border border-flat-weak"
-              :style="{ backgroundColor: WATCH_WIDGET_COLOR_HEX[row.color] }"
-              title="点击切换分类颜色（持仓 / 关注 / 其他）"
-              @click.stop="onCycleColor(row)"
-            />
-            <span class="min-w-0 flex-1 truncate text-left text-text">{{ row.name }}</span>
-            <span class="w-16 shrink-0 text-right tabular-nums text-text-secondary">{{ row.price }}</span>
-            <span class="w-14 shrink-0 text-right tabular-nums" :class="HEADER_MARQUEE_TONE_CLASS[row.tone]">
-              {{ row.percent }}
-            </span>
-          </button>
+          <template v-for="row in group.rows" :key="row.symbol">
+            <button
+              class="pressable flex w-full items-center gap-2 px-3 hover:bg-flat-weak/60"
+              :style="rowStyle"
+              :title="`${row.name} 单击打开详情页`"
+              @click="onPickStock(row.symbol)"
+            >
+              <span v-if="row.fired" class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+              <!-- 分类颜色圆点：点击循环切换（白 → 红 → 橙 → 黄 → 蓝 → 绿 → 紫 → 粉），不触发行点击 -->
+              <span
+                class="h-2 w-2 shrink-0 cursor-pointer rounded-full border border-flat-weak"
+                :style="{ backgroundColor: WATCH_WIDGET_COLOR_HEX[row.color] }"
+                title="点击切换分类颜色（持仓 / 关注 / 其他）"
+                @click.stop="onCycleColor(row)"
+              />
+              <span class="min-w-0 flex-1 truncate text-left text-text">{{ row.name }}</span>
+              <span class="w-16 shrink-0 text-right tabular-nums text-text-secondary">{{ row.price }}</span>
+              <span class="w-14 shrink-0 text-right tabular-nums" :class="HEADER_MARQUEE_TONE_CLASS[row.tone]">
+                {{ row.percent }}
+              </span>
+              <!-- 阈值铃铛：常显（暗色主题白色 / 亮色主题黑色，随 text-text），hover 主题色；
+                   已设阈值按触发方向上色（与顶栏盯盘面板同口径），单击展开行下编辑器 -->
+              <span
+                class="shrink-0 cursor-pointer hover:text-primary"
+                :class="row.alertKind ? (row.alertAbove ? 'text-up' : 'text-down') : 'text-text'"
+                :title="
+                  row.alertText
+                    ? `${row.name} 阈值：${row.alertText}（单击调整）`
+                    : `${row.name}：设阈值提醒`
+                "
+                @click.stop="openAlertEditor(row)"
+              >
+                <MenuIcon name="bell" :size="12" />
+              </span>
+            </button>
+            <!-- 内联阈值编辑器：一次只展开一个；保存 / 清除经 set-alert 交主窗口写候选仓储，
+                 与顶栏盯盘面板同一份数据，两端口径天然同步（编辑器展开高度不占窗口高度口径，
+                 列表自身滚动兜底） -->
+            <div
+              v-if="editingAlertSymbol === row.symbol"
+              class="mx-3 mb-1.5 rounded-lg border border-flat-weak bg-flat-weak/40 p-2"
+              @click.stop
+            >
+              <div class="flex items-center gap-1.5">
+                <select
+                  v-model="alertKind"
+                  class="h-6 min-w-0 flex-1 rounded-md border border-flat-weak bg-flat-weak/60 px-1 text-[11px] text-text outline-none"
+                  aria-label="阈值类型"
+                >
+                  <option value="price">价格</option>
+                  <option value="change">涨跌幅</option>
+                </select>
+                <select
+                  v-model="alertAbove"
+                  class="h-6 min-w-0 flex-1 rounded-md border border-flat-weak bg-flat-weak/60 px-1 text-[11px] text-text outline-none"
+                  aria-label="触发方向"
+                >
+                  <option :value="true">{{ alertDirectionLabels.above }}</option>
+                  <option :value="false">{{ alertDirectionLabels.below }}</option>
+                </select>
+              </div>
+              <div class="mt-1.5 flex items-center gap-1.5">
+                <input
+                  v-model="alertValueText"
+                  type="text"
+                  inputmode="decimal"
+                  autocomplete="off"
+                  class="h-6 min-w-0 flex-1 rounded-md border border-flat-weak bg-flat-weak/60 px-1.5 text-[11px] tabular-nums text-text outline-none"
+                  :placeholder="alertValuePlaceholder"
+                  aria-label="阈值数值"
+                />
+                <button
+                  type="button"
+                  class="pressable shrink-0 rounded-md px-2 py-1 text-[11px] text-text-tertiary hover:text-down active:scale-95"
+                  @click="onClearAlert"
+                >
+                  清除
+                </button>
+                <button
+                  type="button"
+                  class="pressable shrink-0 rounded-md bg-primary-weak px-2 py-1 text-[11px] font-medium text-primary disabled:opacity-40 active:scale-95"
+                  :disabled="!alertCanSave"
+                  @click="onSaveAlert"
+                >
+                  保存
+                </button>
+              </div>
+              <p class="mt-1 text-[10px] leading-relaxed text-text-tertiary">
+                到价后右下角弹提醒；触发过一次，等回到阈值内侧再重新生效
+              </p>
+            </div>
+          </template>
         </template>
       </div>
     </div>

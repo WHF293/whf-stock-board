@@ -8,6 +8,18 @@ import type { BoardScoreWeights } from '../types/board-calendar.types.ts';
  */
 
 /**
+ * 板块上榜最低得分率（王总 2026-10-23 定稿，题材轮动控制行「设置」弹窗可调）
+ *
+ * 当日得分率低于该值的板块无上榜资格：修复「全军覆没日仍取前三名」——
+ * 2026-10-23 全市场情绪冰点，Top1 得分率 -4 仍被画上 bump 图，违背「主线板块」语义。
+ * 在题材轮动控制行「设置」弹窗中可调，持久化于 settings store。
+ */
+export const ROTATION_MIN_SCORE_RATE_DEFAULT = 5;
+
+/** 上榜最低得分率的可调边界（与板块得分权重同界：得分率 = 得分 ÷ 成分股数，得分 ∈ [-10, 10]） */
+export const ROTATION_MIN_SCORE_RATE_RANGE = { MIN: -10, MAX: 10 } as const;
+
+/**
  * 主线宽度 TopN：每日取「涨停家数 ≥ 上榜阈值」板块的前 N 名作为主线候选
  *
  * 2026-10-21 王总指定默认 Top3（09:59 曾改 5、10:12 收回 3 定稿）；Top1 / Top3 / Top5 三档可切。
