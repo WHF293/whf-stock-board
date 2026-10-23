@@ -105,6 +105,8 @@ const toBar = (date: string, point: BreadthPoint): BreadthDayBar => ({
   upVol: point.upVol,
   downVol: point.downVol,
   arms: point.arms,
+  activeCount: point.activeCount,
+  activeTotal: point.activeTotal,
 });
 
 /**
@@ -118,7 +120,9 @@ const isSameBar = (a: BreadthDayBar, b: BreadthDayBar): boolean =>
   a.downCount === b.downCount &&
   a.upVol === b.upVol &&
   a.downVol === b.downVol &&
-  a.arms === b.arms;
+  a.arms === b.arms &&
+  a.activeCount === b.activeCount &&
+  a.activeTotal === b.activeTotal;
 
 /**
  * 消化一轮全市场快照：计算宽度统计 + 积累分钟点 + 收盘定稿日 bar
@@ -150,6 +154,8 @@ export const ingestBreadthSnapshot = (quotes: readonly FullQuote[]): MarketBread
       upVol: breadth.upVol,
       downVol: breadth.downVol,
       arms: breadth.arms,
+      activeCount: breadth.activeCount,
+      activeTotal: breadth.activeTotal,
     };
     dayMap[today] = appendBreadthPoint(dayMap[today] ?? [], point);
     // 滚存最近 N 日（bar 落库后旧分时无用）

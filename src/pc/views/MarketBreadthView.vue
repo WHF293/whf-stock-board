@@ -10,6 +10,7 @@ import MenuIcon from '../components/ui/MenuIcon.vue';
 import TabConfigButton from '../components/ui/TabConfigButton.vue';
 import BreadthIndicatorChart from '../components/charts/BreadthIndicatorChart.vue';
 import {
+  BREADTH_ACTIVE_TURNOVER_THRESHOLD,
   BREADTH_ADL_MA_PERIOD,
   BREADTH_ARMS_MA_PERIOD,
   BREADTH_INDICATOR_INFO,
@@ -34,7 +35,8 @@ import { useTabConfig, type TabOption } from '../../common/composables/use-tab-c
 /**
  * 市场宽度页（PC，2026-10-22 由「市场广度指标」改名）
  *
- * 五大市场宽度指标副图组（ADL / ADR / OBOS / ARMS / MCO），基于本地积累的
+ * 五大经典市场广度指标副图组（ADL / ADR / OBOS / ARMS / MCO）+ 活跃占比副图
+ * （换手率 > 5% 家数占比，2026-10-23 王总指定新增），基于本地积累的
  * 日 bar（readBreadthBars）经 computeBreadthIndicatorSeries 离线计算。
  * 数据生产：本页自带一路与市场总览同规格的全市场快照轮询（tradingAware，
  * 挂载必跑一次）——页面切走时总览轮询因 KeepAlive 暂停，若本页只读不产，
@@ -96,6 +98,13 @@ const accumDays = computed(() => bars.value.length);
 /** 当日概览（当日最后一个分钟点；无采样为 null） */
 const todayPoint = computed<BreadthPoint | null>(() => todaySeries.value.at(-1) ?? null);
 
+/** 当日活跃占比（%，当日末点活跃家数 ÷ 有效家数；旧点无字段或分母为 0 为 null） */
+const todayActiveRatio = computed<number | null>(() => {
+  const point = todayPoint.value;
+  if (point?.activeCount === undefined || !point.activeTotal) return null;
+  return (point.activeCount / point.activeTotal) * 100;
+});
+
 /** ARMS 现值五档状态（null 显「--」） */
 const armsState = computed<ArmsStateResult | null>(() =>
   classifyArms(todayPoint.value?.arms ?? null),
@@ -121,6 +130,7 @@ const latest = computed(() => ({
   obos: lastValue(series.value.obos),
   armsMa: lastValue(series.value.armsMa),
   mco: lastValue(series.value.mco),
+  active: lastValue(series.value.activeRatio),
 }));
 
 /**
@@ -164,6 +174,7 @@ const summaryItems = computed(() => {
     build('obos', 'OBOS 超买超卖', at(s.obos), 0),
     build('arms', 'TRIN 阿姆氏（ARMS）', at(s.armsMa), 2),
     build('mco', '麦克莱伦震荡（MCO）', at(s.mco), 1),
+    build('active', `活跃占比（换手率＞${BREADTH_ACTIVE_TURNOVER_THRESHOLD}%）`, at(s.activeRatio), 1),
   ];
 });
 
@@ -217,7 +228,7 @@ const INDICATOR_CARDS: readonly {
   /** 指标 kind（同时也是页签 value 与 BreadthIndicatorChart 的 kind） */
   key: BreadthIndicatorKind;
   /** 最新值在 latest computed 里的键（ARMS 用平滑均线值，键名不同） */
-  latestKey: 'adl' | 'adr' | 'obos' | 'armsMa' | 'mco';
+  latestKey: 'adl' | 'adr' | 'obos' | 'armsMa' | 'mco' | 'active';
   /** 卡标题 */
   label: string;
   /** 标题行右侧口径说明 */
@@ -259,6 +270,13 @@ const INDICATOR_CARDS: readonly {
     label: '麦克莱伦震荡（MCO）',
     digits: 1,
     subtitle: 'EMA19−EMA39；±25~35 为超买超卖区',
+  },
+  {
+    key: BREADTH_INDICATOR_KIND.ACTIVE,
+    latestKey: 'active',
+    label: '活跃占比',
+    digits: 1,
+    subtitle: `换手率＞${BREADTH_ACTIVE_TURNOVER_THRESHOLD}% 家数占比（%）；越高交投越热`,
   },
 ];
 
@@ -343,6 +361,13 @@ const { visibleOptions: indicatorCardOptions } = useTabConfig<BreadthIndicatorKi
             </span>
           </div>
         </div>
+        <div class="min-w-[180px] flex-1 rounded-lg bg-flat-weak px-3 py-2">
+          <div class="text-xs text-text-secondary">活跃股（换手率＞{{ BREADTH_ACTIVE_TURNOVER_THRESHOLD }}%）</div>
+          <div class="mt-0.5 text-lg font-bold tabular-nums">
+            {{ todayPoint?.activeCount !== undefined ? todayPoint.activeCount.toLocaleString() : '--' }}
+            <span class="text-sm text-text-secondary">家 / {{ fmt(todayActiveRatio, 1) }}%</span>
+          </div>
+        </div>
       </div>
       <div v-if="todayPoint === null" class="mt-2 text-xs text-text-tertiary">
         今日暂无采样（交易日盘中本页自动拉取全市场快照积累，收盘后定稿为当日日 bar）
@@ -398,7 +423,7 @@ const { visibleOptions: indicatorCardOptions } = useTabConfig<BreadthIndicatorKi
          2026-10-22 王总指定；解读函数单源 common/utils/interpret-breadth.ts） -->
     <BaseModal v-model:open="summaryOpen" title="当日总结" max-width-class="max-w-lg">
       <p class="mb-3 text-xs text-text-tertiary">
-        五大指标截至 {{ summaryDateLabel }} 的最新解读，按指标逐条罗列
+        六大指标截至 {{ summaryDateLabel }} 的最新解读，按指标逐条罗列
       </p>
       <ul class="space-y-2">
         <li

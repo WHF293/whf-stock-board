@@ -2,8 +2,9 @@
 /**
  * 市场广度指标（2026-10-21 新增二级页，入口在首页金刚区；PC MarketBreadthView 的移动版）
  *
- * 内容与 PC 一致：五大市场广度指标副图组（ADL / ADR / OBOS / ARMS / MCO），基于本地
- * 积累的日 bar（readBreadthBars）经 computeBreadthIndicatorSeries 离线计算，五指标
+ * 内容与 PC 一致：五大经典市场广度指标副图组（ADL / ADR / OBOS / ARMS / MCO）+ 活跃占比
+ * 副图（换手率 > 5% 家数占比，2026-10-23 王总指定新增），基于本地
+ * 积累的日 bar（readBreadthBars）经 computeBreadthIndicatorSeries 离线计算，六指标
  * 全部零上游请求；当日概览读当日分钟点最后一点。
  *
  * 数据生产：与 PC 同一前提——ingest 必须有人负责。移动端首页 / 行情页的快照轮询
@@ -19,6 +20,7 @@ import { useDark } from '@vueuse/core';
 import type { EChartsCoreOption } from 'echarts/core';
 import {
   ARMS_NEUTRAL_LINE,
+  BREADTH_ACTIVE_TURNOVER_THRESHOLD,
   BREADTH_ADL_MA_PERIOD,
   BREADTH_ARMS_MA_PERIOD,
   BREADTH_ADR_OVERBOUGHT,
@@ -100,6 +102,13 @@ const accumDays = computed(() => bars.value.length);
 /** 当日概览（当日最后一个分钟点；无采样为 null） */
 const todayPoint = computed<BreadthPoint | null>(() => todaySeries.value.at(-1) ?? null);
 
+/** 当日活跃占比（%，当日末点活跃家数 ÷ 有效家数；旧点无字段或分母为 0 为 null） */
+const todayActiveRatio = computed<number | null>(() => {
+  const point = todayPoint.value;
+  if (point?.activeCount === undefined || !point.activeTotal) return null;
+  return (point.activeCount / point.activeTotal) * 100;
+});
+
 /** ARMS 现值五档状态（null 显「--」） */
 const armsState = computed<ArmsStateResult | null>(() => classifyArms(todayPoint.value?.arms ?? null));
 
@@ -123,6 +132,7 @@ const latest = computed(() => ({
   obos: lastValue(series.value.obos),
   armsMa: lastValue(series.value.armsMa),
   mco: lastValue(series.value.mco),
+  active: lastValue(series.value.activeRatio),
 }));
 
 /**
@@ -424,6 +434,28 @@ const mcoOption = computed<EChartsCoreOption>(() => {
   };
 });
 
+/** 活跃占比：面积线（% 轴） */
+const activeOption = computed<EChartsCoreOption>(() => {
+  void isDark.value;
+  const base = buildBase();
+  return {
+    ...base,
+    xAxis: { ...base.xAxis, boundaryGap: false },
+    yAxis: { ...base.yAxis, axisLabel: { fontSize: 9, formatter: (v: number) => `${v}%` } },
+    series: [
+      {
+        name: '活跃占比',
+        type: 'line',
+        data: sliceSeries(series.value.activeRatio),
+        connectNulls: false,
+        symbol: 'none',
+        lineStyle: { color: CHART_LINE_BLUE, width: 1.6 },
+        areaStyle: { color: CHART_LINE_BLUE, opacity: 0.08 },
+      },
+    ],
+  };
+});
+
 /** 副图定义（标题 / 最新值 / 一句话口径 / 说明 kind / option），模板按序渲染 */
 const chartCards = computed(() => [
   { kind: BREADTH_INDICATOR_KIND.ADL, title: 'ADL 腾落线', value: fmt(latest.value.adl, 0), brief: `Σ(上涨−下跌)；虚线 MA${BREADTH_ADL_MA_PERIOD}`, option: adlOption.value },
@@ -431,6 +463,7 @@ const chartCards = computed(() => [
   { kind: BREADTH_INDICATOR_KIND.OBOS, title: 'OBOS 超买超卖', value: fmt(latest.value.obos, 0), brief: 'N=10 净差（家）；正多头占优', option: obosOption.value },
   { kind: BREADTH_INDICATOR_KIND.ARMS, title: 'TRIN 阿姆氏', value: fmt(latest.value.armsMa), brief: `日线+MA${BREADTH_ARMS_MA_PERIOD}；＜1 多头强`, option: armsOption.value },
   { kind: BREADTH_INDICATOR_KIND.MCO, title: '麦克莱伦 MCO', value: fmt(latest.value.mco, 1), brief: 'EMA19−EMA39；±25~35 超买超卖', option: mcoOption.value },
+  { kind: BREADTH_INDICATOR_KIND.ACTIVE, title: '活跃占比', value: fmt(latest.value.active, 1), brief: `换手率＞${BREADTH_ACTIVE_TURNOVER_THRESHOLD}% 占比；越高交投越热`, option: activeOption.value },
 ] as const);
 </script>
 
@@ -463,6 +496,13 @@ const chartCards = computed(() => [
                 <span class="m-up">{{ todayPoint.upVol.toLocaleString() }}</span>
                 <em> / </em>
                 <span class="m-down">{{ todayPoint.downVol.toLocaleString() }}</span>
+              </b>
+            </div>
+            <div class="m-bd-cell">
+              <i>活跃股（换手率＞{{ BREADTH_ACTIVE_TURNOVER_THRESHOLD }}%）</i>
+              <b class="m-num">
+                {{ todayPoint.activeCount !== undefined ? todayPoint.activeCount.toLocaleString() : '--' }}
+                <em>家 / {{ fmt(todayActiveRatio, 1) }}%</em>
               </b>
             </div>
             <div class="m-bd-cell">

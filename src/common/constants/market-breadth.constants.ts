@@ -121,6 +121,17 @@ export const BREADTH_MCO_OVERBOUGHT = 25;
 /** MCO 超卖阈值（< 此值进入超卖区） */
 export const BREADTH_MCO_OVERSOLD = -25;
 
+/* ---- 活跃占比（第六张副图，换手率口径） ---- */
+
+/** 活跃股换手率阈值（%：日换手率 > 此值计入活跃家数） */
+export const BREADTH_ACTIVE_TURNOVER_THRESHOLD = 5;
+
+/** 活跃占比过热阈值（%：≥ 此值交投过热，短线情绪亢奋） */
+export const BREADTH_ACTIVE_OVERHEAT = 20;
+
+/** 活跃占比冰点阈值（%：≤ 此值交投冰点，观望情绪浓） */
+export const BREADTH_ACTIVE_COLD = 5;
+
 /** 广度指标页视图 key（近 60 日 / 近 120 日 / 全部积累） */
 export const BREADTH_INDICATOR_VIEW = {
   D60: 'd60',
@@ -148,13 +159,14 @@ export const BREADTH_INDICATOR_VIEW_OPTIONS: ReadonlyArray<{
   { label: '全部', value: BREADTH_INDICATOR_VIEW.ALL },
 ];
 
-/** 广度指标副图 kind（ADL / ADR / OBOS / ARMS / MCO） */
+/** 广度指标副图 kind（ADL / ADR / OBOS / ARMS / MCO / 活跃占比） */
 export const BREADTH_INDICATOR_KIND = {
   ADL: 'adl',
   ADR: 'adr',
   OBOS: 'obos',
   ARMS: 'arms',
   MCO: 'mco',
+  ACTIVE: 'active',
 } as const;
 
 /** 广度指标副图 kind 类型 */
@@ -199,5 +211,11 @@ export const BREADTH_INDICATOR_INFO: Record<BreadthIndicatorKind, BreadthIndicat
       'DIF = 上涨家数 − 下跌家数\nMCO = EMA(DIF, 19) − EMA(DIF, 39)\nMAMCO = MA(MCO, 9)',
     meaning:
       '广度动量指标（ADL 的动量版），对广度拐点敏感，比 ADL 更早提示背离。MCO > 0：多头占优；MCO < 0：空头占优；+25 ~ +35 超买区、−25 ~ −35 超卖区；看 MCO 与指数的背离，以及 0 轴穿越（金叉死叉）。EMA 需预热，约 50 个交易日后趋稳。',
+  },
+  [BREADTH_INDICATOR_KIND.ACTIVE]: {
+    formula:
+      `活跃占比 = 换手率 > ${BREADTH_ACTIVE_TURNOVER_THRESHOLD}% 家数 ÷ 换手率有效（正常交易）家数 × 100%`,
+    meaning:
+      '市场交投活跃度的温度计，衡量有多少比例的股票被资金重点参与。占比持续走高：题材轮动加快、短线情绪升温；占比 ≥ 20%：交投过热，提防情绪退潮；占比 ≤ 5%：交投冰点，存量博弈。历史无法回填，自上线日起本地逐日积累。',
   },
 };
