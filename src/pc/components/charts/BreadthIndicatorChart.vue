@@ -32,7 +32,8 @@ import BaseChart from './BaseChart.vue';
  * - adr：ADR 线 + 超买 1.5 / 平衡 1.0 / 超卖 0.5 参考线；
  * - obos：涨跌家数差 N 日净差柱（红正绿负）+ MA 线；
  * - arms：ARMS 日线（青绿）+ 家数差柱（次轴，自 ArmsTrendChart 迁移的日线形态）；
- * - mco：MCO 线 + 信号线 + 0 轴 + 超买超卖淡色带（±25~35）。
+ * - mco：MCO 线 + 信号线 + 0 轴 + 超买超卖淡色带（±25~35）；
+ * - active：活跃占比面积线（蓝，y 轴 %；旧 bar 无字段时段为空）。
  * 全部走日线档位（分钟点仅 3 日滚存，只对 ARMS 分时有意义，页面不展示分时）。
  */
 const {
@@ -83,6 +84,7 @@ const MAIN_SERIES_NAME: Record<BreadthIndicatorKind, string> = {
   obos: 'OBOS',
   arms: 'ARMS',
   mco: 'MCO',
+  active: '活跃占比',
 };
 
 /**
@@ -302,6 +304,30 @@ const option = computed<EChartsCoreOption>(() => {
           yAxisIndex: 1,
           barMaxWidth: 8,
           data: sliceSeries(diffBars),
+        },
+      ],
+    };
+  }
+
+  // active：活跃占比面积线（% 轴）
+  if (kind === 'active') {
+    return {
+      ...base,
+      yAxis: {
+        ...base.yAxis,
+        axisLabel: { color: CHART_TEXT_COLOR, fontSize: 10, formatter: (v: number) => `${v}%` },
+      },
+      series: [
+        {
+          name: '活跃占比',
+          type: 'line',
+          data: sliceSeries(series.activeRatio),
+          connectNulls: false,
+          symbol: 'circle',
+          symbolSize: 4,
+          lineStyle: { color: CHART_LINE_BLUE, width: 1.8 },
+          itemStyle: { color: CHART_LINE_BLUE },
+          areaStyle: { color: CHART_LINE_BLUE, opacity: 0.08 },
         },
       ],
     };

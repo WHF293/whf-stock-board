@@ -1,5 +1,5 @@
 /**
- * 日 bar 序列 → 五大市场广度指标序列（ADL / ADR / OBOS / ARMS平滑 / MCO，纯函数）
+ * 日 bar 序列 → 六大市场广度指标序列（ADL / ADR / OBOS / ARMS平滑 / MCO / 活跃占比，纯函数）
  *
  * 口径对齐通达信（ADR/OBOS N=10、OBOS 均线 6、ADL 均线 10、ARMS 平滑均线 21、
  * MCO EMA19/39 + 信号线 MA9）。本地积累的窗口缩短处理：滚动均线 / 比率窗口取
@@ -7,6 +7,7 @@
  * 随交易日积累趋近标准口径，不返回空白。
  * ADL 为自本地首条 bar 起的累加，只有相对意义（上游历史无法回填，见
  * .ai/开发方案/2026-10-21-市场宽度与ARMS曲线开发方案.md §0）。
+ * 活跃占比依赖 bar 上的 activeCount/activeTotal（2026-10-23 前落库的旧 bar 无此字段 → null）。
  */
 import {
   BREADTH_ADL_MA_PERIOD,
@@ -56,9 +57,9 @@ const emaStep = (prev: number | null, value: number | null, period: number): num
 };
 
 /**
- * 从日 bar 序列计算五大市场广度指标序列
+ * 从日 bar 序列计算六大市场广度指标序列
  * @param bars 日 bar 序列（任意顺序，函数内按日期升序重排）
- * @returns 五指标序列（dates 与各指标数组按下标对齐；空输入返回空序列）
+ * @returns 六指标序列（dates 与各指标数组按下标对齐；空输入返回空序列）
  */
 export const computeBreadthIndicatorSeries = (
   bars: readonly BreadthDayBar[],
@@ -115,6 +116,13 @@ export const computeBreadthIndicatorSeries = (
   }
   const mcoSignal = mco.map((_, i) => rollingMean(mco, i, BREADTH_MCO_SIGNAL_PERIOD));
 
+  /** 活跃占比（%）：旧 bar 无字段为 null，分母缺失/为 0 亦为 null */
+  const activeRatio: Array<number | null> = sorted.map((bar) =>
+    bar.activeTotal !== undefined && bar.activeTotal > 0
+      ? ((bar.activeCount ?? 0) / bar.activeTotal) * 100
+      : null,
+  );
+
   return {
     dates: sorted.map((bar) => bar.date),
     adl,
@@ -125,5 +133,6 @@ export const computeBreadthIndicatorSeries = (
     armsMa,
     mco,
     mcoSignal,
+    activeRatio,
   };
 };

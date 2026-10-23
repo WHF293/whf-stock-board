@@ -1,5 +1,7 @@
 import {
   ARMS_NEUTRAL_LINE,
+  BREADTH_ACTIVE_COLD,
+  BREADTH_ACTIVE_OVERHEAT,
   BREADTH_ADR_OVERBOUGHT,
   BREADTH_ADR_OVERSOLD,
   BREADTH_MCO_OVERBOUGHT,
@@ -26,7 +28,7 @@ export interface BreadthInterpretation {
 
 /**
  * 指标当前值 → 白话解读
- * @param kind 指标种类（adl / adr / obos / arms / mco）
+ * @param kind 指标种类（adl / adr / obos / arms / mco / active）
  * @param value 主指标当前值
  * @param ma 同一天的均线值（仅 ADL 用：与均线比强弱）
  * @returns 解读文案 + 语义色；值为空返回 null
@@ -77,5 +79,13 @@ export const interpretBreadthValue = (
       if (value > 0) return { text: '零轴上方：市场偏强', tone: 'up' };
       if (value < 0) return { text: '零轴下方：市场偏弱', tone: 'down' };
       return { text: '中性', tone: 'flat' };
+    case 'active':
+      if (value >= BREADTH_ACTIVE_OVERHEAT) {
+        return { text: `≥${BREADTH_ACTIVE_OVERHEAT}%：交投过热，短线情绪亢奋，提防退潮`, tone: 'down' };
+      }
+      if (value <= BREADTH_ACTIVE_COLD) {
+        return { text: `≤${BREADTH_ACTIVE_COLD}%：交投冰点，观望情绪浓，题材难接力`, tone: 'up' };
+      }
+      return { text: '交投平稳：活跃度处于常规区间', tone: 'flat' };
   }
 };
