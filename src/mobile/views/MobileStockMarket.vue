@@ -8,7 +8,7 @@
  * - 行点击 → /stock/:code 个股详情（全站统一落点）
  * - 30s 前台轮询首页替换（useMobilePolling，页面隐藏即停）；下拉刷新重置回第 1 页
  */
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { fetchThsStockBoardPage } from '../../common/api/ths-stock-board.api.ts';
 import {
@@ -68,8 +68,14 @@ const loadPage = async (mode: 'reset' | 'more'): Promise<void> => {
   }
 };
 
+/** 板块分组 Tabs 绑定下标（van-tabs 的 active 是 index，这里做 index ↔ board key 互转） */
+const activeBoardIndex = computed({
+  get: () => Math.max(0, boards.findIndex((b) => b.board === board.value)),
+  set: (index: number) => onBoardChange(boards[index]!.board),
+});
+
 /**
- * 切换板块：清空重置回第 1 页
+ * 切换板块：清空重置回第 1 页（标题滚动由 van-tabs 自带）
  * @param next 目标板块
  */
 const onBoardChange = (next: ThsStockBoard): void => {
@@ -126,21 +132,18 @@ const fmtPct = (v: number | null): string => (v === null ? '--' : `${v > 0 ? '+'
       @click-left="router.back()"
     />
 
+    <!-- 板块分组 Tabs（参考今天炒什么：van-tabs 选择器模式，空 van-tab 只当分段选择器；
+         不用 animated——内容面板不在此组件内，指示条位移已足够） -->
+    <van-tabs
+      v-model:active="activeBoardIndex"
+      class="m-tabs m-tabs--selector"
+      :ellipsis="false"
+    >
+      <van-tab v-for="item in boards" :key="item.board" :title="item.label" />
+    </van-tabs>
+
     <div class="m-sub-scroll">
       <van-pull-refresh v-model="refreshing" @refresh="onRefresh">
-        <!-- 板块 chips 横滚 -->
-        <div class="m-sm-chips">
-          <button
-            v-for="item in boards"
-            :key="item.board"
-            class="m-sm-chip"
-            :class="{ on: board === item.board }"
-            @click="onBoardChange(item.board)"
-          >
-            {{ item.label }}
-          </button>
-        </div>
-
         <div class="m-card">
           <!-- 字段头（移动端不做表头排序） -->
           <div class="m-sm-rowhead">
@@ -196,29 +199,6 @@ const fmtPct = (v: number | null): string => (v === null ? '--' : `${v > 0 ? '+'
 </template>
 
 <style scoped>
-/* 板块 chips 横滚（通栏贴边，与首页金刚区同口径不留左右白） */
-.m-sm-chips {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding: 10px 12px 2px;
-  scrollbar-width: none;
-}
-.m-sm-chip {
-  flex-shrink: 0;
-  border: none;
-  border-radius: 999px;
-  padding: 6px 14px;
-  font-size: 12.5px;
-  color: var(--color-text-2);
-  background: var(--color-flat-weak);
-}
-.m-sm-chip.on {
-  color: var(--color-primary);
-  background: var(--color-primary-weak, var(--color-flat-weak));
-  font-weight: 600;
-}
-
 /* 列表行：5 列 grid，名称列自适应、数值列等宽右对齐（与成分股弹窗同构） */
 .m-sm-rowhead,
 .m-sm-row {

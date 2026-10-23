@@ -82,10 +82,19 @@ const onRowDblclick = (item: HotBoardItem): void => {
       v-else-if="items.length > 0"
       :class="columns === 2 ? 'grid gap-x-6 gap-y-1 md:grid-cols-2' : 'flex flex-col'"
     >
-      <li v-for="item in items" :key="item.symbol" class="flex">
+      <li
+        v-for="(item, index) in items"
+        :key="item.symbol"
+        class="flex"
+      >
         <button
           type="button"
-          class="pressable block w-full rounded-md px-3 py-2.5 text-left odd:bg-flat-weak/30 hover:bg-flat-weak/50"
+          class="pressable block w-full rounded-md px-3 py-2.5 text-left"
+          :class="
+            index % 2 === 0
+              ? 'bg-flat-weak/40 hover:bg-flat-weak/60'
+              : 'bg-surface hover:bg-flat-weak/60'
+          "
           @click="onRowClick(item)"
           @dblclick="onRowDblclick(item)"
         >

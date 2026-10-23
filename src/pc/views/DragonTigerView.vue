@@ -59,7 +59,7 @@ const emit = defineEmits<{
 }>();
 
 // 页签显隐 + 顺序可配置（持久化）；激活值被隐藏时自动回退首个可见 tab
-// （仅独立访问时生效；被父级市场榜单页接管时以父级页签为准）
+// （仅独立访问时生效；被父级盘面雷达页接管时以父级页签为准）
 const { visibleOptions: viewTabOptions, activeValue: internalTab } = useTabConfig(
   "dragon-tiger",
   VIEW_TAB_OPTIONS,
@@ -279,7 +279,7 @@ const blockColumns: TableColumn<BlockTradeDetailItem>[] = [
   { key: "sellBranch", label: "卖方营业部" },
 ];
 
-// ---------- 榜单数据出口（父级市场榜单页 AI 分析 / 导出 Excel 消费） ----------
+// ---------- 榜单数据出口（父级盘面雷达页 AI 分析 / 导出 Excel 消费） ----------
 
 /** 龙虎榜导出列（表格列 + 代码 / 日期；金额为原始元值，导出与 AI 分析共用） */
 const dragonExportColumns: { label: string; key: string }[] = [

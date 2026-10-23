@@ -10,6 +10,15 @@
 /** 热股平台（设置弹窗里可勾选 / 拖拽排序的粒度，即卡片粒度） */
 export type BoardSource = 'ths' | 'em' | 'cls' | 'tdx' | 'xq';
 
+/** 今天炒什么页的视图模式（'stock' = 股票热榜 / 'etf' = ETF 热榜） */
+export type HotBoardMode = 'stock' | 'etf';
+
+/** 视图模式切换 tab 选项（BaseTabs 消费，数组顺序 = 渲染顺序） */
+export const HOT_BOARD_MODE_TAB_OPTIONS: readonly { value: HotBoardMode; label: string }[] = [
+  { value: 'stock', label: '股票热榜' },
+  { value: 'etf', label: 'ETF 热榜' },
+];
+
 /** 分组切换控件的通用选项形态（分组值 + 展示名） */
 export interface BoardGroupOption {
   /** 分组值（取数函数按它路由到对应上游参数） */
@@ -24,11 +33,9 @@ export interface BoardGroupOption {
  * 口径均为 A 股（雪球榜单天然含港美股，由取数层按代码过滤）
  */
 export const BOARD_GROUPS: Record<BoardSource, readonly BoardGroupOption[]> = {
-  // 同花顺：dq.10jqka 热榜接口的 list_type + 新股独立接口
+  // 同花顺：dq.10jqka 热榜接口的 list_type（快速飙升中 / 新股热度榜已移除，王总 2026-10-13）
   ths: [
     { value: 'normal', label: '大家都在看' },
-    { value: 'skyrocket', label: '快速飙升中' },
-    { value: 'new', label: '新股热度榜' },
     { value: 'tech', label: '技术交易派' },
     { value: 'value', label: '价值投资派' },
     { value: 'trend', label: '趋势投资派' },

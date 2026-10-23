@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from "vue";
 import MarketStatusBadge from "../components/business/MarketStatusBadge.vue";
 import HeaderItemHost from "../components/plugin/HeaderItemHost.vue";
 import BaseTooltip from "../components/ui/BaseTooltip.vue";
@@ -21,16 +22,34 @@ defineProps<{
   isDark: boolean;
 }>();
 
-defineEmits<{
+const emit = defineEmits<{
   /** 切换明暗模式 */
   (event: 'toggle-theme'): void;
   /** 打开全局个股搜索弹窗 */
   (event: 'open-search'): void;
   /** 打开 Agent 分析（桌面开独立窗口 / 浏览器站内路由） */
   (event: 'open-agent'): void;
-  /** 打开官网「软件文档」页（白皮书已迁官网，新窗口外链） */
-  (event: 'open-site-docs'): void;
+  /** 应用内打开官网「软件文档」（WebviewWindow / 新标签页） */
+  (event: 'open-site-docs-in-app'): void;
+  /** 系统默认浏览器打开官网「软件文档」 */
+  (event: 'open-site-docs-in-browser'): void;
 }>();
+
+/** 软件文档打开方式气泡开关（点击书本图标切换，点外部 / 选中后收起） */
+const docsMenuOpen = ref(false);
+
+/**
+ * 选中打开方式：上报对应动作并收起气泡
+ * @param mode app = 应用内打开 / browser = 浏览器打开
+ */
+const onPickDocsMode = (mode: 'app' | 'browser'): void => {
+  docsMenuOpen.value = false;
+  if (mode === 'app') {
+    emit('open-site-docs-in-app');
+  } else {
+    emit('open-site-docs-in-browser');
+  }
+};
 </script>
 
 <template>
@@ -72,18 +91,48 @@ defineEmits<{
         <MenuIcon name="agent" :size="16" />
         <BaseTooltip text="Agent 分析" placement="bottom" />
       </button>
-      <!-- 软件文档：官网文档页（白皮书已迁官网），hover 提示用途 -->
-      <button
-        v-else-if="item.id === HOST_HEADER_ITEM.WHITEPAPER"
-        type="button"
-        class="group relative pressable rounded-lg p-2 text-text-secondary hover:bg-flat-weak active:scale-90"
-        aria-label="软件文档"
-        data-track="NAV_SITE_DOCS_OPEN"
-        @click="$emit('open-site-docs')"
-      >
-        <MenuIcon name="whitepaper" :size="16" />
-        <BaseTooltip text="软件文档（官网）" placement="bottom" />
-      </button>
+      <!-- 软件文档：点击弹出打开方式气泡（应用内 / 浏览器），hover 提示用途 -->
+      <div v-else-if="item.id === HOST_HEADER_ITEM.WHITEPAPER" class="relative">
+        <button
+          type="button"
+          class="group relative pressable rounded-lg p-2 text-text-secondary hover:bg-flat-weak active:scale-90"
+          :class="docsMenuOpen ? 'bg-flat-weak text-text' : ''"
+          aria-label="软件文档"
+          aria-haspopup="menu"
+          :aria-expanded="docsMenuOpen"
+          data-track="NAV_SITE_DOCS_OPEN"
+          @click="docsMenuOpen = !docsMenuOpen"
+        >
+          <MenuIcon name="whitepaper" :size="16" />
+          <BaseTooltip text="软件白皮书" placement="bottom" />
+        </button>
+        <!-- 打开方式气泡：点外部收起（透明遮罩） -->
+        <div v-if="docsMenuOpen" class="fixed inset-0 z-40" @click="docsMenuOpen = false" />
+        <div
+          v-if="docsMenuOpen"
+          class="absolute right-0 top-full z-50 mt-1.5 w-44 rounded-xl border border-flat-weak bg-surface p-1 shadow-[var(--shadow-card)]"
+          role="menu"
+        >
+          <button
+            type="button"
+            class="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs text-text hover:bg-flat-weak"
+            role="menuitem"
+            @click="onPickDocsMode('app')"
+          >
+            <MenuIcon name="whitepaper" :size="14" class="shrink-0 text-text-secondary" />
+            在应用内打开
+          </button>
+          <button
+            type="button"
+            class="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs text-text hover:bg-flat-weak"
+            role="menuitem"
+            @click="onPickDocsMode('browser')"
+          >
+            <MenuIcon name="globe" :size="14" class="shrink-0 text-text-secondary" />
+            在浏览器打开
+          </button>
+        </div>
+      </div>
       <!-- 插件贡献的顶栏条目：图标 + 单条轮播，点击展开下拉面板 -->
       <HeaderItemHost v-else-if="item.panel" :item="item.panel" />
     </template>

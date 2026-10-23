@@ -11,7 +11,11 @@
  * `usePlugins()` 会直接调 `pluginKernel.setEnabled()`，内核即时卸载 / 重挂。
  */
 import * as vueRuntime from 'vue';
-import { orderSidebarMenu } from '../../common/utils/order-sidebar-menu';
+import {
+  flattenSidebarMenuGroups,
+  groupSidebarMenu,
+  orderSidebarMenu,
+} from '../../common/utils/order-sidebar-menu';
 import { NOTIFY_TONE } from '../../common/constants/notify.constants.ts';
 import {
   PLUGIN_RUNTIME_BRIDGE_KEY,
@@ -44,7 +48,14 @@ import BaseSkeleton from '../components/ui/BaseSkeleton.vue';
 import MenuIcon from '../components/ui/MenuIcon.vue';
 import { BUILTIN_PLUGINS } from '../plugins/index';
 import { pluginKernel } from './index';
-import { createFormatService, createMarketService, createPollingService, createStockOpenService, createWatchlistService } from './app-services';
+import {
+  createFormatService,
+  createMarketDataService,
+  createMarketService,
+  createPollingService,
+  createStockOpenService,
+  createWatchlistService,
+} from './app-services';
 import { mountUserPluginRecord } from './user-plugin-loader';
 import { attachPluginRoutes } from './router-bridge';
 import { router } from '../router/index';
@@ -105,7 +116,7 @@ const openPanelByKey = (panelKey: string): void => {
  * 三级落点全部取自「撤销之后」的注册表，所以不会跳进另一个刚消失的页面；
  * 第一级「兜底落点」两处来源并存：宿主自带的正式页面（如插件工坊，在
  * `MENU_ITEMS` 里声明）与插件自己声明的贡献点（`ctx.menu.add` 的 `fallbackLanding`）。
- * ② 侧栏第一个菜单（顺序与界面完全同源：`orderSidebarMenu`）；
+ * ② 侧栏第一个菜单（顺序与界面完全同源：先按扁平序合并、再按分组序归组后拍平）；
  * ③ 宿主首页（侧栏菜单全被用户隐藏时的最后一道）。
  *
  * 用 `replace` 而不是 `push`：原页面已不存在，留在历史里只会让「后退」撞上 404 兜底。
@@ -113,11 +124,16 @@ const openPanelByKey = (panelKey: string): void => {
  */
 const recoverVanishedRoute = (info: VanishedRouteInfo): void => {
   const settingsStore = useSettingsStore();
-  const sidebar = orderSidebarMenu(
-    MENU_ITEMS,
-    pluginKernel.contributions.menu.items,
-    settingsStore.menuOrder,
-    settingsStore.hiddenMenus,
+  const sidebar = flattenSidebarMenuGroups(
+    groupSidebarMenu(
+      orderSidebarMenu(
+        MENU_ITEMS,
+        pluginKernel.contributions.menu.items,
+        settingsStore.menuOrder,
+        settingsStore.hiddenMenus,
+      ),
+      settingsStore.menuGroupOrder,
+    ),
   );
   const target = resolveRouteFallback({
     landingPaths: [
@@ -251,6 +267,10 @@ export const installPlugins = (pinia?: Pinia): void => {
 
   // 市场剖面（成交额 / 涨停池）：重接口，取数口径固定在宿主一侧
   pluginKernel.services.provide('app:market', createMarketService());
+
+  // 市场资讯（实时成交额 / 新闻标题 / 热股榜）：小组件三个内容视图的取数出口，
+  // 实现包装宿主已有 api 并做字段映射，插件不直接触碰上游
+  pluginKernel.services.provide('app:market-data', createMarketDataService());
 
   // 打开个股（右侧详情侧栏 / 详情整页）：全站两条交互的唯一实现，
   // 与宿主组件侧的 useStockOpen 共用 createStockOpenService，避免行为分叉

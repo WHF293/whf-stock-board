@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>题材轮动（题材名次 bump 图）· UI 稿</title>
+<!--
+  需求稿 & UI 高保真稿（对齐 whf-stock-board 项目设计语言 DESIGN-PC.md）
+  - 外壳（TOC/hero/scene）沿用 ui-drafts 需求稿容器风格；应用页面本体严格走项目 token
+  - 项目 token：canvas #f7f9fa / surface #fff / primary #0e9488 / primary-weak #e6f5f3
+    up #e02020 (up-weak #fdecec) / down #00b578 (down-weak #e6f7f1) / flat #8a94a6 (flat-weak #eef1f5)
+    ink #1f2733 / ink-muted #5c6b80 / ink-subtle #98a2b3 · 卡片 12px · 控件 8px · 无 1px 边框线
+  - 参考稿：手机 App「题材主线」页截图（2026-10-21 王总提供）——日期行 + 主线判定 + 彩色题材生命线
+  - 落点：PC 端 BoardCalendarView（页面已改名「题材轮动」，2026-10-21 王总指定）主区视图；Tab 顺序 = 题材轮动 / 板块日历 / 赚钱效应 / 板块Top（原名 列表/气泡图/板块分析），复用板块日历数据管线
+  - 题材口径：复用现有 36 板块池（31 申万一级 + 5 热门）；主线判定：全自动算法（涨停家数阈值 + TopN）
+  - 埋点：无（个人应用，暂无埋点体系；页面行为日志走既有 weblog）
+  - 数据：2026-09-23 ~ 2026-10-21 窗口的示意行情（结构真实、数值为演示样例）
+-->
+<style>
+  :root{
+    /* 项目 token（theme.css 单源同步） */
+    --primary:#0e9488; --primary-weak:#e6f5f3;
+    --up:#e02020; --up-strong:#c51616; --up-light:#f2a6a6; --up-pale:#f8d7d7; --up-weak:#fdecec;
+    --down:#00b578; --down-strong:#00925f; --down-light:#8fd9bd; --down-pale:#ccefe0; --down-weak:#e6f7f1;
+    --flat:#8a94a6; --flat-weak:#eef1f5;
+    --ink:#1f2733; --ink-muted:#5c6b80; --ink-subtle:#98a2b3;
+    --canvas:#f7f9fa; --surface:#fff;
+    --shadow-card:0 1px 3px rgb(31 39 51 / .06), 0 4px 16px rgb(31 39 51 / .06);
+    --radius-card:12px; --radius-ctl:8px;
+    /* 需求稿外壳专用（不属于应用 token） */
+    --line:#e6e9ef; --shadow-soft:0 3px 14px rgba(28,36,55,.06);
+    /* 题材轨道调色板（轮动段专用，非语义色；constants 落地时同样独立于涨跌色） */
+    --tk1:#0e9488; --tk1-bg:#e6f5f3;
+    --tk2:#6366f1; --tk2-bg:#eef0fe;
+    --tk3:#d97706; --tk3-bg:#fdf1e0;
+    --tk4:#8b5cf6; --tk4-bg:#f3eefe;
+    --tk5:#db2777; --tk5-bg:#fdebf3;
+    --tk6:#0284c7; --tk6-bg:#e5f3fb;
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0; color:var(--ink); background:linear-gradient(180deg,#f7f8fb 0,#f0f3f7 100%);
+    font-family:"PingFang SC","Microsoft YaHei",sans-serif; line-height:1.55;
+  }
+  button,input,select{font:inherit;} button{cursor:pointer;}
+
+  /* === 需求稿外壳 === */
+  .toc{position:fixed; top:24px; left:20px; z-index:100; width:196px;
+    max-height:calc(100vh - 48px); padding:14px 12px; overflow-y:auto;
+    border:1px solid var(--line); border-radius:18px;
+    background:rgba(255,255,255,.92); box-shadow:var(--shadow-soft); backdrop-filter:blur(10px);}
+  .toc-title{margin:0 0 8px 4px; color:var(--ink); font-size:12px; font-weight:800;}
+  .toc-group{margin:10px 8px 3px; color:var(--ink-subtle); font-size:9px; font-weight:800; letter-spacing:.06em;}
+  .toc a{display:flex; align-items:center; gap:7px; min-height:28px; padding:5px 8px;
+    color:var(--ink-muted); text-decoration:none; border-radius:8px; font-size:12px; font-weight:700;}
+  .toc a:hover{color:var(--primary); background:var(--primary-weak);}
+  .toc .dot{display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px;
+    flex:0 0 18px; color:var(--ink-subtle); font-size:10px; font-weight:900; border-radius:50%; background:#f1f4fa;}
+  .toc a.main .dot{color:var(--primary); background:var(--primary-weak);}
+  .toc a.warn .dot{color:var(--up); background:var(--up-weak);}
+
+  .wrap{width:min(1480px, calc(100% - 48px)); margin:0 auto; padding:42px 0 92px;}
+
+  .hero{position:relative; overflow:hidden; padding:34px 38px; border-radius:24px; color:#fff;
+    background:linear-gradient(130deg,#171b24 0%,#272d3a 55%,#1e2a3a 100%); box-shadow:var(--shadow-soft);}
+  .hero::after{content:""; position:absolute; right:-90px; top:-100px; width:360px; height:360px;
+    border:60px solid rgba(14,148,136,0.18); border-radius:50%;}
+  .hero > *{position:relative; z-index:1;}
+  .eyebrow{color:#7fd8cd; font-size:12px; font-weight:800; letter-spacing:0.14em;}
+  h1{max-width:900px; margin:8px 0 10px; font-size:clamp(28px, 3.2vw, 42px); line-height:1.15;}
+  .hero p{max-width:940px; margin:0; color:#c5cad4; font-size:14px;}
+  .tags{display:flex; flex-wrap:wrap; gap:8px; margin-top:20px;}
+  .tag{padding:5px 11px; color:#fff; border:1px solid rgba(255,255,255,0.15);
+    border-radius:999px; background:rgba(255,255,255,0.08); font-size:11px;}
+  .tag.teal{border-color:rgba(14,148,136,0.45); background:rgba(14,148,136,0.25);}
+  .tag.red{border-color:rgba(255,76,91,0.35); background:rgba(224,32,32,0.2);}
+
+  .ia{margin-top:28px; padding:22px; border:1px solid var(--line); border-radius:18px;
+    background:rgba(255,255,255,0.88); box-shadow:var(--shadow-soft);}
+  .ia h2{margin:0 0 16px; font-size:17px;}
+  .phase-grid{display:grid; grid-template-columns:repeat(5,1fr); gap:12px;}
+  .phase-card{position:relative; padding:16px; min-height:132px; border:1px solid var(--line);
+    border-radius:18px; background:var(--surface); box-shadow:var(--shadow-soft);}
+  .phase-card .step{color:var(--primary); font-size:11px; font-weight:800; letter-spacing:0.08em;}
+  .phase-card h3{margin:7px 0 6px; font-size:15px;}
+  .phase-card p{margin:0; color:var(--ink-muted); font-size:11px;}
+
+  .module{margin-top:54px; scroll-margin-top:24px;}
+  .module-kicker{color:var(--primary); font-size:11px; font-weight:800; letter-spacing:0.14em;}
+  .module h2{margin:5px 0 6px; font-size:26px;}
+  .module > p{max-width:960px; margin:0; color:var(--ink-muted); font-size:13px;}
+  .scene{margin-top:34px; scroll-margin-top:24px;}
+  .scene-head{display:flex; align-items:flex-start; gap:13px; margin-bottom:16px;}
+  .scene-no{display:grid; place-items:center; width:42px; height:42px; flex:0 0 42px; color:white;
+    border-radius:14px 14px 14px 5px; background:linear-gradient(135deg, var(--primary), #0a6f66);
+    box-shadow:0 8px 20px rgba(14,148,136,0.24); font-size:12px; font-weight:800;}
+  .scene-head h3{margin:0 0 3px; font-size:20px;}
+  .scene-head p{margin:0; color:var(--ink-muted); font-size:12px;}
+
+  .scene-grid{display:grid; grid-template-columns:minmax(0,1fr) 320px; gap:16px; align-items:start;}
+  @media(max-width:1200px){.scene-grid{grid-template-columns:1fr;}}
+
+  /* 右侧标注卡（红色水滴 pin 编号） */
+  .notes{display:flex; flex-direction:column; gap:10px;}
+  .note{position:relative; padding:12px 14px 12px 34px; border:1px solid var(--line);
+    border-radius:14px; background:rgba(255,255,255,0.92); box-shadow:var(--shadow-soft);
+    color:var(--ink-muted); font-size:12px;}
+  .note b{color:var(--ink); font-weight:600;}
+  .note .pin{position:absolute; left:10px; top:11px; display:grid; place-items:center;
+    width:18px; height:18px; border-radius:50% 50% 50% 4px; background:var(--up); color:#fff;
+    font-size:10px; font-weight:800; box-shadow:0 3px 8px rgba(224,32,32,.3);}
+
+  /* === 应用页面高保真（项目风格） === */
+  .prototype{position:relative;}
+  .app-shell{display:grid; grid-template-columns:172px minmax(0,1fr); gap:0;
+    border-radius:16px; overflow:hidden; background:var(--canvas); box-shadow:var(--shadow-card);}
+  .shell-side{padding:14px 10px; background:var(--surface);}
+  .side-logo{padding:0 8px 12px; font-size:14px; font-weight:600;}
+  .side-group{margin:12px 8px 4px; color:var(--ink-subtle); font-size:10px; font-weight:700; letter-spacing:.04em;}
+  .side-item{display:flex; align-items:center; gap:8px; min-height:30px; padding:5px 9px; margin:1px 0;
+    color:var(--ink-muted); border-radius:var(--radius-ctl); font-size:12px;}
+  .side-item.active{background:var(--primary-weak); color:var(--primary); font-weight:600;}
+  .side-item .ico{width:14px; height:14px; border-radius:4px; background:var(--flat-weak); flex:0 0 14px;}
+  .side-item.active .ico{background:var(--primary); opacity:.55;}
+  .shell-main{padding:18px; min-width:0;}
+
+  .page-title{font-size:16px; font-weight:600; margin:0 0 2px;}
+  .page-sub{font-size:12px; color:var(--ink-muted); margin:0 0 12px;}
+
+  .card{background:var(--surface); border-radius:var(--radius-card); box-shadow:var(--shadow-card); padding:16px; min-width:0;}
+  .card-head{display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:12px;}
+  .card-title{font-size:14px; font-weight:600;}
+  .card-extra{font-size:11px; color:var(--ink-subtle);}
+
+  .seg{display:inline-flex; background:var(--flat-weak); border-radius:var(--radius-ctl); padding:2px; gap:2px;}
+  .seg button{border:0; background:transparent; color:var(--ink-muted); font-size:12px; font-weight:600;
+    padding:4px 12px; border-radius:6px;}
+  .seg button.on{background:var(--surface); color:var(--primary); box-shadow:var(--shadow-card);}
+  .f-row{display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:10px;}
+  .f-row:last-child{margin-bottom:0;}
+  .f-label{font-size:12px; color:var(--ink-subtle); font-weight:600; min-width:56px;}
+  .f-meta{margin-left:auto; font-size:11px; color:var(--ink-subtle);}
+
+  .pill{border:0; background:var(--flat-weak); color:var(--ink-muted); font-size:11px; font-weight:600;
+    padding:3px 10px; border-radius:999px;}
+  .pill.on{background:var(--primary-weak); color:var(--primary);}
+
+  .legend-wrap{position:relative; display:inline-block;}
+  .legend-icon{display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:700; color:#667085;
+    cursor:pointer; padding:3px 10px; border:1px solid #e6e9ef; border-radius:999px; background:var(--surface); user-select:none;}
+  .legend-icon:hover{color:var(--primary); border-color:var(--primary);}
+  .legend-pop{display:none; position:absolute; top:calc(100% + 6px); right:0; z-index:40;
+    background:var(--surface); border:1px solid #e6e9ef; border-radius:10px;
+    box-shadow:0 8px 24px rgba(23,27,36,.14); padding:10px 14px; min-width:270px;}
+  .legend-wrap:hover .legend-pop, .legend-wrap.pinned .legend-pop{display:block;}
+  .legend-wrap .legend{flex-direction:column; align-items:flex-start; gap:6px; padding:0;}
+  /* === 题材轮动（核心组件） === */
+  .rot-head{display:grid; grid-template-columns:104px 168px minmax(0,1fr); gap:0 0;
+    padding:0 0 8px; font-size:11px; color:var(--ink-subtle); font-weight:600;}
+  .rot-head .h-date{padding-left:6px;}
+  .rot-head .h-main{padding-left:12px;}
+  .rot-head .h-lanes{display:grid; grid-template-columns:repeat(4,1fr);}
+  .rot-head .h-lanes span{text-align:center;}
+
+  .rot-board{max-height:600px; overflow-y:auto; padding-right:2px;}
+  .rot-row{display:grid; grid-template-columns:104px 168px minmax(0,1fr); min-height:62px;}
+  .rot-row + .rot-row .r-date, .rot-row + .rot-row .r-main{border-top:1px solid var(--flat-weak);}
+
+  .r-date{padding:8px 6px 8px 6px;}
+  .r-date .d1{font-size:12px; font-weight:700; color:var(--ink); font-variant-numeric:tabular-nums;}
+  .r-date .d1 .wk{margin-left:4px; font-size:10px; font-weight:600; color:var(--ink-subtle);}
+  .r-date .d2{margin-top:2px; font-size:10px; color:var(--ink-muted); font-variant-numeric:tabular-nums;}
+  .r-date .d2 b{color:var(--up); font-weight:700;}
+  .r-date .d2 i{color:var(--down); font-style:normal;}
+  .r-date.today .d1{color:var(--primary);}
+
+  .r-main{padding:8px 8px 8px 12px; display:flex; flex-direction:column; justify-content:center; gap:3px;}
+  .m-tag{display:inline-flex; align-items:center; gap:4px; width:fit-content;
+    padding:1px 8px; border-radius:999px; font-size:10px; font-weight:700;}
+  .m-tag.yes{background:var(--up-weak); color:var(--up-strong);}
+  .m-tag.no{background:var(--down-weak); color:var(--down-strong);}
+  .m-name{font-size:12px; font-weight:600; color:var(--ink);}
+  .m-name.clickable{color:var(--primary); cursor:pointer;}
+  .m-name.clickable:hover{text-decoration:underline;}
+  .m-leader{font-size:10px; color:var(--ink-subtle);}
+
+  .r-lanes{position:relative; display:grid; grid-template-columns:repeat(4,1fr);}
+  .lane-cell{position:relative; min-height:62px;}
+  /* 题材生命线：竖线贯穿行与行（占用日的 lane 上画线），起点圆点、终点收口 */
+  /* git graph 式生命线：上榜日 = 色点，点间竖线相连 */
+  .tline{position:absolute; left:50%; width:2px; transform:translateX(-50%);
+    top:-1px; bottom:-1px; opacity:.9;}
+  .lane-cell.t-start .tline{top:50%;}
+  .lane-cell.t-end .tline{bottom:50%;}
+  .lane-cell.t-start.t-end .tline{display:none;}
+  .tnode{position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+    width:11px; height:11px; border-radius:50%; box-shadow:0 0 0 2.5px var(--surface);}
+
+  .node-chips{position:absolute; inset:0; display:flex; flex-direction:column; align-items:flex-start;
+    justify-content:center; gap:3px; padding:4px 2px; padding-left:calc(50% + 10px); z-index:2;}
+  .chip{display:inline-flex; align-items:center; gap:3px; max-width:94%; padding:1px 7px;
+    border-radius:999px; font-size:10px; font-weight:600; white-space:nowrap; overflow:hidden;
+    text-overflow:ellipsis; border:1px solid transparent; cursor:default; max-width:calc(50% - 12px);}
+  .chip b{font-weight:800;}
+  .chip.stock{cursor:pointer;}
+  .chip.stock:hover{filter:brightness(.96); box-shadow:0 2px 6px rgba(31,39,51,.12);}
+
+  .c1  {background:var(--tk1);} .c1-bg{background:var(--tk1-bg); color:#0a6f66; border-color:#bfe5e0;}
+  .c2  {background:var(--tk2);} .c2-bg{background:var(--tk2-bg); color:#4348c8; border-color:#d4d7fb;}
+  .c3  {background:var(--tk3);} .c3-bg{background:var(--tk3-bg); color:#a35a00; border-color:#f4ddb5;}
+  .c4  {background:var(--tk4);} .c4-bg{background:var(--tk4-bg); color:#6d3fd1; border-color:#e0d2fb;}
+  .c5  {background:var(--tk5);} .c5-bg{background:var(--tk5-bg); color:#b51e63; border-color:#f8cfe2;}
+  .c6  {background:var(--tk6);} .c6-bg{background:var(--tk6-bg); color:#0369a1; border-color:#c4e4f7;}
+
+  .lane-free{position:absolute; inset:6px 30%; border-radius:8px; background:repeating-linear-gradient(
+    -45deg, transparent 0 6px, rgba(138,148,166,.07) 6px 12px);}
+
+  /* 图例 */
+  .legend{display:flex; flex-wrap:wrap; gap:6px 14px; padding:10px 4px 0; font-size:11px; color:var(--ink-muted);}
+  .legend i{display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:5px; vertical-align:-1px;}
+  .legend .lg-line{width:4px; height:12px; border-radius:2px;}
+
+  /* （旧）日详情弹层样式——已作废，保留仅防遗留引用 */
+  .modal-mask{position:absolute; inset:0; z-index:20; background:rgba(23,27,36,.42); display:grid; place-items:center; border-radius:16px;}
+  .modal{width:min(660px, 88%); background:var(--surface); border-radius:var(--radius-card);
+    box-shadow:0 18px 50px rgba(23,27,36,.28); padding:16px 18px; max-height:82%; overflow:auto;}
+  .modal h4{margin:0 0 2px; font-size:14px;}
+  .modal .sub{font-size:11px; color:var(--ink-subtle); margin-bottom:10px;}
+  .tier-row{display:flex; gap:8px; margin-bottom:10px;}
+  .tier-box{flex:1; background:var(--canvas); border-radius:var(--radius-ctl); padding:8px 10px;}
+  .tier-box h5{margin:0 0 4px; font-size:10px; color:var(--ink-subtle); font-weight:700;}
+  .tier-box .t{font-size:12px; font-weight:600; color:var(--ink);}
+  .mini-table{width:100%; border-collapse:separate; border-spacing:0; font-size:12px;}
+  .mini-table th{color:var(--ink-subtle); font-weight:600; text-align:right; padding:5px 8px; background:var(--surface);
+    position:sticky; top:0;}
+  .mini-table th:first-child{text-align:left;}
+  .mini-table td{padding:5px 8px; text-align:right; font-variant-numeric:tabular-nums;}
+  .mini-table td:first-child{text-align:left; font-weight:600;}
+  .mini-table tbody tr:hover{background:var(--flat-weak);}
+  .mini-table tbody tr.top1{background:var(--up-weak);}
+  .board-link{color:var(--primary); cursor:pointer;}
+  .board-link:hover{text-decoration:underline;}
+  .close-x{float:right; border:0; background:var(--flat-weak); color:var(--ink-muted); width:24px; height:24px;
+    border-radius:8px; font-size:12px;}
+
+  /* 题材段详情卡（点击题材轨道） */
+  .seg-detail{display:grid; grid-template-columns:200px minmax(0,1fr); gap:14px;}
+  .seg-side{background:var(--canvas); border-radius:var(--radius-ctl); padding:12px;}
+  .seg-side .name{font-size:15px; font-weight:700;}
+  .seg-side .kv{margin-top:6px; font-size:11px; color:var(--ink-muted); display:flex; justify-content:space-between;}
+  .seg-side .kv b{color:var(--ink); font-variant-numeric:tabular-nums;}
+  .chain{display:flex; align-items:center; flex-wrap:wrap; gap:4px; margin:6px 0 12px;}
+  .chain .node{padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700;}
+  .chain .arrow{color:var(--ink-subtle); font-size:11px;}
+  .lb-pill{display:inline-flex; padding:1px 7px; border-radius:999px; font-size:10px; font-weight:800;
+    background:var(--up); color:#fff; margin-right:4px;}
+
+  /* 状态态 */
+  .state-row{display:grid; grid-template-columns:repeat(3,1fr); gap:12px;}
+  .sk{background:var(--flat-weak); border-radius:6px; height:12px; margin:10px 0;}
+  .sk.w60{width:60%;} .sk.w40{width:40%;} .sk.w80{width:80%;}
+  .empty{display:grid; place-items:center; padding:30px 0; color:var(--ink-subtle); font-size:12px; text-align:center;}
+  .empty .big{font-size:26px; margin-bottom:6px;}
+  .err{color:var(--up-strong);}
+  .btn{display:inline-flex; align-items:center; gap:6px; border:0; border-radius:var(--radius-ctl);
+    font-size:12px; font-weight:600; padding:5px 12px;}
+  .btn.primary{background:var(--primary); color:#fff;}
+  .btn.ghost{background:var(--flat-weak); color:var(--ink);}
+
+  /* 落地 scene 的代码块 */
+  pre{margin:10px 0 0; padding:12px 14px; background:#1e2430; color:#d7e0ee; border-radius:10px;
+    font-size:11px; line-height:1.7; overflow:auto;}
+  pre .k{color:#7fd8cd;} pre .c{color:#8b96a8;} pre .s{color:#f2c98a;}
+
+  .risk-card{background:var(--surface); border-radius:var(--radius-card); box-shadow:var(--shadow-card); padding:14px 16px;}
+  .risk-card ol{margin:8px 0 0; padding-left:18px; color:var(--ink-muted); font-size:12px;}
+  .risk-card li{margin:3px 0;}
+  .risk-card li b{color:var(--ink);}
+
+  table.def{width:100%; border-collapse:separate; border-spacing:0; font-size:12px; margin-top:10px;}
+  table.def th{text-align:left; color:var(--ink-subtle); font-weight:600; padding:7px 10px; background:var(--flat-weak);}
+  table.def td{padding:7px 10px; border-bottom:1px solid var(--flat-weak); color:var(--ink-muted); vertical-align:top;}
+  table.def td:first-child{color:var(--ink); font-weight:600; white-space:nowrap;}
+  table.def code{background:var(--flat-weak); padding:1px 6px; border-radius:6px; font-size:11px; color:#0a6f66;}
+
+  @media(max-width:1499px){.toc{display:none;} .state-row{grid-template-columns:1fr;} .phase-grid{grid-template-columns:repeat(2,1fr);}}
+</style>
+</head>
+<body>
+
+<nav class="toc">
+  <p class="toc-title">题材轮动</p>
+  <div class="toc-group">需求总览</div>
+  <a class="main" href="#ia"><span class="dot">IA</span><span>页面结构</span></a>
+  <div class="toc-group">模块</div>
+  <a class="main" href="#scene-a1"><span class="dot">A1</span><span>筛选栏 + bump 图例</span></a>
+  <a class="main" href="#scene-b1"><span class="dot">B1</span><span>主视图：上 bump 图 + 下详情区</span></a>
+  <a class="main" href="#scene-b2"><span class="dot">B2</span><span>详情区内容态一 · 单日构成</span></a>
+  <a class="main" href="#scene-c1"><span class="dot">C1</span><span>详情区 · 题材段生命周期</span></a>
+  <a class="main" href="#scene-d1"><span class="dot">D1</span><span>加载 / 空 / 错误态</span></a>
+  <div class="toc-group">落地</div>
+  <a href="#scene-e1"><span class="dot">E1</span><span>视图 Tab 与路由接线</span></a>
+  <a href="#scene-e2"><span class="dot">E2</span><span>数据与算法层</span></a>
+  <a class="warn" href="#risk"><span class="dot">!</span><span>口径定论与边界</span></a>
+</nav>
+
+<div class="page wrap">
+
+  <header class="hero">
+    <div class="eyebrow">WHF STOCK BOARD · 题材轮动 · 新增主区视图</div>
+    <h1>题材轮动 · 谁在接力，谁在退潮</h1>
+    <p>在板块日历的涨跌统计之上新增「题材轮动」视图：<b>上下布局</b>——上 = 题材名次 bump 图（x 轴交易日升序、y 轴名次第 1 名在顶，
+       默认近 10 日、10/20/30 可切，超出横向滚动），下 = 详情区（默认最新交易日，点日期列切换，无弹窗）；
+       一条线就是一个题材，线爬顶 = 主线强化，断线 = 退潮换挡，平滑曲线一眼看出轮动节奏。
+       视觉参考 ECharts 官方 bump-chart 原生方向；数据 100% 复用板块日历既有采集管线，零新增请求。</p>
+    <div class="tags">
+      <span class="tag teal">PC Web / Tauri</span>
+      <span class="tag teal">BoardCalendarView 第 4 个视图 Tab</span>
+      <span class="tag teal">36 板块池复用 · 零新增采集</span>
+      <span class="tag red">主线判定全自动 · 阈值进 constants</span>
+      <span class="tag">埋点：无（weblog 行为日志既有覆盖）</span>
+    </div>
+  </header>
+
+  <section class="ia" id="ia">
+    <h2>信息架构（IA）</h2>
+    <div class="phase-grid">
+      <div class="phase-card">
+        <div class="step">A1</div>
+        <h3>筛选栏</h3>
+        <p>展示范围（15/30/全部，与日历同款）· 主线宽度 TopN · 涨停阈值 · bump 图例。全部控件与既有 BaseTabs / BaseButton 同款。</p>
+      </div>
+      <div class="phase-card">
+        <div class="step">B1</div>
+        <h3>bump 主视图（上下布局）</h3>
+        <p>上：bump 图（x 轴交易日升序、y 轴名次第 1 名在顶，默认近 10 日、10/20/30 可切，超出横向滚动）；下：详情区全宽（默认最新交易日，点日期列原地切换，无弹窗）。</p>
+      </div>
+      <div class="phase-card">
+        <div class="step">B2</div>
+        <h3>详情区 · 单日构成</h3>
+        <p>原弹层已作废：详情区置于主图下方，默认显示最新交易日，点日期列只换下方详情——Top3 板块（涨停家数/得分率）+ 涨停梯队（高度板 → 首板），可跳板块详情与个股停靠面板。</p>
+      </div>
+      <div class="phase-card">
+        <div class="step">C1</div>
+        <h3>详情区 · 题材段生命周期</h3>
+        <p>点题材名详情区原地切换：持续天数、累计涨停家次、龙头变迁链、成员股明细（连板数 / 封板时间 / 炸板）；「← 返回最新交易日」回默认态。</p>
+      </div>
+      <div class="phase-card">
+        <div class="step">D1</div>
+        <h3>三态与降级</h3>
+        <p>加载骨架（行占位）· 空态（回补日无完整快照 → 引导去板块日历补数）· 错误态（友好文案 + 重试，不裸抛 URL）。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== A1 ===================== -->
+  <section class="module" id="scene-a1">
+    <div class="module-kicker">MODULE A · 工具栏</div>
+    <h2>A1 · 筛选栏 + bump 图例</h2>
+    <p>挂 BoardCalendarView 主区顶部，与「板块日历 / 赚钱效应 / 板块Top」三个前作视图（原名 列表 / 气泡图 / 板块分析，2026-10-21 王总指定改名）共用页头与范围切换；本视图新增的三个口径控件为：主线宽度 TopN、上榜涨停阈值、龙头 chip 密度。</p>
+    <div class="scene-grid">
+      <div class="prototype">
+        <div class="app-shell">
+          <aside class="shell-side">
+            <div class="side-logo">股票看板</div>
+            <div class="side-group">行情</div>
+            <div class="side-item"><span class="ico"></span>市场总览</div>
+            <div class="side-item"><span class="ico"></span>自选股</div>
+            <div class="side-group">板块</div>
+            <div class="side-item active"><span class="ico"></span>题材轮动</div>
+            <div class="side-item"><span class="ico"></span>资金动向</div>
+            <div class="side-item"><span class="ico"></span>涨停与异动</div>
+          </aside>
+          <div class="shell-main">
+            <p class="page-title">题材轮动</p>
+            <p class="page-sub">板块热点 · 赚钱效应 · 题材轮动</p>
+            <div class="card" style="margin-bottom:12px;">
+              <div class="f-row">
+                <span class="f-label">范围</span>
+                <div class="seg">
+                  <button class="on">15天</button><button>30天</button><button>全部</button>
+                </div>
+                <span class="f-label">视图</span>
+                <div class="seg">
+                  <button class="on">题材轮动</button><button>板块日历</button><button>赚钱效应</button><button>板块Top</button>
+                </div>
+              </div>
+              <div class="f-row">
+                <span class="f-label">主线宽度</span>
+                <div class="seg seg" id="topn">
+                  <button>Top1</button><button class="on">Top3</button><button>Top5</button>
+                </div>
+                <span class="f-label">上榜阈值</span>
+                <button class="pill on">涨停 ≥ 2 家</button>
+                <button class="pill">涨停 ≥ 3 家</button>
+                <button class="pill">涨停 ≥ 5 家</button>
+                <span class="f-meta">口径：净额得分 + 涨停家数，阈值在 constants/board-rotation.constants.ts</span>
+              </div>
+              <div class="f-row" style="justify-content:flex-end;">
+                <div class="legend-wrap"><span class="legend-icon" onclick="this.parentNode.classList.toggle('pinned')">ⓘ 图例</span><div class="legend-pop"><div class="legend">
+            <span><i class="lg-line" style="background:var(--tk1);"></i>bump 线：一条线一个题材的名次轨迹</span>
+            <span><i class="lg-line" style="background:repeating-linear-gradient(180deg,var(--tk1) 0 4px,transparent 4px 8px);"></i>断线 = 掉榜（隔日重现开新线）</span>
+            <span><i style="background:var(--up-weak);"></i>主线日</span>
+            <span><i style="background:var(--down-weak);"></i>无主线日</span>
+            <span><i style="width:9px;height:9px;border-radius:50%;background:var(--tk1);"></i>色点 = 当日在榜名次（悬停看当日龙头）</span>
+            <span><i style="width:2px;height:12px;border-radius:1px;"></i>题材名色 = 题材段身份（同板块新段新色）</span>
+          </div></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <aside class="notes">
+        <div class="note"><span class="pin">1</span><b>范围与视图 Tab 复用既有控件：</b>范围三档沿用 <b>BOARD_CALENDAR_RANGE</b>；「题材轮动」是 BOARD_CALENDAR_VIEW 新增值 <code>rotation</code>，追加进 BOARD_CALENDAR_VIEW_OPTIONS 即可，页面骨架零改动。</div>
+        <div class="note"><span class="pin">2</span><b>主线宽度 TopN：</b>每日取「涨停家数 ≥ 阈值」板块的前 N 名作为主线候选，默认 Top3（2026-10-21 王总指定）。N 越大名次轴越宽（Top1 / Top3 / Top5 三档可切）。</div>
+        <div class="note"><span class="pin">3</span><b>上榜阈值：</b>过滤长尾杂音板块；三档 pill 单选，默认 ≥2（回补日仅能算到涨跌停，天然满足该口径）。</div>
+        <div class="note"><span class="pin">4</span><b>图例 icon 化：</b>图例不再常驻占行——「ⓘ 图例」icon 悬停出浮层、点击钉住（2026-10-21 王总指定）；六条视觉语言全量收进浮层。</div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ===================== B1 ===================== -->
+  <section class="module" id="scene-b1">
+    <div class="module-kicker">MODULE B · 主视图</div>
+    <h2>B1 · 主视图：上 bump 图 + 下详情区（无弹窗，Top3）</h2>
+    <p><b>上下布局：</b>上 = 题材名次 bump 图，<b>x = 交易日（升序，左旧右新，第一版方向）</b>、y = 涨停榜名次（第 1 名在顶），
+       一条线一个题材，线爬顶 = 主线强化，断线 = 掉榜；<b>默认显示近 10 日，支持 10 / 20 / 30 日切换</b>，
+       切 30 日时图表容器横向滚动（overflow-x: auto）不压缩列宽；下 = 详情区（全宽），<b>默认显示最新交易日的单日构成</b>，
+       点击图上日期列只切换下方详情（不再弹 BaseModal），点击题材名切换为题材段生命周期。
+       与 ECharts bump-chart 原生方向同构，落地用项目既有 ECharts + 下方详情组件。下方为可交互原型（范围切换真的能切）。</p>
+    <div class="scene-grid">
+      <div class="prototype">
+        <div class="app-shell">
+          <aside class="shell-side">
+            <div class="side-logo">股票看板</div>
+            <div class="side-group">行情</div>
+            <div class="side-item"><span class="ico"></span>市场总览</div>
+            <div class="side-item"><span class="ico"></span>自选股</div>
+            <div class="side-group">板块</div>
+            <div class="side-item active"><span class="ico"></span>题材轮动</div>
+            <div class="side-item"><span class="ico"></span>资金动向</div>
+            <div class="side-item"><span class="ico"></span>涨停与异动</div>
+          </aside>
+          <div class="shell-main">
+            <p class="page-title">题材轮动</p>
+            <p class="page-sub">题材轮动 · 上图下详情 · 涨停榜 Top3 · 默认近 10 日（10/20/30 可切）</p>
+            <div class="card" style="padding:12px 14px;">
+              <div class="card-head" style="margin-bottom:6px; gap:10px; flex-wrap:wrap;">
+                <span class="card-title">题材名次轨迹（涨停榜 Top3）</span>
+                <div class="seg" id="rotRange" style="margin-left:auto;">
+                  <button data-n="10" class="on" onclick="setRange(10)">近10日</button>
+                  <button data-n="20" onclick="setRange(20)">20日</button>
+                  <button data-n="30" onclick="setRange(30)">30日</button>
+                </div>
+                <div class="legend-wrap">
+                  <span class="legend-icon" onclick="this.parentNode.classList.toggle('pinned')">ⓘ 图例</span>
+                  <div class="legend-pop">
+                    <div class="legend">
+                      <span><i class="lg-line" style="background:var(--tk1);"></i>bump 线：一条线一个题材的名次轨迹</span>
+                      <span><i class="lg-line" style="background:repeating-linear-gradient(180deg,var(--tk1) 0 4px,transparent 4px 8px);"></i>断线 = 掉榜（隔日重现开新线）</span>
+                      <span><i style="background:var(--up-weak);"></i>主线日</span>
+                      <span><i style="background:var(--down-weak);"></i>无主线日</span>
+                      <span><i style="width:9px;height:9px;border-radius:50%;background:var(--tk1);"></i>色点 = 当日在榜名次（悬停看当日龙头）</span>
+                      <span><i style="width:2px;height:12px;border-radius:1px;"></i>题材名色 = 题材段身份（同板块新段新色）</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div style="overflow-x:auto; overflow-y:hidden; padding-bottom:4px;">
+                <div id="rotChart" style="min-width:100%;"></div>
+              </div>
+            </div>
+            <div class="card" style="padding:12px 14px; margin-top:12px;">
+              <div class="card-head" style="margin-bottom:6px;">
+                <span class="card-title">单日详情 / 题材段</span>
+                <span class="card-extra">默认最新交易日 · 点图上日期列切换 · 点题材名切段生命周期</span>
+              </div>
+              <div id="rotDetail"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <aside class="notes">
+        <div class="note"><span class="pin">1</span><b>上栏 bump 图：</b>x = 交易日升序（左旧右新，第一版方向，2026-10-21 王总指定回退）；y = 涨停榜名次，第 1 名在顶（yAxis inverse，TopN 默认 3）。平滑贝塞尔连名次点，线爬顶 = 主线强化，断一天即断线（connectNulls=false），隔日重现开新线新色；x 轴每列下挂日期 + 星期 + 涨停家数 + 主线 pill。</div>
+        <div class="note"><span class="pin">2</span><b>范围切换与滚动：</b>近 10 日（默认）/ 20 日 / 30 日三档，切换只重渲染图表不动详情区；列宽固定（56px）不压缩，30 日超出卡片宽度时容器 overflow-x: auto 横向滚动，选中列高亮随滚动保留。</div>
+        <div class="note"><span class="pin">3</span><b>下方详情区（无弹窗）：</b>默认渲染<b>最新交易日</b>的单日构成；点击图上日期列 → 详情区原地切换为该日内容，选中列高亮（浅青底）。全程无 BaseModal。</div>
+        <div class="note"><span class="pin">4</span><b>详情区内容态一 · 单日构成：</b>日期 + 主线 pill + 涨跌概览；Top3 板块表（名次 / 涨停家数 / 得分率 / 当日龙头）；涨停梯队四格（高度板 / 中军 / 首板 / 炸板）；底部跳转按钮。表内板块名可点 → 详情区切题材段。</div>
+        <div class="note"><span class="pin">5</span><b>详情区内容态二 · 题材段生命周期：</b>点击图中题材名 / Top3 表板块名进入——持续天数、累计涨停家次、最高连板、段内状态、接棒题材、龙头变迁链、成员股明细；「← 返回最新交易日」回默认态。</div>
+        <div class="note"><span class="pin">6</span><b>图例 icon 化 + 数据口径：</b>「ⓘ 图例」hover 展开全量图例、点击钉住；涨停家数 board_calendar_meta、Top3 与名次 board_daily、龙头/梯队/成员 board_limit_stock、上涨/下跌家数 = 31 个申万一级行业求和，零新增请求。</div>
+      </aside>
+    </div>
+  </section>
+
+  
+<script>
+(function(){
+  var DAYS = [["09-23","周三",112,3,false],["09-24","周四",98,5,false],["09-25","周五",76,9,false],
+    ["09-28","周一",121,2,false],["09-29","周二",88,11,false],["09-30","周三",54,14,true],
+    ["10-09","周五",135,4,false],["10-12","周一",142,6,false],["10-13","周二",103,8,false],
+    ["10-14","周三",95,7,false],["10-15","周四",84,12,false],["10-16","周五",118,5,false],
+    ["10-19","周一",92,9,false],["10-20","周二",107,6,false],["10-21","周三",89,4,true]];
+  var ORDER = [
+    ["半导体","机器人","基础化工"],["机器人","半导体","汽车"],["半导体","机器人","计算机"],
+    ["半导体","机器人","基础化工"],["机器人","半导体","汽车"],["半导体","新能源","机器人"],
+    ["新能源","半导体","计算机"],["新能源","半导体","计算机"],["半导体","新能源","计算机"],
+    ["传媒","新能源","半导体"],["新能源","传媒","半导体"],["传媒","有色金属","新能源"],
+    ["传媒","有色金属","新能源"],["传媒","有色金属","半导体"],["有色金属","传媒","半导体"]];
+  var THEMES = {
+    "半导体":  {c:"#0e9488",leader:"好上好 11板",members:["好上好","兆易创新","大为股份"]},
+    "机器人":  {c:"#6366f1",leader:"埃斯顿 6板",members:["埃斯顿","拓斯达","埃夫特"]},
+    "新能源":  {c:"#d97706",leader:"海源复材 7板",members:["海源复材","金风科技","双一科技"]},
+    "计算机":  {c:"#8b5cf6",leader:"常山北明 5板",members:["常山北明","拓维信息","湘邮科技"]},
+    "传媒":    {c:"#db2777",leader:"中文在线 8板",members:["中文在线","芒果超媒","掌阅科技"]},
+    "有色金属":{c:"#0284c7",leader:"北方稀土 5板",members:["北方稀土","金力永磁","中国稀土"]},
+    "汽车":    {c:"#ea580c",leader:"赛力斯 4板",members:["赛力斯","江淮汽车","圣龙股份"]},
+    "基础化工":{c:"#65a30d",leader:"万华化学 3板",members:["万华化学","龙佰集团","卫星化学"]}};
+  var FR=[0.16,0.09,0.07], TOPN=3;
+  var N=DAYS.length, RANGE=10, SEL="10-21";
+  var ranks={}; ORDER.forEach(function(o,i){o.forEach(function(t,k){(ranks[t]=ranks[t]||[])[i]=k+1;});});
+  function dayIdx(d){for(var i=0;i<N;i++) if(DAYS[i][0]===d) return i; return -1;}
+  function luOf(lu,r){return Math.max(2,Math.round(lu*FR[r-1]));}
+  function streak(l){var m=/(\d+)板/.exec(l); return m?+m[1]:1;}
+
+  /* ---------- bump 图（x=日期升序，y=名次第1名在顶） ---------- */
+  window.setRange = function(n){
+    RANGE=n; renderChart();
+    var bs=document.querySelectorAll('#rotRange button');
+    for(var i=0;i<bs.length;i++) bs[i].className = (+bs[i].getAttribute('data-n')===n)?'on':'';
+  };
+  window.renderChart = function(){
+    var n=Math.min(RANGE,N), i0=N-n;
+    var colW=56, padL=54, padR=36, padT=22, rowH=62, padB=68;
+    var W=padL+n*colW+padR, H=padT+TOPN*rowH+padB;
+    function X(i){return padL+(i-i0)*colW+colW/2;}
+    function Y(r){return padT+(r-1)*rowH+rowH/2;}
+    var svg=['<svg viewBox="0 0 '+W+' '+H+'" width="'+W+'" height="'+H+'" style="display:block;" role="img" aria-label="题材名次 bump 图">'];
+    var si=dayIdx(SEL);
+    if(si>=i0) svg.push('<rect x="'+(X(si)-colW/2+2)+'" y="6" width="'+(colW-4)+'" height="'+(H-12)+'" rx="6" fill="rgba(14,148,136,0.10)"/>');
+    for(var r=1;r<=TOPN;r++){
+      svg.push('<line x1="'+padL+'" y1="'+Y(r)+'" x2="'+(W-padR+16)+'" y2="'+Y(r)+'" stroke="#e6e9ef" stroke-width="1" stroke-dasharray="4 4"/>');
+      svg.push('<text x="'+(padL-8)+'" y="'+(Y(r)+3.5)+'" text-anchor="end" font-size="10" fill="#98a2b3">第'+r+'名</text>');
+    }
+    var names=[];
+    for(var t in ranks){
+      var pts=[]; for(var i=i0;i<N;i++) if(ranks[t][i]) pts.push([X(i),Y(ranks[t][i]),i]);
+      if(!pts.length) continue;
+      var d='M '+pts[0][0]+' '+Math.round(pts[0][1]);
+      for(var k=1;k<pts.length;k++){
+        var mx=Math.round((pts[k-1][0]+pts[k][0])/2);
+        d+=' C '+mx+' '+Math.round(pts[k-1][1])+', '+mx+' '+Math.round(pts[k][1])+', '+pts[k][0]+' '+Math.round(pts[k][1]);
+      }
+      svg.push('<path d="'+d+'" fill="none" stroke="'+THEMES[t].c+'" stroke-width="3" stroke-linecap="round" opacity="0.9"/>');
+      names.push([t,pts[0],pts[pts.length-1]]);
+    }
+    for(var m=0;m<names.length;m++){
+      var nm=names[m][0], c=THEMES[nm].c, p0=names[m][1], p1=names[m][2];
+      svg.push('<circle cx="'+p0[0]+'" cy="'+Math.round(p0[1])+'" r="4" fill="'+c+'" stroke="#fff" stroke-width="1.5"><title>'+DAYS[p0[2]][0]+' '+nm+' · 第'+ranks[nm][p0[2]]+'名 · '+THEMES[nm].leader+'</title></circle>');
+      for(var q=1;q<names[m].length;q++){}
+      for(var i2=i0;i2<N;i2++) if(ranks[nm][i2] && i2!==p0[2] && i2!==p1[2])
+        svg.push('<circle cx="'+X(i2)+'" cy="'+Math.round(Y(ranks[nm][i2]))+'" r="4" fill="'+c+'" stroke="#fff" stroke-width="1.5"><title>'+DAYS[i2][0]+' '+nm+' · 第'+ranks[nm][i2]+'名 · '+THEMES[nm].leader+'</title></circle>');
+      svg.push('<circle cx="'+p1[0]+'" cy="'+Math.round(p1[1])+'" r="4" fill="'+c+'" stroke="#fff" stroke-width="1.5"><title>'+DAYS[p1[2]][0]+' '+nm+' · 第'+ranks[nm][p1[2]]+'名 · '+THEMES[nm].leader+'</title></circle>');
+      svg.push('<g onclick="selectSeg(\''+nm+'\')" style="cursor:pointer;"><text x="'+p0[0]+'" y="'+Math.round(p0[1]-9)+'" text-anchor="middle" font-size="10" font-weight="700" fill="'+c+'">'+nm+'</text></g>');
+      if(p1[2]!==p0[2])
+        svg.push('<g onclick="selectSeg(\''+nm+'\')" style="cursor:pointer;"><text x="'+p1[0]+'" y="'+Math.round(p1[1]-9)+'" text-anchor="middle" font-size="10" font-weight="700" fill="'+c+'">'+nm+'</text></g>');
+    }
+    for(var i3=i0;i3<N;i3++){
+      var dd=DAYS[i3], x=X(i3), y0=padT+TOPN*rowH, today=(dd[0]==="10-21");
+      var dc=today?"#0e9488":"#1f2733";
+      svg.push('<g class="dayhit" onclick="selectDay(\''+dd[0]+'\')" style="cursor:pointer;">');
+      svg.push('<rect x="'+(x-colW/2)+'" y="4" width="'+colW+'" height="'+(H-8)+'" fill="transparent"/>');
+      svg.push('<text x="'+x+'" y="'+(y0+16)+'" text-anchor="middle" font-size="9.5" font-weight="600" fill="'+dc+'">'+(today?'今':dd[0])+'</text>');
+      svg.push('<text x="'+x+'" y="'+(y0+28)+'" text-anchor="middle" font-size="8.5" fill="#98a2b3">'+dd[1]+'</text>');
+      svg.push('<text x="'+x+'" y="'+(y0+40)+'" text-anchor="middle" font-size="8.5" fill="#c51616">涨停 '+dd[2]+'</text>');
+      if(!dd[4]){
+        svg.push('<rect x="'+(x-15)+'" y="'+(y0+46)+'" width="30" height="13" rx="6.5" fill="#fdecec"/>');
+        svg.push('<text x="'+x+'" y="'+(y0+55.5)+'" text-anchor="middle" font-size="8.5" font-weight="700" fill="#c51616">主线</text>');
+      } else {
+        svg.push('<rect x="'+(x-19)+'" y="'+(y0+46)+'" width="38" height="13" rx="6.5" fill="#e6f7f1"/>');
+        svg.push('<text x="'+x+'" y="'+(y0+55.5)+'" text-anchor="middle" font-size="8.5" font-weight="700" fill="#00925f">无主线</text>');
+      }
+      svg.push('</g>');
+    }
+    svg.push('</svg>');
+    var box=document.getElementById('rotChart');
+    box.innerHTML=svg.join('\n');
+    box.style.width=W+'px';
+  };
+
+  /* ---------- 下方详情区 ---------- */
+  window.selectDay = function(date){
+    SEL=date; paintSel(); renderDetailDay(date);
+  };
+  function paintSel(){
+    var svg=document.querySelector('#rotChart svg'); if(!svg) return;
+    var old=svg.querySelector('rect.selcol'); if(old) old.parentNode.removeChild(old);
+    var i=dayIdx(SEL); if(i<0) return;
+    var n=Math.min(RANGE,N), i0=N-n;
+    if(i<i0) return;
+    var colW=56, padL=54;
+    var r=document.createElementNS('http://www.w3.org/2000/svg','rect');
+    r.setAttribute('class','selcol');
+    r.setAttribute('x', padL+(i-i0)*colW+2); r.setAttribute('y',6);
+    r.setAttribute('width',colW-4); r.setAttribute('height',(22+3*62+68)-12);
+    r.setAttribute('rx',6); r.setAttribute('fill','rgba(14,148,136,0.10)');
+    svg.insertBefore(r, svg.firstChild);
+  }
+  window.selectSeg = function(name){
+    var th=THEMES[name]; if(!th) return;
+    var rk=ranks[name]||[], idx=[];
+    for(var i=0;i<N;i++) if(rk[i]) idx.push(i);
+    if(!idx.length) return;
+    var i0=idx[0], i1=idx[idx.length-1], acc=0;
+    idx.forEach(function(i){acc+=luOf(DAYS[i][2],rk[i]);});
+    var st=streak(th.leader), active=(i1===N-1);
+    var status=active?'<b style="color:#0e9488;">进行中 · 第 '+idx.length+' 天</b>':'<b>已退潮 · '+(N-1-i1)+' 个交易日前掉榜</b>';
+    var succ='--';
+    if(!active){var ni=i1+1; for(var t2 in ranks){if(ranks[t2][ni]&&!ranks[t2][i1]){succ=t2;break;}}}
+    var chain='<span class="node">首板</span><span class="arrow">→</span><span class="node">'+Math.max(2,Math.round(st/2))+'板</span><span class="arrow">→</span><span class="node">'+st+'板 · '+(active?'现高':'见顶')+'</span>';
+    var members='';
+    th.members.forEach(function(m,k){
+      members+='<tr><td><span style="color:var(--primary);cursor:pointer;">'+m+'</span></td>'
+        +'<td>'+DAYS[i0][0]+' 起'+(k>0?' · '+DAYS[Math.min(N-1,i0+k*2)][0]:'')+'</td>'
+        +'<td>'+Math.max(1,st-k*3)+'</td><td>09:'+(32+k*17)+'</td><td>'+k+'</td></tr>';
+    });
+    document.getElementById('rotDetail').innerHTML =
+      '<div style="display:flex;align-items:center;justify-content:space-between;">'
+      +'<b style="font-size:14px;color:'+th.c+';">'+name+'</b>'
+      +'<button class="btn ghost" style="padding:3px 10px;font-size:11px;" onclick="selectDay(\'10-21\')">← 返回最新交易日</button></div>'
+      +'<div class="kv" style="display:flex;justify-content:space-between;font-size:11px;padding:5px 0;border-bottom:1px dashed #eef1f5;"><span style="color:#98a2b3;">持续</span><b>'+idx.length+' 个交易日（'+DAYS[i0][0]+' ~ '+DAYS[i1][0]+'）</b></div>'
+      +'<div class="kv" style="display:flex;justify-content:space-between;font-size:11px;padding:5px 0;border-bottom:1px dashed #eef1f5;"><span style="color:#98a2b3;">累计涨停家次</span><b>'+acc+'</b></div>'
+      +'<div class="kv" style="display:flex;justify-content:space-between;font-size:11px;padding:5px 0;border-bottom:1px dashed #eef1f5;"><span style="color:#98a2b3;">最高连板</span><b>'+th.leader+'</b></div>'
+      +'<div class="kv" style="display:flex;justify-content:space-between;font-size:11px;padding:5px 0;border-bottom:1px dashed #eef1f5;"><span style="color:#98a2b3;">段内状态</span>'+status+'</div>'
+      +'<div class="kv" style="display:flex;justify-content:space-between;font-size:11px;padding:5px 0;"><span style="color:#98a2b3;">接棒题材</span><b>'+succ+'</b></div>'
+      +'<div style="font-size:11px;color:#667085;font-weight:600;margin:8px 0 2px;">龙头变迁链</div>'
+      +'<div class="chain">'+chain+'</div>'
+      +'<div style="font-size:11px;color:#667085;font-weight:600;margin:8px 0 2px;">成员股明细</div>'
+      +'<table class="mini-table"><thead><tr><th>成员股</th><th>上榜日</th><th>现连板</th><th>封板</th><th>炸板</th></tr></thead><tbody>'+members+'</tbody></table>'
+      +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px;"><button class="btn primary">进入'+name+'板块详情</button></div>';
+  };
+  function renderDetailDay(date){
+    var i=dayIdx(date); if(i<0) return;
+    var d=DAYS[i][0], wd=DAYS[i][1], lu=DAYS[i][2], ld=DAYS[i][3], quiet=DAYS[i][4];
+    var rows='', order=ORDER[i];
+    for(var k=0;k<TOPN;k++){
+      var t=order[k], th=THEMES[t];
+      rows+='<tr'+(k===0?' class="top1"':'')+'><td>'+(k+1)+'</td>'
+        +'<td><span style="color:'+th.c+';font-weight:700;cursor:pointer;" onclick="selectSeg(\''+t+'\')">'+t+'</span></td>'
+        +'<td>'+luOf(lu,k+1)+'</td><td>+'+(2.6-(k+1)*0.4).toFixed(2)+'</td><td>'+th.leader+'</td></tr>';
+    }
+    var gao=order[0], thg=THEMES[gao];
+    document.getElementById('rotDetail').innerHTML =
+      '<div style="display:flex;align-items:center;gap:8px;">'
+      +'<b style="font-size:13px;color:'+(date==="10-21"?"#0e9488":"#1f2733")+';">'+d+' '+wd+(date==="10-21"?' · 今':'')+'</b>'
+      +(quiet?'<span style="background:#e6f7f1;color:#00925f;font-size:10px;font-weight:700;padding:2px 9px;border-radius:999px;">无主线</span>'
+             :'<span style="background:#fdecec;color:#c51616;font-size:10px;font-weight:700;padding:2px 9px;border-radius:999px;">主线 · '+gao+'</span>')
+      +'</div>'
+      +'<div style="font-size:10px;color:#98a2b3;margin:3px 0 8px;">涨停 '+lu+' · 跌停 '+ld+' · 上涨 3,412 / 下跌 1,986 · '+(date==="10-21"?'盘中（实时刷新）':'数据已定稿')+'</div>'
+      +'<div style="font-size:11px;color:#667085;font-weight:600;margin-bottom:2px;">Top3 板块（按涨停家数）</div>'
+      +'<table class="mini-table"><thead><tr><th>#</th><th>板块</th><th>涨停</th><th>得分率</th><th>当日龙头</th></tr></thead><tbody>'+rows+'</tbody></table>'
+      +'<div class="tier-row" style="margin-top:10px;">'
+      +'<div class="tier-box"><h5>高度板</h5><div class="t">'+thg.leader+'</div></div>'
+      +'<div class="tier-box"><h5>中军</h5><div class="t">2板 × '+Math.round(lu/28+2)+'</div></div>'
+      +'<div class="tier-box"><h5>首板</h5><div class="t">'+Math.round(lu*0.55)+' 家</div></div>'
+      +'<div class="tier-box"><h5>炸板</h5><div class="t">'+Math.max(1,Math.round(lu*0.06))+' 家</div></div>'
+      +'</div>'
+      +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px;">'
+      +'<button class="btn ghost">查看涨停池明细</button>'
+      +'<button class="btn primary">进入'+gao+'板块详情</button></div>';
+  }
+
+  renderChart(); renderDetailDay("10-21");
+})();
+</script>
+
+
+  <section class="module" id="scene-b2">
+    <div class="module-kicker">MODULE B · 下钻</div>
+    <h2>B2 · 详情区内容态一 · 单日构成（原弹层方案已作废）</h2>
+    <p>2026-10-21 王总指定：<b>去掉弹窗</b>（先改左右布局，10:24 定稿为上下布局）——本节原「单日主线详情弹层」改为 B1 主图下方的默认内容态。
+       详情区置于主图下方（全宽卡片），默认渲染<b>最新交易日</b>（盘中则实时刷新）；点击图上日期列原地切换内容，选中列在图上高亮，全程不打断主视图。
+       下图为详情区内容满幅示意（示例 10-21 · 今）：</p>
+    <div class="scene-grid">
+      <div class="prototype">
+        <div class="card" style="max-width:420px;">
+          <div class="card-head"><span class="card-title">单日详情 / 题材段</span><span class="card-extra">详情区内容态一 · 默认最新交易日</span></div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <b style="font-size:13px;color:#0e9488;">10-21 周三 · 今</b>
+            <span style="background:#fdecec;color:#c51616;font-size:10px;font-weight:700;padding:2px 9px;border-radius:999px;">主线 · 有色金属</span>
+          </div>
+          <div style="font-size:10px;color:#98a2b3;margin:3px 0 8px;">涨停 89 · 跌停 4 · 上涨 3,412 / 下跌 1,986 · 盘中（实时刷新）</div>
+          <div style="font-size:11px;color:#667085;font-weight:600;margin-bottom:2px;">Top3 板块（按涨停家数）</div>
+          <div class="mini-table-wrap">
+            <table class="mini-table">
+              <thead><tr><th>#</th><th>板块</th><th>涨停</th><th>得分率</th><th>当日龙头</th></tr></thead>
+              <tbody>
+                <tr class="top1"><td>1</td><td><span style="color:var(--tk6);font-weight:700;">有色金属</span></td><td>14</td><td>+2.20</td><td>北方稀土 5板</td></tr>
+                <tr><td>2</td><td><span style="color:var(--tk5);font-weight:700;">传媒</span></td><td>8</td><td>+1.80</td><td>中文在线 8板</td></tr>
+                <tr><td>3</td><td><span style="color:var(--tk1);font-weight:700;">半导体</span></td><td>6</td><td>+1.40</td><td>好上好 11板</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="tier-row" style="margin-top:12px;">
+            <div class="tier-box"><h5>高度板</h5><div class="t">北方稀土 5板</div></div>
+            <div class="tier-box"><h5>中军</h5><div class="t">2板 × 5</div></div>
+            <div class="tier-box"><h5>首板</h5><div class="t">49 家</div></div>
+            <div class="tier-box"><h5>炸板</h5><div class="t">5 家</div></div>
+          </div>
+          <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px;">
+            <button class="btn ghost">查看涨停池明细</button>
+            <button class="btn primary">进入有色金属板块详情</button>
+          </div>
+        </div>
+      </div>
+      <aside class="notes">
+        <div class="note"><span class="pin">1</span><b>交互：</b>图上日期列（日期 / 星期 / 家数 / pill 区域）整列可点；点击只换下方详情区内容并高亮选中列，不弹任何浮层；再次点击当前选中日无副作用。</div>
+        <div class="note"><span class="pin">2</span><b>Top3 榜：</b>按涨停家数降序（同数按净额得分），首行高亮 = 当日主线；板块名点击 → 下方详情区切「题材段生命周期」内容态；个股龙头列点击 → openStock() 停靠面板（全站口径，不属于详情区切换）。</div>
+        <div class="note"><span class="pin">3</span><b>涨停梯队：</b>高度板（limitStreak 最大，并列取 sealTime 最早）/ 中军（2 板）/ 首板家数 / 炸板家数（openTimes &gt; 0），全部由 board_limit_stock 现算，无新增请求。</div>
+        <div class="note"><span class="pin">4</span><b>上涨/下跌家数：</b>31 个申万一级行业 upCount/downCount 求和（完整划分、跨行业零重叠）；dataLevel=0 的回补日此两项显示「--」。</div>
+        <div class="note"><span class="pin">5</span><b>盘中语义：</b>最新交易日为盘中数据时副标题标「盘中（实时刷新）」且榜单随采集刷新；历史日标「数据已定稿」。</div>
+      </aside>
+    </div>
+  </section>
+
+  <section class="module" id="scene-c1">
+    <div class="module-kicker">MODULE C · 下钻</div>
+    <h2>C1 · 详情区内容态二 · 题材段生命周期</h2>
+    <p>点击 bump 线端点题材名 / 详情区 Top3 表板块名，<b>详情区原地切换</b>为这一段题材的完整生命周期：从启动到退潮的天数、
+       累计涨停家次、龙头变迁链与成员股明细（无弹窗）；「← 返回最新交易日」按钮回默认内容态。这是「复盘一个题材」的主入口。</p>
+    <div class="scene-grid">
+      <div class="prototype">
+        <div class="card">
+          <div class="card-head">
+            <span class="card-title">题材段详情</span>
+            <span class="card-extra">10-14 ~ 10-20 · 传媒</span>
+          </div>
+          <div class="seg-detail">
+            <div class="seg-side">
+              <div class="name" style="color:var(--tk5);">传媒</div>
+              <div class="kv"><span>持续</span><b>7 个交易日</b></div>
+              <div class="kv"><span>累计涨停家次</span><b>63</b></div>
+              <div class="kv"><span>最高连板</span><b>8 板 · 中文在线</b></div>
+              <div class="kv"><span>段内状态</span><b>10-21 掉榜（退潮）</b></div>
+              <div class="kv"><span>接棒题材</span><b style="color:var(--tk6);">有色金属</b></div>
+            </div>
+            <div>
+              <div style="font-size:11px; color:var(--ink-subtle); font-weight:600; margin-bottom:2px;">龙头变迁链</div>
+              <div class="chain">
+                <span class="node c5-bg">中文在线 3板</span><span class="arrow">→</span>
+                <span class="node c5-bg">中文在线 4板</span><span class="arrow">→</span>
+                <span class="node c5-bg">中文在线 5板</span><span class="arrow">→</span>
+                <span class="node c5-bg">芒果超媒 首板助攻</span><span class="arrow">→</span>
+                <span class="node c5-bg">中文在线 8板 · 见顶</span>
+              </div>
+              <table class="mini-table">
+                <thead><tr><th>成员股</th><th>上榜日</th><th>现连板</th><th>封板时间</th><th>炸板</th></tr></thead>
+                <tbody>
+                  <tr><td><span style="color:var(--primary); cursor:pointer;">中文在线</span></td><td>10-14 起 · 6 日</td><td>8</td><td>09:32</td><td>1</td></tr>
+                  <tr><td><span style="color:var(--primary); cursor:pointer;">芒果超媒</span></td><td>10-16 · 1 日</td><td>1</td><td>10:05</td><td>0</td></tr>
+                  <tr><td><span style="color:var(--primary); cursor:pointer;">掌阅科技</span></td><td>10-15 · 1 日</td><td>2</td><td>11:18</td><td>2</td></tr>
+                  <tr><td><span style="color:var(--primary); cursor:pointer;">值得买</span></td><td>10-19 · 1 日</td><td>1</td><td>13:44</td><td>0</td></tr>
+                  <tr><td><span style="color:var(--primary); cursor:pointer;">引力传媒</span></td><td>10-20 · 1 日</td><td>1</td><td>14:02</td><td>3</td></tr>
+                </tbody>
+              </table>
+              <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:10px;">
+                <button class="btn primary">进入传媒板块详情</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <aside class="notes">
+        <div class="note"><span class="pin">1</span><b>段识别：</b>同一 boardCode 连续在榜（允许中间穿插无主线日，但掉榜即断段）；「接棒题材」= 段结束日当天新启动的段（若无则显示「--」）。</div>
+        <div class="note"><span class="pin">2</span><b>龙头变迁链：</b>按日列出段内每日龙头；同一股票连板高度递增合并展示为一条节点；「见顶」标记 = 该股掉出涨停池的次日。</div>
+        <div class="note"><span class="pin">3</span><b>成员股明细：</b>段内所有涨停过一次即入表，按 (上榜日, 连板数) 排序；股票名点击 → openStock() 停靠面板，可继续看分时/五档。</div>
+        <div class="note"><span class="pin">4</span><b>段状态：</b>活跃段显示「进行中 · 第 N 天」（主色），已结束段显示「M 日掉榜（退潮）」——参考 App 的核心复盘信息。</div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ===================== D1 ===================== -->
+  <section class="module" id="scene-d1">
+    <div class="module-kicker">MODULE D · 三态</div>
+    <h2>D1 · 加载 / 空 / 错误态</h2>
+    <div class="scene-grid">
+      <div class="prototype">
+        <div class="state-row">
+          <div class="card">
+            <div class="card-head"><span class="card-title">加载中（骨架）</span><span class="card-extra">首次进入</span></div>
+            <div class="sk w60"></div>
+            <div style="display:grid; grid-template-columns:56px 1fr; gap:10px; align-items:center; margin:14px 0;">
+              <div class="sk" style="height:10px; margin:0;"></div><div class="sk" style="height:10px; margin:0;"></div>
+              <div class="sk" style="height:10px; margin:0;"></div><div class="sk" style="height:10px; margin:0;"></div>
+              <div class="sk" style="height:10px; margin:0;"></div><div class="sk" style="height:10px; margin:0;"></div>
+            </div>
+            <div class="sk w80"></div><div class="sk w40"></div>
+          </div>
+          <div class="card">
+            <div class="card-head"><span class="card-title">空态</span><span class="card-extra">库内无选定范围数据</span></div>
+            <div class="empty">
+              <div>
+                <div class="big">🗓</div>
+                <p style="margin:0;">当前范围（30 天）内没有板块快照数据。<br>请先在「板块日历」视图执行数据同步或手动补数。</p>
+                <button class="btn primary" style="margin-top:10px;">去板块日历补数</button>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-head"><span class="card-title">错误态</span><span class="card-extra">本地库读取失败</span></div>
+            <div class="empty">
+              <div>
+                <div class="big err">⚠</div>
+                <p class="err" style="margin:0; font-weight:600;">本地数据库读取失败</p>
+                <p style="margin:4px 0 0; color:var(--ink-subtle);">请检查 stock-board.db 是否被占用，或重试。</p>
+                <button class="btn ghost" style="margin-top:10px;">重试</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <aside class="notes">
+        <div class="note"><span class="pin">1</span><b>骨架：</b>左右两栏占位（bump 图区 / 右详情栏），与既有页面 skeleton 同款 shimmer。</div>
+        <div class="note"><span class="pin">2</span><b>空态引导：</b>本视图完全依赖板块日历本地库，不触发网络请求——空态只引导补数，不提供「重试拉取」。</div>
+        <div class="note"><span class="pin">3</span><b>错误态：</b>遵循 2026-10-20 定论——界面只出友好文案，原始错误（含 URL）进 console/weblog。</div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ===================== E1 ===================== -->
+  <section class="module" id="scene-e1">
+    <div class="module-kicker">MODULE E · 落地</div>
+    <h2>E1 · 视图 Tab 与路由接线</h2>
+    <p>不新建路由页：挂进 BoardCalendarView 的主区视图切换，与板块日历/赚钱效应/板块Top 三视图共享数据加载管线（dailyRows / limitRows / meta / dates 全部现成）。</p>
+    <div class="scene-grid">
+      <div class="prototype">
+        <div class="risk-card">
+          <ol>
+            <li><b>常量：</b>BOARD_CALENDAR_VIEW 增加 <code>ROTATION: 'rotation'</code>，BOARD_CALENDAR_VIEW_OPTIONS 改名并重排（2026-10-21 王总指定）：LIST「列表」→「板块日历」、BUBBLE「气泡图」→「赚钱效应」、MAINLINE「板块分析」→「板块Top」、新增 ROTATION「题材轮动」置于首位；BOARD_CALENDAR_VIEW_DEFAULT 改为 ROTATION（页面即题材轮动页，默认进新视图）。</li>
+            <li><b>视图组件：</b>新建 <code>src/pc/components/business/BoardRotationPanel.vue</code>，props 接收 dates / dailyRows / limitRows / metaRows，v-else-if 挂在 BoardCalendarView 主区（与 MAINLINE 分支平级）。</li>
+            <li><b>跳转：</b>个股 chip → <code>useDockPanelStore().openStock(symbol)</code>；板块名 → <code>router.push(ROUTE_PATH.BOARD_DETAIL/&lt;code&gt;)</code>，两条口径全站已有先例。</li>
+            <li><b>移动端：</b>本期不做；MobileBoardCalendar 后续如需，可复用 common 层纯函数（布局层单独出稿）。</li>
+          </ol>
+        </div>
+      </div>
+      <aside class="notes">
+        <div class="note"><span class="pin">1</span><b>为什么做 Tab 不做新路由：</b>数据管线（交易日轴 / 快照 / 涨跌停明细）全在 BoardCalendarView 已加载；新路由要重做一遍加载编排与补数引导，收益为零。</div>
+        <div class="note"><span class="pin">2</span><b>组件隔离：</b>BoardRotationPanel 只吃 props 不直连 store，保证三个旧视图重构互不影响；图表常量入 constants/board-rotation.constants.ts（TopN / 阈值 / 调色板）。</div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ===================== E2 ===================== -->
+  <section class="module" id="scene-e2">
+    <div class="module-kicker">MODULE E · 落地</div>
+    <h2>E2 · 数据与算法层</h2>
+    <p>核心是一个纯函数：<code>buildBoardRotation()</code>。输入板块日历既有落库行，输出名次序列渲染模型；单测可直接对纯函数写，不碰 Vue。</p>
+    <div class="scene-grid">
+      <div class="prototype">
+        <pre>
+<span class="c">// src/common/utils/build-board-rotation.ts（新增，一函数一文件）</span>
+<span class="k">export const</span> buildBoardRotation = (
+  dailyRows,      <span class="c">// BoardDailyRow[]（范围内，含回补日）</span>
+  limitRows,      <span class="c">// BoardLimitStock[]（范围内涨停明细）</span>
+  dates,          <span class="c">// string[] 交易日升序</span>
+  options,        <span class="c">// { topN, minLimitUp, maxLanes }</span>
+) => {
+  <span class="c">// 1. 每日候选：板块涨停家数 ≥ minLimitUp，按 (limitUp desc, score desc) 取前 topN</span>
+  <span class="c">// 2. 段构建：日期升序扫描，同 boardCode 连续在榜 → 延段；掉榜即断段</span>
+  <span class="c">// 3. 名次序列：段内每日名次 = 候选排序位，掉榜日记 null（bump 线在此断开，connectNulls=false）</span>
+  <span class="c">// 4. 每段每日龙头：该板块涨停股 limitStreak 最大（并列取 sealTime 最早）</span>
+  <span class="c">// 5. 主线标签：当日 Top1 limitUp ≥ MAINLINE_MIN_LIMIT_UP(5) → 主线，否则无主线</span>
+  <span class="k">return</span> { days, segments, lanes, marketByDate }
+  <span class="c">//   days[i]     = { date, weekday, limitUpCnt, limitDownCnt, mainline }</span>
+  <span class="c">//   segments[k] = { boardCode, boardName, color, rankByDate[], leaders[], active }</span>
+  <span class="c">//   marketByDate = 申万一级 upCount/downCount 求和（dataLevel=1 才计入）</span>
+}
+        </pre>
+      </div>
+      <aside class="notes">
+        <div class="note"><span class="pin">1</span><b>零新增请求：</b>三个输入全部来自板块日历既有 SQLite 表；回补日（dataLevel=0）只有涨跌停明细，图可画、上涨家数显「--」。</div>
+        <div class="note"><span class="pin">2</span><b>并列与歧义：</b>龙头并列取首封时间最早（与涨停池 fbt:asc 排序口径一致）；同板块当日被一级行业与热门板块同时命中时按 boardCode 区分，各自成线（数据层本就一对多）。</div>
+        <div class="note"><span class="pin">3</span><b>性能：</b>36 板块 × 400 日 ≈ 1.4 万行内存现算，毫秒级；「全部」范围下前端再做一次日期裁剪（默认仍取全部已定稿交易日）。</div>
+        <div class="note"><span class="pin">4</span><b>常量落位：</b>ROTATION_TOP_N(5) / ROTATION_MIN_LIMIT_UP(2) / ROTATION_MAINLINE_MIN(5) / ROTATION_PALETTE(6 色) 全进 constants，禁止散落字面量。</div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ===================== 附录 ===================== -->
+  <section class="module" id="risk">
+    <div class="module-kicker">APPENDIX</div>
+    <h2>口径定论与边界条件</h2>
+    <div class="scene-grid">
+      <div>
+        <div class="risk-card">
+          <ol>
+            <li><b>题材口径定论：</b>v1 复用现有 36 板块池（31 申万一级 + 半导体/航天航空/机器人/光伏设备/新能源）。申万一级是完整划分，横向求和可得全市场家数；题材敏感度弱于东财概念池是已知取舍，扩池走「手动白名单概念板块」路线，另行立项。</li>
+            <li><b>「主线 / 无主线」定论：</b>当日 Top1 板块涨停 ≥ <code>ROTATION_MAINLINE_MIN(5)</code> 家判主线；节前缩量日（全市场涨停 &lt; 60）强制判无主线并注「缩量」。</li>
+            <li><b>断段定论：</b>掉榜一天即断段，不做「隔日接续合并」——参考 App 的轮动语义是断线即换挡，合并会让轮动节奏失真。同板块新段新色。</li>
+            <li><b>未定稿数据：</b>当日盘中行参与渲染但主线判定/chip 标注「盘中」，收盘定稿后自动修正（复用既有 is_final 机制）。</li>
+            <li><b>边界：</b>① 范围内全部为回补日（无涨跌家数）→ 主线判定退化为「涨停家数 Top1」且无主线标签全部显示但注「弱口径」；② 同一交易日一个板块涨停 0 家但得分率高 → 不上榜（阈值过滤）；③ 同日上榜板块数 &gt; TopN → 只画前 TopN 名，落榜段在当日自然断线。</li>
+            <li><b>埋点定论：</b>无埋点表。个人应用无埋点体系，页面加载/跳转行为由既有 weblog 采集覆盖。</li>
+            <li><b>不做（本期）：</b>移动端适配、东财概念板块扩池、人工改判主线、题材间连线（接力箭头）。均列为 v2 候选。</li>
+          </ol>
+        </div>
+        <table class="def">
+          <thead><tr><th>常量</th><th>默认值</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td><code>ROTATION_TOP_N</code></td><td>3</td><td>每日主线候选板块数（Top1/Top3/Top5 三档可切，默认 Top3——09:59 曾改 5，10:12 收回 3 定稿）</td></tr>
+            <tr><td><code>ROTATION_MIN_LIMIT_UP</code></td><td>2</td><td>板块上榜的涨停家数下限（2/3/5 三档可切）</td></tr>
+            <tr><td><code>ROTATION_MAINLINE_MIN</code></td><td>5</td><td>Top1 涨停达到该家数才打「主线」标签</td></tr>
+            <tr><td><code>ROTATION_PALETTE</code></td><td>6 色</td><td>题材线调色板（独立于涨跌语义色）</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <aside class="notes">
+        <div class="note"><span class="pin">①</span><b>验收标准：</b>同一份落库数据下，本视图的每日涨停家数、Top 板块与「板块Top」视图完全一致（同源同口径），题材连线与人工复盘的题材延续判断一致。</div>
+        <div class="note"><span class="pin">②</span><b>关联文档：</b>开发方案落 <code>.ai/开发方案/2026-10-21-前端-题材轮动页面开发方案.md</code>；本稿即需求稿 + UI 稿双用途，无需另出 md。</div>
+      </aside>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>

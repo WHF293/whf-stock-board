@@ -95,7 +95,7 @@ server/           # vite 中间件：/stock-proxy（仅浏览器 dev 使用）
 宿主不硬编码任何具体插件，新增能力应当写成插件而不是改宿主（`MainLayout.vue` 里只保留面板承载与命令转发）。
 
 > **API 文档在根目录 [`PLUGIN_API.md`](./PLUGIN_API.md)**（九个贡献点字段与默认值、ctx 数据层、
-> 十六个宿主服务、六个内置事件、配额与红线的完整清单）。本节只留架构约定；
+> 十七个宿主服务、六个内置事件、配额与红线的完整清单）。本节只留架构约定；
 > 写插件前先看那份文档，改本节涉及的能力时同步它。
 >
 > **面向第三方（应用内安装）插件作者的独立 wiki 在 [`PLUGIN_WIKI.md`](./PLUGIN_WIKI.md)**（能力边界、
@@ -155,7 +155,7 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
 ### 宿主接线（别绕开）
 
 - `main.ts` 在 `app.use(router)` **之前**调 `installPlugins(pinia)`（`plugin/setup.ts`）：
-  先 provide 十六个宿主服务（`app:version` / `kernel:runtime` / `app:navigate` / `panel:open` / `panel:close` /
+  先 provide 十七个宿主服务（`app:version` / `kernel:runtime` / `app:navigate` / `panel:open` / `panel:close` /
   `app:notify` / `app:stock-search` / `app:stock-picker` / `app:stock-open` / `app:watchlist` / `app:polling` /
   `app:ui` / `app:http` / `app:quotes` / `app:market` / `app:format`，清单以
   `types/plugin.types.ts` 的 `AppServiceMap` 为准），再挂插件，
@@ -436,6 +436,25 @@ tauri fetch 绕 webview CORS）。
 - **官网**：`.github/workflows/site-release.yml` 独立部署 GitHub Pages（推 main 命中
   `src/docs/**` 等路径自动部署，也可手动触发），与应用版本发布完全解耦——改官网不发版、不打 tag
 - 本机环境（SDK/NDK/环境变量/rust targets）现状见 `.ai/memory/` 当日日志
+
+## 导航与页签落位规范（硬性，2026-10-22 王总指定）
+
+新增功能 / 页面 / 页签时先按「三层容器模型」定去向，再动代码：
+
+| 去向 | 判定条件 | 现有对号入座 |
+| --- | --- | --- |
+| 页内 tab | 同数据域（共享过滤器 / 时间轴）或**使用意图相同** | 题材轮动三视图、盘面雷达九页签 |
+| 独立页 | 独立数据源、独立心智、需要独立 URL | 行情全景、板块资金流向、大盘云图 |
+| 不入导航 | 低频深潜、单图工具（路由注册 + 宿主页入口 / 顶栏进入） | 板块详情、股票详情、板块历史净流入、系统日志 |
+
+- **页名上位词测试**：tab 的聚合力是「使用意图」而非数据类型；页面名必须能当每个 tab 的
+  上位词（反例：原「市场榜单」盖不住「异动」→ 2026-10-22 更名「盘面雷达」）。
+  给 tab 找不到上位词 = tab 放错了页，或页名起偏了
+- **新功能默认先「不入导航」**：路由注册但不进 `MENU_ITEMS`（`router-meta.constants.ts`），
+  从宿主页入口 / 顶栏（`ctx.header.add`）进入，使用频率高了再转正侧栏席位
+- **单页 tab 软上限 4~5 个**：超了优先「子模块下沉」（参照 2026-10-22 板块Top 并入题材轮动），
+  不再新增并列 tab
+- 方案全文见 `.ai/开发方案/2026-10-22-前端-导航与页签落位治理开发方案.md`
 
 ## UI 约定
 

@@ -30,6 +30,9 @@ export const STORAGE_NS_HOT_NEWS_FILTER = 'hotNews.filter';
 /** 今天炒什么页 - 平台勾选状态命名空间（用户启用哪些热榜平台） */
 export const STORAGE_NS_HOT_BOARD_FILTER = 'hotBoard.filter';
 
+/** 今天炒什么页 - 视图模式命名空间（股票热榜 / ETF 热榜，'stock' | 'etf'） */
+export const STORAGE_NS_HOT_BOARD_MODE = 'hotBoard.mode';
+
 /** 标的搜索历史命名空间（用户确认过的标的，最新在前，最多 SEARCH_HISTORY_MAX 条） */
 export const STORAGE_NS_STOCK_SEARCH = 'stockSearch';
 
@@ -51,11 +54,14 @@ export const STORAGE_NS_PANORAMA_REVIEW = 'panorama.review';
 /** 用户安装插件命名空间（应用内安装的插件代码持久化） */
 export const STORAGE_NS_USER_PLUGINS = 'plugin.user';
 
-/** 市场榜单页 - 板块历史净流入独立存储 key（不走 whf:app 整包：历史数据量随使用增长，避免整包写放大） */
+/** 盘面雷达页（原市场榜单）- 板块历史净流入独立存储 key（不走 whf:app 整包：历史数据量随使用增长，避免整包写放大） */
 export const STORAGE_KEY_SECTOR_FLOW_HISTORY = 'whf:sector-flow-history';
 
 /** ETF 持仓股缓存命名空间（详情页 ETF 持仓 Tab，按 ETF 代码整包存取） */
 export const STORAGE_NS_ETF_HOLDINGS = 'etf.holdings';
+
+/** ETF 基金概况缓存命名空间（详情页基金概况 Tab，按 ETF 代码整包存取） */
+export const STORAGE_NS_ETF_PROFILE = 'etf.profile';
 
 /** 移动端 · 前台轮询间隔（毫秒数值的 JSON 串，四档：5s/10s/30s/1min） */
 export const STORAGE_NS_MOBILE_POLLING = 'mobile.pollingMs';
@@ -83,11 +89,30 @@ export const STORAGE_NS_MOBILE_FUND_FLOW_CURVE = 'mobile.fundFlowCurve';
  *  长按任意金刚区 tile 打开设置弹窗，key 为入口路由路径（to）） */
 export const STORAGE_NS_MOBILE_KING_SETTINGS = 'mobile.kingSettings';
 
+/** 移动端 · 行情页金刚区入口设置（顺序 + 显隐，JSON：{ order, hidden }，结构与首页 kingSettings 相同；
+ *  行情页入口集合与首页不相交，独立持久化避免两页设置互相污染（2026-10-20 新增） */
+export const STORAGE_NS_MOBILE_QUOTE_KING_SETTINGS = 'mobile.quoteKingSettings';
+
 /** 移动端 · 调试模式开关（'1'/'0'；「我的」页应用信息卡连点 10 次切换） */
 export const STORAGE_NS_MOBILE_DEBUG = 'mobile.debug';
 
 /** 移动端 · 调试悬浮球位置（JSON：{ x, y }，视口 px 坐标，球心左上角） */
 export const STORAGE_NS_MOBILE_DEBUG_BALL = 'mobile.debugBall';
 
+/** PC · 浏览器模拟客户端标题栏开关（'1'/'0'；URL `?desktopTitlebar=` 优先写入，样式比对用） */
+export const STORAGE_NS_DEBUG_DESKTOP_CHROME = 'pc.debugDesktopChrome';
+
 /** 大盘评分历史（按本地日积累，近 5 日评分柱消费；值 = RatingHistoryEntry[]） */
 export const STORAGE_NS_THS_RATING_HISTORY = 'ths.ratingHistory';
+
+/** 命令面板 · 最近使用（空输入态展示；值 = RecentPaletteEntry[]，最多 PALETTE_RECENT_MAX 条） */
+export const STORAGE_NS_COMMAND_PALETTE_RECENT = 'pc.commandPaletteRecent';
+
+/** 自选 · 叠加对比组合（勾选符号 + 区间交易日数，JSON：{ symbols, rangeDays }） */
+export const STORAGE_NS_WATCHLIST_COMPARE = 'pc.watchlistCompare';
+
+/** 市场宽度 · 分钟点序列（按本地日积累；值 = { [date]: BreadthPoint[] }，滚存最近 3 日） */
+export const STORAGE_NS_MARKET_BREADTH_DAYS = 'marketBreadth.days';
+
+/** 市场宽度 · 日 bar（收盘定稿聚合，滚存 250 日；值 = BreadthDayBar[]，日期升序） */
+export const STORAGE_NS_MARKET_BREADTH_BARS = 'marketBreadth.bars';

@@ -31,14 +31,24 @@ export const HOST_HEADER_ITEMS = [
   { id: HOST_HEADER_ITEM.MARKET_STATUS, title: '交易时段', icon: 'info' },
   { id: HOST_HEADER_ITEM.THEME, title: '明暗切换', icon: 'sun' },
   { id: HOST_HEADER_ITEM.SEARCH, title: '搜索个股', icon: 'search' },
-  { id: HOST_HEADER_ITEM.AGENT, title: 'Agent 分析', icon: 'agent' },
   { id: HOST_HEADER_ITEM.WHITEPAPER, title: '软件文档', icon: 'whitepaper' },
+  // Agent 分析默认排在软件文档之后（王总 2026-10-13；桌面端 TitleBar 另有恒置末位逻辑）
+  { id: HOST_HEADER_ITEM.AGENT, title: 'Agent 分析', icon: 'agent' },
 ] as const;
 
 /** 宿主自带顶栏条目的默认顺序（设置页编排弹窗的「恢复默认」与合并顺序用） */
 export const HEADER_DEFAULT_ORDER: readonly string[] = HOST_HEADER_ITEMS.map(
   (item) => item.id,
 );
+
+/**
+ * 恒置顶栏首位的插件条目全局键（盯盘轮播，王总 2026-10-16 指定移到其他 icon 前面）
+ *
+ * 与 TitleBar 的「Agent 分析恒置末位」同一套兜底思路：渲染时显式提到最前，
+ * 不随 settings.headerOrder 的用户编排变化（编排弹窗里拖动它不生效）。
+ * 键形态是 `<pluginId>#<itemId>`；插件被禁用 / 卸载时渲染层自然找不到，等于无操作。
+ */
+export const HEADER_PLUGIN_LEAD_KEY = 'dsh-sidebar-watch#watch';
 
 /**
  * 轮播行语义色调 → 文本色类名

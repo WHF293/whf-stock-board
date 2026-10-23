@@ -1,9 +1,9 @@
 <script setup lang="ts">
 /**
- * 市场榜单（v2 二期二级页，稿：market-modules-v2 R0-R1；规范：DESIGN-MOBILE.md §5.2）
+ * 盘面雷达（原市场榜单，v2 二期二级页，稿：market-modules-v2 R0-R1；规范：DESIGN-MOBILE.md §5.2）
  *
  * 双模式（v4.2.1 起）：
- * - 市场榜单页 /market-rank：6 榜 chips（主力/大宗/涨幅/跌幅/成交额/换手率）；
+ * - 盘面雷达页 /market-rank：6 榜 chips（主力/大宗/涨幅/跌幅/成交额/换手率）；
  * - 独立榜页 /rank/:rank（连板 event / 异动 events / 龙虎榜 dragon-tiger，入口在首页金刚区）：
  *   无 chips、navbar 标题为榜名，只渲染该榜。
  *
@@ -17,10 +17,12 @@ import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { sdk } from '../../common/api/sdk';
 import { fetchFundFlowRank } from '../../common/api/flow.api';
-import { fetchStockChanges, fetchZtPool } from '../../common/api/event.api';
+import { fetchBoardChanges, fetchStockChanges, fetchZtPool } from '../../common/api/event.api';
 import { fetchDragonTigerDetail, fetchBlockTradeDetail } from '../../common/api/dragon-tiger.api';
 import type { FundFlowRankItem } from '../../common/types/flow.types';
-import type { ZTPoolItem, StockChangeItem } from '../../common/types/event.types';
+import type { BoardChangeItem, ZTPoolItem, StockChangeItem } from '../../common/types/event.types';
+import { delay } from '../../common/utils/delay';
+import { useMobilePolling } from '../composables/use-mobile-polling';
 import type {
   DragonTigerDetailItem,
   BlockTradeDetailItem,
@@ -31,7 +33,7 @@ import { toFullSymbol } from '../../common/utils/to-full-symbol';
 const router = useRouter();
 const route = useRoute();
 
-/** 拆分为独立页的 3 榜（入口在首页金刚区，路由 /rank/:rank；不再作为市场榜单 chips 子项） */
+/** 拆分为独立页的 3 榜（入口在首页金刚区，路由 /rank/:rank；不再作为盘面雷达 chips 子项） */
 const STANDALONE_RANKS = {
   event: '连板',
   events: '异动',
@@ -39,7 +41,13 @@ const STANDALONE_RANKS = {
 } as const satisfies Record<string, string>;
 type StandaloneKey = keyof typeof STANDALONE_RANKS;
 
-/** 市场榜单页 chips（6 榜；连板 / 异动 / 龙虎榜已拆为独立页） */
+/**
+ * 异动独立页内部子榜：`event-board`（板块异动）不对应路由，
+ * 只作为 /rank/events 页内第二个 Tab 的数据键（王总 2026-10-13 同步 PC 双列表）
+ */
+const EVENT_BOARD_KEY = 'event-board';
+
+/** 盘面雷达页 chips（6 榜；连板 / 异动 / 龙虎榜已拆为独立页） */
 const RANKS = [
   { key: 'stock', label: '主力' },
   { key: 'block-trade', label: '大宗' },
@@ -48,7 +56,13 @@ const RANKS = [
   { key: 'amount', label: '成交额榜' },
   { key: 'turnoverRate', label: '换手率榜' },
 ] as const;
-type RankKey = (typeof RANKS)[number]['key'] | StandaloneKey;
+type RankKey = (typeof RANKS)[number]['key'] | StandaloneKey | typeof EVENT_BOARD_KEY;
+
+/** 异动独立页顶部双 Tab（盘口异动 / 板块异动；对齐 PC 盘面雷达-异动页签） */
+const EVENT_TABS = [
+  { key: 'events', label: '盘口异动' },
+  { key: EVENT_BOARD_KEY, label: '板块异动' },
+] as const satisfies readonly { key: RankKey; label: string }[];
 const activeRank = ref<RankKey>('stock');
 
 /** 各榜表头（名称列 / 值1 列 / 值2 列；空串渲染占位空槽，保持列对齐）
@@ -62,6 +76,7 @@ const RANK_HEADERS: Record<RankKey, [string, string, string]> = {
   turnoverRate: ['股票', '换手率', '涨跌幅'],
   event: ['股票', '连板', '涨跌幅'],
   events: ['股票', '异动类型', ''],
+  [EVENT_BOARD_KEY]: ['板块', '主力净流入', '涨跌幅'],
   'dragon-tiger': ['股票', '净买额', '涨跌幅'],
 };
 
@@ -112,9 +127,9 @@ const standaloneRank = computed<StandaloneKey | null>(() => {
   return typeof rank === 'string' && rank in STANDALONE_RANKS ? (rank as StandaloneKey) : null;
 });
 
-/** navbar 标题：独立页为榜名，市场榜单页为「市场榜单」 */
+/** navbar 标题：独立页为榜名，盘面雷达页为「盘面雷达」 */
 const pageTitle = computed(() =>
-  standaloneRank.value ? STANDALONE_RANKS[standaloneRank.value] : '市场榜单',
+  standaloneRank.value ? STANDALONE_RANKS[standaloneRank.value] : '盘面雷达',
 );
 
 /** 报价榜的排序键 */
@@ -210,14 +225,32 @@ const buildChangeRows = (list: StockChangeItem[]): RankRowView[] =>
     key: `sc-${r.code}-${i}`,
     code: String(r.code),
     name: r.name,
-    // ⚠️ info 是上游原始逗号串（如 "236500,72.04,..."），曾直接塞进右侧定宽槽把名称
-    //    挤成竖排（王总 2026-10-12 截图反馈）；这里只展示时间 + 异动类型标签
-    sub: r.time.slice(0, 5),
+    // ⚠️ info 可能是上游原始逗号串（如 "236500,72.04,..."），曾直接塞进右侧定宽槽把名称
+    //    挤成竖排（王总 2026-10-12 截图反馈）；现与时间并排放在名称下的副行（CSS 截断，
+    //    王总 2026-10-13 要求同步 PC 的丰富内容）
+    sub: [r.time.slice(0, 5), r.info].filter(Boolean).join(' '),
     v1: r.changeTypeLabel || r.changeType,
     // 类型按涨跌语义着色（王总 2026-10-12）：火箭发射/封涨停等红，高台跳水/封跌停等绿
     v1Cls: CHANGE_TONE[r.changeType] ?? 'm-flat',
     v2: '',
     v2Cls: '',
+  }));
+
+/**
+ * 板块异动行（对齐 PC 板块异动表：板块 / 涨跌幅 / 主力净流入 / 异动次数 / 最频繁个股）
+ * @param list 板块异动清单（上游默认序）
+ * @returns 行视图列表
+ */
+const buildBoardChangeRows = (list: BoardChangeItem[]): RankRowView[] =>
+  list.slice(0, 60).map((r, i) => ({
+    key: `bc-${r.name}-${i}`,
+    code: '',
+    name: r.name,
+    sub: `异动 ${r.totalChangeCount ?? '--'} 次 · 最频繁 ${r.topStockName}`,
+    v1: fmtYi(r.mainNetInflow),
+    v1Cls: cls(r.mainNetInflow),
+    v2: pct(r.changePercent),
+    v2Cls: cls(r.changePercent),
   }));
 
 const buildDragonRows = (list: DragonTigerDetailItem[]): RankRowView[] =>
@@ -281,6 +314,9 @@ const loadAllQuotes = async (): Promise<FullQuote[]> => {
   return data;
 };
 
+/** 异动双榜串行请求间隔（毫秒）：与 PC MarketEventView 同口径，对上游保持克制 */
+const EVENT_REQUEST_GAP_MS = 500;
+
 const loadRank = async (key: RankKey, force = false): Promise<void> => {
   if (!force && rowsByRank.value[key]) return;
   loading.value = true;
@@ -291,8 +327,14 @@ const loadRank = async (key: RankKey, force = false): Promise<void> => {
       rows = buildFundFlowRows(await fetchFundFlowRank());
     } else if (key === 'event') {
       rows = buildZtRows(await fetchZtPool('zt'));
-    } else if (key === 'events') {
-      rows = buildChangeRows(await fetchStockChanges());
+    } else if (key === 'events' || key === EVENT_BOARD_KEY) {
+      // 异动页双榜一次取齐（对齐 PC events 模式；两个上游串行 500ms 错峰防封禁）
+      const stockRows = buildChangeRows(await fetchStockChanges());
+      await delay(EVENT_REQUEST_GAP_MS);
+      const boardRows = buildBoardChangeRows(await fetchBoardChanges());
+      rowsByRank.value.events = stockRows;
+      rowsByRank.value[EVENT_BOARD_KEY] = boardRows;
+      rows = key === 'events' ? stockRows : boardRows;
     } else if (key === 'dragon-tiger') {
       rows = buildDragonRows(await fetchDragonTigerDetail());
     } else if (key === 'block-trade') {
@@ -325,6 +367,20 @@ const onRankClick = (key: RankKey): void => {
   void loadRank(key);
 };
 
+/** 6 榜 Tabs 绑定下标（van-tabs 的 active 是 index，这里做 index ↔ rank key 互转） */
+const activeRankIndex = computed({
+  get: () => Math.max(0, RANKS.findIndex((r) => r.key === activeRank.value)),
+  set: (index: number) => onRankClick(RANKS[index]!.key),
+});
+
+/** 异动独立页（/rank/events）：顶部双 Tab 盘口异动 / 板块异动 */
+const isEventStandalone = computed(() => standaloneRank.value === 'events');
+/** 双 Tab 绑定下标（van-tabs 的 active 是 index，这里做 index ↔ rank key 互转） */
+const activeEventTabIndex = computed({
+  get: () => Math.max(0, EVENT_TABS.findIndex((t) => t.key === activeRank.value)),
+  set: (index: number) => onRankClick(EVENT_TABS[index]!.key),
+});
+
 const goStock = (code: string): void => {
   if (!code) return;
   void router.push(`/stock/${toFullSymbol(code)}`);
@@ -342,7 +398,7 @@ const onRefresh = async (): Promise<void> => {
   }
 };
 
-// 独立页模式锁定对应榜（进入即装载）；市场榜单页保持默认主力榜
+// 独立页模式锁定对应榜（进入即装载）；盘面雷达页保持默认主力榜
 watch(standaloneRank, (rank) => {
   if (rank) {
     resetSort();
@@ -351,6 +407,13 @@ watch(standaloneRank, (rank) => {
   }
 }, { immediate: true });
 if (!standaloneRank.value) void loadRank('stock');
+
+// 异动独立页轮询（王总 2026-10-13）：间隔跟随「我的 → 轮询间隔」设置，与 PC 异动页同口径；
+// 仅异动独立页生效（其余榜保持进入加载 + 手动下拉刷新），强刷当前子榜（一次取齐双榜）
+useMobilePolling(() => {
+  if (!isEventStandalone.value) return;
+  void loadRank(activeRank.value, true);
+});
 </script>
 
 <template>
@@ -363,18 +426,25 @@ if (!standaloneRank.value) void loadRank('stock');
       @click-left="router.back()"
     />
 
-    <!-- 6 榜 chips（独立页模式隐藏） -->
-    <div v-if="!standaloneRank" class="m-chips">
-      <button
-        v-for="r in RANKS"
-        :key="r.key"
-        class="m-chip"
-        :class="{ 'm-chip--active': activeRank === r.key }"
-        @click="onRankClick(r.key)"
-      >
-        {{ r.label }}
-      </button>
-    </div>
+    <!-- 6 榜分组 Tabs（参考今天炒什么：van-tabs 选择器模式；独立页模式隐藏） -->
+    <van-tabs
+      v-if="!standaloneRank"
+      v-model:active="activeRankIndex"
+      class="m-tabs m-tabs--selector"
+      :ellipsis="false"
+    >
+      <van-tab v-for="r in RANKS" :key="r.key" :title="r.label" />
+    </van-tabs>
+
+    <!-- 异动独立页双 Tab：盘口异动 / 板块异动（对齐 PC 盘面雷达-异动页签的双列表） -->
+    <van-tabs
+      v-if="isEventStandalone"
+      v-model:active="activeEventTabIndex"
+      class="m-tabs m-tabs--selector"
+      :ellipsis="false"
+    >
+      <van-tab v-for="t in EVENT_TABS" :key="t.key" :title="t.label" />
+    </van-tabs>
 
     <div class="m-sub-scroll">
       <van-pull-refresh v-model="refreshing" @refresh="onRefresh">
@@ -430,6 +500,9 @@ if (!standaloneRank.value) void loadRank('stock');
 <style scoped>
 /* navbar 与榜单卡之间留空隙（独立页无 chips 缓冲，卡片曾直接顶到 navbar——王总 2026-10-12） */
 .m-sub-scroll { padding-top: 10px; }
+
+/* 异动盘口行副行含时间 + 上游说明（可能为长串），单行截断防止换行撑高行 */
+.m-row__nm .sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* 表头行：与 .m-row 同 padding/gap，右两列 min-width 对齐 .m-row__pct(58px) */
 .m-rowhead {

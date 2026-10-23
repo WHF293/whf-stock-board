@@ -21,6 +21,17 @@ export const formatNewsTime = (ctime: string): string => {
 };
 
 /**
+ * 金额展示（上游单位为元；≥1 亿显示「亿」，否则「万」，null 返回 `--`）
+ * @param yuan 金额（元）
+ * @returns 如 `12.34亿` / `5678.90万` / `--`
+ */
+export const formatAmount = (yuan: number | null | undefined): string => {
+  if (yuan === null || yuan === undefined) return '--';
+  if (Math.abs(yuan) >= 1e8) return `${(yuan / 1e8).toFixed(2)}亿`;
+  return `${(yuan / 1e4).toFixed(2)}万`;
+};
+
+/**
  * 快照时刻展示（HH:mm；空值返回 `--`）
  * @param at 快照生成时刻（毫秒），null 表示从未抓取
  * @returns HH:mm 文案

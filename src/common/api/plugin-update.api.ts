@@ -27,6 +27,7 @@ import type {
   PluginUpdateIndex,
   PluginUpdateIndexEntry,
 } from '../types/plugin-update.types.ts';
+import { buildUpdateProxyInit } from '../utils/update-proxy.ts';
 
 /**
  * 网络实现：桌面端走 Rust 直连（绕 CORS），浏览器回退原生 fetch
@@ -59,7 +60,12 @@ const httpGet = async (
   const onOuterAbort = (): void => controller.abort();
   if (outer) outer.addEventListener('abort', onOuterAbort);
   try {
-    return await netFetch(url, { ...init, signal: controller.signal });
+    return await netFetch(url, {
+      ...init,
+      signal: controller.signal,
+      // 设置页配置了更新代理时显式走代理（与应用更新共用，见 update-proxy.ts）
+      ...buildUpdateProxyInit(),
+    });
   } finally {
     window.clearTimeout(timer);
     if (outer) outer.removeEventListener('abort', onOuterAbort);

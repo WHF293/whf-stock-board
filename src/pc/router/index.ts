@@ -1,12 +1,12 @@
 import { createRouter, createWebHistory } from 'vue-router';
-import NProgress from 'nprogress';
-import 'nprogress/nprogress.css';
 import MainLayout from '../layouts/MainLayout.vue';
 import { LAYOUT_ROUTE_NAME, NOT_FOUND_ROUTE_NAME, ROUTE_PATH, MENU_ITEMS } from '../../common/constants/router-meta.constants.ts';
 import DashboardView from '../views/DashboardView.vue';
 import WatchlistView from '../views/WatchlistView.vue';
 import PanoramaView from '../views/PanoramaView.vue';
+import HeatmapView from '../views/HeatmapView.vue';
 import BoardFlowView from '../views/BoardFlowView.vue';
+import MarketBreadthView from '../views/MarketBreadthView.vue';
 import BoardCalendarView from '../views/BoardCalendarView.vue';
 import BoardCalendarDetailView from '../views/BoardCalendarDetailView.vue';
 import HotNewsView from '../views/HotNewsView.vue';
@@ -14,15 +14,14 @@ import HotBoardView from '../views/HotBoardView.vue';
 import StockAccountView from '../views/StockAccountView.vue';
 import AgentAnalysisView from '../views/AgentAnalysisView.vue';
 import MarketRankView from '../views/MarketRankView.vue';
-import StockMarketView from '../views/StockMarketView.vue';
 import SectorFlowHistoryView from '../views/SectorFlowHistoryView.vue';
+import FuturesInstitutionalView from '../views/FuturesInstitutionalView.vue';
+import FuturesOverviewView from '../views/FuturesOverviewView.vue';
 import StockDetailView from '../views/StockDetailView.vue';
+import WideBaseEtfView from '../views/WideBaseEtfView.vue';
 import SystemLogView from '../views/SystemLogView.vue';
 import NotFoundView from '../views/NotFoundView.vue';
 import PluginLabView from '../views/PluginLabView.vue';
-
-/** 路由切换顶部进度条：钩子在路由表定义后立即挂载 */
-NProgress.configure({ showSpinner: false, speed: 300, minimum: 0.2 });
 
 /**
  * 路由标题表（菜单项），避免魔法字符串散落
@@ -60,11 +59,24 @@ const routes = [
         component: PanoramaView,
         meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.PANORAMA] },
       },
-      // 板块资金流向：原「行情全景-最新板块资金」独立成页（2026-10-13）
+      // 大盘云图：原「行情全景-大盘云图」tab 独立成页（2026-10-13），dapanyuntu.com iframe 直嵌；
+      // 侧栏入口已移除（2026-10-22 王总指定），改由市场总览页头按钮进入，不入左侧导航
+      {
+        path: ROUTE_PATH.HEATMAP,
+        component: HeatmapView,
+        meta: { title: '大盘云图' },
+      },
+      // 资金流向（原「板块资金流向」）：原「行情全景-最新板块资金」独立成页（2026-10-13）
       {
         path: ROUTE_PATH.BOARD_FLOW,
         component: BoardFlowView,
         meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.BOARD_FLOW] },
+      },
+      // 市场广度指标：五大广度副图（ADL/ADR/OBOS/ARMS/MCO，2026-10-21）
+      {
+        path: ROUTE_PATH.MARKET_BREADTH,
+        component: MarketBreadthView,
+        meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.MARKET_BREADTH] },
       },
       {
         path: ROUTE_PATH.BOARD_CALENDAR,
@@ -77,7 +89,7 @@ const routes = [
         component: BoardCalendarDetailView,
         meta: { title: '板块详情' },
       },
-      // 市场异动已并入市场榜单（涨停 / 异动 / 龙虎榜 / 大宗为其页签）；
+      // 市场异动已并入盘面雷达（涨停 / 异动 / 龙虎榜 / 大宗为其页签）；
       // 历史合并产生的旧路径（/funds、/market-mood、/market-event、/dragon-tiger、
       // /trade-import、/settings）不再重定向，统一由 404 兜底页承接
       {
@@ -85,12 +97,8 @@ const routes = [
         component: MarketRankView,
         meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.MARKET_RANK] },
       },
-      // 个股行情：全市场列表（同花顺行情中心同源，服务端排序 + 翻页）
-      {
-        path: ROUTE_PATH.STOCK_MARKET,
-        component: StockMarketView,
-        meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.STOCK_MARKET] },
-      },
+      // 个股行情已并入行情全景「全部个股」子 tab（2026-10-22 王总指定），
+      // /stock-market 旧路径由 404 兜底页承接（同 market-mood 等历史合并先例）
       // 选股器已改为插件分发（dsh-stock-screener，路径 /screener 由插件注册）；
       // 未安装插件时旧路径由 404 兜底页承接
       {
@@ -107,6 +115,18 @@ const routes = [
         path: ROUTE_PATH.STOCK_ACCOUNT,
         component: StockAccountView,
         meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.STOCK_ACCOUNT] },
+      },
+      // 期货·总览：期货分组首页（期货市场总览：主力流况 / 资金流向 / 多空比，2026-10-20 新增）
+      {
+        path: ROUTE_PATH.FUTURES_OVERVIEW,
+        component: FuturesOverviewView,
+        meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.FUTURES_OVERVIEW] },
+      },
+      // 期货·机构行为：中金所 CCPM 席位持仓行为分析（2026-10-20 新增）
+      {
+        path: ROUTE_PATH.FUTURES_INSTITUTIONAL,
+        component: FuturesInstitutionalView,
+        meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.FUTURES_INSTITUTIONAL] },
       },
       // 插件工坊：宿主自带的插件自省与管理页（原为一个内置插件，v2.6.2 起转正为正式功能，
       // 因此不受插件启停影响，也不再出现在插件清单里）
@@ -132,6 +152,12 @@ const routes = [
         path: `${ROUTE_PATH.STOCK_DETAIL}/:symbol`,
         component: StockDetailView,
         meta: { title: '股票详情' },
+      },
+      // 宽基ETF：国家队（汇金系）核心操作宽基监控；市场总览页头按钮进入，不入左侧导航
+      {
+        path: ROUTE_PATH.WIDE_BASE_ETF,
+        component: WideBaseEtfView,
+        meta: { title: '宽基ETF' },
       },
     ],
   },
@@ -163,15 +189,4 @@ if (bootPage && bootPage.startsWith('/') && !bootPage.startsWith('//')) {
 export const router = createRouter({
   history: createWebHistory(),
   routes,
-});
-
-// 路由切换进度条：静态组件渲染很快，进度条仅作极短过渡反馈
-router.beforeEach(() => {
-  NProgress.start();
-});
-router.afterEach(() => {
-  NProgress.done();
-});
-router.onError(() => {
-  NProgress.done();
 });

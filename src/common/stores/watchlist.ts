@@ -211,11 +211,46 @@ export const useWatchlistStore = defineStore('watchlist', {
       }
     },
 
-    /**
-     * 修复持久化数据里的历史脏条目（载入时自动执行，见 utils/repair-watchlist-groups）
-     * @returns 是否发生了修改（true 时需要回写持久化）
-     */
-    repairLoadedGroups(): boolean {
+  /**
+   * 合并导入外部分组（移动端「自选导入」用）：按分组 id 合并 ——
+   * id 已存在则覆盖分组名并把导入股票按组内去重追加（组内已有的不动，保留 addedAt）；
+   * id 不存在则整组追加。默认组缺失时兜底补建回首位。
+   * @param groups 导入的分组列表（调用方先经 parseWatchlistImportText 解析校验）
+   * @returns 统计：新增分组数 / 追加股票数（组内去重后实际入库的）
+   */
+  mergeImportedGroups(
+    groups: readonly WatchlistGroup[],
+  ): { groupsAdded: number; stocksAdded: number } {
+    let groupsAdded = 0;
+    let stocksAdded = 0;
+    for (const incoming of groups) {
+      const target = this.groups.find((group) => group.id === incoming.id);
+      if (target) {
+        target.name = incoming.name;
+        for (const stock of incoming.stocks) {
+          if (!target.stocks.some((item) => item.symbol === stock.symbol)) {
+            target.stocks.push({ ...stock });
+            stocksAdded += 1;
+          }
+        }
+      } else {
+        this.groups.push({ id: incoming.id, name: incoming.name, stocks: incoming.stocks.map((stock) => ({ ...stock })) });
+        groupsAdded += 1;
+        stocksAdded += incoming.stocks.length;
+      }
+    }
+    if (!this.groups.some((group) => group.id === DEFAULT_GROUP_ID)) {
+      this.groups.unshift({ id: DEFAULT_GROUP_ID, name: DEFAULT_GROUP_NAME, stocks: [] });
+    }
+    this.$persist();
+    return { groupsAdded, stocksAdded };
+  },
+
+  /**
+   * 修复持久化数据里的历史脏条目（载入时自动执行，见 utils/repair-watchlist-groups）
+   * @returns 是否发生了修改（true 时需要回写持久化）
+   */
+  repairLoadedGroups(): boolean {
       const { groups, changed } = repairWatchlistGroups(this.groups);
       if (changed) {
         this.groups = groups;

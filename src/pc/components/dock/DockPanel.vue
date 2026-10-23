@@ -72,9 +72,12 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <!-- Islands（2026-10-22）：去贴边通栏的 border-l，改独立浮岛
+       （rounded-2xl + shadow-island，overflow-hidden 裁圆角）；
+       与主区的间隔由 MainLayout 内容行的 gap-2.5 露出画布承接 -->
   <aside
     v-if="dockPanel.open"
-    class="dock-panel relative flex flex-col border-l border-flat-weak bg-surface"
+    class="dock-panel relative flex flex-col overflow-hidden rounded-2xl bg-surface shadow-island"
     :style="{ width: `min(${dockPanel.width}px, ${Math.round(DOCK_PANEL_WIDTH_MAX_RATIO * 100)}vw)` }"
   >
     <!-- 头部：标题 + 关闭 -->

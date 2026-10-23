@@ -2,6 +2,7 @@ import type {
   BOARD_DETAIL_RANGE,
   BOARD_DETAIL_SORT,
 } from '../constants/board-detail.constants.ts';
+import type { BoardScoreBuckets } from './board-calendar.types.ts';
 
 /**
  * 板块日历详情页（板块成分股 × 交易日 涨跌幅矩阵）类型
@@ -26,6 +27,13 @@ export interface DailyCloseBar {
   tradeDate: string;
   /** 前复权收盘价 */
   close: number;
+  /**
+   * 成交额（元；上游给万元已换算）
+   *
+   * 仅「板块成分股日 K 聚合补历史」链路使用（详情矩阵只用收盘价），
+   * 上游偶缺时为 undefined，聚合侧按 0 计。
+   */
+  amount?: number;
 }
 
 /**
@@ -69,6 +77,31 @@ export interface BoardDetailMatrix {
   dates: string[];
   /** 成分股行（已按当前排序基准排好） */
   rows: BoardDetailRow[];
+}
+
+/**
+ * 一个板块在某交易日的成分股聚合统计（日 K 推导，板块日历补历史链路专用）
+ *
+ * 口径与当日快照对齐：upCount 含涨停（东财 f104 同口径）；
+ * consCount = up + down + flat（当日有行情的成分股数）。
+ */
+export interface BoardConstituentDayStats {
+  /** 上涨家数（含涨停） */
+  upCount: number;
+  /** 下跌家数（含跌停） */
+  downCount: number;
+  /** 平盘家数 */
+  flatCount: number;
+  /** 成分股数（= up + down + flat） */
+  consCount: number;
+  /** 成分股成交额合计（元；单票缺失按 0 计，为近似口径） */
+  amount: number;
+  /**
+   * 得分分桶（六桶互斥；涨停 / 跌停桶按调用方传入的池符号集判定，
+   * 中间四桶按日 K 涨跌幅划分）。与 up/down/flat 同一循环同一容错口径：
+   * 无日 K / 无前收盘的票该日不计入任何桶。
+   */
+  buckets: BoardScoreBuckets;
 }
 
 /**

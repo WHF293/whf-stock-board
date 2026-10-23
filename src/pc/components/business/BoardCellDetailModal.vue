@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import BaseButton from '../ui/BaseButton.vue';
 import BaseEmpty from '../ui/BaseEmpty.vue';
 import BaseModal from '../ui/BaseModal.vue';
 import BaseSkeleton from '../ui/BaseSkeleton.vue';
@@ -87,6 +88,9 @@ const props = defineProps<{
 }>();
 
 const open = defineModel<boolean>('open', { required: true });
+
+/** 点击「查看当日赚钱效应」：交给父级切到气泡图视图并定位到该交易日 */
+const emit = defineEmits<{ 'profit-click': [tradeDate: string] }>();
 
 /** 当前页签 */
 const activeTab = ref<string>(DETAIL_TAB.LIMIT);
@@ -308,5 +312,14 @@ watch(activeTab, (tab) => {
         </template>
       </template>
     </div>
+
+    <!-- 底部动作：从「板块 × 单日」明细跳到「全市场 × 当日」赚钱效应气泡图（2026-10-22 新增联动） -->
+    <template #footer>
+      <div class="flex justify-end">
+        <BaseButton variant="ghost" @click="emit('profit-click', tradeDate)">
+          查看当日赚钱效应
+        </BaseButton>
+      </div>
+    </template>
   </BaseModal>
 </template>

@@ -42,6 +42,11 @@ const ICON_PATHS: Record<string, string> = {
     '<path d="M4 6h16M4 12h16M4 18h16"/>',
   globe:
     '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.7 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.7-3.8-9S9.5 5.6 12 3z"/>',
+  // 大盘云图：云（云图页侧栏入口）
+  cloud: '<path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>',
+  // 市场广度指标：上行趋势线 + 底部基线（广度曲线）
+  breadth:
+    '<path d="M3 16l5-7 4 4 6-9"/><path d="M3 21h18"/>',
   grip:
     '<circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/>',
   arrowLeft:
@@ -119,6 +124,21 @@ const ICON_PATHS: Record<string, string> = {
   // 导入（粘贴）：剪贴板 + 向下箭头
   clipboardPaste:
     '<rect x="8" y="3" width="8" height="4" rx="1"/><path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2"/><path d="M12 11v6"/><path d="M9.5 14.5 12 17l2.5-2.5"/>',
+  // 进入全屏：四角向外（页面全屏按钮）
+  maximize:
+    '<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>',
+  // 退出全屏：四角向内（页面全屏按钮的还原态）
+  minimize:
+    '<path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/>',
+  // 数据库（板块日历表头数据维护入口）：圆柱 + 两道分层线
+  database:
+    '<ellipse cx="12" cy="5.5" rx="8" ry="3"/><path d="M4 5.5v13c0 1.66 3.58 3 8 3s8-1.34 8-3v-13"/><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/>',
+  // 期货（机构行为页侧栏入口）：两根蜡烛（烛身 + 上下影线）
+  futures:
+    '<path d="M7.5 3v3M7.5 18v3M16.5 5v3M16.5 14v3"/><rect x="5" y="6" width="5" height="12" rx="1"/><rect x="14" y="8" width="5" height="6" rx="1"/>',
+  // 帮助 / 图例说明：圆圈 + 问号
+  help:
+    '<circle cx="12" cy="12" r="9"/><path d="M9.4 9.3a2.7 2.7 0 1 1 3.7 2.5c-.8.3-1.1.9-1.1 1.8v.4"/><circle cx="12" cy="16.9" r="0.5"/>',
 };
 
 const props = withDefaults(

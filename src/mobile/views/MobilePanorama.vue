@@ -238,6 +238,12 @@ const onModuleClick = (key: ModuleKey): void => {
   loadModule(key);
 };
 
+/** 模块分组 Tabs 绑定下标（van-tabs 的 active 是 index，这里做 index ↔ module key 互转） */
+const activeModuleIndex = computed({
+  get: () => Math.max(0, MODULES.findIndex((m) => m.key === activeModule.value)),
+  set: (index: number) => onModuleClick(MODULES[index]!.key),
+});
+
 /** 整页下拉刷新：当前模块强制重拉
  * @returns 无返回值，finally 里复位 v-model 收起下拉状态 */
 const refreshing = ref(false);
@@ -266,18 +272,14 @@ const fmtPct = (v: number | null): string => (v === null ? '--' : `${v > 0 ? '+'
       @click-left="back"
     />
 
-    <!-- 模块 chips -->
-    <div class="m-chips">
-      <button
-        v-for="m in MODULES"
-        :key="m.key"
-        class="m-chip"
-        :class="{ 'm-chip--active': activeModule === m.key }"
-        @click="onModuleClick(m.key)"
-      >
-        {{ m.label }}
-      </button>
-    </div>
+    <!-- 模块分组 Tabs（参考今天炒什么：van-tabs 选择器模式，空 van-tab 只当分段选择器） -->
+    <van-tabs
+      v-model:active="activeModuleIndex"
+      class="m-tabs m-tabs--selector"
+      :ellipsis="false"
+    >
+      <van-tab v-for="m in MODULES" :key="m.key" :title="m.label" />
+    </van-tabs>
 
     <div class="m-sub-scroll">
       <van-pull-refresh v-model="refreshing" @refresh="onRefresh">

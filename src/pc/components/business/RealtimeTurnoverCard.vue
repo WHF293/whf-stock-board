@@ -7,7 +7,16 @@ import { formatAmount } from '../../../common/utils/format-amount';
 import { formatYuanWithSign } from '../../../common/utils/format-yuan';
 import { computeTurnoverAverage5 } from '../../../common/utils/compute-turnover-averages';
 import { usePolling } from '../../../common/composables/use-polling';
+import { CHART_LINE_BLUE } from '../../../common/constants/chart.constants.ts';
 import type { ThsTurnoverDay, ThsTurnoverMinute } from '../../../common/types/ths-market.types.ts';
+
+withDefaults(
+  defineProps<{
+    /** 紧凑模式：隐藏底部均值行（5日均 / 60日均 / 较 5 日均），适配 160px 行高的嵌入场景（资金流向页）；默认完整模式 */
+    compact?: boolean;
+  }>(),
+  { compact: false },
+);
 
 /**
  * 实时成交额卡（市场总览新增，数据源同花顺 dq 域 get_chart_data）
@@ -145,7 +154,7 @@ const spark = computed(() => {
     <!-- 分时双线：当日 vs 昨日同时刻 -->
     <div v-if="spark" class="mt-3 flex-1">
       <div class="flex items-center gap-3 text-[11px] text-text-tertiary">
-        <span><i class="mr-1 inline-block h-0.5 w-3 align-middle" style="background: var(--color-primary)" />今日累计</span>
+        <span><i class="mr-1 inline-block h-0.5 w-3 align-middle" :style="{ background: CHART_LINE_BLUE }" />今日累计</span>
         <span><i class="mr-1 inline-block h-0 w-3 align-middle border-t border-dashed border-text-tertiary" />昨日同时刻</span>
       </div>
       <svg
@@ -167,7 +176,7 @@ const spark = computed(() => {
         <path
           :d="spark.today"
           fill="none"
-          stroke="var(--color-primary)"
+          :stroke="CHART_LINE_BLUE"
           stroke-width="1.6"
           vector-effect="non-scaling-stroke"
           stroke-linejoin="round"
@@ -175,8 +184,8 @@ const spark = computed(() => {
       </svg>
     </div>
 
-    <!-- 均值行（shrink-0：卡片被压缩时保底不溢出） -->
-    <div class="mt-3 grid shrink-0 grid-cols-3 gap-4 border-t border-flat-weak pt-3">
+    <!-- 均值行（shrink-0：卡片被压缩时保底不溢出）；compact 模式隐藏以适配 160px 行高 -->
+    <div v-if="!compact" class="mt-3 grid shrink-0 grid-cols-3 gap-4 border-t border-flat-weak pt-3">
       <div>
         <p class="text-xs text-text-tertiary">5日均</p>
         <p class="mt-0.5 text-sm font-medium tabular-nums text-text-secondary">{{ average5Text }}</p>

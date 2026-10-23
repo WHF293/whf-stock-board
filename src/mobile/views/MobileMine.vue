@@ -199,14 +199,9 @@ const toggleAbout = (key: 'disclaimer' | 'source'): void => {
 
 <template>
   <div class="m-tab-safe">
-    <!-- 2026-10-12 起移出 TabBar（入口 = 首页 navbar 左侧 app logo），改为二级页带返回键 -->
-    <van-nav-bar
-      title="我的"
-      class="m-nav"
-      safe-area-inset-top
-      left-arrow
-      @click-left="router.back()"
-    />
+    <!-- 2026-10-20 起回归 TabBar 第五主 Tab（此前 2026-10-12 曾移出、由首页 navbar logo 进入）；
+         主 Tab 无返回键 -->
+    <van-nav-bar title="我的" class="m-nav" safe-area-inset-top />
 
     <!-- 应用信息卡：logo 用软件 logo（public/favicon.svg，与 PC TitleBar 同源），2026-10-11 名称定为「股票看板」；
          连点 10 次（3s 窗口）切换调试模式 -->

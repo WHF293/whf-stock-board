@@ -13,6 +13,7 @@ import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import {
   BOARD_CALENDAR_RANGE,
+  BOARD_CALENDAR_RANGE_DEFAULT,
   BOARD_CALENDAR_RANGE_OPTIONS,
   BOARD_DATA_LEVEL,
   CALENDAR_BOARDS,
@@ -68,7 +69,7 @@ const loadTradingDates = async (): Promise<boolean> => {
 };
 
 /* === 列表模式：板块×日 矩阵 === */
-const range = ref<string>(BOARD_CALENDAR_RANGE.D10);
+const range = ref<string>(BOARD_CALENDAR_RANGE_DEFAULT);
 const matrixRows = ref<BoardDailyRow[]>([]);
 const matrixLoading = ref(false);
 const matrixError = ref(false);
@@ -262,6 +263,23 @@ const onRangeClick = (v: string): void => {
   else range.value = v;
 };
 
+/** 当前模式的范围档位（列表 / 详情两套） */
+const rangeOptions = computed(() =>
+  isDetail.value ? BOARD_DETAIL_RANGE_OPTIONS : BOARD_CALENDAR_RANGE_OPTIONS,
+);
+
+/** 范围 Tabs 绑定下标（van-tabs 的 active 是 index，这里做 index ↔ range value 互转） */
+const activeRangeIndex = computed({
+  get: () =>
+    Math.max(
+      0,
+      rangeOptions.value.findIndex(
+        (opt) => opt.value === (isDetail.value ? detailRange.value : range.value),
+      ),
+    ),
+  set: (index: number) => onRangeClick(rangeOptions.value[index]!.value),
+});
+
 const back = (): void => {
   router.back();
 };
@@ -279,18 +297,17 @@ const fmtPct = (v: number | null): string => (v === null ? '--' : `${v > 0 ? '+'
       @click-left="back"
     />
 
-    <!-- 范围 chips（列表 6 档 / 详情 6 档） -->
-    <div class="m-chips">
-      <button
-        v-for="opt in isDetail ? BOARD_DETAIL_RANGE_OPTIONS : BOARD_CALENDAR_RANGE_OPTIONS"
-        :key="opt.value"
-        class="m-chip"
-        :class="{ 'm-chip--active': isDetail ? detailRange === opt.value : range === opt.value }"
-        @click="onRangeClick(opt.value)"
-      >
-        {{ opt.label }}
-      </button>
-    </div>
+    <!-- 范围分组 Tabs（参考今天炒什么：van-tabs 选择器模式；列表 6 档 / 详情 6 档，
+         :key 按模式强制重挂——tab 数组变化时 Vant 的 setLine 会跑在新 TabTitle
+         ref 登记之前而静默跳过，重挂走 init 测量路径才准，同今天炒什么换源先例） -->
+    <van-tabs
+      :key="isDetail ? 'detail' : 'list'"
+      v-model:active="activeRangeIndex"
+      class="m-tabs m-tabs--selector"
+      :ellipsis="false"
+    >
+      <van-tab v-for="opt in rangeOptions" :key="opt.value" :title="opt.label" />
+    </van-tabs>
 
     <!-- H5 无 Tauri SQLite 降级 -->
     <div v-if="!dbAvailable" class="m-state">

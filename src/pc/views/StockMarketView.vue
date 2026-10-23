@@ -17,7 +17,8 @@ import { useStockOpen } from '../../common/composables/use-stock-open';
 import type { ThsStockRow } from '../../common/types/ths-market.types.ts';
 
 /**
- * 个股行情（PC 新页面，/stock-market）
+ * 全部个股（行情全景子 tab，2026-10-22 起并入 PanoramaView；原 PC /stock-market 独立页，
+ * 旧路径由 404 兜底页承接）
  *
  * 数据源：同花顺行情中心 ajax HTML 片段（fetchThsStockBoardPage，GBK，服务端排序 + 翻页）。
  * - 板块 Tab：全部 / 沪市A股 / 深市A股 / 北交所 / 创业板 / 科创板
@@ -186,7 +187,7 @@ const cellCls = (col: ColumnDef, row: ThsStockRow): string => {
 </script>
 
 <template>
-  <BaseCard title="个股行情">
+  <BaseCard title="全部个股">
     <template #extra>
       <div class="flex items-center gap-3">
         <span class="text-xs text-text-tertiary">共 {{ THS_STOCK_BOARD_PAGE_SIZE }} 条/页 · 30s 轮询</span>

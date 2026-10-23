@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import { computed, onActivated, onMounted, ref, watch } from "vue";
-import { isTauri } from "@tauri-apps/api/core";
-import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openInNewWindow } from "../../common/utils/open-in-new-window";
 import BaseButton from "../components/ui/BaseButton.vue";
 import BaseCard from "../components/ui/BaseCard.vue";
 import BaseEmpty from "../components/ui/BaseEmpty.vue";
@@ -56,6 +54,7 @@ import {
   type TpSubView,
 } from "../../common/constants/hot-news.constants.ts";
 import { STORAGE_NS_HOT_NEWS_FILTER } from "../../common/constants/storage-key.constants.ts";
+import { usePageHeaderSlot, PAGE_HEADER_ACTIONS_TARGET } from "../../common/composables/use-page-header-slot";
 import { appStorage } from "../../common/utils/app-local-storage";
 import { buildNewsAnalysisPrompt } from "../../common/utils/build-news-analysis-prompt";
 import { dedupeHotNews } from "../../common/utils/dedupe-hot-news";
@@ -264,6 +263,9 @@ const settingsStore = useSettingsStore();
 const agentEntryVisible = computed(() =>
   !settingsStore.hiddenHeaderItems.includes(HOST_HEADER_ITEM.AGENT),
 );
+
+/** 页头动作挂载守卫：只有本页激活时按钮才出现在页头（KeepAlive 缓存页切走不残留） */
+const { active: headerSlotActive } = usePageHeaderSlot();
 
 /**
  * 收集当前已加载展示的新闻条目（「AI 分析」全量口径）：六个通用通道 +
@@ -1323,65 +1325,6 @@ const SOURCE_LOGOS: Record<NewsSource, string> = {
   tdx: "/news-logos/tdx.ico",
 };
 
-/** 新闻原文窗口尺寸（居中弹出） */
-const NEWS_WINDOW_WIDTH = 1024;
-const NEWS_WINDOW_HEIGHT = 768;
-
-/**
- * 打开新闻原文：
- * - Tauri：新建独立 WebviewWindow 加载原文页（应用内 webview 容器），
- *   远程页面无 IPC 权限（capabilities 仅对 main 授予核心权限，
- *   news-* 窗口只保留原生关闭能力）；创建失败时回退系统默认浏览器；
- * - 浏览器：新开 900 x 300 小窗直接导航原文页——不使用 iframe，
- *   规避新闻站点的 X-Frame-Options / CSP 反框架限制（iframe 方案会白屏）
- * @param url 新闻原文链接
- */
-const openInNewWindow = async (url: string): Promise<void> => {
-  if (isTauri()) {
-    try {
-      // label 全局唯一且不能复用已销毁窗口的 label，用时间戳避免冲突
-      const label = `news-${Date.now()}`;
-      const win = new WebviewWindow(label, {
-        url,
-        title: "新闻",
-        width: NEWS_WINDOW_WIDTH,
-        height: NEWS_WINDOW_HEIGHT,
-        center: true,
-      });
-      // 创建失败（权限缺失 / label 冲突等）时回退系统浏览器
-      win.once("tauri://error", (event) => {
-        console.error("[hot-news] webview window", event);
-        void openUrl(url);
-      });
-      return;
-    } catch (error) {
-      console.error("[hot-news] webview window", error);
-      try {
-        await openUrl(url);
-      } catch (openError) {
-        console.error("[hot-news] opener", openError);
-      }
-      return;
-    }
-  }
-  // 浏览器：3:1 小窗（900 x 300）居中弹出
-  const BROWSER_WINDOW_WIDTH = 900;
-  const BROWSER_WINDOW_HEIGHT = Math.round(BROWSER_WINDOW_WIDTH / 3);
-  const left = Math.max(
-    0,
-    Math.round((window.screen.availWidth - BROWSER_WINDOW_WIDTH) / 2),
-  );
-  const top = Math.max(
-    0,
-    Math.round((window.screen.availHeight - BROWSER_WINDOW_HEIGHT) / 2),
-  );
-  const features =
-    `width=${BROWSER_WINDOW_WIDTH},height=${BROWSER_WINDOW_HEIGHT},left=${left},top=${top},` +
-    "menubar=no,toolbar=no,location=no,status=no";
-  if (!window.open(url, "_blank", features)) {
-    window.open(url, "_blank", "noopener");
-  }
-};
 
 /**
  * 时间展示
@@ -1425,12 +1368,13 @@ const loadMoreLabel = (state: SourceState): string => {
   <!-- 单根容器：MainLayout 通过 :class="pageAnim" 下发页面进入动画类名，
          而多根组件无法继承 attrs（会丢动画并刷 Vue warn），故统一包一层 -->
   <div>
-    <!-- 「新闻源设置」工具条：按钮打开弹窗（勾选 / 拖拽排序都在弹窗内，草稿模式） -->
-    <div class="flex shrink-0 items-center justify-between border-b border-flat-weak px-4 py-2">
-      <span class="text-xs text-text-tertiary">
-        已启用 {{ visibleCards.length }} / {{ sourceItems.length }} 个新闻源
-      </span>
-      <div class="flex items-center gap-2">
+    <!-- 页级动作上移 MainLayout 页头：启用计数 + AI 分析 + 新闻源设置
+         （Teleport 投射，本页激活时才挂载；「新闻源设置」弹窗仍留在页内） -->
+    <Teleport v-if="headerSlotActive" :to="PAGE_HEADER_ACTIONS_TARGET">
+      <div class="flex items-center gap-3">
+        <span class="text-xs text-text-tertiary">
+          已启用 {{ visibleCards.length }} / {{ sourceItems.length }} 个新闻源
+        </span>
         <BaseButton
           v-if="agentEntryVisible"
           variant="ghost"
@@ -1445,7 +1389,7 @@ const loadMoreLabel = (state: SourceState): string => {
           新闻源设置
         </BaseButton>
       </div>
-    </div>
+    </Teleport>
 
     <!-- 新闻源设置弹窗（草稿模式：确认才生效） -->
     <HotNewsSourceModal
@@ -1692,8 +1636,9 @@ const loadMoreLabel = (state: SourceState): string => {
     </BaseModal>
 
     <!-- 横向卡片流：每源一张 375px 卡片，超出页面横向滚动 -->
-    <!-- 高度用 100dvh - 7rem：扣除 MainLayout 头部 h-14(56px) + main 内部 div 的 p-6 上下(48px) + buffer -->
-    <div class="flex h-[calc(100dvh-9rem)] min-h-0 gap-4 overflow-x-auto p-4">
+    <!-- 高度用 100dvh - 6.5rem：扣除 MainLayout 头部 h-14(56px) + main 内部 div 的 p-6 上下(48px)
+         （页级动作工具条已上移页头，不再为其预留高度） -->
+    <div class="flex h-[calc(100dvh-6.5rem)] min-h-0 gap-4 overflow-x-auto p-4">
       <BaseCard
         v-for="card in cardViews"
         :key="card.value"

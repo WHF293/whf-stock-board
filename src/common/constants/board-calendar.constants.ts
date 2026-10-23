@@ -5,6 +5,11 @@
  * `.ai/开发方案/2026-09-14-板块日历与赚钱效应开发方案.md`
  */
 
+import type {
+  BoardScoreBuckets,
+  BoardScoreWeights,
+} from '../types/board-calendar.types.ts';
+
 /* --------------------------------- 上游接口 --------------------------------- */
 
 /**
@@ -205,6 +210,54 @@ export const calcBoardScore = (input: {
   input.limitUp * BOARD_SCORE_WEIGHT.LIMIT_UP +
   input.limitDown * BOARD_SCORE_WEIGHT.LIMIT_DOWN;
 
+/* ------------------------------ 得分分桶与自定义权重 ------------------------------ */
+
+/** 分桶边界（%）：涨幅高于该值进强势桶、跌幅低于负值进弱势桶（±5.00% 整点计入温和桶） */
+export const BOARD_SCORE_BUCKET_THRESHOLD = 5;
+
+/** 用户自定义权重的取值边界（题材轮动权重管理器约束，王总 2026-10-22 指定 -10 ~ 10） */
+export const BOARD_SCORE_WEIGHT_RANGE = { MIN: -10, MAX: 10 } as const;
+
+/** 用户自定义权重的滑动条步长（整数步进） */
+export const BOARD_SCORE_WEIGHT_STEP = 1;
+
+/**
+ * 分桶默认权重（王总 2026-10-22 截图定稿：强桶 ±7，温和桶 ±5）
+ *
+ * ⚠️ 与净额口径**不再恒等**：恒等式要求强桶与温和桶同权（gt5 = up05、lt5 = down05），
+ * 王总把强桶加到 7 / -7 后，Σ 分桶 × 默认权重 ≠ calcBoardScore——
+ * 默认权重下渲染层也会走分桶重算，只有**无分桶的旧行**继续沿用净额口径的落库 score
+ * （回退口径，刷一遍历史后全量切换到分桶口径）。
+ */
+export const BOARD_SCORE_WEIGHTS_DEFAULT: BoardScoreWeights = {
+  limitUp: 10,
+  gt5: 7,
+  up05: 5,
+  down05: -5,
+  lt5: -7,
+  limitDown: -10,
+};
+
+/**
+ * 分桶得分：Σ 分桶家数 × 对应权重
+ * @param buckets 得分分桶（六桶互斥家数）
+ * @param weights 权重（键与分桶同构）
+ * @returns 得分
+ */
+export const calcBoardScoreFromBuckets = (
+  buckets: BoardScoreBuckets,
+  weights: BoardScoreWeights,
+): number =>
+  buckets.limitUp * weights.limitUp +
+  buckets.gt5 * weights.gt5 +
+  buckets.up05 * weights.up05 +
+  buckets.down05 * weights.down05 +
+  buckets.lt5 * weights.lt5 +
+  buckets.limitDown * weights.limitDown;
+
+/** 成分股涨跌幅批量查询字段码（f12 = 6 位代码，f3 = 涨跌幅%；分桶采集专用） */
+export const BOARD_BUCKET_QUOTE_FIELDS = 'f12,f3';
+
 /* ---------------------------------- 色阶 ---------------------------------- */
 
 /**
@@ -344,44 +397,54 @@ export const BOARD_CALENDAR_HEAT_OPTIONS = [
   { label: '当日成交额', value: BOARD_CALENDAR_HEAT_BASIS.AMOUNT },
 ] as const;
 
-/** 展示范围（交易日列数） */
+/** 展示范围（交易日列数；2026-10-17 王总拍板缩编为 15 / 30 / 全部三档） */
 export const BOARD_CALENDAR_RANGE = {
-  D10: '10',
-  D20: '20',
+  D15: '15',
   D30: '30',
-  D60: '60',
-  D180: '180',
   ALL: 'all',
 } as const;
 
-/** 展示范围默认值（需求：默认最近 10 天） */
-export const BOARD_CALENDAR_RANGE_DEFAULT = BOARD_CALENDAR_RANGE.D10;
+/** 展示范围默认值（默认最近 15 天） */
+export const BOARD_CALENDAR_RANGE_DEFAULT = BOARD_CALENDAR_RANGE.D15;
 
 /** 展示范围选项（BaseTabs） */
 export const BOARD_CALENDAR_RANGE_OPTIONS = [
-  { label: '10天', value: BOARD_CALENDAR_RANGE.D10 },
-  { label: '20天', value: BOARD_CALENDAR_RANGE.D20 },
+  { label: '15天', value: BOARD_CALENDAR_RANGE.D15 },
   { label: '30天', value: BOARD_CALENDAR_RANGE.D30 },
-  { label: '60天', value: BOARD_CALENDAR_RANGE.D60 },
-  { label: '180天', value: BOARD_CALENDAR_RANGE.D180 },
   { label: '全部', value: BOARD_CALENDAR_RANGE.ALL },
 ] as const;
 
-/** 主区视图：list = 涨跌停矩阵列表（默认）/ bubble = 赚钱效应气泡图 / mainline = 板块主线分析 */
+/**
+ * 主区视图：rotation = 题材轮动 bump 图（默认）/ list = 涨跌停矩阵列表 /
+ * bubble = 赚钱效应气泡图 / mainline = 板块Top 分析
+ *
+ * 2026-10-21 王总指定：页面改名「题材轮动」，四个 Tab 改名重排
+ * （列表 → 板块日历、气泡图 → 赚钱效应、板块分析 → 板块Top、题材轮动置于首位）。
+ * key 不改名，只动 label 与顺序，路由与落库零影响。
+ */
 export const BOARD_CALENDAR_VIEW = {
+  ROTATION: 'rotation',
   LIST: 'list',
   BUBBLE: 'bubble',
   MAINLINE: 'mainline',
+  SEESAW: 'seesaw',
 } as const;
 
-/** 主区视图默认值 */
-export const BOARD_CALENDAR_VIEW_DEFAULT = BOARD_CALENDAR_VIEW.LIST;
+/** 主区视图默认值（页面即题材轮动页，默认进新视图） */
+export const BOARD_CALENDAR_VIEW_DEFAULT = BOARD_CALENDAR_VIEW.ROTATION;
 
-/** 主区视图选项（BaseTabs，样式与展示范围切换同款） */
+/**
+ * 主区视图选项（BaseTabs，顺序 = 页面 Tab 顺序）
+ *
+ * 2026-10-22 王总指定：板块Top 不再作为独立 Tab，移入题材轮动 Tab 下方作子模块
+ * （按当日成交额取每日 Top N，范围与题材轮动的近 10/20/30 日同步）；
+ * MAINLINE key 保留（类型与持久化兼容），仅从选项中移除。
+ */
 export const BOARD_CALENDAR_VIEW_OPTIONS = [
-  { label: '列表', value: BOARD_CALENDAR_VIEW.LIST },
-  { label: '气泡图', value: BOARD_CALENDAR_VIEW.BUBBLE },
-  { label: '板块分析', value: BOARD_CALENDAR_VIEW.MAINLINE },
+  { label: '题材轮动', value: BOARD_CALENDAR_VIEW.ROTATION },
+  { label: '板块日历', value: BOARD_CALENDAR_VIEW.LIST },
+  { label: '赚钱效应', value: BOARD_CALENDAR_VIEW.BUBBLE },
+  { label: '风格跷跷板', value: BOARD_CALENDAR_VIEW.SEESAW },
 ] as const;
 
 /** 板块分析：每日按得分绝对值取前 N 名（横看同一板块是否连续在榜 = 资金集中，跳来跳去 = 快速轮动；多空由色阶区分） */
@@ -432,6 +495,14 @@ export const BOARD_SNAPSHOT_THROTTLE_MS = 10 * 60 * 1_000;
 
 /** 历史回补交易日数（涨停池 date 实测仅可回溯约 14 个交易日，超窗口返回 tc=0 自动跳过） */
 export const ZT_BACKFILL_DAYS = 20;
+
+/**
+ * 手动补数弹窗的日期选择范围（最近 N 个交易日）
+ *
+ * 60 档已从展示范围缩编，但补数一次拉 140 根日 K 序列（请求量与天数无关），
+ * 60 天足够覆盖「没开软件」的回溯窗口并留余量。
+ */
+export const BOARD_SYNC_DATE_PICK_MAX = 60;
 
 /** 收盘定稿时刻（本地小时）：此时间后首次采集标记 is_final */
 export const BOARD_FINAL_HOUR = 15;

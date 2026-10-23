@@ -16,15 +16,21 @@ import BaseTabs from '../components/ui/BaseTabs.vue';
 import MenuIcon from '../components/ui/MenuIcon.vue';
 import ChartIndicatorConfigButton from '../components/ui/ChartIndicatorConfigButton.vue';
 import { useSettingsStore } from '../../common/stores/settings';
+import { useUiStore } from '../../common/stores/ui';
 import { useStockContextStore } from '../../common/stores/stock-context';
 import { ROUTE_PATH } from '../../common/constants/router-meta.constants.ts';
 import { HOST_HEADER_ITEM } from '../../common/constants/header.constants.ts';
 import { formatPercent } from '../../common/utils/format-percent';
 import { formatPrice } from '../../common/utils/format-price';
 import KlineChart from '../../common/components/charts/KlineChart.vue';
+import { useKlineDrawing } from '../../common/composables/use-kline-drawing';
+import { KLINE_DRAWING_SHAPES } from '../../common/constants/kline-drawing.constants.ts';
 import StockQuoteHeader from '../components/business/StockQuoteHeader.vue';
+import StockNewsPanel from '../components/business/StockNewsPanel.vue';
 import StockOrderBook from '../components/business/StockOrderBook.vue';
 import EtfHoldingsCard from '../components/business/EtfHoldingsCard.vue';
+import StockFinancialTab from '../components/business/stock-financial/StockFinancialTab.vue';
+import EtfProfileCard from '../components/business/EtfProfileCard.vue';
 import { fetchFullQuotes } from '../../common/api/quotes.api.ts';
 import { fetchKlineCached } from '../../common/api/kline-cache.api.ts';
 import { listTradeRecordsBySymbol } from '../../common/api/account-records-db.api.ts';
@@ -37,6 +43,10 @@ import {
 import { usePolling } from '../../common/composables/use-polling';
 import { useChartPeriod } from '../../common/composables/use-chart-period';
 import { useDetailPanelCollapse } from '../../common/composables/use-detail-panel-collapse';
+import {
+  PAGE_HEADER_ACTIONS_TARGET,
+  usePageHeaderSlot,
+} from '../../common/composables/use-page-header-slot';
 import { POLLING_INTERVAL } from '../../common/constants/polling.constants.ts';
 import { CHART_PERIOD_OPTIONS } from '../../common/constants/stock-detail.constants.ts';
 import {
@@ -68,6 +78,14 @@ const router = useRouter();
 const dataCache = useDataCacheStore();
 const watchlistStore = useWatchlistStore();
 const settingsStore = useSettingsStore();
+const uiStore = useUiStore();
+
+/**
+ * 页面全屏（本页铺满应用窗口）：入口在 K 线卡头部的全屏按钮，
+ * 置位后 MainLayout 隐藏侧栏与页内页头，本页隐藏底部页签并拉伸 K 线主区；
+ * Esc / 切页由 MainLayout 兜底退出
+ */
+const isPageFullscreen = computed(() => uiStore.pageFullscreen);
 const stockContext = useStockContextStore();
 
 /**
@@ -89,6 +107,12 @@ const onAiAnalysis = (): void => {
     buildStockAnalysisPrompt({ name: quoteRef.value?.name ?? '', symbol: symbol.value }),
   );
 };
+
+/**
+ * 页级动作挂载守卫：「AI 分析 / 自选」按钮上移 MainLayout 页头右侧（插件设置之前），
+ * Teleport 投射需配合激活守卫（KeepAlive 缓存页切走时按钮不会自动撤离，见 composable 说明）
+ */
+const { active: headerSlotActive } = usePageHeaderSlot();
 
 // ---------- 报价（4s 轮询；快照播种，与侧栏互通） ----------
 const quoteRef = ref<FullQuote | null>(
@@ -121,6 +145,20 @@ const chartPeriod = useChartPeriod();
 /** 图表模式：分时 / 五日为分时线，其余为蜡烛图 */
 const chartMode = computed<'timeline' | 'candle'>(() =>
   chartPeriod.value === 'minute' || chartPeriod.value === 'fiveDay' ? 'timeline' : 'candle',
+);
+
+// ---------- 画线工具（K 线卡头部工具条；蜡烛模式可用，分时/五日置灰） ----------
+/** KlineChart 组件实例引用（经 defineExpose 拿 chart 实例） */
+const klineChartRef = ref<InstanceType<typeof KlineChart> | null>(null);
+
+/** 画线可用性（蜡烛模式；分时/五日的时间轴是补齐的固定轴，锚点语义不成立） */
+const drawingEnabled = computed(() => chartMode.value === 'candle');
+
+const drawing = useKlineDrawing(
+  computed(() => klineChartRef.value?.chart ?? null),
+  symbol,
+  chartPeriod,
+  drawingEnabled,
 );
 
 /** K 线快照键（符号 + 周期，不复权无口径差异；与侧栏互通） */
@@ -227,15 +265,18 @@ const isEtf = computed(() => isEtfSymbol(symbol.value));
 /** 当前选中的底部页签（切换股票时重置回交易记录） */
 const bottomTab = ref<DetailBottomTab>(DETAIL_BOTTOM_TAB_DEFAULT);
 
-/** 场内基金的页签顺序：持仓股在前、交易记录在后（参考同花顺移动端） */
-const ETF_TAB_ORDER: readonly DetailBottomTab[] = ['etf', 'trade'];
+/** 场内基金的页签顺序：持仓股在前、交易记录在后、基金概况承接披露口径；资讯两类票都可看 */
+const ETF_TAB_ORDER: readonly DetailBottomTab[] = ['etf', 'trade', 'fund', 'news'];
 
-/** 底部页签选项（场内基金两个页签按上述顺序；普通股票只有交易记录） */
+/** 普通股票的页签顺序：交易记录在前、财务居中、资讯最后 */
+const STOCK_TAB_ORDER: readonly DetailBottomTab[] = ['trade', 'financial', 'news'];
+
+/** 底部页签选项（场内基金无财务报表概念不加财务页签；普通股票追加财务） */
 const bottomTabOptions = computed(() => {
   const optionByValue = new Map(
     DETAIL_BOTTOM_TAB_OPTIONS.map((option) => [option.value, option]),
   );
-  const order = isEtf.value ? ETF_TAB_ORDER : ['trade' as DetailBottomTab];
+  const order = isEtf.value ? ETF_TAB_ORDER : STOCK_TAB_ORDER;
   return order.map((value) => optionByValue.get(value)).filter((option) => option != null);
 });
 
@@ -411,9 +452,47 @@ const pctClass = (value: number | null): string =>
   <!--
     页面整体高 = 主区（K 线行）+ 交易记录行，超出视口由 MainLayout 的 main 滚动；
     两行各自定高 calc(100dvh - 11rem)：6.5rem 为 MainLayout 顶栏 + p-6，
-    4.5rem 为本页顶栏卡与行间距——交易记录因此与 K 线卡片等高（需求口径）
+    4.5rem 为本页顶栏卡与行间距——交易记录因此与 K 线卡片等高（需求口径）。
+
+    页面全屏（isPageFullscreen，K 线卡头部按钮切换）：MainLayout 已隐藏页头与
+    p-6 并把内容容器改成 h-full flex 列，本页根节点改吃满高度、K 线行改 flex-1
+    拉伸，底部页签隐藏——应用窗口只剩「顶栏卡 + K 线行」（王总 2026-10-17）
   -->
-  <div class="flex min-h-0 flex-col gap-3">
+  <div class="flex min-h-0 flex-col gap-3" :class="isPageFullscreen ? 'h-full' : ''">
+    <!-- 页级动作上移 MainLayout 页头：「AI 分析 + 自选」按钮（Teleport 投射，本页激活时才挂载；
+         弹窗仍留在页内。位置在「插件设置」齿轮之前，王总 2026-10-16 指定） -->
+    <Teleport v-if="headerSlotActive" :to="PAGE_HEADER_ACTIONS_TARGET">
+      <div class="flex items-center gap-2">
+        <!-- AI 分析（交 Agent 做个股短期综合分析；样式保持原 ghost 按钮） -->
+        <BaseButton v-if="quoteRef && agentEntryVisible" variant="ghost" @click="onAiAnalysis">
+          <MenuIcon name="agent" :size="14" />
+          AI 分析
+        </BaseButton>
+        <!-- 自选按钮（原右栏报价头再上移至此）；2026-10-17 起用 BaseButton，
+             与旁边「AI 分析 / 插件设置」同款形状字号（rounded-lg 玻璃）。
+             王总 2026-10-17：红色去除——未加 = primary 绿、已加 = ghost 无语义色 -->
+        <BaseButton
+          v-if="quoteRef"
+          :variant="isInWatchlist ? 'ghost' : 'primary'"
+          @click="isInWatchlist ? openRemoveDialog() : openAddDialog()"
+        >
+          <svg
+            v-if="!isInWatchlist"
+            viewBox="0 0 24 24"
+            class="h-3 w-3"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+            stroke-linecap="round"
+          >
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+          <!-- 文案统一为「自选」（点击都弹自选编辑弹窗，王总 2026-10-13），颜色区分加/删 -->
+          自选
+        </BaseButton>
+      </div>
+    </Teleport>
+
     <!-- 顶栏：返回 + 标的报价摘要 + 周期按钮组（参考 pro period-bar 横条） -->
     <BaseCard class="shrink-0">
       <div class="flex flex-wrap items-center justify-between gap-3">
@@ -439,36 +518,6 @@ const pctClass = (value: number | null): string =>
               {{ quoteRef.changePercent >= 0 ? '+' : '' }}{{ quoteRef.changePercent.toFixed(2) }}%
             </span>
           </div>
-          <!-- AI 分析（交 Agent 做个股短期综合分析；与热点新闻页同款 BaseButton ghost） -->
-          <BaseButton
-            v-if="quoteRef && agentEntryVisible"
-            variant="ghost"
-            @click="onAiAnalysis"
-          >
-            <MenuIcon name="agent" :size="14" />
-            AI 分析
-          </BaseButton>
-          <!-- 自选按钮（原右栏报价头移此） -->
-          <button
-            v-if="quoteRef"
-            type="button"
-            class="pressable inline-flex shrink-0 items-center gap-1 rounded-full px-3 py-1 text-xs font-medium hover:opacity-80 active:scale-95"
-            :class="isInWatchlist ? 'bg-up-weak text-up' : 'bg-primary-weak text-primary'"
-            @click="isInWatchlist ? openRemoveDialog() : openAddDialog()"
-          >
-            <svg
-              v-if="!isInWatchlist"
-              viewBox="0 0 24 24"
-              class="h-3 w-3"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2.5"
-              stroke-linecap="round"
-            >
-              <path d="M12 5v14M5 12h14" />
-            </svg>
-            {{ isInWatchlist ? '删自选' : '加自选' }}
-          </button>
         </div>
         <!-- 周期按钮组（胶囊高亮当前周期）+ 指标配置按钮 -->
         <div class="flex items-center gap-2">
@@ -490,12 +539,63 @@ const pctClass = (value: number | null): string =>
             </button>
           </div>
           <ChartIndicatorConfigButton :disabled="chartMode === 'timeline'" />
+          <!-- 画线工具条（K 线卡头部；分时/五日置灰，见 use-kline-drawing） -->
+          <div
+            class="flex items-center gap-1 rounded-xl bg-flat-weak/60 p-1"
+            :class="drawingEnabled ? '' : 'opacity-40'"
+          >
+            <button
+              v-for="shape in KLINE_DRAWING_SHAPES"
+              :key="shape.name"
+              type="button"
+              class="rounded-lg px-2 py-1 text-xs transition-colors"
+              :class="drawing.activeShape.value === shape.name ? 'bg-primary-weak font-semibold text-primary' : 'text-text-secondary hover:text-text'"
+              :disabled="!drawingEnabled"
+              :title="shape.label"
+              :aria-pressed="drawing.activeShape.value === shape.name"
+              @click="drawing.startDrawing(shape.name)"
+            >
+              {{ shape.label }}
+            </button>
+            <button
+              type="button"
+              class="rounded-lg px-2 py-1 text-xs text-text-secondary transition-colors hover:text-text disabled:cursor-not-allowed disabled:opacity-40"
+              :disabled="!drawingEnabled || !drawing.hasSelection.value"
+              title="删除选中画线"
+              @click="drawing.removeSelected()"
+            >
+              删除
+            </button>
+            <button
+              type="button"
+              class="rounded-lg px-2 py-1 text-xs text-text-secondary transition-colors hover:text-text disabled:cursor-not-allowed disabled:opacity-40"
+              :disabled="!drawingEnabled || drawing.shapeCount.value === 0"
+              title="清空当前票当前周期的全部画线"
+              @click="drawing.clearAll()"
+            >
+              清空
+            </button>
+            <button
+              type="button"
+              class="rounded-lg px-2 py-1 text-xs transition-colors"
+              :class="drawing.drawingVisible.value ? 'text-text-secondary hover:text-text' : 'text-primary'"
+              :disabled="!drawingEnabled"
+              :title="drawing.drawingVisible.value ? '隐藏全部画线' : '显示全部画线'"
+              @click="drawing.toggleVisible()"
+            >
+              {{ drawing.drawingVisible.value ? '隐藏' : '显示' }}
+            </button>
+          </div>
         </div>
       </div>
     </BaseCard>
 
-    <!-- 主区：左（来源列表）/ 中（K 线占满整列）/ 右（报价头 + 五档盘口） -->
-    <div class="flex h-[calc(100dvh-11rem)] min-h-0 shrink-0 gap-3">
+    <!-- 主区：左（来源列表）/ 中（K 线占满整列）/ 右（报价头 + 五档盘口）。
+         常规模式定高滚动、全屏模式 flex-1 吃满剩余高度（见根节点注释） -->
+    <div
+      class="flex min-h-0 gap-3"
+      :class="isPageFullscreen ? 'flex-1' : 'h-[calc(100dvh-11rem)] shrink-0'"
+    >
       <!-- 左侧来源股票列表：跳转入口写入上下文后展示；为空（如直链进入）不渲染。
            支持展开/收起：收起时仅显示股票名称窄条 -->
       <BaseCard
@@ -561,7 +661,8 @@ const pctClass = (value: number | null): string =>
         </ul>
       </BaseCard>
 
-      <!-- K 线主图：撑满整列高度（min-w-0 允许随窗口收缩，canvas 不撑破行） -->
+      <!-- K 线主图：撑满整列高度（min-w-0 允许随窗口收缩，canvas 不撑破行）。
+           全屏入口已上移至应用顶栏（全局，任意页面可用），此处不再放页内按钮 -->
       <BaseCard title="K 线图" class="flex min-h-0 min-w-0 flex-1 flex-col">
         <div class="min-h-0 min-w-0 flex-1">
           <div v-if="klineError" class="py-10">
@@ -569,6 +670,7 @@ const pctClass = (value: number | null): string =>
           </div>
           <KlineChart
             v-else-if="!isKlineLoading && klines.length > 0"
+            ref="klineChartRef"
             :key="`${symbol}-${chartMode}`"
             :bars="klines"
             :mode="chartMode"
@@ -584,7 +686,8 @@ const pctClass = (value: number | null): string =>
         </div>
       </BaseCard>
 
-      <!-- 右侧信息栏：报价头 + 五档盘口（不随图表周期切换）。
+      <!-- 右侧信息栏：报价头 + 五档盘口（不随图表周期切换），两卡白底实色（王总 2026-10-22
+           指定，替代 2026-10-16 的高光玻璃——玻璃半透明底在红色主题下泛粉）。
            支持展开/收起（与左侧列表同款交互，会话级）：收起时列宽 w-44，
            报价头切 compact（高/低/开/收 两列）、五档盘口切 vertical（买盘上/卖盘下） -->
       <div
@@ -618,8 +721,12 @@ const pctClass = (value: number | null): string =>
     </div>
 
     <!-- 底部：交易记录 / ETF 持仓股 页签（行情全景同款下划线页签；场内基金追加持仓页签），
-         与上方 K 线卡片等高，行数超出时列表内部滚动 -->
-    <BaseCard class="flex h-[calc(100dvh-11rem)] min-h-0 shrink-0 flex-col">
+         与上方 K 线卡片等高，行数超出时列表内部滚动。
+         页面全屏时隐藏（v-show 避免页签组件重建重复拉数），只保留 K 线主区 -->
+    <BaseCard
+      v-show="!isPageFullscreen"
+      class="flex h-[calc(100dvh-11rem)] min-h-0 shrink-0 flex-col"
+    >
       <!-- 页签行：左页签 + 右侧上下文控件（随页签切换） -->
       <div class="flex shrink-0 items-center justify-between gap-2 border-b border-flat-weak px-2">
         <BaseTabs v-model="bottomTab" :options="bottomTabOptions" variant="underline" aria-label="详情底部页签" />
@@ -684,7 +791,16 @@ const pctClass = (value: number | null): string =>
       </div>
 
       <!-- ETF 持仓股页签：季度披露的重仓明细，单击行切换详情到该成分股 -->
-      <EtfHoldingsCard v-else :symbol="symbol" @open="switchStock" />
+      <EtfHoldingsCard v-else-if="bottomTab === 'etf'" :symbol="symbol" @open="switchStock" />
+
+      <!-- 财务页签：四张 datacenter 报表（摘要 / 资产负债 / 现金流 / 业绩预告），页签切入才挂载拉数 -->
+      <StockFinancialTab v-else-if="bottomTab === 'financial'" :symbol="symbol" />
+
+      <!-- 基金概况页签：场内基金承接「财务」对应的披露口径（规模/费率/管理人/投资目标） -->
+      <EtfProfileCard v-else-if="bottomTab === 'fund'" :symbol="symbol" />
+
+      <!-- 资讯页签：公告 + 个股新闻（东财源；进页签拉一次 + 手动刷新，不轮询） -->
+      <StockNewsPanel v-else-if="bottomTab === 'news'" :symbol="symbol" />
     </BaseCard>
 
     <!-- 加自选弹窗：分组多选 + 新建分组 -->

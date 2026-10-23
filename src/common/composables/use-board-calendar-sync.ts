@@ -1,5 +1,6 @@
 import {
   fetchBoardConstituents,
+  fetchBoardConstituentChangePct,
   fetchBoardSnapshot,
   fetchLimitPool,
   fetchTradingDates,
@@ -14,9 +15,11 @@ import {
   getCalendarMeta,
   getConstituentSyncedAt,
   isBoardDbAvailable,
+  listBoardDailyByDates,
   listBoardDailyDates,
   listBoardDailyDatesByDataLevel,
   listConstituentBoardMap,
+  listConstituentsByBoard,
   readBoardPoolSignature,
   readPoolBoundaryDate,
   readTradingDatesCache,
@@ -29,6 +32,7 @@ import {
   writePoolBoundaryDate,
   writeTradingDatesCache,
 } from '../api/board-calendar-db.api.ts';
+import { loadBoardConstituentDayStats } from '../api/board-detail.api.ts';
 import {
   BACKFILL_CONCURRENCY,
   BOARD_DATA_LEVEL,
@@ -50,16 +54,22 @@ import {
   ZT_BACKFILL_DAYS,
   calcBoardScore,
 } from '../constants/board-calendar.constants.ts';
+import { ROTATION_MIN_LIMIT_UP } from '../constants/board-rotation.constants.ts';
 import type {
+  BoardCalendarMeta,
   BoardDailyRow,
+  BoardFetchDayResult,
   BoardLimitStock,
+  BoardManualFetchResult,
   BoardProfile,
+  BoardScoreBuckets,
   BoardSyncResult,
   LimitPoolStock,
   TradingDatesCache,
 } from '../types/board-calendar.types.ts';
 import { delay } from '../utils/delay';
 import { handleSdkError } from '../utils/handle-sdk-error';
+import { addBoardScoreBucket } from '../utils/add-board-score-bucket';
 import { mapWithConcurrency } from '../utils/map-with-concurrency';
 
 /**
@@ -363,17 +373,38 @@ const syncConstituents = async (force: boolean): Promise<{ synced: boolean; coun
 /* -------------------------------- 当日快照 -------------------------------- */
 
 /**
- * 采集「今日完整快照」并落库（涨跌停 + 涨跌家数齐全）
+ * 单日完整快照的内存产物（落库前形态）
+ *
+ * 手动刷新弹窗需要「先采集预览、点应用才落库」，故构建与写入必须拆开；
+ * 自动采集路径 = 构建 + 写入，行为与拆分前完全一致。
+ */
+interface DailySnapshotData {
+  /** 板块日聚合行 */
+  rows: BoardDailyRow[];
+  /** 涨跌停个股明细 */
+  limitRows: BoardLimitStock[];
+  /** 板块档案 */
+  profiles: BoardProfile[];
+  /** 采集台账 */
+  meta: BoardCalendarMeta;
+  /** 全市场涨停家数 */
+  limitUpCnt: number;
+  /** 全市场跌停家数 */
+  limitDownCnt: number;
+}
+
+/**
+ * 采集「今日完整快照」数据（涨跌停 + 涨跌家数齐全），**只构建不落库**
  *
  * 请求数固定为 3：板块快照 1（一次批量查板块池全部板块）+ 涨停池 1 + 跌停池 1。
  * @param tradeDate 交易日（`YYYY-MM-DD`）
  * @param constituentMap symbol → boardCode 列表映射
- * @returns 全市场涨停 / 跌停家数
+ * @returns 快照内存产物
  */
-const collectDailySnapshot = async (
+const buildDailySnapshot = async (
   tradeDate: string,
   constituentMap: Map<string, string[]>,
-): Promise<{ limitUpCnt: number; limitDownCnt: number }> => {
+): Promise<DailySnapshotData> => {
   const snapshot = await fetchBoardSnapshot();
   const poolDate = toPoolDateParam(tradeDate);
   const limitUp = await fetchLimitPool(1, poolDate);
@@ -382,7 +413,7 @@ const collectDailySnapshot = async (
 
   const missing = CALENDAR_BOARDS.filter((board) => !snapshot.has(board.code));
   if (missing.length >= CALENDAR_BOARD_COUNT / 2) {
-    // 大半板块缺失 → 判上游异常，拒绝写库（避免污染历史）
+    // 大半板块缺失 → 判上游异常，拒绝产出（避免污染历史）
     throw new Error(`板块快照缺失 ${missing.length} 个，疑似上游异常`);
   }
   if (missing.length > 0) {
@@ -405,6 +436,33 @@ const collectDailySnapshot = async (
   const limitRows: BoardLimitStock[] = [];
   const profiles: BoardProfile[] = [];
 
+  /* -- 得分分桶采集（权重管理器数据源，2026-10-22）： --
+   * 定稿轮（15:00 后）全板块覆盖；盘中只为「涨停 ≥ 上榜阈值」的候选板块取数
+   * （轮动榜与色阶只有候选板块用得到自定义得分，长尾板块回退落库默认口径）。
+   * 请求节奏：逐板块串行 + 300ms 错峰，单板块 ≈ ceil(成分股数 / 100) 页；
+   * 单板块失败仅该板块无分桶（buckets = null 回退），不阻断整轮采集。 */
+  const quotesByBoard = new Map<string, Map<string, number>>();
+  const limitSymbolsByBoard = new Map<string, { up: Set<string>; down: Set<string> }>();
+  for (const board of CALENDAR_BOARDS) {
+    const ups = upGroup.groups.get(board.code) ?? [];
+    const downs = downGroup.groups.get(board.code) ?? [];
+    if (!isFinal && ups.length < ROTATION_MIN_LIMIT_UP) {
+      continue;
+    }
+    limitSymbolsByBoard.set(board.code, {
+      up: new Set(ups.map((stock) => stock.symbol)),
+      down: new Set(downs.map((stock) => stock.symbol)),
+    });
+    await delay(BOARD_REQUEST_GAP_MS);
+    try {
+      quotesByBoard.set(board.code, await fetchBoardConstituentChangePct(board.code));
+    } catch (error) {
+      console.warn(
+        `[board-calendar] ${board.name} 成分股涨跌幅取数失败，该板块无分桶：${toErrorMessage(error)}`,
+      );
+    }
+  }
+
   CALENDAR_BOARDS.forEach((board, index) => {
     const item = snapshot.get(board.code);
     if (!item) return;
@@ -417,6 +475,16 @@ const collectDailySnapshot = async (
       upCount: item.upCount,
       downCount: item.downCount,
     });
+    // 分桶：涨跌停桶按池口径（与 limitUp / limitDown 家数同源），中间桶按实时涨跌幅
+    const quotes = quotesByBoard.get(board.code);
+    const limitSymbols = limitSymbolsByBoard.get(board.code);
+    let buckets: BoardScoreBuckets | null = null;
+    if (quotes && limitSymbols) {
+      buckets = { limitUp: 0, gt5: 0, up05: 0, down05: 0, lt5: 0, limitDown: 0 };
+      for (const [symbol, change] of quotes) {
+        addBoardScoreBucket(buckets, change, limitSymbols.up.has(symbol), limitSymbols.down.has(symbol));
+      }
+    }
     rows.push({
       tradeDate,
       boardCode: board.code,
@@ -431,6 +499,7 @@ const collectDailySnapshot = async (
       consCount,
       score,
       scoreRate: consCount > 0 ? score / consCount : 0,
+      buckets,
       dataLevel: BOARD_DATA_LEVEL.FULL,
       snapshotAt: now,
       isFinal,
@@ -448,19 +517,48 @@ const collectDailySnapshot = async (
     });
   });
 
-  await upsertBoardDaily(rows);
-  await replaceLimitStocks(tradeDate, limitRows);
-  await upsertBoardProfiles(profiles);
-  await upsertCalendarMeta({
-    tradeDate,
-    dataLevel: BOARD_DATA_LEVEL.FULL,
-    isFinal,
+  return {
+    rows,
+    limitRows,
+    profiles,
+    meta: {
+      tradeDate,
+      dataLevel: BOARD_DATA_LEVEL.FULL,
+      isFinal,
+      limitUpCnt: limitUp.length,
+      limitDownCnt: limitDown.length,
+      constituentSyncedAt: 0,
+      updatedAt: now,
+    },
     limitUpCnt: limitUp.length,
     limitDownCnt: limitDown.length,
-    constituentSyncedAt: 0,
-    updatedAt: now,
-  });
-  return { limitUpCnt: limitUp.length, limitDownCnt: limitDown.length };
+  };
+};
+
+/**
+ * 快照内存产物 → 本地库（board_daily / board_limit_stock / board_profile / 台账）
+ * @param data 单日快照内存产物
+ */
+const writeDailySnapshot = async (data: DailySnapshotData): Promise<void> => {
+  await upsertBoardDaily(data.rows);
+  await replaceLimitStocks(data.meta.tradeDate, data.limitRows);
+  await upsertBoardProfiles(data.profiles);
+  await upsertCalendarMeta(data.meta);
+};
+
+/**
+ * 采集「今日完整快照」并落库（构建 + 写入）
+ * @param tradeDate 交易日（`YYYY-MM-DD`）
+ * @param constituentMap symbol → boardCode 列表映射
+ * @returns 全市场涨停 / 跌停家数
+ */
+const collectDailySnapshot = async (
+  tradeDate: string,
+  constituentMap: Map<string, string[]>,
+): Promise<{ limitUpCnt: number; limitDownCnt: number }> => {
+  const data = await buildDailySnapshot(tradeDate, constituentMap);
+  await writeDailySnapshot(data);
+  return { limitUpCnt: data.limitUpCnt, limitDownCnt: data.limitDownCnt };
 };
 
 /**
@@ -552,6 +650,91 @@ const probeLimitPool = async (tradeDate: string): Promise<BackfillProbe> => {
 };
 
 /**
+ * 回补日的内存产物（rows + 明细 + 台账）
+ *
+ * 自动回补（backfillHistory）与手动获取（fetchMissingBoardData）共用，
+ * 保证两条路径的落库口径完全一致。
+ */
+interface BackfillDayData {
+  /** 板块日聚合行（回补口径：无涨跌家数，得分退化为仅涨跌停） */
+  rows: BoardDailyRow[];
+  /** 涨跌停个股明细 */
+  limitRows: BoardLimitStock[];
+  /** 采集台账（data_level = PARTIAL） */
+  meta: BoardCalendarMeta;
+}
+
+/**
+ * 由某日的涨跌停池构建回补日数据（**只构建不落库**）
+ * @param tradeDate 交易日（`YYYY-MM-DD`）
+ * @param limitUp 涨停池
+ * @param limitDown 跌停池
+ * @param constituentMap symbol → boardCode 列表映射
+ * @returns 回补日内存产物
+ */
+const buildBackfillDay = (
+  tradeDate: string,
+  limitUp: LimitPoolStock[],
+  limitDown: LimitPoolStock[],
+  constituentMap: Map<string, string[]>,
+): BackfillDayData => {
+  const upGroup = groupByBoard(limitUp, constituentMap);
+  const downGroup = groupByBoard(limitDown, constituentMap);
+  const now = Date.now();
+  const rows: BoardDailyRow[] = [];
+  const limitRows: BoardLimitStock[] = [];
+
+  CALENDAR_BOARDS.forEach((board) => {
+    const ups = upGroup.groups.get(board.code) ?? [];
+    const downs = downGroup.groups.get(board.code) ?? [];
+    // 该日无涨跌家数：up/down 置 0，得分退化为「仅涨跌停」口径（不参与色阶）
+    rows.push({
+      tradeDate,
+      boardCode: board.code,
+      boardName: board.name,
+      changePercent: null,
+      amount: null,
+      limitUp: ups.length,
+      limitDown: downs.length,
+      upCount: 0,
+      downCount: 0,
+      flatCount: 0,
+      consCount: 0,
+      score: calcBoardScore({
+        limitUp: ups.length,
+        limitDown: downs.length,
+        upCount: ups.length,
+        downCount: downs.length,
+      }),
+      scoreRate: 0,
+      // 回补日无涨跌家数（更无逐股涨跌幅），六桶残缺 → 不落分桶，读取侧回退默认口径
+      buckets: null,
+      dataLevel: BOARD_DATA_LEVEL.PARTIAL,
+      snapshotAt: now,
+      isFinal: true,
+    });
+    limitRows.push(
+      ...toLimitStockRows(tradeDate, board.code, ups),
+      ...toLimitStockRows(tradeDate, board.code, downs),
+    );
+  });
+
+  return {
+    rows,
+    limitRows,
+    meta: {
+      tradeDate,
+      dataLevel: BOARD_DATA_LEVEL.PARTIAL,
+      isFinal: true,
+      limitUpCnt: limitUp.length,
+      limitDownCnt: limitDown.length,
+      constituentSyncedAt: 0,
+      updatedAt: now,
+    },
+  };
+};
+
+/**
  * 回补历史交易日（只能拿到涨跌停，板块级涨跌家数接口无历史值）
  *
  * **并发尺度是「交易日」**：最多 `BACKFILL_CONCURRENCY` 个交易日同时在探（单日内部 2 个请求
@@ -594,61 +777,350 @@ const backfillHistory = async (
       break;
     }
 
-    const upGroup = groupByBoard(limitUp, constituentMap);
-    const downGroup = groupByBoard(limitDown, constituentMap);
-    const now = Date.now();
-    const rows: BoardDailyRow[] = [];
-    const limitRows: BoardLimitStock[] = [];
-
-    CALENDAR_BOARDS.forEach((board) => {
-      const ups = upGroup.groups.get(board.code) ?? [];
-      const downs = downGroup.groups.get(board.code) ?? [];
-      // 该日无涨跌家数：up/down 置 0，得分退化为「仅涨跌停」口径（不参与色阶）
-      rows.push({
-        tradeDate,
-        boardCode: board.code,
-        boardName: board.name,
-        changePercent: null,
-        amount: null,
-        limitUp: ups.length,
-        limitDown: downs.length,
-        upCount: 0,
-        downCount: 0,
-        flatCount: 0,
-        consCount: 0,
-        score: calcBoardScore({
-          limitUp: ups.length,
-          limitDown: downs.length,
-          upCount: ups.length,
-          downCount: downs.length,
-        }),
-        scoreRate: 0,
-        dataLevel: BOARD_DATA_LEVEL.PARTIAL,
-        snapshotAt: now,
-        isFinal: true,
-      });
-      limitRows.push(
-        ...toLimitStockRows(tradeDate, board.code, ups),
-        ...toLimitStockRows(tradeDate, board.code, downs),
-      );
-    });
-
+    const { rows, limitRows, meta } = buildBackfillDay(tradeDate, limitUp, limitDown, constituentMap);
     await upsertBoardDaily(rows);
     await replaceLimitStocks(tradeDate, limitRows);
-    await upsertCalendarMeta({
-      tradeDate,
-      dataLevel: BOARD_DATA_LEVEL.PARTIAL,
-      isFinal: true,
-      limitUpCnt: limitUp.length,
-      limitDownCnt: limitDown.length,
-      constituentSyncedAt: 0,
-      updatedAt: now,
-    });
+    await upsertCalendarMeta(meta);
     done.push(tradeDate);
     // 此处不再 delay：跨日错峰已由 BACKFILL_CONCURRENCY（在飞请求 ≤3）承担，写库是本地
     // sqlite 无需让路；串行版在这一行的 delay 纯粹是给上游让路，并发后只会白等。
   }
   return { done: done.reverse(), boundary };
+};
+
+/* ---------------------- 手动获取 / 刷新（表头弹窗专用） ---------------------- */
+
+/**
+ * 强制重采当日完整快照（表头「刷新板块数据」），**只构建不落库**
+ *
+ * 无视「已定稿 / 节流 / 午休」标记（与自动采集的增量原则相反——用户显式要求覆盖）；
+ * 仅受两条硬限制约束：非交易日无可刷新对象、盘前上游返回的是上一交易日收盘值
+ * （采了会把昨收写进今天的行，与 shouldCollectSnapshot 同一判据）。
+ * @returns 采集结果（全程不抛异常，致命错误在 `error`）
+ */
+export const fetchTodayBoardSnapshot = async (): Promise<BoardManualFetchResult> => {
+  const result: BoardManualFetchResult = {
+    mode: 'refresh',
+    days: [],
+    boundaryDate: null,
+    missingTotal: 0,
+    beyondBoundaryCount: 0,
+    error: null,
+  };
+  try {
+    if (!isBoardDbAvailable()) {
+      result.error = '浏览器端不支持本地累积（需桌面客户端）';
+      return result;
+    }
+    if ((await getBoardDb()) === null) {
+      result.error = '本地数据库不可用';
+      return result;
+    }
+    const tradingDates = await ensureTradingDates(false);
+    if (tradingDates.length === 0) {
+      result.error = '交易日轴不可用，请检查网络后重试';
+      return result;
+    }
+    const today = getLocalDateString();
+    if (tradingDates[tradingDates.length - 1] !== today) {
+      result.error = '今日非交易日，无可刷新的当日快照';
+      return result;
+    }
+    if (localMinutes(new Date()) < BOARD_SNAPSHOT_EARLIEST_MINUTE) {
+      result.error = '盘前上游无当日行情（09:25 后再试）';
+      return result;
+    }
+    const constituentMap = await listConstituentBoardMap();
+    if (constituentMap.size === 0) {
+      result.error = '成分股映射为空，请等首次采集完成后再试';
+      return result;
+    }
+    const data = await buildDailySnapshot(today, constituentMap);
+    result.days = [
+      {
+        tradeDate: today,
+        status: 'ok',
+        limitUpCnt: data.limitUpCnt,
+        limitDownCnt: data.limitDownCnt,
+        rows: data.rows,
+        limitRows: data.limitRows,
+        meta: data.meta,
+        profiles: data.profiles,
+        message: data.meta.isFinal ? '已过 15:00，本次采集即为定稿' : '盘中快照，15:00 后定稿',
+      },
+    ];
+    return result;
+  } catch (error) {
+    console.error('[board-calendar] 手动刷新当日快照失败', handleSdkError(error));
+    result.error = toErrorMessage(error);
+    return result;
+  }
+};
+
+/**
+ * 手动获取 / 刷新的结果落库（弹窗「应用」按钮）
+ *
+ * 逐日写入 board_daily / board_limit_stock / board_profile / 台账（仅 ok 日）；
+ * fetch 模式同时落本次探明的回溯边界（后续自动采集按边界跳过这些日期）。
+ * 注意：limitRows 为空数组时跳过明细重建（日 K 聚合升级日的涨跌停明细已在库内，
+ * 空写会先删后插把既有明细清光）。
+ * @param result 弹窗采集结果（原样回传即可）
+ */
+export const applyBoardFetchResult = async (result: BoardManualFetchResult): Promise<void> => {
+  for (const day of result.days) {
+    if (day.status !== 'ok') continue;
+    if (day.rows.length > 0) {
+      await upsertBoardDaily(day.rows);
+    }
+    if (day.limitRows.length > 0) {
+      await replaceLimitStocks(day.tradeDate, day.limitRows);
+    }
+    if (day.profiles.length > 0) {
+      await upsertBoardProfiles(day.profiles);
+    }
+    if (day.meta !== null) {
+      await upsertCalendarMeta(day.meta);
+    }
+  }
+  if (result.mode === 'fetch' && result.boundaryDate !== null) {
+    await writePoolBoundaryDate(result.boundaryDate);
+  }
+};
+
+/* --------------------- 日 K 聚合升级（表头弹窗 · 选日期补数） --------------------- */
+
+/**
+ * 日 K 聚合升级的进度事件
+ */
+export interface BoardUpgradeProgress {
+  /** pool = 探测缺失日涨跌停池；kline = 逐票拉成分股日 K */
+  stage: 'pool' | 'kline';
+  /** 已完成单元（pool 阶段 = 日，kline 阶段 = 票） */
+  completed: number;
+  /** 总单元数 */
+  total: number;
+  /** 当前正在处理的板块名（kline 阶段） */
+  detail: string;
+}
+
+/**
+ * 用成分股日 K 聚合补全 / 升级选中交易日的板块数据（表头「获取板块数据」· 手动选日期）
+ *
+ * 背景（2026-10-17 王总）：板块级涨跌家数无历史接口，但**板块详情页能拿到任意历史日
+ * 的成分股涨跌幅**（腾讯前复权日 K，逐票取数）——同一通道反过来聚合，即可还原
+ * up / down / flat / consCount，配合涨跌停池的涨停 / 跌停数把 PARTIAL 回补日
+ * **升级为完整口径**（色阶可上）。
+ *
+ * 请求量特性（务必让用户知情）：
+ * - 腾讯日 K 无批量通道，成本 = 去重后的成分股数（全池 ≈ 5200 票）个请求，
+ *   首次约 3~5 分钟（并发 6）；
+ * - 单票一次拉 140 根序列（会话内缓存共享），**补 1 天与补多天请求量相同**，
+ *   同一会话内再补其它日期零新增请求。
+ *
+ * 落库口径：upCount 含涨停（东财 f104 同口径）；limitUp / limitDown 沿用
+ * 涨跌停池（缺失日现探、升级日读既有行）；板块涨跌幅无官方历史值，置 null；
+ * 成交额 = 成分股日 K 成交额合计（近似口径）。
+ * @param dates 选中的交易日（顺序不限，不含今天；UI 侧已过滤窗口外日期）
+ * @param onProgress 进度回调
+ * @param signal 中断信号（用户取消）
+ * @returns 单日结果（全程不抛异常，致命错误在 `error`）
+ */
+export const upgradeBoardDailyFromKline = async (
+  dates: string[],
+  onProgress?: (progress: BoardUpgradeProgress) => void,
+  signal?: AbortSignal,
+): Promise<{ days: BoardFetchDayResult[]; error: string | null }> => {
+  const days: BoardFetchDayResult[] = [];
+  const failure = (message: string): { days: BoardFetchDayResult[]; error: string | null } => ({
+    days,
+    error: message,
+  });
+  try {
+    if (!isBoardDbAvailable()) {
+      return failure('浏览器端不支持历史累积（需桌面客户端）');
+    }
+    if ((await getBoardDb()) === null) {
+      return failure('本地数据库不可用');
+    }
+    // 降序去重（聚合与涨跌幅计算都按降序列序）；今天不属于历史补数范围
+    const today = getLocalDateString();
+    const selected = [...new Set(dates)].filter((date) => date !== today).sort((a, b) => b.localeCompare(a));
+    if (selected.length === 0) {
+      return failure('未选中任何交易日');
+    }
+
+    const existingRows = await listBoardDailyByDates(selected);
+    const existingByKey = new Map(existingRows.map((row) => [`${row.tradeDate}|${row.boardCode}`, row]));
+    const existingDates = new Set(existingRows.map((row) => row.tradeDate));
+    const missingDates = selected.filter((date) => !existingDates.has(date));
+
+    /* -- 阶段一：缺失日的涨跌停池探测（每 +2 请求；升级日沿用既有行的涨跌停数） -- */
+    const poolByDate = new Map<string, { limitUp: LimitPoolStock[]; limitDown: LimitPoolStock[] }>();
+    let poolDone = 0;
+    const probes = await mapWithConcurrency(missingDates, probeLimitPool, {
+      concurrency: BACKFILL_CONCURRENCY,
+      onProgress: () => {
+        poolDone += 1;
+        onProgress?.({ stage: 'pool', completed: poolDone, total: missingDates.length, detail: '' });
+      },
+    });
+    for (const probe of probes) {
+      // 探测失败（瞬时错误）≠ 空池：该日标 failed，不写库
+      if (probe.limitUp === null || probe.limitDown === null) {
+        days.push({
+          tradeDate: probe.tradeDate,
+          status: 'failed',
+          limitUpCnt: 0,
+          limitDownCnt: 0,
+          rows: [],
+          limitRows: [],
+          meta: null,
+          profiles: [],
+          message: '涨跌停池探测失败（网络或上游限频），可重试',
+        });
+        continue;
+      }
+      poolByDate.set(probe.tradeDate, { limitUp: probe.limitUp, limitDown: probe.limitDown });
+    }
+
+    /* -- 阶段二：逐板块拉成分股日 K 并聚合（会话缓存共享，重叠成分股零重复请求） -- */
+    const constituentsByBoard = new Map<string, Array<{ symbol: string; stockName: string }>>();
+    let klineTotal = 0;
+    for (const board of CALENDAR_BOARDS) {
+      const items = await listConstituentsByBoard(board.code);
+      constituentsByBoard.set(board.code, items);
+      klineTotal += items.length;
+    }
+    if (klineTotal === 0) {
+      return failure('成分股映射为空，请等首次采集完成后再试');
+    }
+
+    const statsByBoard = new Map<string, Awaited<ReturnType<typeof loadBoardConstituentDayStats>>>();
+    // 涨跌停池符号集（分桶的涨跌停桶判定依据）：阶段一探测结果按日汇总，逐板块日 K 聚合时逐票比对
+    const limitSymbolsByDate = new Map<string, { up: Set<string>; down: Set<string> }>();
+    for (const [tradeDate, pool] of poolByDate) {
+      limitSymbolsByDate.set(tradeDate, {
+        up: new Set(pool.limitUp.map((stock) => stock.symbol)),
+        down: new Set(pool.limitDown.map((stock) => stock.symbol)),
+      });
+    }
+    let klineDone = 0;
+    for (const board of CALENDAR_BOARDS) {
+      if (signal?.aborted) {
+        return failure('已取消');
+      }
+      const stats = await loadBoardConstituentDayStats(
+        board.code,
+        selected,
+        // mapWithConcurrency 的 completed 是单次调用内的累计值，跨板块直接累加会重复；
+        // 每次回调 = 该板块完成一票，按调用次数 +1 才与 klineTotal（Σ各板块票数）对齐
+        () => {
+          klineDone += 1;
+          onProgress?.({ stage: 'kline', completed: klineDone, total: klineTotal, detail: board.name });
+        },
+        signal,
+        limitSymbolsByDate,
+      );
+      statsByBoard.set(board.code, stats);
+    }
+    if (signal?.aborted) {
+      return failure('已取消');
+    }
+
+    /* -- 阶段三：组装行（涨跌家数 = 日 K 聚合，涨停 / 跌停 = 池或既有行） -- */
+    // 涨跌停归组映射（一对多）：仅缺失日需要；6200+ 行本地库只读一次
+    const constituentMap = missingDates.length > 0 ? await listConstituentBoardMap() : null;
+    const now = Date.now();
+    for (const tradeDate of selected) {
+      const rows: BoardDailyRow[] = [];
+      const limitRows: BoardLimitStock[] = [];
+      const pool = poolByDate.get(tradeDate);
+      const missing = !existingDates.has(tradeDate);
+      // 缺失日的涨跌停归组（一对多，与回补同口径）；探测失败的日子上面已标 failed
+      const upGroup = pool && constituentMap ? groupByBoard(pool.limitUp, constituentMap) : null;
+      const downGroup = pool && constituentMap ? groupByBoard(pool.limitDown, constituentMap) : null;
+
+      CALENDAR_BOARDS.forEach((board) => {
+        const existing = existingByKey.get(`${tradeDate}|${board.code}`);
+        const stats = statsByBoard.get(board.code)?.get(tradeDate);
+        const limitUp = existing ? existing.limitUp : (upGroup?.groups.get(board.code)?.length ?? 0);
+        const limitDown = existing ? existing.limitDown : (downGroup?.groups.get(board.code)?.length ?? 0);
+        if (!stats && !existing && !pool) {
+          return;
+        }
+        const upCount = stats?.upCount ?? 0;
+        const downCount = stats?.downCount ?? 0;
+        const consCount = stats?.consCount ?? existing?.consCount ?? 0;
+        const score = calcBoardScore({ limitUp, limitDown, upCount, downCount });
+        rows.push({
+          tradeDate,
+          boardCode: board.code,
+          boardName: board.name,
+          // 板块涨跌幅无官方历史值（市值加权不可还原），置 null 与回补日口径一致
+          changePercent: existing?.changePercent ?? null,
+          amount: stats?.amount ?? existing?.amount ?? null,
+          limitUp,
+          limitDown,
+          upCount,
+          downCount,
+          flatCount: stats?.flatCount ?? 0,
+          consCount,
+          score,
+          scoreRate: consCount > 0 ? score / consCount : 0,
+          buckets: stats?.buckets ?? existing?.buckets ?? null,
+          dataLevel: BOARD_DATA_LEVEL.FULL,
+          snapshotAt: now,
+          isFinal: true,
+        });
+        if (pool) {
+          limitRows.push(
+            ...toLimitStockRows(tradeDate, board.code, upGroup?.groups.get(board.code) ?? []),
+            ...toLimitStockRows(tradeDate, board.code, downGroup?.groups.get(board.code) ?? []),
+          );
+        }
+      });
+
+      if (rows.length === 0) {
+        days.push({
+          tradeDate,
+          status: 'failed',
+          limitUpCnt: 0,
+          limitDownCnt: 0,
+          rows: [],
+          limitRows: [],
+          meta: null,
+          profiles: [],
+          message: '该日未产出任何数据',
+        });
+        continue;
+      }
+
+      const existingMeta = await getCalendarMeta(tradeDate);
+      days.push({
+        tradeDate,
+        status: 'ok',
+        limitUpCnt: missing ? (pool?.limitUp.length ?? 0) : (existingMeta?.limitUpCnt ?? 0),
+        limitDownCnt: missing ? (pool?.limitDown.length ?? 0) : (existingMeta?.limitDownCnt ?? 0),
+        rows,
+        limitRows,
+        meta: {
+          tradeDate,
+          dataLevel: BOARD_DATA_LEVEL.FULL,
+          isFinal: true,
+          limitUpCnt: missing ? (pool?.limitUp.length ?? 0) : (existingMeta?.limitUpCnt ?? 0),
+          limitDownCnt: missing ? (pool?.limitDown.length ?? 0) : (existingMeta?.limitDownCnt ?? 0),
+          constituentSyncedAt: 0,
+          updatedAt: now,
+        },
+        profiles: [],
+        message: '日 K 聚合口径：涨跌家数来自成分股日 K，涨停 / 跌停沿用涨跌停池',
+      });
+    }
+    return { days, error: null };
+  } catch (error) {
+    console.error('[board-calendar] 日 K 聚合升级失败', handleSdkError(error));
+    return { days, error: toErrorMessage(error) };
+  }
 };
 
 /* -------------------------------- 采集编排 -------------------------------- */

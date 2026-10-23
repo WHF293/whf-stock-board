@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { computed, nextTick, ref, watch } from 'vue';
 import BaseButton from '../ui/BaseButton.vue';
+import { useSlidingThumb } from '../../../common/composables/use-sliding-thumb';
 import type { ThsHotTheme } from '../../../common/api/news.api.ts';
 import type { HotNewsViewOption } from '../../../common/constants/hot-news.constants.ts';
 
@@ -11,9 +13,12 @@ import type { HotNewsViewOption } from '../../../common/constants/hot-news.const
  * 主题 chips 仅同花顺「热点主题」子视图使用（传入 themes 且 active 为 theme 才渲染）；
  * 卡片本体与卡片放大弹窗共用这一套控件（两处只有布局宽紧差异），
  * 选中态与副作用全部由父组件持有，本组件只渲染 + 上抛事件
+ *
+ * 两组选中态均用共享滑动玻璃气泡（useSlidingThumb，与 BaseTabs/移动端 TabBar 同款动画）：
+ * 玻璃底挂在组内 thumb 层上，切换时滑到新项
  */
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     /** 子视图选项列表（值 + 展示名） */
     views: readonly HotNewsViewOption[];
@@ -47,23 +52,55 @@ const emit = defineEmits<{
   /** 重试拉取主题列表 */
   retryThemes: [];
 }>();
+
+/** 子视图分段容器（气泡定位父级） */
+const viewsRef = ref<HTMLElement | null>(null);
+/** 主题 chips 容器（v-if 延迟渲染，composable 内已处理挂载重测） */
+const themesRef = ref<HTMLElement | null>(null);
+
+/** 激活子视图序号（驱动气泡位移；未匹配 = -1 气泡隐藏） */
+const activeViewIndex = computed(() =>
+  props.views.findIndex((view) => view.value === props.active),
+);
+/** 激活主题序号（chips 行未渲染 / 未选中时为 -1） */
+const activeThemeIndex = computed(() =>
+  (props.themes ?? []).findIndex((theme) => theme.themeId === props.selectedThemeId),
+);
+
+const { thumbStyle: viewThumbStyle } = useSlidingThumb({
+  container: viewsRef,
+  activeIndex: activeViewIndex,
+});
+const { thumbStyle: themeThumbStyle, measure: measureThemes } = useSlidingThumb({
+  container: themesRef,
+  activeIndex: activeThemeIndex,
+});
+
+// 主题列表变化（异步加载完成 / 重试重拉）后重量取 chips 气泡几何
+watch(
+  () => [props.themes, props.active === 'theme'] as const,
+  () => {
+    void nextTick(measureThemes);
+  },
+  { flush: 'post' },
+);
 </script>
 
 <template>
   <div class="flex flex-col gap-2">
-    <!-- 子视图切换：分段控件（等宽段，选中段用淡主色） -->
-    <div class="flex gap-1 rounded-lg bg-flat-weak/50 p-0.5">
+    <!-- 子视图切换：分段控件（等宽段，选中段玻璃底由滑动气泡提供） -->
+    <div ref="viewsRef" class="relative flex gap-1 rounded-lg bg-flat-weak/50 p-0.5">
+      <span
+        v-if="viewThumbStyle"
+        class="pc-nav-bubble pointer-events-none absolute left-0 top-0 z-0 rounded-md"
+        :style="viewThumbStyle"
+      ></span>
       <button
         v-for="view in views"
         :key="view.value"
         type="button"
-        class="pressable flex-1 rounded-md px-2 py-1 text-xs"
-        :class="
-          active === view.value
-            ? // 选中态：高光玻璃气泡（theme.css .pc-nav-bubble，与 BaseTabs/侧栏同源）
-              'pc-nav-bubble font-medium text-primary'
-            : 'text-text-secondary hover:text-text'
-        "
+        class="pressable relative flex-1 rounded-md px-2 py-1 text-xs"
+        :class="active === view.value ? 'font-medium text-primary' : 'text-text-secondary hover:text-text'"
         @click="emit('selectView', view.value)"
       >
         {{ view.label }}
@@ -73,19 +110,24 @@ const emit = defineEmits<{
     <!-- 同花顺热点主题子视图：主题 chips（单选切换，切换后该通道分页重置） -->
     <div
       v-if="themes && active === 'theme'"
-      class="flex items-center gap-1.5"
+      ref="themesRef"
+      class="relative flex items-center gap-1.5"
       :class="roomy ? 'flex-wrap' : 'overflow-x-auto'"
     >
+      <span
+        v-if="themeThumbStyle"
+        class="pc-nav-bubble pointer-events-none absolute left-0 top-0 z-0 rounded-full"
+        :style="themeThumbStyle"
+      ></span>
       <template v-if="themes.length > 0">
         <button
           v-for="theme in themes"
           :key="theme.themeId"
           type="button"
-          class="pressable shrink-0 rounded-full px-2.5 py-1 text-xs"
+          class="pressable relative shrink-0 rounded-full px-2.5 py-1 text-xs"
           :class="
             selectedThemeId === theme.themeId
-              ? // 选中态：高光玻璃气泡（同上）
-                'pc-nav-bubble font-medium text-primary'
+              ? 'font-medium text-primary'
               : 'bg-flat-weak text-text-secondary hover:text-text'
           "
           @click="emit('selectTheme', theme.themeId)"

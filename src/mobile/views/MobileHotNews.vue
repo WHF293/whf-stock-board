@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import type { ComponentPublicInstance } from 'vue';
 import { useRouter } from 'vue-router';
 import { showFailToast, showSuccessToast } from 'vant';
+import { VueDraggable } from 'vue-draggable-plus';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import {
   fetchClsDepth,
@@ -46,7 +47,6 @@ import {
   mobileCacheRemove,
   mobileCacheSet,
 } from '../cache';
-import { useMobilePolling } from '../composables/use-mobile-polling';
 import { formatNewsTime, formatPct, formatSnapshotTime, isTopRank, pctClass } from '../utils/format';
 import NewsRow from '../components/NewsRow.vue';
 
@@ -56,7 +56,10 @@ import NewsRow from '../components/NewsRow.vue';
  * 新闻源切换在 navbar 标题两侧的箭头 icon（◀ logo 当前源名 ▶，点击循环切换可见源）；
  * 各源子栏目（如同花顺的快讯/头条）升为 Vant Tabs（原源 tabs 的位置），一次只渲染当前源；
  * 频道页状态（items/翻页游标）按「源:栏目」独立持久化缓存
- * （30 分钟 TTL），下拉 / 前台轮询为强制刷新，navbar 不设刷新按钮
+ * （30 分钟 TTL），下拉为唯一强制刷新，navbar 不设刷新按钮；
+ * 2026-10-20 起取消前台轮询（王总反馈「页面放着不动自己闪一下刷新」）：
+ * 原 30s 轮询 force 路径会清列表 + 删缓存重建，既闪屏又打穿缓存 TTL——
+ * 快照类内容刷新只走下拉，进入 / 切回页面一律吃缓存
  */
 
 /** 频道加载上下文（翻页参数） */
@@ -398,7 +401,7 @@ const channelDefOf = (channelKey: string): MobileNewsChannel | null => {
  * 加载一个频道页（重置 / 追加二态；静默轮询失败不动现有内容）
  * @param channelKey 频道 key（`<sourceKey>:<channelKey>`）
  * @param opts 加载选项
- * @param opts.force 清空重拉（下拉 / 轮询）
+ * @param opts.force 清空重拉（下拉）
  * @param opts.silent 失败不翻错误态、不打 toast
  */
 const ensureChannel = async (
@@ -520,21 +523,17 @@ const toggleSource = (sourceKey: string, visible: boolean): void => {
   clampActiveIndex();
 };
 
-/**
- * 源排序（上移 / 下移；持久化；激活 tab 跟随当前源的新位置）
- * @param index 当前序号（newsSettings.order 内）
- * @param offset 移动偏移（-1 上移 / 1 下移）
- */
-const moveSource = (index: number, offset: number): void => {
-  const target = index + offset;
-  if (target < 0 || target >= newsSettings.order.length) return;
-  const activeKey = activeSource.value.key;
-  const order = [...newsSettings.order];
-  const [moved] = order.splice(index, 1);
-  order.splice(target, 0, moved!);
-  newsSettings.order = order;
+/* === 源拖拽排序（vue-draggable-plus） ===
+ * 拖拽开始时记下当前激活源，排序结束后激活 tab 跟随该源的新位置
+ * （沿用原上下移排序的「tab 跟随」语义；v-model 已即时更新 order） */
+const dragActiveKey = ref<string | null>(null);
+
+/** 拖拽结束：持久化 + 激活 tab 跟随 */
+const onOrderChanged = (): void => {
   persistNewsSettings();
-  const newIndex = visibleSources.value.findIndex((source) => source.key === activeKey);
+  const key = dragActiveKey.value;
+  if (key === null) return;
+  const newIndex = visibleSources.value.findIndex((source) => source.key === key);
   if (newIndex >= 0 && newIndex !== activeIndex.value) activeIndex.value = newIndex;
 };
 
@@ -664,9 +663,6 @@ const footerText = (channelKey: string): string => {
   return '上拉加载更多';
 };
 
-/** 前台轮询：按设置间隔静默刷新当前「源 × 栏目」 */
-useMobilePolling(() => ensureChannel(activeChannelKey.value, { force: true, silent: true }));
-
 /** 触底哨兵元素登记表（key = 频道 key `<sourceKey>:<channelKey>`，元素由各面板的函数 ref 提供） */
 const sentinelEls = reactive<Record<string, Element | null>>({});
 let sentinelObserver: IntersectionObserver | null = null;
@@ -761,6 +757,7 @@ onUnmounted(() => {
           @refresh="onPullRefresh(channelKeyOf(activeSource, channel))"
         >
           <div v-if="pageOfChannel(activeSource, channel).error" class="m-error">
+            <van-icon name="warning-o" />
             <div>内容加载失败，请检查网络后重试</div>
             <button
               class="m-error__retry"
@@ -904,6 +901,7 @@ onUnmounted(() => {
                 主题加载中…
               </div>
               <div v-else-if="thsThemes.error && thsThemes.items.length === 0" class="m-error">
+                <van-icon name="warning-o" />
                 <div>主题列表加载失败</div>
                 <button class="m-error__retry" @click="void ensureThsThemes()">↻ 重新加载</button>
               </div>
@@ -949,45 +947,47 @@ onUnmounted(() => {
       </van-tab>
     </van-tabs>
 
-    <!-- 新闻源设置弹层（显隐 + 排序，与今天炒什么平台设置同构） -->
+    <!-- 新闻源设置弹层（显隐 + 拖拽排序，与今天炒什么平台设置同构；
+         拖拽用 vue-draggable-plus，handle 限定手柄 + force-fallback（WebView 必需）） -->
     <van-popup v-model:show="settingsOpen" position="bottom" round>
       <div style="padding: 14px 16px 18px">
         <div class="m-board-head" style="padding-top: 0">
           <div class="m-board-head__title">新闻源设置</div>
-          <div class="m-board-head__time">开关显隐 · ↑↓ 调整顺序</div>
+          <div class="m-board-head__time">开关显隐 · 拖拽调整顺序</div>
         </div>
-        <div
-          v-for="(sourceKey, index) in newsSettings.order"
-          :key="sourceKey"
-          class="m-sheet-row"
+        <VueDraggable
+          v-model="newsSettings.order"
+          tag="div"
+          :animation="150"
+          handle=".m-drag-handle"
+          :force-fallback="true"
+          fallback-class="sortable-fallback"
+          ghost-class="m-drag-ghost"
+          chosen-class="m-drag-chosen"
+          :fallback-tolerance="6"
+          @start="dragActiveKey = activeSource.key"
+          @update="onOrderChanged"
         >
           <div
-            class="m-sheet-row__name"
-            :class="{ 'm-sheet-row__name--off': newsSettings.hidden.includes(sourceKey) }"
+            v-for="sourceKey in newsSettings.order"
+            :key="sourceKey"
+            class="m-sheet-row"
           >
-            {{ sourceLabel(sourceKey) }}
-            <span v-if="newsSettings.hidden.includes(sourceKey)">已隐藏 · 缓存保留</span>
+            <span class="m-drag-handle"><van-icon name="wap-nav" /></span>
+            <div
+              class="m-sheet-row__name"
+              :class="{ 'm-sheet-row__name--off': newsSettings.hidden.includes(sourceKey) }"
+            >
+              {{ sourceLabel(sourceKey) }}
+              <span v-if="newsSettings.hidden.includes(sourceKey)">已隐藏 · 缓存保留</span>
+            </div>
+            <van-switch
+              :model-value="!newsSettings.hidden.includes(sourceKey)"
+              size="20px"
+              @update:model-value="(value: boolean) => toggleSource(sourceKey, value)"
+            />
           </div>
-          <van-switch
-            :model-value="!newsSettings.hidden.includes(sourceKey)"
-            size="20px"
-            @update:model-value="(value: boolean) => toggleSource(sourceKey, value)"
-          />
-          <button
-            class="m-order-btn"
-            :disabled="index === 0"
-            @click="moveSource(index, -1)"
-          >
-            ↑
-          </button>
-          <button
-            class="m-order-btn"
-            :disabled="index === newsSettings.order.length - 1"
-            @click="moveSource(index, 1)"
-          >
-            ↓
-          </button>
-        </div>
+        </VueDraggable>
         <van-button type="primary" block round style="margin-top: 14px" @click="settingsOpen = false">
           完成
         </van-button>

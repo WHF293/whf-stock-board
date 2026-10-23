@@ -16,6 +16,8 @@ defineProps<{
     role="note"
   >
     <MenuIcon name="info" :size="14" class="mt-0.5 shrink-0 text-primary" />
-    <p>{{ text }}</p>
+    <p class="min-w-0 flex-1">{{ text }}</p>
+    <!-- 右侧动作区（可选）：原站跳转 / 重试按钮等 -->
+    <slot name="action" />
   </div>
 </template>

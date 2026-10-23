@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onActivated, onMounted, ref } from 'vue';
+import BaseButton from '../components/ui/BaseButton.vue';
 import BaseCard from '../components/ui/BaseCard.vue';
 import BaseEmpty from '../components/ui/BaseEmpty.vue';
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue';
@@ -10,6 +11,7 @@ import HeatmapBoardList from '../components/business/HeatmapBoardList.vue';
 import MarketFundFlowTrendChart from '../components/charts/MarketFundFlowTrendChart.vue';
 import TurnoverTrendChart from '../components/charts/TurnoverTrendChart.vue';
 import RealtimeTurnoverCard from '../components/business/RealtimeTurnoverCard.vue';
+import MarketBreadthCard from '../components/business/MarketBreadthCard.vue';
 import MarketRatingCard from '../components/business/MarketRatingCard.vue';
 import BaseTabs from '../components/ui/BaseTabs.vue';
 import MenuIcon from '../components/ui/MenuIcon.vue';
@@ -45,6 +47,7 @@ import {
 import { POLLING_INTERVAL } from '../../common/constants/polling.constants.ts';
 import { PANORAMA_GLOBAL_INDEX_SECIDS } from '../../common/constants/panorama.constants.ts';
 import { useHeatmapDrill } from '../../common/composables/use-heatmap-drill';
+import { usePageHeaderSlot, PAGE_HEADER_ACTIONS_TARGET } from '../../common/composables/use-page-header-slot';
 import { useRowClamp } from '../../common/composables/use-row-clamp';
 import { useStockOpen } from '../../common/composables/use-stock-open';
 import type { DistributionCount } from '../../common/types/distribution.types.ts';
@@ -57,6 +60,8 @@ import type { MarketFundFlow } from '../../common/types/flow.types.ts';
 import type { TurnoverDayItem } from '../../common/types/turnover.types.ts';
 import type { ZTPoolItem } from '../../common/types/event.types.ts';
 import type { MarketSentiment } from '../../common/types/market-sentiment.types.ts';
+import type { MarketBreadth } from '../../common/types/market-breadth.types.ts';
+import { ingestBreadthSnapshot } from '../../common/api/market-breadth-db.api.ts';
 import type { TurnoverTableRow } from '../../common/constants/turnover.constants.ts';
 import type { TableColumn } from '../../common/types/table.types.ts';
 import type { FullQuote } from '../../common/types/stock-quote.types.ts';
@@ -116,12 +121,15 @@ const settingsStore = useSettingsStore();
 const dataCache = useDataCacheStore();
 const router = useRouter();
 
-/** 跳市场榜单（成交额 / 主力净流入卡片标题入口） */
+/** 页头动作挂载守卫（KeepAlive 下切走页面时撤离 Teleport 内容，见 use-page-header-slot） */
+const { active: headerSlotActive } = usePageHeaderSlot();
+
+/** 跳盘面雷达（成交额 / 主力净流入卡片标题入口） */
 const goMarketRank = (): void => {
   void router.push(ROUTE_PATH.MARKET_RANK);
 };
 
-/** 跳板块资金流向页（主力净流入卡标题落点，2026-10-13 起独立成页） */
+/** 跳资金流向页（主力净流入卡标题落点，2026-10-13 起独立成页） */
 const goBoardFlow = (): void => {
   void router.push(ROUTE_PATH.BOARD_FLOW);
 };
@@ -129,6 +137,16 @@ const goBoardFlow = (): void => {
 /** 跳行情全景（涨跌分布 / 板块热力卡片标题入口；默认即 A 股全景模块） */
 const goPanorama = (): void => {
   void router.push(ROUTE_PATH.PANORAMA);
+};
+
+/** 跳宽基ETF页（页头按钮入口，国家队/汇金系宽基监控） */
+const goWideBaseEtf = (): void => {
+  void router.push(ROUTE_PATH.WIDE_BASE_ETF);
+};
+
+/** 跳大盘云图（页头按钮入口；侧栏入口 2026-10-22 移除，与本页宽基ETF按钮同位） */
+const goHeatmap = (): void => {
+  void router.push(ROUTE_PATH.HEATMAP);
 };
 
 // 板块下钻状态机：热力图 / 列表两视图共享，切换展示形式不丢下钻位置
@@ -154,6 +172,9 @@ const marketFundFlow = ref<MarketFundFlow | null>(null);
 const marketFlowHistory = ref<MarketFundFlow[]>([]);
 /** 两市成交额合计（万） */
 const totalAmountWan = ref<number | null>(null);
+
+/** 市场宽度 · ARMS 统计（随 fetchMarketBreadth 同源快照写入，供 MarketBreadthCard 消费） */
+const marketBreadth = ref<MarketBreadth | null>(null);
 
 /** 市场宽度快照结构 */
 interface BreadthSnapshot {
@@ -242,6 +263,8 @@ const fetchMarketBreadth = async (): Promise<void> => {
 
   distribution.value = countDistribution(quotes.map((quote) => quote.changePercent));
   totalAmountWan.value = quotes.reduce((acc, quote) => acc + (quote.amount ?? 0), 0);
+  // 市场宽度 · ARMS：与涨跌分布同源快照，ingest 落分钟点 / 收盘定稿日 bar（零新增请求）
+  marketBreadth.value = ingestBreadthSnapshot(quotes);
   industryBoards.value = boards;
   marketFundFlow.value = flows.at(-1) ?? null;
   marketFlowHistory.value = flows.slice(-MARKET_FLOW_DAYS);
@@ -555,6 +578,18 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
 
 <template>
   <div class="space-y-6">
+    <!-- 页头快捷入口：大盘云图（侧栏入口已移除，2026-10-22 王总指定）+ 宽基ETF
+        （Teleport 投射，本页激活时才挂载） -->
+    <Teleport v-if="headerSlotActive" :to="PAGE_HEADER_ACTIONS_TARGET">
+      <BaseButton variant="ghost" data-track="DASHBOARD_OPEN_HEATMAP" @click="goHeatmap">
+        <MenuIcon name="cloud" :size="14" />
+        大盘云图
+      </BaseButton>
+      <BaseButton variant="ghost" data-track="DASHBOARD_OPEN_WIDE_BASE_ETF" @click="goWideBaseEtf">
+        <MenuIcon name="chartBars" :size="14" />
+        宽基ETF
+      </BaseButton>
+    </Teleport>
     <!--
       顶部指数卡片：主指数 + 全球指数共处**同一个栅格**，且一次性全部渲染（DOM 始终完整），
       收起态由 .row-clamp 把容器裁到「首行高度」——所以「一行显示几张」完全由可用宽度决定：
@@ -616,7 +651,7 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
     <!--
       市场情绪 + 大盘评级（等宽 flex 左右分布，gap 20px；2026-10-13 实时成交额并入下方成交额卡后，
       本行左侧由市场情绪补位）：四池数据与市场宽度同上游（东财），每轮串行错峰 4 请求；
-      梯队口径与市场榜单-连板页签一致；大盘评级数据源同花顺 q 域 indexflash
+      梯队口径与盘面雷达-连板页签一致；大盘评级数据源同花顺 q 域 indexflash
     -->
     <div class="flex flex-wrap gap-5">
       <BaseCard
@@ -681,7 +716,7 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
               </p>
             </div>
           </div>
-          <!-- 连板梯队药丸：与市场榜单-连板页签同款样式（≥3 板红色高亮） -->
+          <!-- 连板梯队药丸：与盘面雷达-连板页签同款样式（≥3 板红色高亮） -->
           <div v-if="sentiment.ladder.length > 0" class="mt-4 flex flex-wrap items-center gap-2">
             <span
               v-for="tier in sentiment.ladder"
@@ -700,7 +735,7 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
       </BaseCard>
     </div>
 
-    <!-- 成交额（资金速览 + 成交额变化合并为一张卡：两者本质同属市场成交维度；标题跳市场榜单）。
+    <!-- 成交额（资金速览 + 成交额变化合并为一张卡：两者本质同属市场成交维度；标题跳盘面雷达）。
          2026-10-13 实时成交额由独立卡并入本卡，成为图表视图第一个量纲子项（实时成交额/历史成交量/相对成交量） -->
     <BaseCard
       title="成交额"
@@ -709,12 +744,6 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
     >
       <template #extra>
         <div class="flex items-center gap-2">
-          <!-- 量纲口径：仅图表视图展示（实时成交额 / 历史成交量 / 相对成交量，2026-10-13 并入实时成交额子功能） -->
-          <BaseTabs
-            v-if="turnoverViewMode === VIEW_MODE.CHART"
-            v-model="turnoverChartMetric"
-            :options="TURNOVER_CHART_METRIC_OPTIONS"
-          />
           <!-- 交易日窗口：仅历史口径（历史/相对成交量）有意义，实时成交额视图下隐藏 -->
           <BaseTabs
             v-if="turnoverViewMode === VIEW_MODE.CHART && turnoverChartMetric !== TURNOVER_CHART_METRIC.REALTIME"
@@ -726,6 +755,12 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
             v-if="turnoverChartMetric !== TURNOVER_CHART_METRIC.REALTIME"
             v-model="turnoverViewMode"
             :options="VIEW_MODE_OPTIONS"
+          />
+          <!-- 量纲口径：仅图表视图展示（实时成交额 / 历史成交量 / 相对成交量，2026-10-13 并入实时成交额子功能） -->
+          <BaseTabs
+            v-if="turnoverViewMode === VIEW_MODE.CHART"
+            v-model="turnoverChartMetric"
+            :options="TURNOVER_CHART_METRIC_OPTIONS"
           />
         </div>
       </template>
@@ -819,7 +854,7 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
         </BaseTable>
       </BaseCard>
 
-      <!-- 大盘资金流（近10日）：曲线 / 列表；标题跳板块资金流向页（2026-10-13 起独立成页） -->
+      <!-- 大盘资金流（近10日）：曲线 / 列表；标题跳资金流向页（2026-10-13 起独立成页） -->
       <BaseCard
         title="主力净流入（近10日）"
         clickable-title
@@ -879,6 +914,9 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
         </template>
       </BaseCard>
     </div>
+
+    <!-- 市场宽度 · ARMS（2026-10-21 新增：当日分时 + 近 30/60 日曲线；数据随行情快照本地积累） -->
+    <MarketBreadthCard :breadth="marketBreadth" :sentiment="sentiment" />
 
     <!-- 板块热力（标题跳行情全景 A 股全景模块） -->
     <BaseCard

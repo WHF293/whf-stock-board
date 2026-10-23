@@ -39,10 +39,16 @@ export const DATA_CACHE_KEY = {
   DETAIL_QUOTE_PREFIX: 'detail.quote.',
   DETAIL_TIMELINE_PREFIX: 'detail.timeline.',
   DETAIL_KLINE_PREFIX: 'detail.kline.',
+  /** 个股详情资讯（公告 + 关联新闻，前缀 + 符号；会话级，手动刷新绕过） */
+  DETAIL_NEWS_PREFIX: 'detail.news.',
+  /** 个股详情财务页签（前缀 + 符号；四张 datacenter 报表合并快照，含 fetchedAt） */
+  DETAIL_FINANCIAL_PREFIX: 'detail.financial.',
   HOT_NEWS_ITEMS: 'hot-news.items.',
   /** 今天炒什么（前缀 + `平台#分组` 通道键） */
   HOT_BOARD_ITEMS: 'hot-board.items.',
-  /** 市场榜单：全 A 股报价快照（按 sortKey 客户端排序） */
+  /** ETF 热榜（前缀 + 榜单 key 通道键） */
+  ETF_BOARD_ITEMS: 'etf-board.items.',
+  /** 盘面雷达：全 A 股报价快照（按 sortKey 客户端排序） */
   MARKET_RANK_QUOTES: 'marketRank.quotes',
   /** 板块日历：交易日轴（会话内复用，避免每次挂载都请求腾讯） */
   BOARD_CALENDAR_DATES: 'boardCalendar.dates',

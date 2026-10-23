@@ -1,4 +1,5 @@
 import {
+  BOARD_BUCKET_QUOTE_FIELDS,
   BOARD_CALENDAR_URL,
   BOARD_LIST_PAGE_SIZE,
   BOARD_REQUEST_GAP_MS,
@@ -199,6 +200,40 @@ export const fetchBoardSnapshot = async (): Promise<Map<string, BoardSnapshotIte
     }
   }
   return map;
+};
+
+/**
+ * 拉取某板块全部成分股的实时涨跌幅（得分分桶采集专用）
+ *
+ * 走 clist `fs=b:BKxxxx` 逐页翻全（页大小与成分股同步共用 `BOARD_LIST_PAGE_SIZE`），
+ * 只取 `f12`（代码）与 `f3`（涨跌幅%）。停牌股上游给 `'-'`，经 toNumberOrNull 归 null 后
+ * 不计入返回值（分桶侧自然跳过，不落入任何桶）。
+ * @param boardCode 板块代码（BKxxxx）
+ * @returns symbol → 涨跌幅（%）；上游异常时抛出
+ * @throws Error 上游返回空数据（限频 / 异常）时抛出
+ */
+export const fetchBoardConstituentChangePct = async (
+  boardCode: string,
+): Promise<Map<string, number>> => {
+  const map = new Map<string, number>();
+  const fs = `b:${boardCode}`;
+  // 页数上限复用成分股同步的 CONSTITUENT_MAX_PAGES（机械设备 629 只 → 7 页，留余量）；
+  // 上游异常时 page 拉空 / 不足整页自然终止，顶到上限则抛错（避免死循环打上游）
+  for (let pn = 1; pn <= CONSTITUENT_MAX_PAGES; pn += 1) {
+    const rows = await fetchClistPage(fs, BOARD_BUCKET_QUOTE_FIELDS, pn);
+    for (const row of rows) {
+      const symbol = toText(row.f12);
+      const changePercent = toNumberOrNull(row.f3);
+      if (symbol !== '' && changePercent !== null) {
+        map.set(symbol, changePercent);
+      }
+    }
+    // 不足整页 = 已到末页（clist 无 total 透出，fetchClistPage 只回行数组）
+    if (rows.length < BOARD_LIST_PAGE_SIZE) {
+      return map;
+    }
+  }
+  throw new Error(`板块 ${boardCode} 成分股涨跌幅翻页超限（>${CONSTITUENT_MAX_PAGES} 页）`);
 };
 
 /* -------------------------------- 涨跌停池 -------------------------------- */

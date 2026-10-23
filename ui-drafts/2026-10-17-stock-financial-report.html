@@ -1,0 +1,990 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>个股财务报告 · 需求稿 v1 · whf-stock-board</title>
+<!--
+  团队设计 Token 对照表（design_spec = DESIGN-PC.md + src/common/assets/styles/theme.css，2026-10-17 提取）：
+  ┌──────────────────────┬──────────────────────────┬──────────┐
+  │ 语义变量             │ 团队 token               │ 实际值   │
+  ├──────────────────────┼──────────────────────────┼──────────┤
+  │ --primary            │ --color-primary          │ #0e9488  │
+  │ --primary-weak       │ --color-primary-weak     │ #e6f5f3  │
+  │ --up                 │ --color-up（涨/同比正）  │ #e02020  │
+  │ --down               │ --color-down（跌/同比负）│ #00b578  │
+  │ --ink                │ --color-text             │ #1f2733  │
+  │ --text-2             │ --color-text-secondary   │ #5c6b80  │
+  │ --text-3             │ --color-text-tertiary    │ #98a2b3  │
+  │ --line               │ --color-flat-weak        │ #eef1f5  │
+  │ --surface            │ --color-surface          │ #ffffff  │
+  │ --canvas             │ --color-bg               │ #f7f9fa  │
+  │ 圆角                 │ --radius-card            │ 12px     │
+  └──────────────────────┴──────────────────────────┴──────────┘
+  涨跌语义色跟随应用 <html data-trend> 主题（红涨绿跌为默认档），同比正负复用同一套 token。
+  本稿为亮色模式；暗色模式由 CSS 变量级联自动跟随，稿内不单独绘制。
+-->
+<style>
+  :root{
+    --primary:#0e9488;
+    --primary-weak:#e6f5f3;
+    --up:#e02020;
+    --up-strong:#c51616;
+    --up-weak:#fdecec;
+    --down:#00b578;
+    --down-weak:#e6f7f1;
+    --ink:#1f2733;
+    --text-2:#5c6b80;
+    --text-3:#98a2b3;
+    --line:#eef1f5;
+    --surface:#fff;
+    --canvas:#f7f9fa;
+    --radius:12px;
+    --shadow:0 14px 40px rgba(31,39,51,.10);
+    --shadow-soft:0 3px 14px rgba(31,39,51,.06);
+    --font-base:"PingFang SC","Microsoft YaHei",sans-serif;
+    --font-num:"SF Mono",Menlo,Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0; color:var(--ink);
+    background:
+      radial-gradient(circle at 78% 2%, rgba(14,148,136,0.08), transparent 26rem),
+      linear-gradient(180deg,#f8fafb 0,#f1f4f6 100%);
+    font-family:var(--font-base); line-height:1.55;
+  }
+  button,input{font:inherit;}
+  button{cursor:pointer;}
+  .num{font-family:var(--font-num); font-variant-numeric:tabular-nums;}
+
+  /* === 左侧目录 === */
+  .toc{position:fixed; top:24px; left:20px; z-index:100; width:200px;
+    max-height:calc(100vh - 48px); padding:14px 12px; overflow-y:auto; color:var(--ink);
+    border:1px solid var(--line); border-radius:16px;
+    background:rgba(255,255,255,.92); box-shadow:var(--shadow-soft); backdrop-filter:blur(10px);}
+  .toc-title{margin:0 0 8px 4px; color:var(--ink); font-size:12px; font-weight:800;}
+  .toc-group{margin:10px 8px 3px; color:var(--text-3); font-size:9px; font-weight:800; letter-spacing:.06em;}
+  .toc a{display:flex; align-items:center; gap:7px; min-height:28px; padding:5px 8px;
+    color:var(--text-2); text-decoration:none; border-radius:10px;
+    font-size:12px; font-weight:700;}
+  .toc a:hover{color:var(--primary); background:var(--primary-weak);}
+  .toc .dot{display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px;
+    flex:0 0 18px; color:var(--text-3); font-size:9px; font-weight:900;
+    border-radius:50%; background:#f1f4f6;}
+  .toc a.main .dot{color:var(--primary); background:var(--primary-weak);}
+
+  .wrap{width:min(1480px, calc(100% - 48px)); margin:0 auto; padding:42px 0 92px;}
+
+  /* === 顶部 hero === */
+  .hero{position:relative; overflow:hidden; padding:34px 38px; border:1px solid rgba(255,255,255,0.8);
+    border-radius:20px; color:#fff;
+    background:linear-gradient(130deg,#10161a 0%,#16282b 55%,#0e3a37 100%); box-shadow:var(--shadow);}
+  .hero::after{content:""; position:absolute; right:-90px; top:-100px; width:360px; height:360px;
+    border:60px solid rgba(14,148,136,0.22); border-radius:50%;}
+  .hero > *{position:relative; z-index:1;}
+  .eyebrow{color:#6fd5c9; font-size:12px; font-weight:800; letter-spacing:0.14em;}
+  h1{max-width:900px; margin:8px 0 10px; font-size:clamp(26px, 3vw, 42px); line-height:1.18;}
+  .hero p{max-width:940px; margin:0; color:#c2ccd2; font-size:14px;}
+  .tags{display:flex; flex-wrap:wrap; gap:8px; margin-top:20px;}
+  .tag{padding:5px 11px; color:#fff; border:1px solid rgba(255,255,255,0.15);
+    border-radius:999px; background:rgba(255,255,255,0.08); font-size:11px;}
+  .tag.red{border-color:rgba(111,213,201,0.4); background:rgba(14,148,136,0.28);}
+
+  /* === 范围卡（IA） === */
+  .ia{margin-top:28px; padding:22px; border:1px solid var(--line);
+    border-radius:16px; background:rgba(255,255,255,0.9); box-shadow:var(--shadow-soft);}
+  .ia h2{margin:0 0 14px; font-size:17px;}
+  .scope-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:14px;}
+  .phase-card{position:relative; padding:18px; min-height:150px;
+    border:1px solid var(--line); border-radius:var(--radius);
+    background:var(--surface); box-shadow:var(--shadow-soft);}
+  .phase-card .step{color:var(--primary); font-size:11px; font-weight:800; letter-spacing:0.08em;}
+  .phase-card h3{margin:7px 0 8px; font-size:17px;}
+  .phase-card p{margin:0; color:var(--text-2); font-size:12px;}
+  .phase-card .proof{margin-top:12px; padding-top:9px; color:var(--text-3);
+    border-top:1px solid var(--line); font-size:11px;}
+  .phase-card .proof code{font-family:var(--font-num); font-size:10.5px; color:var(--primary);}
+
+  /* === 数据口径表 === */
+  .module{margin-top:54px; scroll-margin-top:24px;}
+  .module-kicker{color:var(--primary); font-size:11px; font-weight:800; letter-spacing:0.14em;}
+  .module h2{margin:5px 0 6px; font-size:26px;}
+  .module > p{max-width:960px; margin:0; color:var(--text-2); font-size:13px;}
+  .panel{margin-top:16px; padding:16px 18px; border:1px solid var(--line); border-radius:var(--radius);
+    background:var(--surface); box-shadow:var(--shadow-soft);}
+  table.spec{width:100%; border-collapse:collapse; font-size:12px;}
+  table.spec th, table.spec td{text-align:left; padding:7px 9px; border-top:1px solid var(--line); line-height:1.5; vertical-align:top;}
+  table.spec th{font-size:10.5px; text-transform:uppercase; color:var(--text-3); letter-spacing:.04em; background:#f7f9fa; border-top:0;}
+  table.spec td code, .inline-code{font-family:var(--font-num); color:#0b7f75; font-weight:700; font-size:11px;}
+  td.r, th.r{text-align:right;}
+  .up{color:var(--up); font-weight:700;}
+  .down{color:var(--down); font-weight:700;}
+
+  /* === scene 通用 === */
+  .scene{margin-top:36px; scroll-margin-top:24px;}
+  .scene-head{display:flex; align-items:flex-start; gap:13px; margin-bottom:16px;}
+  .scene-no{display:grid; place-items:center; width:42px; height:42px; flex:0 0 42px;
+    color:white; border-radius:13px 13px 13px 5px;
+    background:linear-gradient(135deg, var(--primary), #0b7f75);
+    box-shadow:0 8px 20px rgba(14,148,136,0.28);
+    font-size:12px; font-weight:800;}
+  .scene-head h3{margin:0 0 3px; font-size:19px;}
+  .scene-head p{margin:0; color:var(--text-2); font-size:12px; max-width:960px;}
+  .scene-body{display:grid; grid-template-columns:minmax(0, 1.72fr) minmax(300px, 0.78fr);
+    gap:18px; align-items:start;}
+  .prototype, .notes{min-width:0;}
+  .prototype{position:relative;}
+
+  /* === 红色水滴 pin === */
+  .proto-pin{position:absolute; left:var(--x); top:var(--y); z-index:18;
+    display:grid; place-items:center; width:25px; height:29px; color:#fff;
+    border:2px solid #fff; border-radius:50% 50% 50% 8px;
+    background:var(--up); box-shadow:0 7px 16px rgba(224,32,32,0.3);
+    transform:translate(-50%,-50%) rotate(-45deg); pointer-events:none;}
+  .proto-pin b{position:relative; z-index:1; font-size:10px; font-weight:800; line-height:1;
+    transform:rotate(45deg);}
+
+  /* === 右侧 note === */
+  .notes{display:grid; gap:12px;}
+  .note{position:relative; padding:15px 16px 14px 42px; border:1px solid var(--line);
+    border-radius:var(--radius); background:#fff; box-shadow:var(--shadow-soft);}
+  .note .drop{position:absolute; left:12px; top:13px; display:grid; place-items:center;
+    width:23px; height:27px; color:white; border-radius:50% 50% 50% 8px;
+    transform:rotate(-45deg); background:var(--up);
+    box-shadow:0 5px 12px rgba(224,32,32,0.24);
+    font-size:10px; font-weight:800;}
+  .note .drop span{transform:rotate(45deg);}
+  .note h4{margin:0 0 4px; font-size:13px;}
+  .note p, .note li{color:var(--text-2); font-size:11.5px;}
+  .note p{margin:0;}
+  .note ul{margin:6px 0 0; padding-left:17px;}
+  .note .flow{display:flex; flex-wrap:wrap; align-items:center; gap:5px; margin-top:8px;}
+  .note .flow b{padding:3px 7px; color:#0b7f75; border-radius:999px; background:var(--primary-weak); font-size:10px;}
+  .note .flow i{color:var(--text-3); font-style:normal; font-size:10px;}
+
+  /* === 应用壳（模拟 StockDetailView 所在应用） === */
+  .browser{overflow:hidden; border:1px solid #d7dce6;
+    border-radius:14px; background:var(--canvas); box-shadow:var(--shadow);}
+  .browser-bar{display:flex; align-items:center; gap:12px; height:32px; padding:0 13px;
+    background:#eceff4; border-bottom:1px solid var(--line);}
+  .browser-dots{display:flex; gap:5px;}
+  .browser-dots i{width:9px; height:9px; border-radius:50%; background:#c5cad4;}
+  .browser-dots i:first-child{background:#ff6b70;}
+  .browser-dots i:nth-child(2){background:#f8bd54;}
+  .browser-dots i:last-child{background:#46c66b;}
+  .browser-url{flex:1; height:20px; padding:2px 11px; overflow:hidden; color:var(--text-3);
+    border-radius:10px; background:#fff; font-size:9px;
+    white-space:nowrap; text-overflow:ellipsis;}
+  .app-top{display:flex; align-items:center; gap:14px; height:44px; padding:0 16px;
+    border-bottom:1px solid var(--line); background:var(--surface);}
+  .brand{display:flex; align-items:center; gap:7px; font-size:13px; font-weight:800;}
+  .brand-mark{display:grid; place-items:center; width:22px; height:22px; color:#fff;
+    border-radius:6px; background:var(--primary); font-size:10px;}
+  .app-nav{display:flex; gap:4px; color:var(--text-2); font-size:12px;}
+  .app-nav span{padding:4px 9px; border-radius:8px;}
+  .app-nav span.on{color:var(--primary); background:var(--primary-weak); font-weight:700;}
+  .app-body{padding:12px 14px 14px; background:var(--canvas); min-height:420px;}
+
+  /* === 应用内卡片 / 页签（对齐 BaseCard / BaseTabs 视觉） === */
+  .acard{background:var(--surface); border-radius:var(--radius); box-shadow:var(--shadow-soft);}
+  .acard-head{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 14px 0;}
+  .acard-title{font-size:14px; font-weight:600;}
+  .tabs{display:flex; gap:2px; border-bottom:1px solid var(--line); padding:0 10px;}
+  .tabs span{position:relative; padding:9px 12px 8px; color:var(--text-2); font-size:13px; cursor:pointer;}
+  .tabs span.on{color:var(--ink); font-weight:700;}
+  .tabs span.on::after{content:""; position:absolute; left:10px; right:10px; bottom:-1px; height:2px;
+    border-radius:2px; background:var(--primary);}
+  .tabs span .new{color:var(--primary); font-size:10px; font-weight:800; margin-left:3px;}
+
+  /* 报价头条（示意） */
+  .quote-strip{display:flex; align-items:baseline; gap:10px; padding:10px 14px;}
+  .quote-strip .nm{font-size:14px; font-weight:700;}
+  .quote-strip .cd{color:var(--text-3); font-size:11px;}
+  .quote-strip .px{font-size:20px; font-weight:800;}
+  .quote-strip .sub{color:var(--text-3); font-size:11px;}
+
+  /* 指标卡行 */
+  .metric-row{display:grid; grid-template-columns:repeat(5,1fr); gap:10px; padding:12px 14px 2px;}
+  .metric{padding:12px 13px; border:1px solid var(--line); border-radius:10px; background:var(--surface);}
+  .metric small{display:block; color:var(--text-3); font-size:11px;}
+  .metric b{display:block; margin-top:5px; font-size:19px; font-weight:800; letter-spacing:-.01em;}
+  .metric .sub{display:flex; align-items:center; gap:6px; margin-top:4px; font-size:11px; color:var(--text-3);}
+
+  /* 图表（纯 CSS 柱状） */
+  .chart-wrap{margin:10px 14px 0; padding:12px 14px 10px; border:1px solid var(--line); border-radius:10px;}
+  .chart-head{display:flex; align-items:center; gap:10px; margin-bottom:8px;}
+  .legend{display:flex; gap:12px; margin-left:auto; font-size:11px; color:var(--text-2);}
+  .legend i{display:inline-block; width:9px; height:9px; border-radius:3px; margin-right:4px; vertical-align:-1px;}
+  .bars{display:flex; align-items:flex-end; gap:18px; height:130px; padding:0 4px;}
+  .bgroup{flex:1; display:flex; align-items:flex-end; justify-content:center; gap:5px; height:100%;}
+  .bar{width:26px; border-radius:4px 4px 0 0; position:relative;}
+  .bar.rev{background:var(--primary);}
+  .bar.np{background:#4f83cc;}
+  .bar em{position:absolute; left:50%; top:-17px; transform:translateX(-50%);
+    font-style:normal; font-size:9.5px; color:var(--text-3); white-space:nowrap;}
+  .bar b{position:absolute; left:50%; bottom:100%; transform:translateX(-50%); margin-bottom:14px;
+    font-size:10px; font-weight:700; white-space:nowrap;}
+  .xaxis{display:flex; gap:18px; padding:5px 4px 0; border-top:1px solid var(--line); margin-top:0;}
+  .xaxis span{flex:1; text-align:center; font-size:10.5px; color:var(--text-3);}
+
+  /* 财务摘要表（指标为行、报告期为列） */
+  .fin-table{width:100%; border-collapse:collapse; font-size:12px;}
+  .fin-table th, .fin-table td{padding:7px 10px; border-top:1px solid var(--line); white-space:nowrap;}
+  .fin-table thead th{position:sticky; top:0; background:#f7f9fa; color:var(--text-2);
+    font-size:11px; font-weight:600; border-top:0;}
+  .fin-table td:first-child{color:var(--text-2); position:sticky; left:0; background:var(--surface);}
+  .fin-table td{font-family:var(--font-num); font-variant-numeric:tabular-nums;}
+  .fin-table td:first-child{font-family:var(--font-base);}
+  .fin-table tbody tr:hover td{background:#f7f9fa;}
+  .fin-table tbody tr:hover td:first-child{background:#f7f9fa;}
+  .seg{display:inline-flex; padding:2px; gap:2px; background:var(--line); border-radius:9px;}
+  .seg span{padding:3px 10px; border-radius:7px; font-size:11px; color:var(--text-2); cursor:pointer;}
+  .seg span.on{background:var(--surface); color:var(--ink); font-weight:700; box-shadow:0 1px 3px rgba(31,39,51,.10);}
+
+  /* 两栏报表 */
+  .two-col{display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:12px 14px 14px;}
+
+  /* 业绩预告卡 */
+  .forecast-card{margin:0 14px 12px; padding:13px 15px; border:1px solid var(--line); border-radius:10px;}
+  .forecast-head{display:flex; align-items:center; gap:8px;}
+  .badge{padding:2px 9px; border-radius:999px; font-size:11px; font-weight:700;}
+  .badge.pre{background:var(--up-weak); color:var(--up);}
+  .badge.rev{background:var(--down-weak); color:var(--down);}
+  .badge.flat{background:var(--line); color:var(--text-2);}
+  .forecast-nums{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:10px;}
+  .forecast-nums small{display:block; color:var(--text-3); font-size:11px;}
+  .forecast-nums b{display:block; margin-top:3px; font-size:15px;}
+
+  /* 骨架屏 */
+  .skeleton{display:inline-block; overflow:hidden;
+    background:linear-gradient(90deg, #eceef3 0%, #f4f6f9 50%, #eceef3 100%);
+    background-size:200% 100%; border-radius:6px;
+    animation:shimmer 1.4s linear infinite;}
+  @keyframes shimmer{0%{background-position:200% 0;}100%{background-position:-200% 0;}}
+  @media (prefers-reduced-motion: reduce){.skeleton{animation:none; background:#eceef3;}}
+
+  /* 空态 / 错误态 */
+  .empty-state{display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:34px 20px; text-align:center;}
+  .empty-state .illust{width:72px; height:72px; border-radius:20px; display:flex; align-items:center; justify-content:center;
+    background:linear-gradient(135deg, var(--primary-weak), var(--line)); color:var(--primary);
+    font-size:34px; margin-bottom:12px;}
+  .empty-state .t{font-size:15px; font-weight:800; margin-bottom:5px;}
+  .empty-state .d{font-size:12px; color:var(--text-2); max-width:380px; line-height:1.6;}
+  .error-state .illust{background:var(--up-weak); color:var(--up);}
+  .retry-btn{display:inline-flex; align-items:center; gap:5px; margin-top:12px; min-height:32px; padding:0 16px;
+    border:none; border-radius:16px; background:var(--primary); color:#fff; font-size:12px; font-weight:700;}
+  .err-code{font-family:var(--font-num); font-size:10.5px; color:var(--text-3);
+    background:#f7f9fa; border:1px solid var(--line); border-radius:4px; padding:2px 6px; margin-top:8px; display:inline-block;}
+
+  /* 折叠示意（K 线区占位） */
+  .collapsed-hint{display:flex; align-items:center; justify-content:center; gap:8px;
+    height:64px; margin-bottom:12px; border-radius:var(--radius);
+    border:1px dashed #d7dce6; color:var(--text-3); font-size:12px; background:rgba(255,255,255,.6);}
+
+  /* 附录 */
+  .appendix-card{margin-top:34px; border:1px solid var(--line);
+    border-radius:16px; background:var(--surface); padding:18px 20px;
+    box-shadow:var(--shadow-soft);}
+  .appendix-card h3{margin:0 0 10px; font-size:15px;}
+  .decision{display:grid; grid-template-columns:56px minmax(0,1fr); gap:8px;
+    padding:8px 0; font-size:12px; line-height:1.65; border-top:1px solid var(--line);}
+  .decision:first-of-type{border-top:0;}
+  .decision b{color:var(--primary); font-weight:800;}
+  .appendix-card h4{margin:18px 0 8px; font-size:13.5px;}
+  .appendix-card ul{margin:0; padding-left:20px; color:var(--text-2); font-size:12px; line-height:1.8;}
+  .appendix-card li code{font-family:var(--font-num); font-size:11px; color:#0b7f75;}
+
+  /* 响应式 */
+  @media(min-width:1500px){.wrap{width:auto; max-width:1480px; margin-left:248px; margin-right:28px;}}
+  @media(max-width:1499px){.toc{display:none;} .scene-body{grid-template-columns:1fr;}}
+  @media(max-width:980px){.wrap{width:min(100% - 28px, 920px); padding-top:68px;}
+    .scope-grid{grid-template-columns:1fr;}
+    .metric-row{grid-template-columns:repeat(2,1fr);}
+    .two-col{grid-template-columns:1fr;}
+    .forecast-nums{grid-template-columns:1fr 1fr;}}
+  @media(max-width:720px){.hero{padding:26px 22px;}
+    .browser{overflow-x:auto;} .browser > .browser-bar, .browser > .app-top, .browser > .app-body{min-width:900px;}}
+</style>
+</head>
+<body>
+
+<nav class="toc" aria-label="需求稿目录">
+  <div class="toc-title">需求稿目录</div>
+  <div class="toc-group">总览</div>
+  <a class="main" href="#overview"><span class="dot">0</span><span>范围与落点</span></a>
+  <a class="main" href="#data"><span class="dot">#</span><span>数据口径与取数</span></a>
+  <div class="toc-group">Module A · 页签与布局</div>
+  <a href="#scene-a1"><span class="dot">A1</span><span>财务页签首屏</span></a>
+  <a href="#scene-a2"><span class="dot">A2</span><span>加载骨架</span></a>
+  <div class="toc-group">Module B · 财务摘要</div>
+  <a href="#scene-b1"><span class="dot">B1</span><span>多期对比表</span></a>
+  <div class="toc-group">Module C · 报表科目</div>
+  <a href="#scene-c1"><span class="dot">C1</span><span>资产负债 · 现金流</span></a>
+  <div class="toc-group">Module D · 业绩预告</div>
+  <a href="#scene-d1"><span class="dot">D1</span><span>预告卡与空态</span></a>
+  <div class="toc-group">Module E · 异常态</div>
+  <a href="#scene-e1"><span class="dot">E1</span><span>错误与重试</span></a>
+  <div class="toc-group">附录</div>
+  <a href="#edge"><span class="dot">附</span><span>边界条件</span></a>
+  <a href="#decisions"><span class="dot">✓</span><span>定论清单</span></a>
+  <a href="#devplan"><span class="dot">⚙</span><span>开发方案</span></a>
+</nav>
+
+<main>
+  <div class="wrap">
+
+    <!-- ============ Hero ============ -->
+    <header class="hero" id="overview">
+      <div class="eyebrow">whf-stock-board · 个股财务报告 · v1</div>
+      <h1>详情整页新增「财务」页签：一次看清营收、利润、家底与现金</h1>
+      <p>
+        以「报告期为轴、四张报表为面」组织个股财务信息：先在详情整页底部页签区新增「财务」入口，
+        首屏给核心指标卡 + 营收/净利五期趋势图；再往里是财务摘要多期对比表（行 = 指标、列 = 报告期）；
+        然后是资产负债与现金流关键科目两栏表；最后挂业绩预告（多数股票无披露，空态为一等公民）。
+        数据全部来自东财 datacenter 四张报表——项目已有取数层
+        <code style="color:#6fd5c9">src/common/api/financial.api.ts</code>（2026-09-24 实测四接口全通），本期只做 UI 消费层，不动数据通道。
+        本期不包含：业务构成（按产品/行业/地区）、最新财务指标卡（F10 报表需显式列字段名，风险另评）、移动端。
+      </p>
+      <div class="tags">
+        <span class="tag red">v1 · 核心四件套</span>
+        <span class="tag">高保真 UI 稿</span>
+        <span class="tag">PC · 详情整页底部页签</span>
+        <span class="tag">数据源：东财 datacenter（已打通）</span>
+        <span class="tag">不轮询 · 页签触发 + TTL 缓存</span>
+      </div>
+    </header>
+
+    <!-- ============ 落点与模块地图 ============ -->
+    <section class="ia">
+      <h2>落点与模块地图</h2>
+      <div class="scope-grid">
+        <article class="phase-card">
+          <span class="step">落点 · WHERE</span>
+          <h3>详情整页底部页签区</h3>
+          <p>StockDetailView 底部页签卡（现有「交易记录 / ETF 持仓股」）追加「财务」页签；停靠面板本期不加，面板保持轻量。</p>
+          <div class="proof">接线点：<code>StockDetailView.vue:244 bottomTabOptions</code></div>
+        </article>
+        <article class="phase-card">
+          <span class="step">数据 · WHAT</span>
+          <h3>四张报表，零新增接口</h3>
+          <p>财务摘要 / 资产负债 / 现金流 / 业绩预告，四个函数现成且类型齐全；本期新增 UI 组件层与 composable，不改 fetch 通道。</p>
+          <div class="proof">复用：<code>financial.api.ts · 4 个 fetch 函数</code></div>
+        </article>
+        <article class="phase-card">
+          <span class="step">节奏 · WHEN</span>
+          <h3>页签触发一次，不轮询</h3>
+          <p>财务数据日级更新，切到页签时拉取一次；结果进 dataCache 快照（TTL 见定论），重复进入秒开；失败按表独立重试。</p>
+          <div class="proof">约束：<code>datacenter 域非行情高频域 · 无封禁先例</code></div>
+        </article>
+      </div>
+    </section>
+
+    <!-- ============ 数据口径与取数 ============ -->
+    <section class="module" id="data">
+      <div class="module-kicker">DATA · 口径先行</div>
+      <h2>数据口径与取数</h2>
+      <p>
+        四张报表均为东财 datacenter-web <code class="inline-code">/api/data/v1/get</code>，按
+        <code class="inline-code">SECURITY_CODE</code> 过滤、报告期倒序；金额上游单位为「元」，展示统一换算「亿元（2 位小数）」；
+        比率单位「%」直出；EPS / BPS 单位「元」直出。字段名两套命名的坑（REPORTDATE vs REPORT_DATE）已封装在 api 层，UI 层不感知。
+      </p>
+      <div class="panel">
+        <table class="spec">
+          <thead><tr><th>模块</th><th>取数函数（现成）</th><th>上游报表</th><th>关键展示字段</th><th class="r">期数</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><b>财务摘要</b>（B）</td>
+              <td><code>fetchFinancialSummary</code></td>
+              <td><code>RPT_LICO_FN_CPD</code>（排序 REPORTDATE）</td>
+              <td>营业总收入 / 归母净利及同比环比 / EPS / 扣非 EPS / BPS / ROE / 毛利率 / 每股经营现金流 / 分配预案</td>
+              <td class="r num">5 期</td>
+            </tr>
+            <tr>
+              <td><b>资产负债</b>（C）</td>
+              <td><code>fetchBalanceSheetDigest</code></td>
+              <td><code>RPT_DMSK_FN_BALANCE</code>（排序 REPORT_DATE）</td>
+              <td>总资产 / 总负债 / 股东权益 / 负债率 / 流动比率 / 货币资金 / 存货 / 应收</td>
+              <td class="r num">5 期</td>
+            </tr>
+            <tr>
+              <td><b>现金流</b>（C）</td>
+              <td><code>fetchCashFlowDigest</code></td>
+              <td><code>RPT_DMSK_FN_CASHFLOW</code>（排序 REPORT_DATE）</td>
+              <td>经营 / 投资 / 筹资净额 / 净增加额 / 资本开支</td>
+              <td class="r num">5 期</td>
+            </tr>
+            <tr>
+              <td><b>业绩预告</b>（D）</td>
+              <td><code>fetchProfitForecast</code></td>
+              <td><code>RPT_PUBLIC_OP_NEWPREDICT</code>（排序 NOTICE_DATE）</td>
+              <td>预告类型 / 指标区间 / 同比增幅区间 / 公告日 / 原文</td>
+              <td class="r num">最近 3 条</td>
+            </tr>
+            <tr>
+              <td colspan="5" style="color:var(--text-3); font-size:11.5px;">
+                ⚠️ 已探明不可接：业绩快报 <code>RPT_PUBLIC_OP_NEWDISCOVER</code> 报表不存在（上游 9501）；
+                F10 主指标 <code>RPT_F10_FINANCE_MAINFINADATA</code> 的 <code>fields=ALL</code> 会报 9501，必须显式列字段名——两者均不进本期范围。
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ============ Module A · 页签与布局 ============ -->
+    <section class="module" id="module-a">
+      <div class="module-kicker">MODULE A · 页签与布局</div>
+      <h2>财务页签首屏</h2>
+      <p>页签行追加「财务」；首屏自上而下：核心指标卡行（最新报告期 + 同比）→ 营收/净利五期趋势图 →（滚动）财务摘要表。样例数据取自东方财富 300059（2026-10-16 收盘口径的公开披露值）。</p>
+
+      <!-- A1 -->
+      <section class="scene" id="scene-a1">
+        <header class="scene-head">
+          <div class="scene-no">A1</div>
+          <div><h3>页签入口 + 指标卡 + 趋势图（高保真）</h3>
+          <p>切到「财务」页签时并发拉取四张报表（Promise.allSettled，单表失败不拖垮整页）；指标卡与趋势图消费财务摘要，同比正负用 up/down 语义色（随 data-trend 主题自动切换）。</p></div>
+        </header>
+        <div class="scene-body">
+          <div class="prototype">
+            <span class="proto-pin" style="--x:63%;--y:29%"><b>1</b></span>
+            <span class="proto-pin" style="--x:26%;--y:47%"><b>2</b></span>
+            <span class="proto-pin" style="--x:88%;--y:63%"><b>3</b></span>
+            <div class="browser">
+              <div class="browser-bar">
+                <div class="browser-dots"><i></i><i></i><i></i></div>
+                <div class="browser-url">whf-stock-board（Tauri 桌面端）· /stock-detail · 300059</div>
+              </div>
+              <div class="app-top">
+                <div class="brand"><span class="brand-mark">W</span>看板</div>
+                <div class="app-nav"><span>市场总览</span><span>自选股</span><span class="on">个股详情</span><span>行情全景</span><span>资金动向</span></div>
+              </div>
+              <div class="app-body">
+                <!-- 报价头条（示意，本期不变） -->
+                <div class="acard" style="margin-bottom:12px;">
+                  <div class="quote-strip">
+                    <span class="nm">东方财富</span><span class="cd">300059 · 证券Ⅱ</span>
+                    <span class="px num" style="color:var(--down);">18.11</span>
+                    <span class="sub num" style="color:var(--down);">-0.21&nbsp;&nbsp;-1.15%</span>
+                    <span class="sub" style="margin-left:auto;">总市值 2865亿 · PE 17.77 · PB 2.91</span>
+                  </div>
+                </div>
+                <!-- K 线区折叠示意（本期不变） -->
+                <div class="collapsed-hint">▤ K 线图 / 五档盘口区域（保持现状，示意折叠）</div>
+
+                <!-- 财务页签卡片 -->
+                <div class="acard">
+                  <div class="tabs">
+                    <span>交易记录</span>
+                    <span>ETF 持仓股</span>
+                    <span class="on">财务<span class="new">New</span></span>
+                  </div>
+                  <!-- 指标卡行 -->
+                  <div class="metric-row">
+                    <div class="metric">
+                      <small>营业总收入（2026 中报）</small>
+                      <b class="num">105.05亿</b>
+                      <div class="sub"><span class="up num">同比 +53.22%</span></div>
+                    </div>
+                    <div class="metric">
+                      <small>归母净利润</small>
+                      <b class="num">80.64亿</b>
+                      <div class="sub"><span class="up num">同比 +44.85%</span></div>
+                    </div>
+                    <div class="metric">
+                      <small>基本每股收益</small>
+                      <b class="num">0.5100元</b>
+                      <div class="sub"><span class="num" style="color:var(--text-3);">扣非 0.5097元</span></div>
+                    </div>
+                    <div class="metric">
+                      <small>加权平均 ROE</small>
+                      <b class="num">8.46%</b>
+                      <div class="sub"><span class="num" style="color:var(--text-3);">每股净资产 6.22元</span></div>
+                    </div>
+                    <div class="metric">
+                      <small>销售毛利率</small>
+                      <b class="num">74.39%</b>
+                      <div class="sub"><span class="num" style="color:var(--text-3);">每股经营现金流 1.92元</span></div>
+                    </div>
+                  </div>
+
+                  <!-- 趋势图（营收 / 净利，五期） -->
+                  <div class="chart-wrap">
+                    <div class="chart-head">
+                      <span class="seg"><span class="on">按报告期</span><span>按年度</span><span>按单季</span></span>
+                      <div class="legend">
+                        <span><i style="background:var(--primary);"></i>营业总收入（亿）</span>
+                        <span><i style="background:#4f83cc;"></i>归母净利润（亿）</span>
+                      </div>
+                    </div>
+                    <div class="bars">
+                      <div class="bgroup">
+                        <div class="bar rev" style="height:52%;"><em>105.05</em></div>
+                        <div class="bar np" style="height:40%;"><em>80.64</em></div>
+                      </div>
+                      <div class="bgroup">
+                        <div class="bar rev" style="height:25%;"><em>50.31</em></div>
+                        <div class="bar np" style="height:19%;"><em>37.38</em></div>
+                      </div>
+                      <div class="bgroup">
+                        <div class="bar rev" style="height:80%;"><em>160.68</em></div>
+                        <div class="bar np" style="height:60%;"><em>120.85</em></div>
+                      </div>
+                      <div class="bgroup">
+                        <div class="bar rev" style="height:58%;"><em>115.89</em></div>
+                        <div class="bar np" style="height:45%;"><em>90.97</em></div>
+                      </div>
+                      <div class="bgroup">
+                        <div class="bar rev" style="height:34%;"><em>68.56</em></div>
+                        <div class="bar np" style="height:28%;"><em>55.67</em></div>
+                      </div>
+                    </div>
+                    <div class="xaxis">
+                      <span>2026-06-30</span><span>2026-03-31</span><span>2025-12-31</span><span>2025-09-30</span><span>2025-06-30</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <aside class="notes">
+            <div class="note"><div class="drop"><span>1</span></div>
+              <h4>「财务」页签 · 入口</h4>
+              <p>挂在现有底部页签组末尾（交易记录 / ETF 持仓股 / 财务），复用 BaseTabs 的 underline 形态，不加图标。首次切到该页签才发请求（懒加载），切走不销毁已加载数据（组件 keep-alive 或 v-show 保留）。</p>
+              <div class="flow"><b>bottomTab = 'financial'</b><i>→</i><b>useStockFinancial(symbol)</b></div>
+            </div>
+            <div class="note"><div class="drop"><span>2</span></div>
+              <h4>指标卡行 · 最新报告期速读</h4>
+              <p>5 张卡取自财务摘要最新一期：营收、归母净利（带同比）、EPS（带扣非）、ROE（带 BPS）、毛利率（带每股经营现金流）。同比为正红 / 负绿，复用 <code>text-up / text-down</code> 语义色，随 data-trend 主题自动换色。卡片头部标注报告期（如「2026 中报」）。</p>
+            </div>
+            <div class="note"><div class="drop"><span>3</span></div>
+              <h4>趋势图 · 营收 vs 净利（5 期柱状）</h4>
+              <p>ECharts 双系列柱状图，系列色用主色 teal + 蓝灰（不占用涨跌语义色，避免被误读成涨跌）；柱顶标数值（亿元 2 位）；横轴报告期。<b>本期不做折线叠加同比</b>——同比已在摘要表逐期给全，避免图表信息过载。实现走项目 ECharts 注册表（<code>common/components/charts</code>），新增 <code>FinancialTrendChart.vue</code>。</p>
+            </div>
+            <div class="note"><div class="drop"><span>＋</span></div>
+              <h4>样例数据口径</h4>
+              <p>稿内数字取自东财 300059 公开披露（2026-06-30 期财务摘要五期，与 datacenter 接口返回一致）；「按年度 / 按单季」分段为 v2 预留（需自算差分，见定论④），v1 点击置灰或提示「即将支持」。</p>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- A2 骨架 -->
+      <section class="scene" id="scene-a2">
+        <header class="scene-head">
+          <div class="scene-no">A2</div>
+          <div><h3>加载骨架</h3>
+          <p>首次进入页签的加载态：指标卡行 + 图表区 + 表格区各出骨架，宽高与最终态一致，避免加载完成跳动。四张报表分别就绪分别点亮（渐进呈现）。</p></div>
+        </header>
+        <div class="scene-body">
+          <div class="prototype">
+            <div class="browser">
+              <div class="browser-bar">
+                <div class="browser-dots"><i></i><i></i><i></i></div>
+                <div class="browser-url">/stock-detail · 300059 · 财务页签 loading</div>
+              </div>
+              <div class="app-body">
+                <div class="acard">
+                  <div class="tabs"><span>交易记录</span><span>ETF 持仓股</span><span class="on">财务</span></div>
+                  <div class="metric-row">
+                    <div class="metric"><span class="skeleton" style="display:block; height:10px; width:70%;"></span><span class="skeleton" style="display:block; height:20px; width:55%; margin-top:8px;"></span><span class="skeleton" style="display:block; height:9px; width:45%; margin-top:7px;"></span></div>
+                    <div class="metric"><span class="skeleton" style="display:block; height:10px; width:62%;"></span><span class="skeleton" style="display:block; height:20px; width:48%; margin-top:8px;"></span><span class="skeleton" style="display:block; height:9px; width:52%; margin-top:7px;"></span></div>
+                    <div class="metric"><span class="skeleton" style="display:block; height:10px; width:66%;"></span><span class="skeleton" style="display:block; height:20px; width:58%; margin-top:8px;"></span><span class="skeleton" style="display:block; height:9px; width:40%; margin-top:7px;"></span></div>
+                    <div class="metric"><span class="skeleton" style="display:block; height:10px; width:58%;"></span><span class="skeleton" style="display:block; height:20px; width:50%; margin-top:8px;"></span><span class="skeleton" style="display:block; height:9px; width:48%; margin-top:7px;"></span></div>
+                    <div class="metric"><span class="skeleton" style="display:block; height:10px; width:64%;"></span><span class="skeleton" style="display:block; height:20px; width:44%; margin-top:8px;"></span><span class="skeleton" style="display:block; height:9px; width:55%; margin-top:7px;"></span></div>
+                  </div>
+                  <div class="chart-wrap" style="min-height:170px;">
+                    <span class="skeleton" style="display:block; height:12px; width:180px;"></span>
+                    <span class="skeleton" style="display:block; height:110px; margin-top:14px; border-radius:8px;"></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <aside class="notes">
+            <div class="note"><div class="drop"><span>1</span></div>
+              <h4>渐进点亮</h4>
+              <p>allSettled 让四张表独立渲染：摘要先回先亮指标卡与趋势图，资产负债/现金流/预告各自就绪各自渲染，不做整页 spinner。骨架 shimmer 1.4s，颜色中性灰，不参与主题色。</p>
+            </div>
+            <div class="note"><div class="drop"><span>2</span></div>
+              <h4>快照播种</h4>
+              <p>同 symbol 的财务数据进 dataCache 后，重复进入页签直接渲染快照、后台按 TTL 判断是否回源——与 K 线快照（<code>klineCacheKey</code>）同一套模式，无感刷新。</p>
+            </div>
+          </aside>
+        </div>
+      </section>
+    </section>
+
+    <!-- ============ Module B · 财务摘要 ============ -->
+    <section class="module" id="module-b">
+      <div class="module-kicker">MODULE B · 财务摘要</div>
+      <h2>多期对比表</h2>
+      <p>对齐东财「财务摘要」的信息形态：行 = 指标、列 = 报告期（最近 5 期），分盈利能力 / 利润表摘要两组；金额单位亿元，同比正负上色。表头吸顶 + 首列吸左，沿用应用 <code class="inline-code">table-scroll</code> 系列样式。</p>
+
+      <section class="scene" id="scene-b1">
+        <header class="scene-head">
+          <div class="scene-no">B1</div>
+          <div><h3>财务摘要表（高保真）</h3>
+          <p>消费 <code>fetchFinancialSummary(symbol, 5)</code>；报告期列由返回行倒序生成。样例为 300059 实测五期值。</p></div>
+        </header>
+        <div class="scene-body">
+          <div class="prototype">
+            <span class="proto-pin" style="--x:8%;--y:12%"><b>1</b></span>
+            <span class="proto-pin" style="--x:55%;--y:34%"><b>2</b></span>
+            <span class="proto-pin" style="--x:55%;--y:80%"><b>3</b></span>
+            <div class="browser">
+              <div class="browser-bar">
+                <div class="browser-dots"><i></i><i></i><i></i></div>
+                <div class="browser-url">/stock-detail · 300059 · 财务页签 · 财务摘要</div>
+              </div>
+              <div class="app-body">
+                <div class="acard">
+                  <div class="acard-head">
+                    <span class="acard-title">财务摘要</span>
+                    <span style="color:var(--text-3); font-size:11px;">数据源：东方财富 · 金额单位：亿元</span>
+                  </div>
+                  <div style="padding:0 14px 12px;" class="table-scroll-sm">
+                    <table class="fin-table">
+                      <thead>
+                        <tr>
+                          <th style="text-align:left;">指标</th>
+                          <th class="r">2026-06-30</th><th class="r">2026-03-31</th><th class="r">2025-12-31</th><th class="r">2025-09-30</th><th class="r">2025-06-30</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr><td>营业总收入（亿）</td><td class="r">105.05</td><td class="r">50.31</td><td class="r">160.68</td><td class="r">115.89</td><td class="r">68.56</td></tr>
+                        <tr><td>营收同比（%）</td><td class="r"><span class="up">+53.22</span></td><td class="r"><span class="up">+44.34</span></td><td class="r"><span class="up">+38.46</span></td><td class="r"><span class="up">+58.67</span></td><td class="r"><span class="up">+38.65</span></td></tr>
+                        <tr><td>归母净利润（亿）</td><td class="r">80.64</td><td class="r">37.38</td><td class="r">120.85</td><td class="r">90.97</td><td class="r">55.67</td></tr>
+                        <tr><td>净利同比（%）</td><td class="r"><span class="up">+44.85</span></td><td class="r"><span class="up">+37.67</span></td><td class="r"><span class="up">+25.75</span></td><td class="r"><span class="up">+50.57</span></td><td class="r"><span class="up">+37.27</span></td></tr>
+                        <tr><td>基本每股收益（元）</td><td class="r">0.5100</td><td class="r">0.2360</td><td class="r">0.7650</td><td class="r">0.5760</td><td class="r">0.3530</td></tr>
+                        <tr><td>每股净资产（元）</td><td class="r">6.22</td><td class="r">6.05</td><td class="r">5.81</td><td class="r">5.62</td><td class="r">5.42</td></tr>
+                        <tr><td>加权 ROE（%）</td><td class="r">8.46</td><td class="r">3.99</td><td class="r">14.03</td><td class="r">10.74</td><td class="r">6.69</td></tr>
+                        <tr><td>销售毛利率（%）</td><td class="r">74.39</td><td class="r">73.97</td><td class="r">70.30</td><td class="r">71.07</td><td class="r">69.00</td></tr>
+                        <tr><td>每股经营现金流（元）</td><td class="r">1.92</td><td class="r">1.93</td><td class="r" style="color:var(--down);">-0.65</td><td class="r" style="color:var(--down);">-0.42</td><td class="r">0.29</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                <!-- 行内空态示意 -->
+                <div class="acard" style="margin-top:12px;">
+                  <div class="acard-head"><span class="acard-title">分配预案</span></div>
+                  <div class="empty-state" style="padding:20px;">
+                    <div class="t" style="font-size:13px;">2026 中报：不分配、不转增</div>
+                    <div class="d">来自财务摘要 ASSIGNDSCRPT 字段；无预案时整行不展示，不出空态块</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <aside class="notes">
+            <div class="note"><div class="drop"><span>1</span></div>
+              <h4>行 = 指标、列 = 报告期</h4>
+              <p>与东财「财务摘要」同构，方便对照核数。首列指标名吸左、表头吸顶（沿用 <code>table-scroll-sm</code> 既有样式，零新 CSS）。列数自适应实际返回期数：次新股可能只有 1~2 期，不补空列。</p>
+            </div>
+            <div class="note"><div class="drop"><span>2</span></div>
+              <h4>同比 / 环比上色规则</h4>
+              <p>同比（YSTZ/SJLTZ）为正 <code>text-up</code> 红、为负 <code>text-down</code> 绿、缺失灰「—」；跟随 data-trend 主题。每股经营现金流为负时数值本身也上 down 色提示失血。</p>
+            </div>
+            <div class="note"><div class="drop"><span>3</span></div>
+              <h4>单位换算</h4>
+              <p>上游金额单位元 → 展示除以 1e8 保留 2 位（新增 <code>utils/format-yi.ts</code>，一函数一文件）；比率、EPS、BPS 原样直出。表头右侧固定「金额单位：亿元」提示，避免误读。</p>
+            </div>
+          </aside>
+        </div>
+      </section>
+    </section>
+
+    <!-- ============ Module C · 报表科目 ============ -->
+    <section class="module" id="module-c">
+      <div class="module-kicker">MODULE C · 报表科目</div>
+      <h2>资产负债 · 现金流</h2>
+      <p>两栏并排（窄窗口自动叠放），左 = 资产负债关键科目，右 = 现金流关键科目；行结构同财务摘要（行 = 科目、列 = 报告期），列数与摘要表对齐方便竖向扫读。</p>
+
+      <section class="scene" id="scene-c1">
+        <header class="scene-head">
+          <div class="scene-no">C1</div>
+          <div><h3>两栏科目表（高保真）</h3>
+          <p>消费 <code>fetchBalanceSheetDigest</code> 与 <code>fetchCashFlowDigest</code>，各 5 期。负债率超 60% 档位加弱色底提示（阈值仅提示、不做判断口径，见定论⑥）。</p></div>
+        </header>
+        <div class="scene-body">
+          <div class="prototype">
+            <span class="proto-pin" style="--x:22%;--y:36%"><b>1</b></span>
+            <span class="proto-pin" style="--x:78%;--y:70%"><b>2</b></span>
+            <div class="browser">
+              <div class="browser-bar">
+                <div class="browser-dots"><i></i><i></i><i></i></div>
+                <div class="browser-url">/stock-detail · 300059 · 财务页签 · 报表科目</div>
+              </div>
+              <div class="app-body">
+                <div class="acard">
+                  <div class="two-col">
+                    <!-- 资产负债 -->
+                    <div>
+                      <div class="acard-title" style="margin-bottom:8px;">资产负债 <span style="color:var(--text-3); font-size:11px; font-weight:400;">· 单位：亿元</span></div>
+                      <table class="fin-table">
+                        <thead><tr><th style="text-align:left;">科目</th><th class="r">26-06-30</th><th class="r">25-12-31</th><th class="r">25-06-30</th></tr></thead>
+                        <tbody>
+                          <tr><td>总资产</td><td class="r">5057.41</td><td class="r">3929.34</td><td class="r">3552.80</td></tr>
+                          <tr><td>总负债</td><td class="r">4073.35</td><td class="r">3010.58</td><td class="r">2696.98</td></tr>
+                          <tr><td>股东权益</td><td class="r">984.06</td><td class="r">918.75</td><td class="r">855.82</td></tr>
+                          <tr><td>资产负债率（%）</td><td class="r" style="background:var(--up-weak);"><span class="up">80.54</span></td><td class="r" style="background:var(--up-weak);"><span class="up">76.62</span></td><td class="r" style="background:var(--up-weak);"><span class="up">75.93</span></td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                    <!-- 现金流 -->
+                    <div>
+                      <div class="acard-title" style="margin-bottom:8px;">现金流量 <span style="color:var(--text-3); font-size:11px; font-weight:400;">· 单位：亿元</span></div>
+                      <table class="fin-table">
+                        <thead><tr><th style="text-align:left;">科目</th><th class="r">26-06-30</th><th class="r">25-12-31</th><th class="r">25-06-30</th></tr></thead>
+                        <tbody>
+                          <tr><td>经营活动净额</td><td class="r"><span class="up">303.14</span></td><td class="r" style="color:var(--down);">-102.22</td><td class="r">46.28</td></tr>
+                          <tr><td>投资活动净额</td><td class="r" style="color:var(--down);">-46.28</td><td class="r">29.97</td><td class="r">61.31</td></tr>
+                          <tr><td>筹资活动净额</td><td class="r">112.52</td><td class="r">240.13</td><td class="r">17.67</td></tr>
+                          <tr><td>现金净增加额</td><td class="r">369.38</td><td class="r">167.88</td><td class="r">125.26</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+                <div style="margin:10px 2px 0; color:var(--text-3); font-size:11px;">
+                  ⚠️ 券商 / 银行等金融股负债率天然高企（吸收存款 / 应付 brokers 计负债），弱色底仅视觉提示、不构成风险判定。
+                </div>
+              </div>
+            </div>
+          </div>
+          <aside class="notes">
+            <div class="note"><div class="drop"><span>1</span></div>
+              <h4>负债率弱色底</h4>
+              <p>资产负债率 &gt; 60% 的单元格加 <code>up-weak</code> 底 + up 色（阈值入 constants）。金融股普遍超限，弱色底会被常亮——若观感吵闹，可在「行业 = 证券 / 银行 / 保险」时不提示（行业字段财务摘要已带 BOARD_NAME）。实现时二选一，默认做行业豁免。</p>
+            </div>
+            <div class="note"><div class="drop"><span>2</span></div>
+              <h4>现金流正负色</h4>
+              <p>净额为正 up 红 / 为负 down 绿——这里沿用应用「红涨绿跌」的方向语义而非好坏判断（筹资为正未必是好事），表意是「方向」，与全站一致。</p>
+            </div>
+            <div class="note"><div class="drop"><span>＋</span></div>
+              <h4>列数对齐</h4>
+              <p>两张表的报告期列统一取财务摘要返回的报告期并集裁剪，保证三表（摘要/资产/现金流）在同一批报告期上竖向对齐，扫读不跳列。某表缺席某期 → 该期整列灰「—」。</p>
+            </div>
+          </aside>
+        </div>
+      </section>
+    </section>
+
+    <!-- ============ Module D · 业绩预告 ============ -->
+    <section class="module" id="module-d">
+      <div class="module-kicker">MODULE D · 业绩预告</div>
+      <h2>预告卡与空态</h2>
+      <p>业绩预告只有部分公司在特定窗口披露（季报截至前），<b>空态是常态而不是异常</b>。卡片消费 <code>fetchProfitForecast(symbol, 3)</code>，取最近 3 条；预告类型映射徽标色（预增 / 略增 / 扭亏 = up 红；预减 / 略减 / 首亏 = down 绿；不确定 = 灰）。</p>
+
+      <section class="scene" id="scene-d1">
+        <header class="scene-head">
+          <div class="scene-no">D1</div>
+          <div><h3>预告卡（有数据）+ 空态（高保真）</h3>
+          <p>上：有披露时的卡片形态（样例为示意值，非 300059 实际披露——东财 300059 当前无预告）；下：300059 的真实形态 = 空态。</p></div>
+        </header>
+        <div class="scene-body">
+          <div class="prototype">
+            <span class="proto-pin" style="--x:50%;--y:13%"><b>1</b></span>
+            <span class="proto-pin" style="--x:50%;--y:74%"><b>2</b></span>
+            <div class="browser">
+              <div class="browser-bar">
+                <div class="browser-dots"><i></i><i></i><i></i></div>
+                <div class="browser-url">/stock-detail · 财务页签 · 业绩预告</div>
+              </div>
+              <div class="app-body">
+                <div class="acard">
+                  <div class="acard-head">
+                    <span class="acard-title">业绩预告</span>
+                    <span style="color:var(--text-3); font-size:11px;">公告日倒序 · 最多 3 条</span>
+                  </div>
+                  <!-- 有数据：预告卡 -->
+                  <div style="padding:12px 14px 4px;">
+                    <div class="forecast-card">
+                      <div class="forecast-head">
+                        <span class="badge pre">预增</span>
+                        <b style="font-size:13px;">净利润</b>
+                        <span style="margin-left:auto; color:var(--text-3); font-size:11px;">报告期 2026-06-30 · 公告 2026-07-14</span>
+                      </div>
+                      <div class="forecast-nums">
+                        <div><small>预告区间（亿）</small><b class="num">12.60 ~ 13.50</b></div>
+                        <div><small>同比增幅</small><b class="num up">+45.00% ~ +55.00%</b></div>
+                        <div><small>上年同期（亿）</small><b class="num">8.69</b></div>
+                      </div>
+                      <p style="margin:9px 0 0; padding-top:8px; border-top:1px solid var(--line); color:var(--text-2); font-size:11.5px;">
+                        预告原文：预计 2026 年半年度归母净利润 12.6 亿元 ~ 13.5 亿元，同比增长 45%~55%。业绩变动主要原因：主营业务保持增长……
+                      </p>
+                    </div>
+                    <div class="forecast-card" style="opacity:.55;">
+                      <div class="forecast-head">
+                        <span class="badge rev">略减</span>
+                        <b style="font-size:13px;">净利润</b>
+                        <span style="margin-left:auto; color:var(--text-3); font-size:11px;">报告期 2026-03-31 · 公告 2026-04-10</span>
+                      </div>
+                      <div class="forecast-nums">
+                        <div><small>预告区间（亿）</small><b class="num">2.10 ~ 2.40</b></div>
+                        <div><small>同比增幅</small><b class="num down">-12.00% ~ -5.00%</b></div>
+                        <div><small>上年同期（亿）</small><b class="num">2.53</b></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 空态：300059 实际无预告 -->
+                <div class="acard" style="margin-top:12px;">
+                  <div class="acard-head"><span class="acard-title">业绩预告 · 空态</span></div>
+                  <div class="empty-state">
+                    <div class="illust">📜</div>
+                    <div class="t">暂无业绩预告</div>
+                    <div class="d">东方财富（300059）当前无已披露的业绩预告。预告通常在季报披露窗口前 15 日内集中发布，届时此处自动更新。</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <aside class="notes">
+            <div class="note"><div class="drop"><span>1</span></div>
+              <h4>预告类型徽标</h4>
+              <p>PREDICT_TYPE → 徽标色映射（constants 收口）：预增 / 略增 / 扭亏 / 续盈 = up 底；预减 / 略减 / 首亏 / 续亏 = down 底；不确定 / 增亏 = 灰。区间缺失（如只有增幅没有金额）时对应列显示「—」。</p>
+            </div>
+            <div class="note"><div class="drop"><span>2</span></div>
+              <h4>空态是常态</h4>
+              <p>上游「查询成功但 result 为 null」= 该票无预告（合法空，success 仍 true），API 层已归一为空数组——UI 直接 BaseEmpty，<b>不弹错误</b>。文案给「披露窗口」提示，避免用户误判为数据缺失。</p>
+            </div>
+          </aside>
+        </div>
+      </section>
+    </section>
+
+    <!-- ============ Module E · 异常态 ============ -->
+    <section class="module" id="module-e">
+      <div class="module-kicker">MODULE E · 异常态</div>
+      <h2>错误与重试</h2>
+      <p>四张表独立失败独立重试：某张表失败只在其区块内出错误态（保留其它表正常渲染），重试只补拉失败的那张。</p>
+
+      <section class="scene" id="scene-e1">
+        <header class="scene-head">
+          <div class="scene-no">E1</div>
+          <div><h3>区块级错误态（高保真）</h3>
+          <p>示意：现金流表请求失败（上游间歇性连接中断），其余表正常。重试按钮只重发 <code>fetchCashFlowDigest</code>。</p></div>
+        </header>
+        <div class="scene-body">
+          <div class="prototype">
+            <div class="browser">
+              <div class="browser-bar">
+                <div class="browser-dots"><i></i><i></i><i></i></div>
+                <div class="browser-url">/stock-detail · 300059 · 财务页签 · 现金流失败</div>
+              </div>
+              <div class="app-body">
+                <div class="acard">
+                  <div class="two-col">
+                    <div>
+                      <div class="acard-title" style="margin-bottom:8px;">资产负债</div>
+                      <table class="fin-table">
+                        <thead><tr><th style="text-align:left;">科目</th><th class="r">26-06-30</th><th class="r">25-12-31</th></tr></thead>
+                        <tbody>
+                          <tr><td>总资产</td><td class="r">5057.41</td><td class="r">3929.34</td></tr>
+                          <tr><td>资产负债率（%）</td><td class="r"><span class="up">80.54</span></td><td class="r"><span class="up">76.62</span></td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                    <div>
+                      <div class="acard-title" style="margin-bottom:8px;">现金流量</div>
+                      <div class="empty-state error-state">
+                        <div class="illust">!</div>
+                        <div class="t" style="font-size:14px;">现金流数据加载失败</div>
+                        <div class="d">上游连接被中断（多为瞬时限频），稍后重试即可恢复。其余报表不受影响。</div>
+                        <span class="err-code">东财财务接口 HTTP 000 · UND_ERR_SOCKET</span>
+                        <button class="retry-btn">↻ 仅重试现金流</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <aside class="notes">
+            <div class="note"><div class="drop"><span>1</span></div>
+              <h4>allSettled + 区块级重试</h4>
+              <p><code>Promise.allSettled</code> 四表并发，rejected 的表记独立 error 状态；重试函数按表粒度重发。失败文案给上游原始错误摘要（HTTP 码 / 错误名）方便截图排查。</p>
+            </div>
+            <div class="note"><div class="drop"><span>2</span></div>
+              <h4>不自动重试</h4>
+              <p>与全站约定一致：非行情域但属「上游间歇掐断」场景，失败后<b>手动重试</b>，不做自动重试循环（避免叠加请求触发真限频）。</p>
+            </div>
+          </aside>
+        </div>
+      </section>
+    </section>
+
+    <!-- ============ 附录 · 边界条件 ============ -->
+    <section class="appendix-card" id="edge">
+      <h3>边界条件</h3>
+      <div class="decision"><b>!</b><span><b>次新股 / 期数不足</b>：返回期数 &lt; 5 时列数自适应实际数据，不补空列、不报错。</span></div>
+      <div class="decision"><b>!</b><span><b>业绩预告为 null</b>：上游 success=true + result=null 是合法空，UI 出空态不出错误（Module D）。</span></div>
+      <div class="decision"><b>!</b><span><b>单表失败</b>：allSettled 区块级错误态 + 手动重试，不整页报错、不自动重试。</span></div>
+      <div class="decision"><b>!</b><span><b>金融股负债率</b>：60% 阈值对券商/银行常亮，默认按行业豁免提示（行业取财务摘要 BOARD_NAME）。</span></div>
+      <div class="decision"><b>!</b><span><b>非 A 股代码</b>：页签仅对 A 股符号显示（6 位代码均可过 extractSixDigitCode；ETF / 港美股详情不渲染该页签）。</span></div>
+      <div class="decision"><b>!</b><span><b>快照跨报告期陈旧</b>：TTL 内上游新披露一期时快照会落后——TTL 定 6h 且卡片头部展示「数据截至 {最新报告期 + 公告日}」，陈旧可感知而非静默。</span></div>
+    </section>
+
+    <!-- ============ 附录 · 定论清单 ============ -->
+    <section class="appendix-card" id="decisions">
+      <h3>定论清单</h3>
+      <div class="decision"><b>①</b><span><b>落点</b>：详情整页底部页签新增「财务」（StockDetailView），停靠面板本期不加、保持轻量。</span></div>
+      <div class="decision"><b>②</b><span><b>范围</b>：核心四件套（摘要表 / 趋势图 / 资产负债+现金流 / 业绩预告）。业务构成、F10 指标卡不做（F10 报表 fields=ALL 报 9501，需显式列字段名，另行评估）；业绩快报报表不存在，永远不做。</span></div>
+      <div class="decision"><b>③</b><span><b>口径</b>：v1 只做「按报告期」（累计口径，接口直出零换算）；「按年度 / 按单季」需要自算差分与年度归集，留 v2。</span></div>
+      <div class="decision"><b>④</b><span><b>取数节奏</b>：页签切换触发一次、四表并发、不轮询；dataCache 快照 TTL 6h；失败手动重试（区块级）。</span></div>
+      <div class="decision"><b>⑤</b><span><b>语义色</b>：同比 / 净额正负沿用全站 up/down token（红涨绿跌为默认档），随 data-trend 主题自动切换；趋势图系列色用 teal + 蓝灰，不占语义色。</span></div>
+      <div class="decision"><b>⑥</b><span><b>阈值只提示不判断</b>：负债率 60% 弱色底是视觉提示，不是风险口径；金融行业豁免。</span></div>
+      <div class="decision"><b>⑦</b><span><b>无埋点</b>：个人应用，本期不挂任何埋点表。</span></div>
+    </section>
+
+    <!-- ============ 附录 · 开发方案 ============ -->
+    <section class="appendix-card" id="devplan">
+      <h3>开发方案（分层落点，全部有现成依赖）</h3>
+
+      <h4>1 · 数据层：零改动复用</h4>
+      <ul>
+        <li>四个取数函数已在 <code>src/common/api/financial.api.ts</code>：fetchFinancialSummary / fetchBalanceSheetDigest / fetchCashFlowDigest / fetchProfitForecast。均走 proxyFetch → datacenter-web，Referer/UA 已封装；报告期倒序、symbol 任意形态（内部提取 6 位码）。2026-09-24 实测四接口全通（600519 半年报全字段有值）。</li>
+        <li>类型已在 <code>src/common/types/financial.types.ts</code>（FinancialSummaryRow / BalanceSheetRow / CashFlowRow / ProfitForecastRow），UI 层直接消费，不新增类型。</li>
+        <li>域已在白名单：datacenter-web 属 <code>eastmoney.com</code> 后缀（<code>constants/proxy.constants.ts</code>），Tauri capability 同已覆盖，无需改配置。</li>
+      </ul>
+
+      <h4>2 · Composable：新增 1 个</h4>
+      <ul>
+        <li><code>src/common/composables/use-stock-financial.ts</code>：输入 symbol；内部 Promise.allSettled 并发四表；输出 <code>{ summary, balance, cashflow, forecast, loading: {summary,balance,cashflow,forecast}, error: 同构, reload(table?) }</code>。</li>
+        <li>缓存：快照写 dataCache（新 key <code>DATA_CACHE_KEY.FINANCIAL_PREFIX + symbol</code>，key 结构登记进 constants）；TTL 常量 <code>FINANCIAL_CACHE_TTL_MS = 6h</code> 进 <code>constants/financial.constants.ts</code>。进页签先读快照秒开，过期后台回源。</li>
+        <li>常量：负债率阈值 60、预告类型→徽标映射、期数（摘要/资产/现金流 5 期、预告 3 条）统一入 <code>financial.constants.ts</code>，禁散落字面量。</li>
+      </ul>
+
+      <h4>3 · 组件层：新增 5 个业务子组件</h4>
+      <ul>
+        <li>目录 <code>src/pc/components/business/stock-financial/</code>：
+          <code>FinancialMetricCards.vue</code>（指标卡行）·
+          <code>FinancialTrendChart.vue</code>（ECharts 双系列柱状，走 common/components/charts 注册方式）·
+          <code>FinancialSummaryTable.vue</code>（含分配预案行）·
+          <code>FinancialStatementsTables.vue</code>（资产负债+现金流两栏）·
+          <code>FinancialForecastList.vue</code>（预告卡 + BaseEmpty 空态）。</li>
+        <li>接线：StockDetailView 的 <code>bottomTabOptions</code>（约 ：244）追加 <code>{ value:'financial', label:'财务' }</code>；页签内容区加 <code>v-if="bottomTab === 'financial'"</code> 块挂五个子组件。懒加载：首次切入才调用 composable。</li>
+        <li>页面隐藏性页签不注册路由、不动侧栏，不涉及插件贡献点（宿主内置功能，非插件）。</li>
+      </ul>
+
+      <h4>4 · 工具与规范</h4>
+      <ul>
+        <li>新增 <code>src/common/utils/format-yi.ts</code>：<code>formatYi(yuan: number | null): string</code>，元→亿元 2 位 + 千分位；缺省 null → '—'。JSDoc 全量（ESLint 卡口）。</li>
+        <li>硬性规范逐条对齐：无 enum、import type、魔法值进 constants、表格吸顶/吸左复用 <code>table-scroll-sm</code> 既有类、组件内不用 1px 边框线（分隔走 flat-weak 底）。</li>
+      </ul>
+
+      <h4>5 · 风险与验证</h4>
+      <ul>
+        <li><b>上游非官方契约</b>：字段名/报表名可能漂移——已全部收敛在 api 层；UI 层不感知，漂移时只修一处。</li>
+        <li><b>验证路径</b>：pnpm dev → 打开 300059 详情 → 切「财务」页签 → 对照东财 data.eastmoney.com/stockdata/300059.html 财务摘要逐格核数（稿内样例即可当核数基准）；再验 600519（高价股）/ 一只次新股（期数 &lt; 5）/ 一只无预告股（空态）。</li>
+        <li><b>验收门槛</b>：pnpm lint 0 error 0 warning；pnpm build 通过；四表任意单表断网时其余表正常、重试可恢复。</li>
+      </ul>
+    </section>
+
+  </div>
+</main>
+</body>
+</html>

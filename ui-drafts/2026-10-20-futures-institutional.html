@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>期货 · 机构行为（席位持仓行为分析）· UI 稿 v1</title>
+<!--
+  需求稿 & UI 高保真稿（对齐 whf-stock-board 项目设计语言 DESIGN-PC.md）
+  - 外壳（TOC/hero/scene）沿用 ui-drafts 需求稿容器风格；应用页面本体严格走项目 token
+  - 项目 token：canvas #f7f9fa / surface #fff / primary #0e9488 / primary-weak #e6f5f3
+    up #e02020 (up-weak #fdecec) / down #00b578 (down-weak #e6f7f1) / flat #8a94a6 (flat-weak #eef1f5)
+    ink #1f2733 / ink-muted #5c6b80 / ink-subtle #98a2b3 · 卡片 12px · 控件 8px · 无 1px 边框线
+  - 数据：2026-10-19 中金所 CCPM 真实披露（.ai/项目资源/期货行为分析/data/CFFEX_IF_20261019.csv）
+  - 新增口径（王总 2026-10-20）：合并维度三档 —— 单合约 / 同品种多合约合并 / 全股指品种合并（IF+IC+IH+IM）
+-->
+<style>
+  :root{
+    /* 项目 token（theme.css 单源同步） */
+    --primary:#0e9488; --primary-weak:#e6f5f3;
+    --up:#e02020; --up-strong:#c51616; --up-light:#f2a6a6; --up-pale:#f8d7d7; --up-weak:#fdecec;
+    --down:#00b578; --down-strong:#00925f; --down-light:#8fd9bd; --down-pale:#ccefe0; --down-weak:#e6f7f1;
+    --flat:#8a94a6; --flat-weak:#eef1f5;
+    --ink:#1f2733; --ink-muted:#5c6b80; --ink-subtle:#98a2b3;
+    --canvas:#f7f9fa; --surface:#fff;
+    --shadow-card:0 1px 3px rgb(31 39 51 / .06), 0 4px 16px rgb(31 39 51 / .06);
+    --radius-card:12px; --radius-ctl:8px;
+    /* 需求稿外壳专用（不属于应用 token） */
+    --line:#e6e9ef; --shadow-soft:0 3px 14px rgba(28,36,55,.06);
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0; color:var(--ink); background:linear-gradient(180deg,#f7f8fb 0,#f0f3f7 100%);
+    font-family:"PingFang SC","Microsoft YaHei",sans-serif; line-height:1.55;
+  }
+  button,input,select{font:inherit;} button{cursor:pointer;}
+
+  /* === 需求稿外壳 === */
+  .toc{position:fixed; top:24px; left:20px; z-index:100; width:196px;
+    max-height:calc(100vh - 48px); padding:14px 12px; overflow-y:auto;
+    border:1px solid var(--line); border-radius:18px;
+    background:rgba(255,255,255,.92); box-shadow:var(--shadow-soft); backdrop-filter:blur(10px);}
+  .toc-title{margin:0 0 8px 4px; color:var(--ink); font-size:12px; font-weight:800;}
+  .toc-group{margin:10px 8px 3px; color:var(--ink-subtle); font-size:9px; font-weight:800; letter-spacing:.06em;}
+  .toc a{display:flex; align-items:center; gap:7px; min-height:28px; padding:5px 8px;
+    color:var(--ink-muted); text-decoration:none; border-radius:8px; font-size:12px; font-weight:700;}
+  .toc a:hover{color:var(--primary); background:var(--primary-weak);}
+  .toc .dot{display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px;
+    flex:0 0 18px; color:var(--ink-subtle); font-size:10px; font-weight:900; border-radius:50%; background:#f1f4fa;}
+  .toc a.main .dot{color:var(--primary); background:var(--primary-weak);}
+  .toc a.warn .dot{color:var(--up); background:var(--up-weak);}
+
+  .wrap{width:min(1480px, calc(100% - 48px)); margin:0 auto; padding:42px 0 92px;}
+
+  .hero{position:relative; overflow:hidden; padding:34px 38px; border-radius:24px; color:#fff;
+    background:linear-gradient(130deg,#171b24 0%,#272d3a 55%,#1e2a3a 100%); box-shadow:var(--shadow-soft);}
+  .hero::after{content:""; position:absolute; right:-90px; top:-100px; width:360px; height:360px;
+    border:60px solid rgba(14,148,136,0.18); border-radius:50%;}
+  .hero > *{position:relative; z-index:1;}
+  .eyebrow{color:#7fd8cd; font-size:12px; font-weight:800; letter-spacing:0.14em;}
+  h1{max-width:900px; margin:8px 0 10px; font-size:clamp(28px, 3.2vw, 42px); line-height:1.15;}
+  .hero p{max-width:940px; margin:0; color:#c5cad4; font-size:14px;}
+  .tags{display:flex; flex-wrap:wrap; gap:8px; margin-top:20px;}
+  .tag{padding:5px 11px; color:#fff; border:1px solid rgba(255,255,255,0.15);
+    border-radius:999px; background:rgba(255,255,255,0.08); font-size:11px;}
+  .tag.teal{border-color:rgba(14,148,136,0.45); background:rgba(14,148,136,0.25);}
+  .tag.red{border-color:rgba(255,76,91,0.35); background:rgba(224,32,32,0.2);}
+
+  .ia{margin-top:28px; padding:22px; border:1px solid var(--line); border-radius:18px;
+    background:rgba(255,255,255,0.88); box-shadow:var(--shadow-soft);}
+  .ia h2{margin:0 0 16px; font-size:17px;}
+  .phase-grid{display:grid; grid-template-columns:repeat(6,1fr); gap:12px;}
+  .phase-card{position:relative; padding:16px; min-height:150px; border:1px solid var(--line);
+    border-radius:18px; background:var(--surface); box-shadow:var(--shadow-soft);}
+  .phase-card .step{color:var(--primary); font-size:11px; font-weight:800; letter-spacing:0.08em;}
+  .phase-card h3{margin:7px 0 6px; font-size:15px;}
+  .phase-card p{margin:0; color:var(--ink-muted); font-size:11px;}
+
+  .module{margin-top:54px; scroll-margin-top:24px;}
+  .module-kicker{color:var(--primary); font-size:11px; font-weight:800; letter-spacing:0.14em;}
+  .module h2{margin:5px 0 6px; font-size:26px;}
+  .module > p{max-width:940px; margin:0; color:var(--ink-muted); font-size:13px;}
+  .scene{margin-top:34px; scroll-margin-top:24px;}
+  .scene-head{display:flex; align-items:flex-start; gap:13px; margin-bottom:16px;}
+  .scene-no{display:grid; place-items:center; width:42px; height:42px; flex:0 0 42px; color:white;
+    border-radius:14px 14px 14px 5px; background:linear-gradient(135deg, var(--primary), #0a6f66);
+    box-shadow:0 8px 20px rgba(14,148,136,0.24); font-size:12px; font-weight:800;}
+  .scene-head h3{margin:0 0 3px; font-size:20px;}
+  .scene-head p{margin:0; color:var(--ink-muted); font-size:12px;}
+
+  /* === 应用页面高保真（项目风格） === */
+  .prototype{position:relative;}
+  .app-shell{display:grid; grid-template-columns:172px minmax(0,1fr); gap:0;
+    border-radius:16px; overflow:hidden; background:var(--canvas); box-shadow:var(--shadow-card);}
+  .shell-side{padding:14px 10px; background:var(--surface);}
+  .side-logo{padding:0 8px 12px; font-size:14px; font-weight:600;}
+  .side-group{margin:12px 8px 4px; color:var(--ink-subtle); font-size:10px; font-weight:700; letter-spacing:.04em;}
+  .side-item{display:flex; align-items:center; gap:8px; min-height:30px; padding:5px 9px; margin:1px 0;
+    color:var(--ink-muted); border-radius:var(--radius-ctl); font-size:12px;}
+  .side-item.new{position:relative;}
+  .side-item.active{background:var(--primary-weak); color:var(--primary); font-weight:600;}
+  .side-item .ico{width:14px; height:14px; border-radius:4px; background:var(--flat-weak); flex:0 0 14px;}
+  .side-item.active .ico{background:var(--primary); opacity:.55;}
+  .side-item .badge-new{margin-left:auto; font-size:9px; font-weight:800; color:var(--up);
+    background:var(--up-weak); border-radius:999px; padding:1px 6px;}
+  .shell-main{padding:18px; min-width:0;}
+
+  .page-title{font-size:16px; font-weight:600; margin:0 0 2px;}
+  .page-sub{font-size:12px; color:var(--ink-muted); margin:0 0 12px;}
+
+  .notice{display:flex; gap:10px; align-items:flex-start; padding:10px 14px; margin-bottom:12px;
+    border-radius:var(--radius-card); background:var(--flat-weak); color:var(--ink-muted); font-size:12px;}
+  .notice b{color:var(--ink); font-weight:600;}
+  .notice.danger{background:var(--up-weak); color:var(--up-strong);}
+  .notice.danger .n-title{color:var(--up-strong); font-weight:600;}
+  .notice .n-title{font-weight:600; color:var(--ink);}
+  .notice ul{margin:4px 0 0; padding-left:16px;}
+  .notice li{margin:1px 0;}
+
+  .filter-card{background:var(--surface); border-radius:var(--radius-card); box-shadow:var(--shadow-card);
+    padding:14px 16px; margin-bottom:12px;}
+  .f-row{display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:10px;}
+  .f-row:last-child{margin-bottom:0;}
+  .f-label{font-size:12px; color:var(--ink-subtle); font-weight:600; min-width:56px;}
+  .seg{display:inline-flex; background:var(--flat-weak); border-radius:var(--radius-ctl); padding:2px; gap:2px;}
+  .seg button{border:0; background:transparent; color:var(--ink-muted); font-size:12px; font-weight:600;
+    padding:4px 12px; border-radius:6px;}
+  .seg button.on{background:var(--surface); color:var(--primary); box-shadow:var(--shadow-card);}
+  .seg.seg-dim button.on{color:var(--ink);}
+  .pill{border:0; background:var(--flat-weak); color:var(--ink-muted); font-size:12px; font-weight:600;
+    padding:4px 12px; border-radius:999px;}
+  .pill.on{background:var(--primary-weak); color:var(--primary);}
+  .f-input{display:inline-flex; align-items:center; gap:6px; background:var(--flat-weak);
+    border-radius:var(--radius-ctl); padding:4px 10px; color:var(--ink-subtle); font-size:12px; min-width:190px;}
+  .f-meta{margin-left:auto; font-size:11px; color:var(--ink-subtle);}
+
+  .stat-grid{display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:8px; margin-bottom:12px;}
+  .stat{background:var(--surface); border-radius:var(--radius-card); box-shadow:var(--shadow-card); padding:12px 14px;}
+  .stat .k{font-size:11px; color:var(--ink-subtle); font-weight:600;}
+  .stat .v{margin-top:3px; font-size:17px; font-weight:700; font-variant-numeric:tabular-nums;}
+  .stat .d{margin-top:2px; font-size:11px; font-variant-numeric:tabular-nums;}
+  .c-up{color:var(--up);} .c-down{color:var(--down);} .c-flat{color:var(--flat);}
+  .c-ink{color:var(--ink);} .c-muted{color:var(--ink-muted);}
+
+  .grid-2{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:12px; margin-bottom:12px;}
+  .grid-2wide{display:grid; grid-template-columns:minmax(0,1.8fr) minmax(280px,1fr); gap:12px; margin-bottom:12px;}
+
+  .card{background:var(--surface); border-radius:var(--radius-card); box-shadow:var(--shadow-card); padding:16px; min-width:0;}
+  .card-head{display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:12px;}
+  .card-title{font-size:14px; font-weight:600;}
+  .card-extra{font-size:11px; color:var(--ink-subtle);}
+
+  .btag{display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:999px;
+    font-size:11px; font-weight:600; white-space:nowrap;}
+  .btag.up{background:var(--up-weak); color:var(--up);}
+  .btag.down{background:var(--down-weak); color:var(--down-strong);}
+  .btag.flat{background:var(--flat-weak); color:var(--ink-muted);}
+  .btag.primary{background:var(--primary-weak); color:var(--primary);}
+
+  .table-scroll{max-height:420px; overflow:auto; border-radius:var(--radius-ctl);}
+  table{width:100%; border-collapse:separate; border-spacing:0; font-size:12px;}
+  thead th{position:sticky; top:0; z-index:2; background:var(--surface); color:var(--ink-subtle);
+    font-weight:600; text-align:right; padding:7px 10px; white-space:nowrap;}
+  thead th:nth-child(-n+2){text-align:left;}
+  tbody td{padding:6px 10px; text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap;}
+  tbody td:nth-child(-n+2){text-align:left;}
+  tbody tr:hover{background:var(--flat-weak);}
+  tbody tr:hover td:first-child{border-radius:6px 0 0 6px;}
+  tbody tr:hover td:last-child{border-radius:0 6px 6px 0;}
+  tbody tr.member-click{cursor:pointer;}
+  tbody tr.selected{background:var(--primary-weak);}
+  tbody tr.total-row{background:var(--flat-weak); font-weight:700;}
+  tbody tr.total-row td{border-top:2px solid #fff;}
+  .na{color:var(--ink-subtle); font-size:11px;}
+  .member-link{color:var(--ink); font-weight:600;}
+  tbody tr.selected .member-link{color:var(--primary);}
+
+  .fold-head{display:flex; align-items:center; gap:8px; padding:10px 14px; background:var(--flat-weak);
+    border-radius:var(--radius-ctl); font-size:12px; font-weight:600; color:var(--ink-muted); cursor:pointer;}
+  .fold-head .chev{margin-left:auto; color:var(--ink-subtle);}
+  .rank-chips{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; padding:12px 2px 0;}
+  .rank-mini{background:var(--canvas); border-radius:var(--radius-ctl); padding:10px 12px;}
+  .rank-mini h5{margin:0 0 6px; font-size:11px; color:var(--ink-subtle); font-weight:700;}
+  .rank-mini .r{display:flex; justify-content:space-between; font-size:11px; padding:2.5px 0; color:var(--ink-muted);}
+  .rank-mini .r b{font-weight:600; font-variant-numeric:tabular-nums;}
+
+  .chart-row{display:grid; grid-template-columns:170px minmax(0,1fr); gap:12px; align-items:center;}
+  .donut{width:132px; height:132px; border-radius:50%; margin:0 auto;
+    background:conic-gradient(var(--up) 0 20.1%, #ef6a6a 20.1% 41.9%, var(--up-light) 41.9% 51.7%, #f5c1c1 51.7% 59.8%, var(--up-pale) 59.8% 66.6%, var(--flat-weak) 66.6% 100%);
+    display:grid; place-items:center;}
+  .donut-hole{width:78px; height:78px; border-radius:50%; background:var(--surface);
+    display:grid; place-items:center; text-align:center; font-size:11px; color:var(--ink-muted); line-height:1.3;}
+  .legend{display:flex; flex-wrap:wrap; gap:6px 12px; margin-top:10px; font-size:11px; color:var(--ink-muted);}
+  .legend i{display:inline-block; width:9px; height:9px; border-radius:3px; margin-right:4px; vertical-align:-1px;}
+  .bars{display:flex; align-items:flex-end; gap:18px; height:150px; padding:0 6px;}
+  .bar-g{flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; height:100%; justify-content:flex-end;}
+  .bar-pair{display:flex; align-items:flex-end; gap:4px; height:100%;}
+  .bar{width:16px; border-radius:5px 5px 0 0;}
+  .bar.buy{background:var(--up);}
+  .bar.sell{background:var(--down);}
+  .bar-g .nm{font-size:10px; color:var(--ink-subtle); white-space:nowrap;}
+
+  .fold{margin-bottom:12px;}
+  .fold > .card{border-radius:0 0 var(--radius-card) var(--radius-card);}
+
+  .risk-card{background:var(--surface); border-radius:var(--radius-card); box-shadow:var(--shadow-card); padding:14px 16px;}
+  .risk-card ol{margin:8px 0 0; padding-left:18px; color:var(--ink-muted); font-size:12px;}
+  .risk-card li{margin:3px 0;}
+  .risk-card li b{color:var(--ink);}
+
+  .state-row{display:grid; grid-template-columns:repeat(3,1fr); gap:12px;}
+  .sk{background:var(--flat-weak); border-radius:6px; height:12px; margin:8px 0;}
+  .sk.w60{width:60%;} .sk.w40{width:40%;} .sk.w80{width:80%;}
+  .empty{display:grid; place-items:center; padding:26px 0; color:var(--ink-subtle); font-size:12px; text-align:center;}
+  .err{color:var(--up-strong);}
+  .btn{display:inline-flex; align-items:center; gap:6px; border:0; border-radius:var(--radius-ctl);
+    font-size:12px; font-weight:600; padding:5px 12px;}
+  .btn.primary{background:var(--primary); color:#fff;}
+  .btn.ghost{background:var(--flat-weak); color:var(--ink);}
+
+  /* 维度C 大卡 */
+  .dimc{background:var(--surface); border-radius:var(--radius-card); box-shadow:var(--shadow-card); padding:16px;}
+  .dimc-big{display:flex; align-items:baseline; gap:10px; margin:6px 0 10px;}
+  .dimc-big .num{font-size:34px; font-weight:800; font-variant-numeric:tabular-nums;}
+  .dimc-big .unit{font-size:12px; color:var(--ink-muted);}
+  .dimc-table{width:100%; font-size:12px; border-collapse:separate; border-spacing:0;}
+  .dimc-table th{color:var(--ink-subtle); font-weight:600; text-align:right; padding:5px 8px;}
+  .dimc-table th:first-child{text-align:left;}
+  .dimc-table td{padding:5px 8px; text-align:right; font-variant-numeric:tabular-nums;}
+  .dimc-table td:first-child{text-align:left; font-weight:600;}
+  .dimc-table tr.total td{font-weight:700; background:var(--flat-weak);}
+
+  @media(max-width:1499px){.toc{display:none;} .grid-2, .grid-2wide, .state-row{grid-template-columns:1fr;} .phase-grid{grid-template-columns:repeat(3,1fr);}}
+</style>
+</head>
+<body>
+
+<nav class="toc">
+  <p class="toc-title">期货 · 机构行为</p>
+  <div class="toc-group">需求总览</div>
+  <a class="main" href="#ia"><span class="dot">IA</span><span>页面结构</span></a>
+  <div class="toc-group">模块</div>
+  <a class="main" href="#scene-a1"><span class="dot">A1</span><span>筛选栏 + 三档合并口径</span></a>
+  <a class="main" href="#scene-b1"><span class="dot">B1</span><span>指标卡 + 席位画像</span></a>
+  <a class="warn" href="#scene-b2"><span class="dot">B2</span><span>全股指合并口径（5903）</span></a>
+  <a class="main" href="#scene-c1"><span class="dot">C1</span><span>单合约会员总表</span></a>
+  <a class="main" href="#scene-c2"><span class="dot">C2</span><span>席位跨合约分解</span></a>
+  <a class="main" href="#scene-c3"><span class="dot">C3</span><span>衍生榜单（折叠）</span></a>
+  <a class="main" href="#scene-d1"><span class="dot">D1</span><span>占比 / 对比 / 时序图</span></a>
+  <a class="main" href="#scene-e1"><span class="dot">E1</span><span>移仓换月面板</span></a>
+  <a class="main" href="#scene-f1"><span class="dot">F1</span><span>加载 / 空 / 错误态</span></a>
+  <div class="toc-group">落地</div>
+  <a href="#scene-g1"><span class="dot">G1</span><span>侧栏分组与路由接线</span></a>
+  <a href="#scene-g2"><span class="dot">G2</span><span>数据通道与计算层</span></a>
+  <a class="warn" href="#risk"><span class="dot">!</span><span>常驻风险提示</span></a>
+</nav>
+
+<div class="page wrap">
+
+  <header class="hero">
+    <div class="eyebrow">WHF STOCK BOARD · 侧栏新增「期货」分组 · 新页面「机构行为」</div>
+    <h1>期货席位持仓行为分析 · UI 稿 v1</h1>
+    <p>基于中金所 CCPM 成交持仓排名每日披露。与全站设计语言对齐：浅灰青画布 + 白卡 12px + 湖青主色 +
+      红涨绿跌语义 + 无边框弱色分隔。筛选器内置三档合并口径（单合约 / 同品种合并 / 全股指合并），
+      直接回答「中信新增多单 5900 手」这类短视频口径的核验需求。</p>
+    <div class="tags">
+      <span class="tag teal">数据源：中金所 sj/ccpm/{yyyymm}/{dd}/{PRODUCT}_1.csv</span>
+      <span class="tag teal">示例数据：2026-10-19 真实披露（IF）</span>
+      <span class="tag red">新增：全股指合并口径 + 醒目口径提示</span>
+    </div>
+  </header>
+
+  <section class="ia" id="ia">
+    <h2>页面六大模块 · 数据流向：中金所每日 CSV → 前端解析归并 → 纯函数计算 → 展示</h2>
+    <div class="phase-grid">
+      <article class="phase-card"><span class="step">MODULE A</span><h3>筛选与口径</h3><p>品种 / 三档合并维度 / 交易日 / 席位搜索。常驻数据边界提示。</p></article>
+      <article class="phase-card"><span class="step">MODULE B</span><h3>概览与画像</h3><p>合约整体多空总量；选中席位指标 + 行为标签（对冲/单边/移仓）。</p></article>
+      <article class="phase-card"><span class="step">MODULE C</span><h3>核心表格</h3><p>①单合约会员总表（一张全指标）②衍生榜单（折叠）③席位跨合约分解。</p></article>
+      <article class="phase-card"><span class="step">MODULE D</span><h3>可视化图表</h3><p>多空占比环图 / 头部席位多空并排柱状 / 席位净持仓时序。</p></article>
+      <article class="phase-card"><span class="step">MODULE E</span><h3>移仓换月</h3><p>头部席位近/次月增减仓横向对比，自动标记疑似移仓。</p></article>
+      <article class="phase-card"><span class="step">MODULE F</span><h3>通用状态</h3><p>骨架屏 / 非交易日空态 / 拉取失败错误态（含重试）。</p></article>
+    </div>
+  </section>
+
+  <!-- ==================== MODULE A ==================== -->
+  <section class="module">
+    <div class="module-kicker">MODULE A · 筛选与口径</div>
+    <h2>顶部筛选控制器（所有分析的入口）</h2>
+    <p>合并维度是本次新增的核心：很多短视频口径是「全股指品种合并」，只看单合约永远对不上数。</p>
+
+    <section class="scene" id="scene-a1">
+      <header class="scene-head">
+        <div class="scene-no">A1</div>
+        <div><h3>筛选栏 + 三档合并维度 + 常驻数据边界提示</h3>
+          <p>侧栏示意（左）中「期货」为新分组、「机构行为」为新页面；主区（右）为页面首屏高保真。</p></div>
+      </header>
+      <div class="prototype">
+        <div class="app-shell">
+          <aside class="shell-side">
+            <div class="side-logo">📊 看板</div>
+            <div class="side-group">市场行情 ▾</div>
+            <div class="side-item"><span class="ico"></span>市场总览</div>
+            <div class="side-item"><span class="ico"></span>行情全景</div>
+            <div class="side-group">榜单与资金 ▾</div>
+            <div class="side-item"><span class="ico"></span>市场榜单</div>
+            <div class="side-group">期货 ▾ <span style="color:var(--up);font-size:9px;">NEW</span></div>
+            <div class="side-item active"><span class="ico"></span>机构行为<span class="badge-new">新</span></div>
+            <div class="side-group">热点资讯 ▾</div>
+            <div class="side-item"><span class="ico"></span>热点新闻</div>
+            <div class="side-group">自选与账户 ▾</div>
+            <div class="side-item"><span class="ico"></span>自选股</div>
+            <div class="side-group">插件 ▾</div>
+            <div class="side-item"><span class="ico"></span>插件工坊</div>
+          </aside>
+          <div class="shell-main">
+            <h4 class="page-title">机构行为</h4>
+            <p class="page-sub">中金所成交持仓排名（CCPM）· 席位多空持仓与增减仓行为分析</p>
+
+            <div class="notice">
+              <div>⚠ <b>数据边界：</b>数据来源中金所成交持仓排名，仅披露<b>代客经纪业务</b>（会员全部客户合并数据，不等于单一机构）；
+                仅披露上榜<b>前 20 会员</b>，非全市场数据；净持仓为收盘隔夜快照。标签为算法自动识别，仅供分析，不构成交易信号。</div>
+            </div>
+
+            <div class="filter-card">
+              <div class="f-row">
+                <span class="f-label">品种</span>
+                <span class="seg"><button class="on">IF 沪深300</button><button>IH 上证50</button><button>IC 中证500</button><button>IM 中证1000</button><button>T / TF / TL 国债</button></span>
+                <span class="f-meta">交易日 <b style="color:var(--ink);">2026-10-19</b>（周一）· 数据已披露</span>
+              </div>
+              <div class="f-row">
+                <span class="f-label">合并口径</span>
+                <span class="seg seg-dim"><button class="on">单合约</button><button>同品种多合约合并</button><button style="color:var(--up);">全股指合并 IF+IC+IH+IM</button></span>
+              </div>
+              <div class="f-row">
+                <span class="f-label">合约</span>
+                <span class="seg"><button class="on">IF2611 当月</button><button>IF2612 次月</button><button>IF2703 远季</button></span>
+                <span class="f-input">🔍 搜索席位，如「中信期货」</span>
+              </div>
+            </div>
+
+            <div class="notice danger">
+              <div><span class="n-title">⚠ 全股指合并口径提醒</span>
+                <ul>
+                  <li>合并仅统计<b>上榜 TOP20 合约</b>，未上榜合约数据缺失，结果为不完全统计；</li>
+                  <li>代客席位是全部客户头寸合并，<b>不是单一机构</b>；</li>
+                  <li><b>净增减 ≠ 多头新开仓，不等于看多大盘</b>（含套保、跨期套利）；</li>
+                  <li>IF/IH/IC/IM 属于不同指数，跨品种直接相加逻辑粗糙，仅供核验短视频口径参考。</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </section>
+
+  <!-- ==================== MODULE B ==================== -->
+  <section class="module">
+    <div class="module-kicker">MODULE B · 概览与画像</div>
+    <h2>指标卡片 + 选中席位行为画像</h2>
+    <p>单合约模式展示该合约整体；切换口径后卡片随之切换为对应聚合口径。</p>
+
+    <section class="scene" id="scene-b1">
+      <header class="scene-head">
+        <div class="scene-no">B1</div>
+        <div><h3>单合约模式：IF2611 · 2026-10-19</h3>
+          <p>下方指标为 2026-10-19 中金所真实披露。点击总表席位行后，右侧画像卡同步。</p></div>
+      </header>
+      <div class="prototype">
+        <div class="stat-grid">
+          <div class="stat"><div class="k">上榜总多单</div><div class="v c-up">40,333</div><div class="d c-muted">手</div></div>
+          <div class="stat"><div class="k">上榜总空单</div><div class="v c-down">42,810</div><div class="d c-muted">手</div></div>
+          <div class="stat"><div class="k">上榜总成交量</div><div class="v c-ink">92,262</div><div class="d c-muted">手</div></div>
+          <div class="stat"><div class="k">上榜多空净差</div><div class="v c-down">−2,477</div><div class="d c-flat">多 − 空</div></div>
+          <div class="stat"><div class="k">上榜席位数</div><div class="v c-ink">27</div><div class="d c-muted">三榜并集</div></div>
+        </div>
+        <div class="grid-2wide">
+          <div class="card">
+            <div class="card-head"><span class="card-title">上榜会员总表 · IF2611</span><span class="card-extra">点击行展开席位画像与跨合约分解 →</span></div>
+            <div class="table-scroll">
+              <table>
+                <thead><tr><th>会员</th><th>行为标签</th><th>成交量</th><th>量增减</th><th>多单</th><th>多增减</th><th>空单</th><th>空增减</th><th>净持仓</th><th>净增减</th><th>多占比</th><th>空占比</th></tr></thead>
+                <tbody>
+                  <tr class="member-click selected"><td class="member-link">中信期货(代客)</td><td><span class="btag primary">✅ 对冲</span></td><td>10,507</td><td class="c-down">−2,165</td><td>8,102</td><td class="c-up">+396</td><td>7,611</td><td class="c-up">+309</td><td class="c-up">+491</td><td class="c-up">+87</td><td>20.1%</td><td>17.8%</td></tr>
+                  <tr class="member-click"><td class="member-link">国泰君安(代客)</td><td><span class="btag up">⚠ 单边多头</span></td><td>8,745</td><td class="c-down">−2,482</td><td>8,773</td><td class="c-down">−171</td><td>5,721</td><td class="c-down">−626</td><td class="c-up">+3,052</td><td class="c-up">+455</td><td>21.8%</td><td>13.4%</td></tr>
+                  <tr class="member-click"><td class="member-link">海通期货(代客)</td><td><span class="btag down">⚠ 单边空头</span></td><td>3,280</td><td class="c-down">−3,050</td><td>3,940</td><td class="c-down">−190</td><td>5,001</td><td class="c-up">+72</td><td class="c-down">−1,061</td><td class="c-down">−262</td><td>9.8%</td><td>11.7%</td></tr>
+                  <tr class="member-click"><td class="member-link">银河期货(代客)</td><td><span class="btag up">⚠ 单边多头</span></td><td>885</td><td class="c-down">−424</td><td>3,265</td><td class="c-up">+56</td><td>1,405</td><td class="c-up">+43</td><td class="c-up">+1,860</td><td class="c-up">+13</td><td>8.1%</td><td>3.3%</td></tr>
+                  <tr class="member-click"><td class="member-link">东证期货(代客)</td><td><span class="btag primary">✅ 对冲</span></td><td>3,733</td><td class="c-down">−618</td><td>2,729</td><td class="c-up">+81</td><td>2,570</td><td class="c-up">+316</td><td class="c-up">+159</td><td class="c-down">−235</td><td>6.8%</td><td>6.0%</td></tr>
+                  <tr class="member-click"><td class="member-link">中金财富(代客)</td><td><span class="btag down">⚠ 单边空头</span></td><td>661</td><td class="c-down">−1,094</td><td><span class="na">未上榜</span></td><td><span class="na">—</span></td><td>4,482</td><td class="c-down">−75</td><td class="c-down">−4,482</td><td class="c-down">−75</td><td><span class="na">—</span></td><td>10.5%</td></tr>
+                  <tr class="member-click"><td class="member-link">摩根大通(代客)</td><td><span class="btag down">⚠ 单边空头</span></td><td><span class="na">未上榜</span></td><td><span class="na">—</span></td><td><span class="na">未上榜</span></td><td><span class="na">—</span></td><td>2,611</td><td class="c-down">−14</td><td class="c-down">−2,611</td><td class="c-down">−14</td><td><span class="na">—</span></td><td>6.1%</td></tr>
+                  <tr class="member-click"><td class="member-link">南华期货(代客)</td><td><span class="btag up">⚠ 单边多头</span></td><td><span class="na">未上榜</span></td><td><span class="na">—</span></td><td>1,643</td><td class="c-up">+42</td><td><span class="na">未上榜</span></td><td><span class="na">—</span></td><td class="c-up">+1,643</td><td class="c-up">+42</td><td>4.1%</td><td><span class="na">—</span></td></tr>
+                  <tr class="member-click"><td class="member-link">其余 19 席位…</td><td><span class="na">—</span></td><td>…</td><td>…</td><td>…</td><td>…</td><td>…</td><td>…</td><td>…</td><td>…</td><td>…</td><td>…</td></tr>
+                  <tr class="total-row"><td>合计（27 席位）</td><td></td><td>92,262</td><td>—</td><td>40,333</td><td>—</td><td>42,810</td><td>—</td><td class="c-down">−2,477</td><td>—</td><td>100%</td><td>100%</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-head"><span class="card-title">席位画像 · 中信期货(代客)</span><span class="card-extra">IF2611 · 2026-10-19</span></div>
+            <div class="stat-grid" style="grid-template-columns:1fr 1fr; margin-bottom:10px;">
+              <div class="stat"><div class="k">多头持仓</div><div class="v c-up">8,102</div><div class="d c-up">+396</div></div>
+              <div class="stat"><div class="k">空头持仓</div><div class="v c-down">7,611</div><div class="d c-up">+309</div></div>
+              <div class="stat"><div class="k">净持仓</div><div class="v c-up">+491</div><div class="d c-muted">多 − 空</div></div>
+              <div class="stat"><div class="k">净持仓增减</div><div class="v c-up">+87</div><div class="d c-muted">多增减 − 空增减</div></div>
+              <div class="stat"><div class="k">多头占比</div><div class="v">20.1%</div><div class="d c-muted">÷ 上榜总多单</div></div>
+              <div class="stat"><div class="k">空头占比</div><div class="v">17.8%</div><div class="d c-muted">÷ 上榜总空单</div></div>
+            </div>
+            <div style="display:flex; flex-wrap:wrap; gap:6px;">
+              <span class="btag primary">✅ 对冲特征</span>
+              <span class="btag flat">|净| ÷ max(多,空) = 6.1% &lt; 20%</span>
+              <span class="btag flat">多空双向同步增仓</span>
+            </div>
+            <p style="font-size:11px; color:var(--ink-subtle); margin:10px 0 0;">标签为算法自动识别，仅供分析，不构成交易信号。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="scene" id="scene-b2">
+      <header class="scene-head">
+        <div class="scene-no">B2</div>
+        <div><h3>全股指合并口径（新增，核验「中信新增多单 5900 手」）</h3>
+          <p>口径 = Σ多头增减 − Σ空头增减（IF+IC+IH+IM 全部上榜合约）。切换该维度后，概览卡自动换成跨品种聚合，并强制展示口径提醒。</p></div>
+      </header>
+      <div class="prototype">
+        <div class="dimc">
+          <div class="card-head">
+            <span class="card-title">席位聚合 · 中信期货(代客) · IF+IC+IH+IM 全部上榜合约 · 2026-10-19</span>
+            <span class="btag primary">口径 C · 全股指合并</span>
+          </div>
+          <div class="dimc-big">
+            <span class="num c-up">+5,903</span>
+            <span class="unit">手 · 净持仓增减（= 总多头增减 − 总空头增减）</span>
+          </div>
+          <table class="dimc-table">
+            <thead><tr><th>品种</th><th>上榜合约数</th><th>Σ多头增减</th><th>Σ空头增减</th><th>净持仓增减</th><th>合并净持仓</th><th>完整性</th></tr></thead>
+            <tbody>
+              <tr><td>IF 沪深300</td><td>3 / 3</td><td class="c-up">+2,507</td><td class="c-up">+577</td><td class="c-up">+1,930</td><td class="c-down">−24,096</td><td><span class="btag flat">完整</span></td></tr>
+              <tr><td>IC 中证500</td><td>4 / 4</td><td class="c-up">+3,120 <span class="na">(示意)</span></td><td class="c-up">+890 <span class="na">(示意)</span></td><td class="c-up">+2,230 <span class="na">(示意)</span></td><td class="c-down">−18,442 <span class="na">(示意)</span></td><td><span class="btag flat">完整</span></td></tr>
+              <tr><td>IH 上证50</td><td>3 / 3</td><td class="c-up">+1,050 <span class="na">(示意)</span></td><td class="c-down">−220 <span class="na">(示意)</span></td><td class="c-up">+1,270 <span class="na">(示意)</span></td><td class="c-up">+3,815 <span class="na">(示意)</span></td><td><span class="btag flat">完整</span></td></tr>
+              <tr><td>IM 中证1000</td><td>4 / 4</td><td class="c-up">+780 <span class="na">(示意)</span></td><td class="c-up">+307 <span class="na">(示意)</span></td><td class="c-up">+473 <span class="na">(示意)</span></td><td class="c-up">+1,204 <span class="na">(示意)</span></td><td><span class="btag flat">完整</span></td></tr>
+              <tr class="total"><td>四品种合计</td><td>14 / 14</td><td class="c-up">+7,457</td><td class="c-up">+1,554</td><td class="c-up">+5,903</td><td class="c-down">−37,519</td><td><span class="btag up">以上榜 TOP20 为限</span></td></tr>
+            </tbody>
+          </table>
+          <p style="font-size:11px; color:var(--ink-subtle); margin:10px 0 0;">
+            「净持仓增减 +5,903」即短视频所谓「新增多单 5900 手」的真实口径：内部可能同时加多与加空（示例中加多 7,457 的同时加空 1,554），
+            是多空对冲后的净结果，且为全部代客客户合并，<b style="color:var(--up-strong);">不是单一机构大举开多</b>。
+            IC/IH/IM 行为示意占位，接入真实披露后自动计算。</p>
+        </div>
+      </div>
+    </section>
+  </section>
+
+  <!-- ==================== MODULE C ==================== -->
+  <section class="module">
+    <div class="module-kicker">MODULE C · 核心数据表格</div>
+    <h2>一张总表看全所有指标，不做分散小表</h2>
+
+    <section class="scene" id="scene-c2">
+      <header class="scene-head">
+        <div class="scene-no">C2</div>
+        <div><h3>席位跨合约分解（核心增值，同花顺没有）</h3>
+          <p>在总表点击「中信期货(代客)」展开：列出该会员当日全部上榜合约 + 底部合并汇总与完整性标记。
+            解决「IF2611 小幅净多误导，实际 IF2612 大幅净空」的问题。</p></div>
+      </header>
+      <div class="prototype">
+        <div class="card">
+          <div class="card-head">
+            <span class="card-title">跨合约分解 · 中信期货(代客) · IF · 2026-10-19</span>
+            <span class="btag flat">上榜合约 3 / 3 · 完全统计</span>
+          </div>
+          <div class="table-scroll" style="max-height:none;">
+            <table>
+              <thead><tr><th>合约</th><th>多单</th><th>多增减</th><th>空单</th><th>空增减</th><th>单合约净持仓</th><th>净增减</th></tr></thead>
+              <tbody>
+                <tr><td>IF2611 当月</td><td>8,102</td><td class="c-up">+396</td><td>7,611</td><td class="c-up">+309</td><td class="c-up">+491</td><td class="c-up">+87</td></tr>
+                <tr><td>IF2612 次月</td><td>21,859</td><td class="c-up">+2,453</td><td>35,888</td><td class="c-up">+653</td><td class="c-down">−14,029</td><td class="c-up">+1,800</td></tr>
+                <tr><td>IF2703 远季</td><td>4,498</td><td class="c-down">−342</td><td>15,056</td><td class="c-down">−385</td><td class="c-down">−10,558</td><td class="c-up">+43</td></tr>
+                <tr class="total-row"><td>上榜合约合并</td><td>34,459</td><td class="c-up">+2,507</td><td>58,555</td><td class="c-up">+577</td><td class="c-down">−24,096</td><td class="c-up">+1,930</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="notice danger" style="margin:10px 0 0;">
+            <div>⚠ 仅统计<b>上榜合约</b>：未进 TOP20 的合约无公开数据。本例 3/3 为完全统计；
+              若席位仅部分合约上榜，合并结果为<b>部分头寸</b>，将在此处红字提示（covered / total 标记）。</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="scene" id="scene-c3">
+      <header class="scene-head">
+        <div class="scene-no">C3</div>
+        <div><h3>衍生榜单（折叠面板，按需展开）</h3>
+          <p>不做主页面，避免只看衍生榜丢失完整上下文。六类榜单两列排布。</p></div>
+      </header>
+      <div class="prototype">
+        <div class="fold">
+          <div class="fold-head">📉 衍生榜单（净多 / 净空 / 多空增减仓 TOP）<span class="chev">▾ 展开</span></div>
+          <div class="card">
+            <div class="rank-chips">
+              <div class="rank-mini"><h5>净多 TOP</h5>
+                <div class="r"><span>国泰君安</span><b class="c-up">+3,052</b></div>
+                <div class="r"><span>银河期货</span><b class="c-up">+1,860</b></div>
+                <div class="r"><span>南华期货</span><b class="c-up">+1,643</b></div>
+                <div class="r"><span>中信期货</span><b class="c-up">+491</b></div>
+                <div class="r"><span>东证期货</span><b class="c-up">+159</b></div>
+              </div>
+              <div class="rank-mini"><h5>净空 TOP</h5>
+                <div class="r"><span>中金财富</span><b class="c-down">−4,482</b></div>
+                <div class="r"><span>摩根大通</span><b class="c-down">−2,611</b></div>
+                <div class="r"><span>海通期货</span><b class="c-down">−1,061</b></div>
+                <div class="r"><span>广发期货</span><b class="c-down">−1,530</b></div>
+                <div class="r"><span>兴业期货</span><b class="c-down">−874</b></div>
+              </div>
+              <div class="rank-mini"><h5>多单增仓 TOP</h5>
+                <div class="r"><span>中信期货</span><b class="c-up">+396</b></div>
+                <div class="r"><span>中泰期货</span><b class="c-up">+354</b></div>
+                <div class="r"><span>光大期货</span><b class="c-up">+311</b></div>
+                <div class="r"><span>中信建投</span><b class="c-up">+300</b></div>
+                <div class="r"><span>永安期货</span><b class="c-up">+116</b></div>
+              </div>
+              <div class="rank-mini"><h5>多单减仓 TOP</h5>
+                <div class="r"><span>华闻期货</span><b class="c-down">−340</b></div>
+                <div class="r"><span>国信期货</span><b class="c-down">−249</b></div>
+                <div class="r"><span>海通期货</span><b class="c-down">−190</b></div>
+                <div class="r"><span>华泰期货</span><b class="c-down">−152</b></div>
+                <div class="r"><span>广发期货</span><b class="c-down">−121</b></div>
+              </div>
+              <div class="rank-mini"><h5>空单增仓 TOP</h5>
+                <div class="r"><span>中信建投</span><b class="c-down">+486</b></div>
+                <div class="r"><span>国投期货</span><b class="c-down">+402</b></div>
+                <div class="r"><span>东证期货</span><b class="c-down">+316</b></div>
+                <div class="r"><span>海通期货</span><b class="c-down">+72</b></div>
+                <div class="r"><span>申银万国</span><b class="c-down">+12</b></div>
+              </div>
+              <div class="rank-mini"><h5>空单减仓 TOP</h5>
+                <div class="r"><span>国泰君安</span><b class="c-up">−626</b></div>
+                <div class="r"><span>国信期货</span><b class="c-up">−418</b></div>
+                <div class="r"><span>华闻期货</span><b class="c-up">−320</b></div>
+                <div class="r"><span>中金财富</span><b class="c-up">−75</b></div>
+                <div class="r"><span>招商期货</span><b class="c-up">−71</b></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </section>
+
+  <!-- ==================== MODULE D ==================== -->
+  <section class="module">
+    <div class="module-kicker">MODULE D · 可视化图表</div>
+    <h2>占比 → 体量 → 时序，三层递进观察资金行为</h2>
+
+    <section class="scene" id="scene-d1">
+      <header class="scene-head">
+        <div class="scene-no">D1</div>
+        <div><h3>饼图 / 多空并排柱状 / 席位净持仓时序</h3>
+          <p>实际开发走 BaseChart（ECharts，多空色随涨跌主题 token 重绘）；此处为静态示意。时序图数据需逐日拉取历史 CSV，本地聚合。</p></div>
+      </header>
+      <div class="prototype">
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-head"><span class="card-title">多头席位占比 · IF2611</span><span class="card-extra">资金集中度</span></div>
+            <div class="chart-row">
+              <div class="donut"><div class="donut-hole"><b style="color:var(--ink);">CR3</b><br>41.9%</div></div>
+              <div>
+                <div class="legend">
+                  <span><i style="background:var(--up);"></i>中信期货 20.1%</span>
+                  <span><i style="background:#ef6a6a;"></i>国泰君安 21.8%</span>
+                  <span><i style="background:var(--up-light);"></i>海通期货 9.8%</span>
+                  <span><i style="background:#f5c1c1;"></i>银河期货 8.1%</span>
+                  <span><i style="background:var(--up-pale);"></i>东证期货 6.8%</span>
+                  <span><i style="background:var(--flat-weak);"></i>其他 33.4%</span>
+                </div>
+                <p style="font-size:11px; color:var(--ink-subtle); margin:8px 0 0;">空头占比结构对称展示（空单占比环图），多空分别着 up / down 语义色。</p>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-head"><span class="card-title">头部席位 多单 vs 空单</span><span class="card-extra">判断对冲还是单边，比看数字直观</span></div>
+            <div class="bars">
+              <div class="bar-g"><div class="bar-pair"><div class="bar buy" style="height:74%;"></div><div class="bar sell" style="height:70%;"></div></div><span class="nm">中信</span></div>
+              <div class="bar-g"><div class="bar-pair"><div class="bar buy" style="height:80%;"></div><div class="bar sell" style="height:52%;"></div></div><span class="nm">国泰君安</span></div>
+              <div class="bar-g"><div class="bar-pair"><div class="bar buy" style="height:36%;"></div><div class="bar sell" style="height:46%;"></div></div><span class="nm">海通</span></div>
+              <div class="bar-g"><div class="bar-pair"><div class="bar buy" style="height:30%;"></div><div class="bar sell" style="height:13%;"></div></div><span class="nm">银河</span></div>
+              <div class="bar-g"><div class="bar-pair"><div class="bar buy" style="height:25%;"></div><div class="bar sell" style="height:24%;"></div></div><span class="nm">东证</span></div>
+              <div class="bar-g"><div class="bar-pair"><div class="bar buy" style="height:0%;"></div><div class="bar sell" style="height:41%;"></div></div><span class="nm">中金财富</span></div>
+            </div>
+            <div class="legend"><span><i style="background:var(--up);"></i>多单持仓</span><span><i style="background:var(--down);"></i>空单持仓</span></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-head"><span class="card-title">席位合并净持仓时序 · 中信期货(代客) · IF 全部上榜合约</span>
+            <span class="card-extra">近 6 个交易日 · 可叠加指数收盘价（二期）</span></div>
+          <svg viewBox="0 0 680 190" style="width:100%; height:auto; display:block;">
+            <rect x="46" y="20" width="620" height="120" fill="none"/>
+            <line x1="46" y1="140" x2="666" y2="140" stroke="#eef1f5" stroke-width="2"/>
+            <line x1="46" y1="95" x2="666" y2="95" stroke="#eef1f5" stroke-width="1"/>
+            <line x1="46" y1="50" x2="666" y2="50" stroke="#eef1f5" stroke-width="1"/>
+            <text x="40" y="144" font-size="10" fill="#98a2b3" text-anchor="end">-26k</text>
+            <text x="40" y="99" font-size="10" fill="#98a2b3" text-anchor="end">-24k</text>
+            <text x="40" y="54" font-size="10" font-size="10" fill="#98a2b3" text-anchor="end">-22k</text>
+            <g>
+              <rect x="84" y="118" width="12" height="14" rx="2" fill="#e02020"/>
+              <rect x="172" y="112" width="12" height="8" rx="2" fill="#00b578"/>
+              <rect x="260" y="106" width="12" height="14" rx="2" fill="#00b578"/>
+              <rect x="348" y="112" width="12" height="8" rx="2" fill="#e02020"/>
+              <rect x="436" y="104" width="12" height="16" rx="2" fill="#00b578"/>
+              <rect x="524" y="112" width="12" height="8" rx="2" fill="#e02020"/>
+            </g>
+            <polyline points="90,36 178,44 266,56 354,44 442,60 530,84" fill="none" stroke="#0e9488" stroke-width="2.5" stroke-linejoin="round"/>
+            <circle cx="90" cy="36" r="3.5" fill="#0e9488"/><circle cx="178" cy="44" r="3.5" fill="#0e9488"/>
+            <circle cx="266" cy="56" r="3.5" fill="#0e9488"/><circle cx="354" cy="44" r="3.5" fill="#0e9488"/>
+            <circle cx="442" cy="60" r="3.5" fill="#0e9488"/><circle cx="530" cy="84" r="3.5" fill="#0e9488"/>
+            <text x="90" y="164" font-size="10" fill="#98a2b3" text-anchor="middle">10-13</text>
+            <text x="178" y="164" font-size="10" fill="#98a2b3" text-anchor="middle">10-14</text>
+            <text x="266" y="164" font-size="10" fill="#98a2b3" text-anchor="middle">10-15</text>
+            <text x="354" y="164" font-size="10" fill="#98a2b3" text-anchor="middle">10-16</text>
+            <text x="442" y="164" font-size="10" fill="#98a2b3" text-anchor="middle">10-19</text>
+            <text x="530" y="164" font-size="10" fill="#98a2b3" text-anchor="middle" opacity="0">10-20</text>
+          </svg>
+          <div class="legend">
+            <span><i style="background:#0e9488;"></i>合并净持仓（手）</span>
+            <span><i style="background:var(--up);"></i>净多日增（柱）</span>
+            <span><i style="background:var(--down);"></i>净空日增（柱）</span>
+            <span style="color:var(--ink-subtle);">示意曲线 · 单日噪音大，连续多日才能判断持续加仓还是一日脉冲</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  </section>
+
+  <!-- ==================== MODULE E ==================== -->
+  <section class="module">
+    <div class="module-kicker">MODULE E · 移仓换月专项</div>
+    <h2>移仓换月分析面板（折叠）</h2>
+
+    <section class="scene" id="scene-e1">
+      <header class="scene-head">
+        <div class="scene-no">E1</div>
+        <div><h3>头部席位 近月 / 次月 增减仓横向对比</h3>
+          <p>同一批头部席位，横向对比当月/下月多空增减；算法自动标记疑似移仓。移仓 ≠ 看多/看空，只是更换到期合约。</p></div>
+      </header>
+      <div class="prototype">
+        <div class="fold">
+          <div class="fold-head">📦 移仓换月专项分析（IF · 2026-10-19）<span class="chev">▾ 展开</span></div>
+          <div class="card">
+            <div class="table-scroll" style="max-height:none;">
+              <table>
+                <thead><tr><th>席位</th><th>IF2611 多增减</th><th>IF2611 空增减</th><th>IF2612 多增减</th><th>IF2612 空增减</th><th>判定</th></tr></thead>
+                <tbody>
+                  <tr><td class="member-link">国泰君安(代客)</td><td class="c-down">−171</td><td class="c-down">−626</td><td class="c-up">+1,863</td><td class="c-up">+1,554</td><td><span class="btag primary">📦 疑似移仓</span></td></tr>
+                  <tr><td class="member-link">中信期货(代客)</td><td class="c-up">+396</td><td class="c-up">+309</td><td class="c-up">+2,453</td><td class="c-up">+653</td><td><span class="btag flat">双向增仓 · 非移仓</span></td></tr>
+                  <tr><td class="member-link">海通期货(代客)</td><td class="c-down">−190</td><td class="c-up">+72</td><td class="c-down">−367</td><td class="c-up">+65</td><td><span class="btag flat">同向变动 · 非移仓</span></td></tr>
+                  <tr><td class="member-link">其余头部席位…</td><td>…</td><td>…</td><td>…</td><td>…</td><td><span class="na">—</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p style="font-size:11px; color:var(--ink-subtle); margin:10px 0 0;">
+              判定规则：近月某方向减仓（chg &lt; 0），且更远合约同方向增仓（chg &gt; 0，阈值默认 100 手，可配置）。
+              未上榜指标为空的席位不参与判定。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </section>
+
+  <!-- ==================== MODULE F ==================== -->
+  <section class="module">
+    <div class="module-kicker">MODULE F · 通用状态</div>
+    <h2>加载 / 空 / 错误态</h2>
+
+    <section class="scene" id="scene-f1">
+      <header class="scene-head">
+        <div class="scene-no">F1</div>
+        <div><h3>骨架屏 · 空态 · 错误态</h3><p>加载中骨架与最终态同构；节假日 / 未披露日用空态；CSV 拉取失败给错误态 + 重试。</p></div>
+      </header>
+      <div class="prototype">
+        <div class="state-row">
+          <div class="card">
+            <div class="card-head"><span class="card-title">加载中</span></div>
+            <div class="sk w40"></div><div class="sk w80"></div><div class="sk w60"></div><div class="sk w80"></div>
+          </div>
+          <div class="card">
+            <div class="card-head"><span class="card-title">非交易日 / 未披露</span></div>
+            <div class="empty">2026-10-18（周日）无披露数据<br>最近披露日：2026-10-17（周五）<br><button class="btn ghost" style="margin-top:8px;">切换到最近披露日</button></div>
+          </div>
+          <div class="card">
+            <div class="card-head"><span class="card-title">拉取失败</span></div>
+            <div class="empty"><span class="err">中金所数据获取失败（网络/上游异常）</span><br>已重试 2 次<br><button class="btn primary" style="margin-top:8px;">重试</button></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </section>
+
+  <!-- ==================== 落地 ==================== -->
+  <section class="module">
+    <div class="module-kicker">落地说明</div>
+    <h2>接线方式与数据通道</h2>
+
+    <section class="scene" id="scene-g1">
+      <header class="scene-head">
+        <div class="scene-no">G1</div>
+        <div><h3>侧栏分组与路由接线</h3></div>
+      </header>
+      <div class="prototype">
+        <div class="card">
+          <div class="risk-card" style="box-shadow:none; padding:0;">
+            <ol>
+              <li><b>侧栏分组</b>：<code>sidebar-group.constants.ts</code> 新增 <code>FUTURES: 'futures'</code>（标题「期货」），
+                默认序排在「榜单与资金」之后、「热点资讯」之前（用户可在设置页编排里自由调整组序）。</li>
+              <li><b>菜单与路由</b>：<code>MENU_ITEMS</code> 新增
+                <code>{ path: '/futures/institutional', title: '机构行为', icon: MENU_ICON.FUTURES, group: FUTURES }</code>；
+                <code>router</code> 注册整页路由；<code>MenuIcon</code> 补一个期货图标（如蜡烛图 / 持仓形）。</li>
+              <li><b>页面形态</b>：宿主自带页面（非插件），与板块日历等同级；移动端二期对齐。</li>
+              <li><b>口径切换持久化</b>：品种 / 合并维度 / 交易日 / 选中席位存 settings 或会话内 store，刷新不丢。</li>
+            </ol>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="scene" id="scene-g2">
+      <header class="scene-head">
+        <div class="scene-no">G2</div>
+        <div><h3>数据通道与计算层（全部前端，无后端）</h3></div>
+      </header>
+      <div class="prototype">
+        <div class="card">
+          <div class="risk-card" style="box-shadow:none; padding:0;">
+            <ol>
+              <li><b>上游</b>：中金所 <code>http://www.cffex.com.cn/sj/ccpm/{yyyymm}/{dd}/{PRODUCT}_1.csv</code>，
+                每品种每日一个 CSV（三榜并排，与参考 data/CFFEX_IF_20261019.csv 同构）。编码（GBK/UTF-8）与 URL 规律需开发前冒烟实测。</li>
+              <li><b>通道</b>：走既有 <code>proxy-fetch</code> 体系——浏览器经 <code>/stock-proxy</code> 转发（白名单加 <code>www.cffex.com.cn</code>），
+                Tauri 走 Rust 直连（capabilities scope 追加同域名）；响应按原始字节透传，按实测编码解码，防乱码。</li>
+              <li><b>解析与计算</b>：utils 纯函数——三榜并集归并（缺失记 NULL 不记 0）→ net_pos / net_chg / 占比 → 行为标签 →
+                按【交易日+会员】跨合约聚合 → 跨品种聚合（口径 C）。前端计算即可，数据量小（单品种单日 ≤ 60 行）。</li>
+              <li><b>缓存</b>：dataCache 快照（key 含品种+日期），TTL 到次日披露前；时序图按需逐日回拉（默认近 20 交易日）。</li>
+              <li><b>排序</b>：表头点击按 成交量/多单/空单/净持仓/净增减 排序，前端本地排序。</li>
+            </ol>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="scene" id="risk">
+      <header class="scene-head">
+        <div class="scene-no">!</div>
+        <div><h3>常驻风险提示（页面固定区域，不可隐藏）</h3></div>
+      </header>
+      <div class="prototype">
+        <div class="risk-card">
+          <b>⚠ 数据局限性（常驻展示）</b>
+          <ol>
+            <li>所有数据为<b>期货公司代客合并持仓</b>：是席位全部客户总和（公募/私募/量化/散户/套保混合），不是某一家机构的单独头寸。</li>
+            <li>中金所只披露达标 / 前 20 会员：未上榜会员与合约无公开数据，分析样本是<b>部分样本</b>。</li>
+            <li>净持仓是收盘隔夜快照，看不到盘中 T+0 日内交易。</li>
+            <li><b>空头持仓 ≠ 看空大盘</b>：大量空单是股票现货多头的套保盘。</li>
+            <li><b>净增减 ≠ 多头新开仓</b>：净多变化 = 多头增减 − 空头增减，内部可能同时加多与加空。</li>
+            <li>跨品种合并（IF+IC+IH+IM）属不同指数头寸直接相加，逻辑粗糙，仅作口径核验参考。</li>
+            <li>本页面仅做资金行为观测工具，所有标签、图表不构成任何投资建议。</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+  </section>
+
+  <footer style="margin-top:40px; color:var(--ink-subtle); font-size:12px; text-align:center;">
+    期货 · 机构行为 UI 稿 v1 · 2026-10-20 · 示例数据为中金所 2026-10-19 真实披露（IF），IC/IH/IM 标注「示意」处待接入后自动计算
+  </footer>
+</div>
+</body>
+</html>

@@ -80,6 +80,33 @@ export interface BoardConstituent {
 }
 
 /**
+ * 板块得分分桶（board_daily 分桶列；六桶互斥，平盘不计权重）
+ *
+ * 涨停 / 跌停两桶以涨跌停池口径为准（不看涨跌幅阈值），
+ * 中间四桶按当日涨跌幅划分，边界归属：> 5% 与 < -5% 为严格开区间，
+ * (0, 5%] 与 [-5%, 0) 含整点（±5.00% 计入温和桶）。
+ */
+export interface BoardScoreBuckets {
+  /** 涨停家数（涨跌停池口径） */
+  limitUp: number;
+  /** 涨幅 > 5% 家数（非涨停） */
+  gt5: number;
+  /** 涨幅 (0, 5%] 家数 */
+  up05: number;
+  /** 跌幅 [-5%, 0) 家数 */
+  down05: number;
+  /** 跌幅 < -5% 家数（非跌停） */
+  lt5: number;
+  /** 跌停家数（涨跌停池口径） */
+  limitDown: number;
+}
+
+/**
+ * 板块得分权重（与分桶同构：得分 = Σ 分桶家数 × 对应权重；取值范围 [-10, 10]）
+ */
+export type BoardScoreWeights = BoardScoreBuckets;
+
+/**
  * 板块 × 交易日聚合（board_daily 行）
  */
 export interface BoardDailyRow {
@@ -109,6 +136,8 @@ export interface BoardDailyRow {
   score: number;
   /** 得分率 = score ÷ consCount */
   scoreRate: number;
+  /** 得分分桶（六桶互斥；null = 该行无分桶数据：旧版本行 / 回补日 / 盘中未覆盖板块） */
+  buckets: BoardScoreBuckets | null;
   /** 数据级别：1 = 完整快照，0 = 仅回补到涨跌停 */
   dataLevel: number;
   /** 采集时间戳（毫秒） */
@@ -329,7 +358,7 @@ export interface BoardColumnSelection {
 }
 
 /**
- * 主线分析单元格（视图模型：某交易日得分第 N 名的板块）
+ * 主线分析单元格（视图模型：某交易日按指定口径第 N 名的板块）
  */
 export interface BoardMainlineCell {
   /** 交易日 YYYY-MM-DD */
@@ -338,6 +367,8 @@ export interface BoardMainlineCell {
   boardCode: string;
   /** 板块名称 */
   boardName: string;
+  /** 当日成交额（元；amount 口径进榜依据，null = 上游缺额） */
+  amount: number | null;
   /** 涨停家数 */
   limitUp: number;
   /** 跌停家数 */
@@ -373,5 +404,56 @@ export interface BoardSyncResult {
   /** 本次新回补的交易日（升序） */
   backfilledDates: string[];
   /** 失败信息（null 表示无失败） */
+  error: string | null;
+}
+
+/* -------------------------- 手动获取 / 刷新（表头弹窗） -------------------------- */
+
+/**
+ * 手动获取弹窗的单日状态：
+ * ok = 已取到数据（待应用写入）；empty = 上游无该日（回溯窗口边界）；
+ * failed = 探测失败（可重试）
+ */
+export type BoardFetchDayStatus = 'ok' | 'empty' | 'failed';
+
+/**
+ * 手动获取 / 刷新弹窗的单日结果（内存形态，点「应用」才落库）
+ */
+export interface BoardFetchDayResult {
+  /** 交易日（`YYYY-MM-DD`） */
+  tradeDate: string;
+  /** 单日状态 */
+  status: BoardFetchDayStatus;
+  /** 该日全市场涨停家数（ok / empty 时有效） */
+  limitUpCnt: number;
+  /** 该日全市场跌停家数（ok / empty 时有效） */
+  limitDownCnt: number;
+  /** 板块日聚合行（仅 ok 非空） */
+  rows: BoardDailyRow[];
+  /** 涨跌停个股明细（仅 ok 非空） */
+  limitRows: BoardLimitStock[];
+  /** 采集台账（仅 ok 非空） */
+  meta: BoardCalendarMeta | null;
+  /** 板块档案（仅当日快照刷新时非空） */
+  profiles: BoardProfile[];
+  /** 展示用补充说明（失败原因 / 跳过原因 / 定稿提示） */
+  message: string;
+}
+
+/**
+ * 手动获取 / 刷新弹窗的一次采集结果（全部为内存数据，不落库）
+ */
+export interface BoardManualFetchResult {
+  /** fetch = 回补缺失交易日；refresh = 强制重采当日快照 */
+  mode: 'fetch' | 'refresh';
+  /** 单日结果（采集层不保证顺序，展示层自行排序） */
+  days: BoardFetchDayResult[];
+  /** 本次探明到的回溯窗口边界（仅 fetch 模式可能非 null；点「应用」时落库） */
+  boundaryDate: string | null;
+  /** fetch 模式：交易日轴上库内缺失的交易日总数（含边界之后未逐日列出的） */
+  missingTotal: number;
+  /** fetch 模式：位于边界之后、未逐日列出的缺失日数（必然超出回溯窗口） */
+  beyondBoundaryCount: number;
+  /** 致命错误（连第一步都没走通）；单日失败不在这里，在 days[].message */
   error: string | null;
 }

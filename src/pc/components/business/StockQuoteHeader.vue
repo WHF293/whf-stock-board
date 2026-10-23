@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import BaseSkeleton from '../ui/BaseSkeleton.vue';
+import BaseButton from '../ui/BaseButton.vue';
 import {
   TREND,
   getTrendByChangePercent,
@@ -16,7 +17,7 @@ import type { FullQuote } from '../../../common/types/stock-quote.types.ts';
 /**
  * 个股报价头（参考投资账本侧栏排版）：
  *
- * - 名称居中大字 + 代码居中小字；右上角自选按钮（未加 = 主色「+ 自选」，已加 = 红字「删自选」）
+ * - 名称居中大字 + 代码居中小字；右上角自选按钮（两态统一文案「自选」，未加 = 主色、已加 = 红色）
  * - 下方：左侧现价大字 + 涨跌额/幅；右侧 3x3 紧凑指标网格
  *   （高 / 低 / 开 / 市值 / 流通 / 量 / 换 / 额 / 市盈——label 灰 + 值紧跟）
  * - stacked 模式（窄栏场景，如详情页右栏）：现价块与指标网格上下堆叠，
@@ -39,9 +40,9 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  /** 点击「+ 自选」按钮：弹窗选择分组 */
+  /** 点击「自选」按钮（未加自选态）：弹窗选择分组 */
   'add-to-watchlist': [];
-  /** 点击「删自选」按钮：弹窗选择删除范围 */
+  /** 点击「自选」按钮（已加自选态）：弹窗选择删除范围 */
   'remove-from-watchlist': [];
 }>();
 
@@ -121,10 +122,12 @@ const ohlcMetrics = computed<CompactMetric[]>(() => {
     <div class="flex w-full items-center justify-center">
       <p class="truncate text-sm font-semibold text-text">{{ quote.name }}</p>
       <div class="absolute right-0 top-0">
-        <button
+        <!-- 两个状态统一文案「自选」（点击都弹自选编辑弹窗，王总 2026-10-13）；
+             2026-10-17 起用 BaseButton 玻璃按钮（与页头「AI 分析 / 插件设置」同款形状字号），
+             王总 2026-10-17：红色去除——未加 = primary 绿、已加 = ghost 无语义色 -->
+        <BaseButton
           v-if="!isInWatchlist"
-          type="button"
-          class="pressable inline-flex items-center gap-1 rounded-full bg-primary-weak px-3 py-1 text-xs font-medium text-primary hover:opacity-80 active:scale-95"
+          variant="primary"
           @click="emit('add-to-watchlist')"
         >
           <svg
@@ -137,16 +140,11 @@ const ohlcMetrics = computed<CompactMetric[]>(() => {
           >
             <path d="M12 5v14M5 12h14" />
           </svg>
-          加自选
-        </button>
-        <button
-          v-else
-          type="button"
-          class="pressable inline-flex items-center gap-1 rounded-full bg-up-weak px-3 py-1 text-xs font-medium text-up hover:opacity-80 active:scale-95"
-          @click="emit('remove-from-watchlist')"
-        >
-          删自选
-        </button>
+          自选
+        </BaseButton>
+        <BaseButton v-else variant="ghost" @click="emit('remove-from-watchlist')">
+          自选
+        </BaseButton>
       </div>
     </div>
     <p class="text-xs text-text-tertiary">{{ quote.code }}</p>

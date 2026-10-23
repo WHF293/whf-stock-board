@@ -19,6 +19,7 @@ import { useSettingsStore } from '../../common/stores/settings';
 import { useNotificationsStore } from '../../common/stores/notifications';
 import { useTabConfigStore } from '../../common/stores/tab-config';
 import { useStockOpen } from '../../common/composables/use-stock-open';
+import { usePageHeaderSlot, PAGE_HEADER_ACTIONS_TARGET } from '../../common/composables/use-page-header-slot';
 import { requestAgentAnalysis } from '../agent/agent-bridge';
 import { buildRankAnalysisPrompt } from '../../common/utils/build-rank-analysis-prompt';
 import { exportSheetsToExcel } from '../../common/utils/export-excel';
@@ -40,7 +41,7 @@ import type { FundFlowRankItem } from '../../common/types/flow.types.ts';
 import { delay } from '../../common/utils/delay';
 
 /**
- * 市场榜单（原「市场异动」页已并入为页签）：
+ * 盘面雷达（原「市场榜单」，2026-10-22 更名；原「市场异动」页已并入为页签）：
  * 个股主力资金榜 → 连板 / 异动 / 龙虎榜 / 大宗交易（自管数据，重接口不轮询）
  * → 全 A 报价排序榜（涨跌幅 / 成交额 / 换手率）。
  * 板块维度的资金流向（板块净流入 / 行业资金曲线）已在「行情全景-板块资金」模块。
@@ -61,20 +62,21 @@ const dataCache = useDataCacheStore();
 const DISPLAY_COUNT = 100;
 
   /**
-   * 页签：个股主力资金榜 → 连板 / 异动 / 龙虎榜 / 大宗交易（原「市场异动」页并入）
-   * → 全 A 报价排序榜（自管数据；北向持股已下线——上游长期无数据，
-   * 接口仍保留给 Agent MCP 工具；板块净流入已迁至「行情全景-板块资金」）
+   * 页签：三组式布局（2026-10-22，组间分隔线见 BaseTabs groupStart）——
+   * 排行（同一份全 A 报价换 sortKey）｜股池事件（连板 / 异动）｜席位与大宗（龙虎榜 / 大宗交易）。
+   * 原「市场异动」页并入本页；北向持股已下线——上游长期无数据，
+   * 接口仍保留给 Agent MCP 工具；板块净流入已迁至「行情全景-板块资金」
    */
 const SORT_TAB_OPTIONS = [
-  { label: '个股主力', value: 'stock' },
-  { label: '连板', value: 'event' },
-  { label: '异动', value: 'events' },
-  { label: '龙虎榜', value: 'dragon-tiger' },
-  { label: '大宗交易', value: 'block-trade' },
+  { label: '个股主力', value: 'stock', groupStart: true, groupName: '排行' },
   { label: '涨幅榜', value: 'changePercent' },
   { label: '跌幅榜', value: 'changePercentDesc' },
   { label: '成交额榜', value: 'amount' },
   { label: '换手率榜', value: 'turnoverRate' },
+  { label: '连板', value: 'event', groupStart: true, groupName: '股池事件' },
+  { label: '异动', value: 'events' },
+  { label: '龙虎榜', value: 'dragon-tiger', groupStart: true, groupName: '席位与大宗' },
+  { label: '大宗交易', value: 'block-trade' },
 ] as const;
 
 /** 原市场异动页并入的四个页签值（页签配置迁移用） */
@@ -98,6 +100,16 @@ if (moodStored) {
   tabConfigStore.setConfig('market-rank', {
     order: [...rankOrder, ...moodOrder],
     hidden: [...rankHidden, ...moodHidden],
+  });
+}
+
+// 2026-10-22 页签三组式重排：旧自定义顺序与新分组（排行｜股池事件｜席位与大宗）不兼容，
+// 一次性重置顺序、保留显隐自定义（旧值残留由 normalizeTabConfig 丢弃，无害）
+const rankStoredConfig = tabConfigStore.configs['market-rank'];
+if (rankStoredConfig) {
+  tabConfigStore.setConfig('market-rank', {
+    order: SORT_TAB_OPTIONS.map((option) => option.value as string),
+    hidden: [...rankStoredConfig.hidden],
   });
 }
 
@@ -335,9 +347,13 @@ const openDetail = (code: string): void => {
   openSidebar(code);
 };
 
-// ---------- 榜单工具条：AI 分析 + 导出 Excel（所有页签共用，数据取当前页签榜单） ----------
+// ---------- 榜单工具条：AI 分析 + 导出 Excel（所有页签共用，数据取当前页签榜单；
+// ---------- 按钮上移 MainLayout 页头，经 Teleport 投射） ----------
 const settingsStore = useSettingsStore();
 const notifications = useNotificationsStore();
+
+/** 页头动作挂载守卫：只有本页激活时按钮才出现在页头（KeepAlive 缓存页切走不残留） */
+const { active: headerSlotActive } = usePageHeaderSlot();
 
 /** 连板 / 异动子视图（数据在其组件内，按钮点击时经 expose 方法获取） */
 const eventViewRef = ref<InstanceType<typeof MarketEventView> | null>(null);
@@ -351,7 +367,7 @@ const agentEntryVisible = computed(
 
 /** 当前页签的榜单类型名（AI 分析提示词与导出文件名共用） */
 const currentRankLabel = computed(
-  () => SORT_TAB_OPTIONS.find((option) => option.value === sortKey.value)?.label ?? '市场榜单',
+  () => SORT_TAB_OPTIONS.find((option) => option.value === sortKey.value)?.label ?? '盘面雷达',
 );
 
 /** 报价排序榜导出列（表格列 + 代码；成交额单位万 / 成交量单位手，导出与 AI 分析共用） */
@@ -455,7 +471,7 @@ const onRankExport = async (): Promise<void> => {
         rows: dataset.rows,
         columns: dataset.columns,
       })),
-      `市场榜单-${currentRankLabel.value}-${exportStamp()}`,
+      `盘面雷达-${currentRankLabel.value}-${exportStamp()}`,
     );
   } catch (error) {
     console.error('[market-rank] export', error);
@@ -477,17 +493,19 @@ const onRankExport = async (): Promise<void> => {
       <TabConfigButton page-id="market-rank" :options="SORT_TAB_OPTIONS" />
     </div>
 
-    <!-- 榜单工具条：AI 分析 + 导出 Excel -->
-    <div class="flex shrink-0 items-center justify-end gap-2">
-      <BaseButton v-if="agentEntryVisible" variant="ghost" @click="onRankAiAnalysis">
-        <MenuIcon name="agent" :size="14" />
-        AI 分析
-      </BaseButton>
-      <BaseButton variant="ghost" @click="onRankExport">
-        <MenuIcon name="export" :size="14" />
-        导出 Excel
-      </BaseButton>
-    </div>
+    <!-- 榜单工具条上移页头：AI 分析 + 导出 Excel（Teleport 投射，本页激活时才挂载） -->
+    <Teleport v-if="headerSlotActive" :to="PAGE_HEADER_ACTIONS_TARGET">
+      <div class="flex items-center gap-2">
+        <BaseButton v-if="agentEntryVisible" variant="ghost" @click="onRankAiAnalysis">
+          <MenuIcon name="agent" :size="14" />
+          AI 分析
+        </BaseButton>
+        <BaseButton variant="ghost" @click="onRankExport">
+          <MenuIcon name="export" :size="14" />
+          导出 Excel
+        </BaseButton>
+      </div>
+    </Teleport>
 
     <!-- 原市场异动页签：连板 / 异动 / 龙虎榜 / 大宗交易（自管数据，重接口不轮询） -->
     <MarketEventView v-if="sortKey === 'event'" ref="eventViewRef" mode="zt" class="min-h-0 flex-1" />
@@ -545,7 +563,7 @@ const onRankExport = async (): Promise<void> => {
     <BaseCard v-else fill class="min-h-0 flex-1">
       <div v-if="isLoading && allQuotes.length === 0"><BaseSkeleton /></div>
       <div v-else-if="isError && allQuotes.length === 0" class="py-10">
-        <BaseEmpty text="市场榜单加载失败，请稍后重试（上游可能限频或封禁）" />
+        <BaseEmpty text="盘面雷达加载失败，请稍后重试（上游可能限频或封禁）" />
       </div>
       <BaseTable
         v-else-if="displayedRows.length > 0"

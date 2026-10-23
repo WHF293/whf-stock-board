@@ -3,7 +3,9 @@ import { HEATMAP_TOP_DEFAULT } from '../constants/index-symbols.constants.ts';
 import { HEATMAP_VIEW_MODE_DEFAULT } from '../constants/heatmap.constants.ts';
 import {
   BOARD_CALENDAR_HEAT_BASIS_DEFAULT,
+  BOARD_CALENDAR_RANGE,
   BOARD_CALENDAR_RANGE_DEFAULT,
+  BOARD_SCORE_WEIGHTS_DEFAULT,
 } from '../constants/board-calendar.constants.ts';
 import { BOARD_DETAIL_RANGE_DEFAULT } from '../constants/board-detail.constants.ts';
 import { STORAGE_NS_SETTINGS } from '../constants/storage-key.constants.ts';
@@ -32,6 +34,7 @@ import { syncCloseToTray } from '../api/tray.api.ts';
 import { SIDEBAR_COLLAPSED_DEFAULT } from '../constants/sidebar.constants.ts';
 import { WEBLOG_ENABLED_DEFAULT } from '../constants/weblog.constants.ts';
 import { MENU_DEFAULT_ORDER } from '../constants/router-meta.constants.ts';
+import { SIDEBAR_MENU_GROUP_DEFAULT_ORDER } from '../constants/sidebar-group.constants.ts';
 import { HEADER_DEFAULT_ORDER } from '../constants/header.constants.ts';
 import { PANORAMA_CN_VIEW_MODE_DEFAULT } from '../constants/panorama.constants.ts';
 import {
@@ -41,11 +44,15 @@ import {
 import { CHART_PERIOD_DEFAULT, type ChartPeriod } from '../constants/stock-detail.constants.ts';
 import type { HeatmapViewMode } from '../types/heatmap.types.ts';
 import type { PanoramaCnViewMode } from '../constants/panorama.constants.ts';
-import type { BoardCalendarHeatBasis, BoardCalendarRange } from '../types/board-calendar.types.ts';
+import type { BoardCalendarHeatBasis, BoardCalendarRange, BoardScoreWeights } from '../types/board-calendar.types.ts';
 import type { BoardDetailRange } from '../types/board-detail.types.ts';
 import type { WatchWidgetSettings } from '../types/watch-widget.types.ts';
 import { BOARD_DEFAULT_ORDER, normalizeBoardHidden, normalizeBoardOrder } from '../utils/board-order';
 import { migrateWatchWidgetSettings } from '../utils/migrate-watch-widget-settings';
+import { mergeMenuGroupOrder } from '../utils/order-sidebar-menu.ts';
+import { normalizeBoardScoreWeights } from '../utils/normalize-board-score-weights';
+import { normalizeRotationMinScoreRate } from '../utils/normalize-rotation-min-score-rate';
+import { ROTATION_MIN_SCORE_RATE_DEFAULT } from '../constants/board-rotation.constants.ts';
 
 /**
  * 初始设置引导的默认完成态
@@ -75,6 +82,10 @@ interface SettingsState {
   sidebarCollapsed: boolean;
   /** 左侧导航顺序（存路由 path 数组；默认按 MENU_ITEMS 声明顺序，插件菜单追加末尾） */
   menuOrder: string[];
+  /** 左侧导航分组顺序（存分组 id 数组；默认按 SIDEBAR_MENU_GROUP_DEFAULT_ORDER，插件声明的新组追加末尾） */
+  menuGroupOrder: string[];
+  /** 左侧导航中被折叠的分组 id（点组头折叠 / 展开；侧栏不渲染折叠组的条目但路由仍可达） */
+  collapsedMenuGroups: string[];
   /** 左侧导航中被隐藏的页面 path（编排弹窗里关掉开关的项；侧栏不渲染但路由仍可达） */
   hiddenMenus: string[];
   /** 顶栏顺序（存条目键数组；宿主项为 id、插件条目为 `<pluginId>#<id>`；插件条目追加末尾） */
@@ -103,6 +114,10 @@ interface SettingsState {
   boardCalendarHidden: string[];
   /** 板块日历详情 · 展示范围（交易日列数；与看板页的范围各自独立） */
   boardDetailRange: BoardDetailRange;
+  /** 板块得分 · 自定义权重（题材轮动权重管理器；六键与得分分桶同构，[-10, 10]） */
+  boardScoreWeights: BoardScoreWeights;
+  /** 题材轮动 · 上榜最低得分率（低于该值的板块无上榜资格；[-10, 10]，默认 5，王总 2026-10-23 定稿） */
+  rotationMinScoreRate: number;
   /** 股票详情 · 蜡烛模式主图指标清单（如 ['MA']，klinecharts 指标名） */
   chartMainIndicators: string[];
   /** 股票详情 · 蜡烛模式副图指标清单（如 ['VOL', 'MACD_KDJ']，每项独立面板） */
@@ -121,6 +136,8 @@ interface SettingsState {
   launchAtStartup: boolean;
   /** 桌面端 · 任务栏盯盘小组件（三态电源 / 显示模式 / 拖动位置；浏览器模式无此行为） */
   watchWidget: WatchWidgetSettings;
+  /** 更新检查代理地址（如 http://127.0.0.1:7890；空 = 直连。应用更新与插件更新的 GitHub 请求共用） */
+  updateProxyUrl: string;
 }
 
 /**
@@ -135,6 +152,8 @@ export const useSettingsStore = defineStore('settings', {
     panoramaCnViewMode: PANORAMA_CN_VIEW_MODE_DEFAULT,
     sidebarCollapsed: SIDEBAR_COLLAPSED_DEFAULT,
     menuOrder: [...MENU_DEFAULT_ORDER],
+    menuGroupOrder: [...SIDEBAR_MENU_GROUP_DEFAULT_ORDER],
+    collapsedMenuGroups: [],
     hiddenMenus: [],
     headerOrder: [...HEADER_DEFAULT_ORDER],
     hiddenHeaderItems: [],
@@ -149,6 +168,8 @@ export const useSettingsStore = defineStore('settings', {
     boardCalendarOrder: [...BOARD_DEFAULT_ORDER],
     boardCalendarHidden: [],
     boardDetailRange: BOARD_DETAIL_RANGE_DEFAULT,
+    boardScoreWeights: { ...BOARD_SCORE_WEIGHTS_DEFAULT },
+    rotationMinScoreRate: ROTATION_MIN_SCORE_RATE_DEFAULT,
     chartMainIndicators: [...CHART_MAIN_INDICATORS_DEFAULT],
     chartSubIndicators: [...CHART_SUB_INDICATORS_DEFAULT],
     detailChartPeriod: CHART_PERIOD_DEFAULT,
@@ -158,6 +179,7 @@ export const useSettingsStore = defineStore('settings', {
     closeToTray: CLOSE_TO_TRAY_DEFAULT,
     launchAtStartup: LAUNCH_AT_STARTUP_DEFAULT,
     watchWidget: { ...WATCH_WIDGET_SETTINGS_DEFAULT },
+    updateProxyUrl: '',
   }),
 
   actions: {
@@ -304,6 +326,27 @@ export const useSettingsStore = defineStore('settings', {
     },
 
     /**
+     * 设置左侧导航分组顺序（持久化，下次进入自动恢复）
+     * @param order 编排后的分组 id 数组
+     */
+    setMenuGroupOrder(order: string[]): void {
+      this.menuGroupOrder = [...order];
+    },
+
+    /**
+     * 切换左侧导航分组的折叠状态（点组头收起 / 展开；持久化）
+     * @param groupId 分组 id
+     */
+    toggleMenuGroupCollapsed(groupId: string): void {
+      const index = this.collapsedMenuGroups.indexOf(groupId);
+      if (index >= 0) {
+        this.collapsedMenuGroups.splice(index, 1);
+      } else {
+        this.collapsedMenuGroups.push(groupId);
+      }
+    },
+
+    /**
      * 设置左侧导航隐藏页集合（编排弹窗的显隐开关；持久化）
      * @param paths 被隐藏的页面 path 数组
      */
@@ -311,9 +354,11 @@ export const useSettingsStore = defineStore('settings', {
       this.hiddenMenus = [...paths];
     },
 
-    /** 重置左侧导航：顺序恢复默认、全部页面重新显示 */
+    /** 重置左侧导航：顺序恢复默认（含分组顺序）、全部页面重新显示、全部分组展开 */
     resetMenuOrder(): void {
       this.menuOrder = [...MENU_DEFAULT_ORDER];
+      this.menuGroupOrder = [...SIDEBAR_MENU_GROUP_DEFAULT_ORDER];
+      this.collapsedMenuGroups = [];
       this.hiddenMenus = [];
     },
 
@@ -361,6 +406,22 @@ export const useSettingsStore = defineStore('settings', {
      */
     setBoardDetailRange(range: BoardDetailRange): void {
       this.boardDetailRange = range;
+    },
+
+    /**
+     * 设置板块得分 · 自定义权重（题材轮动权重管理器保存入口；持久化）
+     * @param weights 用户输入的权重（入库前归一化：缺键补默认、越界收敛到 [-10, 10]）
+     */
+    setBoardScoreWeights(weights: BoardScoreWeights): void {
+      this.boardScoreWeights = normalizeBoardScoreWeights(weights);
+    },
+
+    /**
+     * 设置题材轮动 · 上榜最低得分率（控制行「设置」弹窗保存入口；持久化）
+     * @param value 用户输入值（入库前归一化：非数值回落默认、越界钳位到 [-10, 10]）
+     */
+    setRotationMinScoreRate(value: number): void {
+      this.rotationMinScoreRate = normalizeRotationMinScoreRate(value);
     },
 
     /**
@@ -428,6 +489,14 @@ export const useSettingsStore = defineStore('settings', {
   completeSetup(): void {
     this.setupCompleted = true;
   },
+
+  /**
+   * 设置更新检查代理地址
+   * @param url 代理地址（如 http://127.0.0.1:7890；空串 = 直连不走代理）
+   */
+  setUpdateProxyUrl(url: string): void {
+    this.updateProxyUrl = url.trim();
+  },
 },
 
   persist: {
@@ -450,6 +519,24 @@ export const useSettingsStore = defineStore('settings', {
       }
       // 玻璃透明度坏数据回落：非法值会让 rgba() alpha 失效、玻璃变实心
       context.store.glassOpacity = normalizeGlassOpacity(context.store.glassOpacity);
+      // 新版本新增的内置分组（如 2026-10-20「期货」）补插回规范位次：
+      // 老用户存档的 menuGroupOrder 里没有它，groupSidebarMenu 会把
+      // 未知组追加到「插件」组后面，违反默认信息架构
+      context.store.menuGroupOrder = mergeMenuGroupOrder(
+        context.store.menuGroupOrder,
+        SIDEBAR_MENU_GROUP_DEFAULT_ORDER,
+      );
+      // 板块得分权重坏数据兜底：缺键 / 非数值 / 越界一律归一化（非法值会让得分失真）
+      context.store.boardScoreWeights = normalizeBoardScoreWeights(context.store.boardScoreWeights);
+      // 题材轮动上榜门槛坏数据兜底：非数值 / 越界归一化（非法值会让 bump 图候选过滤失真）
+      context.store.rotationMinScoreRate = normalizeRotationMinScoreRate(
+        context.store.rotationMinScoreRate,
+      );
+      // 板块日历展示范围缩编（10/20/60/180 → 15/30/全部，2026-10-17）：
+      // 旧持久化值不在新值集合时回落默认，否则 BaseTabs 无选中态、范围文案为空
+      if (!Object.values(BOARD_CALENDAR_RANGE).includes(context.store.boardCalendarRange)) {
+        context.store.boardCalendarRange = BOARD_CALENDAR_RANGE_DEFAULT;
+      }
     },
   },
 });

@@ -20,6 +20,7 @@ import {
   type TradeMark,
 } from '../../../common/utils/trade-marks';
 import { CHART_PERIOD_OPTIONS } from '../../../common/constants/stock-detail.constants.ts';
+import { DOCK_LAYOUT_CANVAS_PADDING } from '../../../common/constants/dock-panel.constants.ts';
 import { usePolling } from '../../../common/composables/use-polling';
 import { useChartPeriod } from '../../../common/composables/use-chart-period';
 import { POLLING_INTERVAL } from '../../../common/constants/polling.constants.ts';
@@ -272,10 +273,12 @@ watch(chartPeriod, () => {
 /**
  * dock-panel 拖拽：把当前鼠标 X 换算为「面板右缘到视口右缘」的宽度
  * 写入 store（store 内 clamp 到 375 ~ 60vw 并持久化）
+ *
+ * Islands 布局（2026-10-22）后面板右缘距视口右缘有一份画布留白，换算须扣除
  * @param clientX
  */
 const onDockResize = (clientX: number): void => {
-  dockPanel.setWidth(window.innerWidth - clientX);
+  dockPanel.setWidth(window.innerWidth - clientX - DOCK_LAYOUT_CANVAS_PADDING);
 };
 
 /** 拖拽结束信号（自增 tick，驱动 K 线图强制重绘适配最终宽度） */

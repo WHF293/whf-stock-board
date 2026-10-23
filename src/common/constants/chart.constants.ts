@@ -44,3 +44,20 @@ export const CANDLE_Y_AXIS_TICK_COUNT = 4;
 
 /** 分时图价格线固定颜色（淡雅蓝，不随涨跌配色主题变化） */
 export const MINUTE_LINE_COLOR = '#4f83cc';
+
+/* ---- 趋势折线固定配色（2026-10-13 王总：成交额 / 主力净流入两图曲线不随主题变化） ----
+ * 亮暗主题共用一档（Tailwind 500 系，两种底色下均可读）；
+ * 消费方：PC TurnoverTrendChart / MarketFundFlowTrendChart，
+ * 移动端 MobileHome 成交额 SVG 三线 / MobileFundFlow 主力净流入折线 */
+
+/** 固定曲线色 · 蓝（两市总成交额 / 主力净流入主线） */
+export const CHART_LINE_BLUE = '#3b82f6';
+
+/** 固定曲线色 · 绿（上证成交额） */
+export const CHART_LINE_GREEN = '#22c55e';
+
+/** 固定曲线色 · 紫（深证成交额） */
+export const CHART_LINE_PURPLE = '#a855f7';
+
+/** 固定曲线色：青绿（主题色系，不随主题色变化；市场宽度 ARMS 曲线） */
+export const CHART_LINE_TEAL = '#0e9488';

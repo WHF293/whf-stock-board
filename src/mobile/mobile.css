@@ -51,19 +51,19 @@
 }
 
 .dark {
-  /* 王总 2026-10-10 指定：移动端暗色统一灰底 #21282e——页面背景同色，
-     卡片面抬一档 #262e35（v3 清新版），靠 --color-border 细线分层 */
-  --color-surface: #262e35;
-  --m-page-bg: #21282e;
+  /* 王总 2026-10-20 指定：移动端暗色对齐 PC 黑灰——页面底 #09090b、
+     卡片面抬一档 #15161a（与 theme.css 的 .dark 覆盖同值），靠 --color-border 细线分层 */
+  --color-surface: #15161a;
+  --m-page-bg: #09090b;
   --color-border: rgba(255, 255, 255, 0.07);
   --m-card-shadow: none;
-  --glass-light: rgba(38, 44, 53, 0.55);
+  --glass-light: rgba(21, 22, 26, 0.55);
   --glass-light-strong: rgba(255, 255, 255, 0.14);
   --glass-border: rgba(255, 255, 255, 0.09);
   --glass-highlight: rgba(255, 255, 255, 0.1);
   --glass-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-  /* 金刚区 tile 底（暗档）：卡面 #262e35 再抬一档的浅灰 */
-  --m-king-ic-bg: #313943;
+  /* 金刚区 tile 底（暗档）：卡面 #15161a 再抬一档的中性灰（同 PC --color-flat-weak） */
+  --m-king-ic-bg: #212226;
 }
 
 html,
@@ -149,7 +149,9 @@ body {
   bottom: calc(10px + env(safe-area-inset-bottom, 0px));
   z-index: 100;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  /* 5 等分 = 五主 Tab（2026-10-20，与 constants.ts MOBILE_TAB_ITEMS.length 同步；
+     指示胶囊宽度 .m-tabbar__thumb 的 /5 需一并改） */
+  grid-template-columns: repeat(5, 1fr);
   padding: 6px;
   border-radius: 999px;
   /* 玻璃质感只在 TabBar 局部加浓（王总 2026-10-10：白天模式几乎看不出玻璃）——
@@ -181,9 +183,9 @@ body {
   will-change: transform;
 }
 .dark .m-tabbar {
-  /* 暗色玻璃同样加浓：抬亮的深灰玻璃（禁止深黑）、透明度更高，透白高光更明显 */
-  --glass-light: rgba(52, 60, 70, 0.42);
-  --glass-light-strong: rgba(62, 71, 82, 0.8);
+  /* 暗色玻璃同样加浓：抬亮的中性深灰玻璃（禁止深黑）、透明度更高，透白高光更明显 */
+  --glass-light: rgba(40, 41, 46, 0.42);
+  --glass-light-strong: rgba(52, 53, 60, 0.8);
   --glass-border: rgba(255, 255, 255, 0.14);
   --glass-highlight: rgba(255, 255, 255, 0.22);
   --glass-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
@@ -203,8 +205,8 @@ body {
   backdrop-filter: var(--liquid-glass-filter) blur(6px) saturate(1.3);
 }
 .dark .m-tabbar--liquid {
-  --glass-light: rgba(52, 60, 70, 0.26);
-  --glass-light-strong: rgba(62, 71, 82, 0.78);
+  --glass-light: rgba(40, 41, 46, 0.26);
+  --glass-light-strong: rgba(52, 53, 60, 0.78);
 }
 .m-tabbar__item {
   position: relative;
@@ -238,7 +240,8 @@ body {
   bottom: 6px;
   left: 6px;
   z-index: 0;
-  width: calc((100% - 12px) / 4);
+  /* 槽位宽 = (100% - 左右 6px padding × 2) / 5（五主 Tab，与 .m-tabbar 的列数同步） */
+  width: calc((100% - 12px) / 5);
   border-radius: 999px;
   background: var(--glass-light-strong);
   box-shadow:
@@ -311,14 +314,7 @@ body {
   padding: 2px;
 }
 .m-nav-switch .m-nav-switch__flip { transform: rotate(180deg); }
-/* 首页 navbar 左侧 app logo（「我的」页入口；TabBar 移除我的后 2026-10-12） */
-.m-nav-app-logo {
-  display: block;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  cursor: pointer;
-}
+/* 首页 navbar 左侧 app logo 样式已随 logo 移除（2026-10-20，「我的」回归 TabBar 后冗余） */
 
 /* chips 横滚区（一级源 / 二级子栏目 / 平台 / 分组共用）；v3 起透明底浮于页面底色 */
 .m-chips {
@@ -540,6 +536,15 @@ body {
   background: var(--color-surface);
 }
 
+/* 选择器式 Tabs（二级页顶部分组切换：个股行情 / 行情全景 / 盘面雷达 / 板块日历）：
+   空 van-tab 只当分段选择器，内容面板不在此组件内——不吃主 Tab 版的 flex:1，
+   自身固定高度，内容滚动仍由下方 .m-sub-scroll 承担 */
+.m-page-flex .m-tabs--selector {
+  flex: none;
+  min-height: 0;
+}
+.m-tabs--selector .van-tabs__content { display: none; }
+
 /* 分段选择（轮询间隔等四档选项） */
 .m-seg { display: flex; background: var(--m-page-bg); border-radius: 8px; padding: 2px; }
 .m-seg__opt {
@@ -678,18 +683,27 @@ body {
 .m-sheet-row__name { flex: 1; min-width: 0; font-size: 13.5px; font-weight: 600; }
 .m-sheet-row__name span { font-size: 10.5px; color: var(--color-text-3); font-weight: 500; margin-left: 6px; }
 .m-sheet-row__name--off { color: var(--color-text-3); }
-.m-order-btn {
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: 8px;
-  background: var(--color-border);
-  color: var(--color-text);
-  font-size: 13px;
-  font-weight: 800;
-  cursor: pointer;
+/* 设置弹层行拖拽手柄（vue-draggable-plus，handle 限定；PC HotNewsSourceModal 同款约定：
+   force-fallback 必须——Tauri/Android WebView 下原生 HTML5 DnD 不触发 drop） */
+.m-drag-handle {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 4px 2px;
+  color: var(--color-text-3);
+  cursor: grab;
+  touch-action: none;
 }
-.m-order-btn:disabled { opacity: 0.4; cursor: default; }
+.m-drag-handle:active { cursor: grabbing; }
+/* 拖拽跟随元素（force-fallback 克隆体挂 body，fallback-class 只能传单个 class 名） */
+.sortable-fallback {
+  opacity: 0.95 !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  background: var(--color-surface);
+  border-radius: 8px;
+}
+.m-drag-ghost { opacity: 0.4; }
+.m-drag-chosen { background: var(--color-flat-weak, rgba(127, 127, 127, 0.12)); border-radius: 8px; }
 
 /* 通用辅助 */
 .m-empty { padding: 36px 16px; text-align: center; color: var(--color-text-3); font-size: 12.5px; background: var(--color-surface); }
@@ -705,6 +719,8 @@ body {
 .m-error__retry {
   margin-top: 10px;
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 30px;
   padding: 0 14px;
   border: none;
@@ -715,6 +731,8 @@ body {
   font-weight: 700;
   cursor: pointer;
 }
+/* 错误态占位图（warning 图标，置于文案上方） */
+.m-error .van-icon { display: block; margin: 0 auto 8px; font-size: 26px; opacity: 0.5; }
 .m-footer { padding: 12px 0 14px; text-align: center; font-size: 11.5px; color: var(--color-text-3); background: transparent; }
 .m-load-sentinel { height: 1px; }
 .m-foot-note { padding: 14px 24px 4px; text-align: center; font-size: 10.5px; color: var(--color-text-3); line-height: 1.7; }
@@ -851,7 +869,9 @@ body {
   padding: 16px 8px 14px;
   background: var(--color-surface);
   border-radius: 12px;
-  margin: 10px 12px 0;
+  /* 底距 10px（2026-10-20）：原间距由首页书本翻页容器提供，容器拆除后
+     改由金刚区自带，与 .m-home-panel / .m-card 的 10px 下距同节奏 */
+  margin: 10px 12px 10px;
   box-shadow: var(--m-card-shadow);
 }
 .m-home-king__item { display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer; }
@@ -909,9 +929,11 @@ body {
   position: absolute; width: 7px; height: 7px; border-radius: 50%;
   transform: translate(-50%, -50%); border: 1.5px solid #fff; pointer-events: none;
 }
-.m-home-dot.total { background: var(--color-primary); }
-.m-home-dot.sh { background: #f97316; }
-.m-home-dot.sz { background: #22d3ee; }
+/* 成交额曲线数据点：固定配色 蓝/绿/紫（与 common/constants/chart.constants.ts
+   CHART_LINE_BLUE/GREEN/PURPLE 同源，2026-10-13 王总：曲线不随主题变化） */
+.m-home-dot.total { background: #3b82f6; }
+.m-home-dot.sh { background: #22c55e; }
+.m-home-dot.sz { background: #a855f7; }
 /* 逐日常驻数据点（王总 2026-10-12：成交额曲线每天画点，与 PC showSymbol 同口径；
    小号无边，避免 60 日窗口下密集糊线；crosshair 悬停点仍用 7px 白边大点覆盖强调） */
 .m-home-dot--sm {
@@ -950,6 +972,22 @@ body {
 }
 .m-home-dist__labels span { flex: 1; text-align: center; }
 
+/* ARMS 分时（涨跌分布合并卡内新增区块：现值 + 状态 pill + 自绘 sparkline） */
+.m-home-arms { margin: 10px 16px 0; padding-top: 10px; border-top: 1px dashed var(--color-border); }
+.m-home-arms-head { display: flex; align-items: center; gap: 8px; }
+.m-home-arms-head .t { font-size: 11.5px; font-weight: 700; color: var(--color-text-2); }
+.m-home-arms-head .v { font-family: var(--font-num); font-size: 17px; font-weight: 800; }
+.m-home-arms-head .pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 1.5px 8px; border-radius: 999px; font-size: 10px; font-weight: 800;
+}
+.m-home-arms-head .pill::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentcolor; }
+.m-home-arms-head .pill--up { color: var(--color-up-strong); background: var(--color-up-weak); }
+.m-home-arms-head .pill--down { color: var(--color-down-strong); background: var(--color-down-weak); }
+.m-home-arms-head .pill--flat { color: var(--color-text-2); background: var(--color-flat-weak); }
+.m-home-arms-head .hint { margin-left: auto; font-size: 9.5px; color: var(--color-text-3); }
+.m-home-arms .m-arms-svg { margin-top: 5px; }
+
 /* 市场情绪：图下小字提示行 + 连板梯队药丸 */
 .m-home-senti-line {
   display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px;
@@ -987,6 +1025,22 @@ body {
   background: var(--color-primary-soft); color: var(--color-primary);
   font-size: 11px; font-weight: 700; cursor: pointer;
 }
+/* 指数条失败态：保留指数名占位（数值 --/--% 弱化显示），不整块报错（王总 2026-10-13） */
+.m-home-index--err .m-home-index__px,
+.m-home-index--err .m-home-index__pct { color: var(--color-text-3); }
+/* 指数条失败提示行：异常占位图 + 文案 + 重试（整体居中） */
+.m-home-err-strip {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 6px 0 2px; font-size: 11px; color: var(--color-text-3);
+}
+.m-home-err-strip .van-icon { font-size: 14px; opacity: 0.7; }
+/* 通用小重试按钮：显式双轴居中（原 inline-flex 缺对齐，文字偏移——王总 2026-10-13） */
+.m-err-retry {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 24px; padding: 0 12px; border: none; border-radius: 12px;
+  background: var(--color-primary-soft); color: var(--color-primary);
+  font-size: 11px; font-weight: 700; cursor: pointer;
+}
 
 /* 首页滚动宿主：面板内部原生滚动 + 底部让位（无 Tabs 结构的简化版 m-page-flex） */
 .m-home-scroll { flex: 1; overflow-y: auto; overscroll-behavior: contain; }
@@ -1003,7 +1057,7 @@ body {
 .m-sub-scroll > * { flex-shrink: 0; }
 /* van-pull-refresh 必须「自然高度」：拉伸（flex:1）会让 vant track 自带的 overflow:hidden
    把列表裁在视口高里，外层 .m-sub-scroll 拿不到滚动量 → 整页滚不动（v4.2.1 修复：
-   行情全景 / 市场榜单不可下滑即此因）。内容不足一屏的下拉手势不受影响（手势监听不依赖高度） */
+   行情全景 / 盘面雷达不可下滑即此因）。内容不足一屏的下拉手势不受影响（手势监听不依赖高度） */
 .m-sub-scroll .van-pull-refresh { flex: 0 0 auto; display: flex; flex-direction: column; }
 .m-sub-scroll .van-pull-refresh__track { flex: 0 0 auto; display: flex; flex-direction: column; }
 .m-sub-scroll .van-pull-refresh__track > * { flex-shrink: 0; width: auto; }
@@ -1390,4 +1444,32 @@ body {
 .page-anim-forward,
 .page-anim-back {
   animation-duration: 0.4s;
+}
+
+/* ============================================================
+   详情底部页签扩展（2026-10-17：财务 / 基金概况 / 资讯 对齐 PC 口径）
+   ============================================================ */
+/* 键值行（基金概况 / 财务指标共用）：左键右值，值右对齐允许换行 */
+.m-kv {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 9px 16px;
+  font-size: 12.5px;
+}
+.m-kv + .m-kv { border-top: 1px solid var(--color-border); }
+.m-kv__k { flex-shrink: 0; font-weight: 600; color: var(--color-text-2); }
+.m-kv__v {
+  min-width: 0;
+  text-align: right;
+  font-weight: 700;
+  font-family: var(--font-num);
+  word-break: break-all;
+}
+/* 可点击行（公告 / 新闻）：链接语义重置为行外观，:active 反馈沿用 .m-row */
+a.m-row--link {
+  width: 100%;
+  color: inherit;
+  text-decoration: none;
 }

@@ -8,6 +8,10 @@ import type { FullQuote } from '../../../common/types/stock-quote.types.ts';
  * 五档盘口：每档一行「档位 / 价格 / 手数」；
  * 颜色跟随系统涨跌主题色：买盘整列用涨色，卖盘整列用跌色（不按档位价格相对昨收 individually 着色）
  *
+ * 深度底色（2026-10-22 王总指定）：每档行底加一条渐变色带，宽度按本档手数
+ * 占本侧五档最大手数的比例——手数越大色带越宽，盘口厚度一眼可读；
+ * 色带用 up-weak / down-weak token 渐变到透明，暗色模式与涨跌配色主题自动跟随
+ *
  * 布局两种（默认左右分栏，买盘在左 / 卖盘在右）：
  * - horizontal（默认）：grid 两列，左买右卖；
  * - vertical（详情页右栏收起态）：上下堆叠，买盘在上 / 卖盘在下，窄栏可读
@@ -23,6 +27,25 @@ const props = defineProps<{
 const bidLevels = computed(() => props.quote?.bid ?? []);
 /** 卖盘（卖一 -> 卖五） */
 const askLevels = computed(() => props.quote?.ask ?? []);
+
+/** 买侧五档最大手数（深度色带宽度的分母；空盘口为 0 防除零） */
+const bidMaxVolume = computed(() => Math.max(0, ...bidLevels.value.map((level) => Number(level.volume))));
+/** 卖侧五档最大手数 */
+const askMaxVolume = computed(() => Math.max(0, ...askLevels.value.map((level) => Number(level.volume))));
+
+/**
+ * 档位深度色带内联样式（宽度 = 本档手数 / 本侧最大手数）
+ * @param volume 本档手数
+ * @param maxVolume 本侧五档最大手数
+ * @returns 背景渐变样式（maxVolume 为 0 时返回空对象不渲染色带）
+ */
+const depthStyle = (volume: number | string, maxVolume: number): Record<string, string> => {
+  if (maxVolume <= 0) {
+    return {};
+  }
+  const ratio = Math.min(1, Math.max(0, Number(volume) / maxVolume));
+  return { width: `${(ratio * 100).toFixed(1)}%` };
+};
 </script>
 
 <template>
@@ -36,7 +59,7 @@ const askLevels = computed(() => props.quote?.ask ?? []);
     class="text-xs tabular-nums"
     :class="vertical ? 'flex flex-col gap-3' : 'grid grid-cols-2 gap-x-4'"
   >
-    <!-- 买盘（买一 在上 / 买五 在下）：整列涨色 -->
+    <!-- 买盘（买一 在上 / 买五 在下）：整列涨色 + 深度渐变底 -->
     <div>
       <div class="mb-1 text-center text-xs font-medium text-up">买盘</div>
       <div class="grid grid-cols-[1fr_1.2fr_1fr] items-center border-b border-flat-weak py-1 text-text-tertiary">
@@ -47,14 +70,20 @@ const askLevels = computed(() => props.quote?.ask ?? []);
       <div
         v-for="(level, index) in bidLevels"
         :key="`b${level.price}`"
-        class="grid grid-cols-[1fr_1.2fr_1fr] items-center border-b border-flat-weak/50 py-1.5"
+        class="relative grid grid-cols-[1fr_1.2fr_1fr] items-center overflow-hidden border-b border-flat-weak/50 py-1.5"
       >
-        <span class="text-up">买{{ index + 1 }}</span>
-        <span class="text-center text-up">{{ formatPrice(level.price) }}</span>
-        <span class="text-right text-up/80">{{ level.volume }}</span>
+        <!-- 深度色带：绝对定位铺在行底，文字加 relative 保证盖在色带上 -->
+        <span
+          class="absolute inset-y-0 left-0"
+          style="background: linear-gradient(to right, var(--color-up-weak) 0%, transparent 88%)"
+          :style="depthStyle(level.volume, bidMaxVolume)"
+        ></span>
+        <span class="relative text-up">买{{ index + 1 }}</span>
+        <span class="relative text-center text-up">{{ formatPrice(level.price) }}</span>
+        <span class="relative text-right text-up/80">{{ level.volume }}</span>
       </div>
     </div>
-    <!-- 卖盘（卖一 在上 / 卖五 在下）：整列跌色 -->
+    <!-- 卖盘（卖一 在上 / 卖五 在下）：整列跌色 + 深度渐变底 -->
     <div>
       <div class="mb-1 text-center text-xs font-medium text-down">卖盘</div>
       <div class="grid grid-cols-[1fr_1.2fr_1fr] items-center border-b border-flat-weak py-1 text-text-tertiary">
@@ -65,11 +94,16 @@ const askLevels = computed(() => props.quote?.ask ?? []);
       <div
         v-for="(level, index) in askLevels"
         :key="`a${level.price}`"
-        class="grid grid-cols-[1fr_1.2fr_1fr] items-center border-b border-flat-weak/50 py-1.5"
+        class="relative grid grid-cols-[1fr_1.2fr_1fr] items-center overflow-hidden border-b border-flat-weak/50 py-1.5"
       >
-        <span class="text-down">卖{{ index + 1 }}</span>
-        <span class="text-center text-down">{{ formatPrice(level.price) }}</span>
-        <span class="text-right text-down/80">{{ level.volume }}</span>
+        <span
+          class="absolute inset-y-0 left-0"
+          style="background: linear-gradient(to right, var(--color-down-weak) 0%, transparent 88%)"
+          :style="depthStyle(level.volume, askMaxVolume)"
+        ></span>
+        <span class="relative text-down">卖{{ index + 1 }}</span>
+        <span class="relative text-center text-down">{{ formatPrice(level.price) }}</span>
+        <span class="relative text-right text-down/80">{{ level.volume }}</span>
       </div>
     </div>
   </div>

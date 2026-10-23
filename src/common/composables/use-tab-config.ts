@@ -5,6 +5,10 @@ import { useTabConfigStore } from '../stores/tab-config';
 export interface TabOption<T extends string> {
   label: string;
   value: T;
+  /** 分组首项标记：true 时在其前渲染组间分隔与组名标签（index 0 无分隔线） */
+  groupStart?: boolean;
+  /** 分组名（groupStart 为 true 时展示；页签条 chip 与「页签配置」弹窗分组标题共用） */
+  groupName?: string;
 }
 
 /**

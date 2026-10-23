@@ -673,6 +673,59 @@ CREATE TABLE IF NOT EXISTS kline_cache_meta (
 );
 ";
 
+/// stock-board.db v8：K 线画线工具持久化（kline_drawings）
+///
+/// 一行一票一周期：全部形状序列化进 `data_json`（klinecharts overlay points，
+/// 锚点存时间戳 + 价格，不存 K 线索引——增量补尾后索引会错位，见开发方案），
+/// 写入走防抖整行 upsert，删除/清空立即写
+const STOCK_BOARD_DB_V8: &str = "
+CREATE TABLE IF NOT EXISTS kline_drawings (
+  symbol     TEXT NOT NULL,
+  period     TEXT NOT NULL,
+  data_json  TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (symbol, period)
+);
+";
+
+/// stock-board.db v9：期货机构行为（中金所 CCPM）披露数据缓存（ccpm_day_cache）
+///
+/// 上游每日一品种一个静态 CSV（GBK），前端解析归并后整包 JSON 落库：
+/// 应用重启 / 回看历史披露日不再回源拉取。缓存语义（勿改）：
+/// - 披露数据收盘后定稿，正缓存（has_data=1）**永久有效**（交易所极罕见修正
+///   靠页面「刷新」按钮强制回源兜底）；
+/// - 负缓存（has_data=0，非披露日 / 尚未披露 / 探测落空）带 fetched_at，
+///   由前端读取侧按 TTL 过期（当天盘后披露时点前后都会探测同一天）；
+/// - 一行 = 一品种一交易日，data_json 为 CcpmProductDayData | null 的 JSON。
+const STOCK_BOARD_DB_V9: &str = "
+CREATE TABLE IF NOT EXISTS ccpm_day_cache (
+  product     TEXT    NOT NULL,
+  trading_day TEXT    NOT NULL,
+  has_data    INTEGER NOT NULL DEFAULT 1,
+  data_json   TEXT,
+  fetched_at  INTEGER NOT NULL,
+  PRIMARY KEY (product, trading_day)
+);
+";
+
+/// stock-board.db v10：board_daily 得分分桶列（题材轮动权重管理器，王总 2026-10-22）
+///
+/// 六桶互斥：bucket_limit_up（涨停，池口径）/ bucket_gt5（涨幅>5%，非涨停）/
+/// bucket_up_05（涨幅 0~5%）/ bucket_down_05（跌幅 0~5%，含 -5.00% 整点）/
+/// bucket_lt_5（跌幅<-5%，非跌停）/ bucket_limit_down（跌停，池口径）。
+/// 可空（NULL = 无分桶数据：旧版本行 / 回补日 / 盘中未覆盖板块），
+/// 全 NULL 时前端读取侧回退 score 列的净额口径得分；score / score_rate 一律按净额口径
+/// （BOARD_SCORE_WEIGHT，5/-5）落库作为固定基准，前端展示得分由分桶 × 用户权重现算
+/// （默认强桶 ±7 与净额口径不恒等），不回写这两列。
+const STOCK_BOARD_DB_V10: &str = "
+ALTER TABLE board_daily ADD COLUMN bucket_limit_up   REAL;
+ALTER TABLE board_daily ADD COLUMN bucket_gt5        REAL;
+ALTER TABLE board_daily ADD COLUMN bucket_up_05      REAL;
+ALTER TABLE board_daily ADD COLUMN bucket_down_05    REAL;
+ALTER TABLE board_daily ADD COLUMN bucket_lt_5       REAL;
+ALTER TABLE board_daily ADD COLUMN bucket_limit_down REAL;
+";
+
 /// weblog.db v1：系统日志（报错日志 + 行为日志）
 ///
 /// 独立成库的理由：日志是高频写入 + 按保留期整段删除的「滚动数据」，
@@ -791,8 +844,66 @@ fn stock_board_db_migrations() -> Vec<Migration> {
       sql: STOCK_BOARD_DB_V7,
       kind: MigrationKind::Up,
     },
+    Migration {
+      version: 8,
+      description: "create_kline_drawings",
+      sql: STOCK_BOARD_DB_V8,
+      kind: MigrationKind::Up,
+    },
+    Migration {
+      version: 9,
+      description: "create_ccpm_day_cache",
+      sql: STOCK_BOARD_DB_V9,
+      kind: MigrationKind::Up,
+    },
+    Migration {
+      version: 10,
+      description: "add_board_daily_score_buckets",
+      sql: STOCK_BOARD_DB_V10,
+      kind: MigrationKind::Up,
+    },
   ]
 }
+
+/// 大盘云图（dapanyuntu.com）iframe 主题跟随注入脚本
+///
+/// 经 `initialization_script_for_all_frames` 注入：会在主窗口**所有 frame**
+/// （含跨域 iframe）的每个 document 创建时、页面自身脚本执行前运行，
+/// 因此用 hostname 门控，只在第三方云图页面内生效。
+///
+/// 第三方主题机制（2026-10-13 抓取原站 HTML 查证）：Tailwind class 模式——
+/// `<html class="dark">` + `style.colorScheme`，持久化键为
+/// `localStorage["heatmap-display-mode"]`（无值或非 "light" 一律暗色）。
+///
+/// 同步协议（宿主 HeatmapView.vue 经 postMessage 发起，与 `heatmap.constants.ts`
+/// 的 `HEATMAP_THEME_MESSAGE_SOURCE` 约定一致，两端改动必须同步）：
+/// - iframe → 宿主 `{ source, type: 'heatmap-theme-ready' }`：脚本就绪，宿主收到即回发当前主题
+///   （早于 iframe load 完成首次同步，减少明暗闪烁）；
+/// - 宿主 → iframe `{ source, type: 'heatmap-theme', dark: boolean }`：应用主题并写入
+///   localStorage，使原站自身 theme-init / 后续导航读到与宿主一致的值。
+///
+/// 纯浏览器 dev / 移动端不注入（无此机制），宿主侧 postMessage 无接收方、静默失效。
+const HEATMAP_THEME_INIT_SCRIPT: &str = r#"
+(function () {
+  if (!/(^|\.)dapanyuntu\.com$/.test(location.hostname)) return;
+  var SITE_SOURCE = 'whf-stock-board';
+  var applyTheme = function (isDark) {
+    document.documentElement.classList.toggle('dark', isDark);
+    document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
+    try {
+      localStorage.setItem('heatmap-display-mode', isDark ? 'dark' : 'light');
+    } catch (e) { /* 隐私模式等场景写不进则仅本次会话生效 */ }
+  };
+  window.addEventListener('message', function (event) {
+    var data = event.data;
+    if (!data || data.source !== SITE_SOURCE || data.type !== 'heatmap-theme') return;
+    applyTheme(!!data.dark);
+  });
+  try {
+    window.parent.postMessage({ source: SITE_SOURCE, type: 'heatmap-theme-ready' }, '*');
+  } catch (e) { /* 顶层 frame 场景不存在，防御性忽略 */ }
+})();
+"#;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -843,12 +954,24 @@ pub fn run() {
             .build(),
         )?;
       }
+      // 主窗口改为 Rust 侧构建（tauri.conf.json 声明 create:false）：只有构建期
+      // 才能挂 initialization_script_for_all_frames——这是跨域 iframe（大盘云图页）
+      // 内执行脚本的唯一通道，用于把宿主明暗主题同步给第三方站点。
+      // 窗口几何 / 装饰等仍以 tauri.conf.json 为唯一事实源（from_config 原样取用）。
+      let window_config = app
+        .config()
+        .app
+        .windows
+        .first()
+        .cloned()
+        .expect("tauri.conf.json 缺少主窗口配置");
+      let main_window = tauri::WebviewWindowBuilder::from_config(app.handle(), &window_config)?
+        .initialization_script_for_all_frames(HEATMAP_THEME_INIT_SCRIPT)
+        .build()?;
       // 无边框主窗口补系统命令支持：decorations:false 后触控板三指手势投递的
       // WM_SYSCOMMAND（最大化 / 最小化）无人处理，见 window_syscmd.rs。
       // Agent 窗口是原生边框，系统自带处理，无需启用。
-      if let Some(main_window) = app.get_webview_window("main") {
-        window_syscmd::enable(&main_window);
-      }
+      window_syscmd::enable(&main_window);
       // 系统托盘：左键唤起主窗口，右键菜单「显示主窗口 / 退出」（桌面专属）
       #[cfg(desktop)]
       build_tray(app)?;
