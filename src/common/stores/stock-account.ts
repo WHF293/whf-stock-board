@@ -16,8 +16,8 @@ interface StockAccountState {
 /**
  * 股票账户 store（localStorage 持久化）
  *
- * 账户档案纯前端维护；对账单导入记录落 SQLite（api/account-statement-db.api.ts）；
- * 交割单解析入库字段定稿后，成交记录一并迁移 SQLite（tauri-plugin-sql）
+ * 账户档案纯前端维护；成交流水存 SQLite（api/account-records-db.api.ts），
+ * 现为历史手工导入存量（只读展示），后续由投资账本官方 MCP 同步接管
  */
 export const useStockAccountStore = defineStore('stock-account', {
   state: (): StockAccountState => ({

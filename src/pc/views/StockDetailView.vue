@@ -193,8 +193,8 @@ const loadKline = async (): Promise<void> => {
   }
 };
 
-// ---------- 交易记录（本地交割单 / 对账单库，按股票） ----------
-/** 该股成交记录（跨账户；来源为账户管理导入的同花顺文件） */
+// ---------- 交易记录（本地成交流水库，按股票） ----------
+/** 该股成交记录（跨账户；来源为账户成交流水本机库） */
 const tradeRecords = ref<AccountTradeRecord[]>([]);
 /** 成交记录加载中 */
 const isTradeRecordsLoading = ref(false);
@@ -744,7 +744,7 @@ const pctClass = (value: number | null): string =>
             </option>
           </select>
           <span v-if="bottomTab === 'trade'" class="text-xs text-text-tertiary">
-            来源：账户管理导入的同花顺交割单 / 对账单
+            来源：账户成交流水（本机数据库）
           </span>
         </div>
       </div>
@@ -754,7 +754,7 @@ const pctClass = (value: number | null): string =>
         <BaseSkeleton v-if="isTradeRecordsLoading" />
         <BaseEmpty
           v-else-if="visibleTradeRecords.length === 0"
-          text="暂无该股成交记录：在「账户管理」导入同花顺交割单后即可在此查看"
+          text="暂无该股成交记录"
         />
         <div v-else class="min-h-0 flex-1 overflow-y-auto">
           <div

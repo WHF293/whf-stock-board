@@ -2,7 +2,7 @@
  * 股票账户类型
  */
 
-/** 股票账户（UI 阶段：仅账户档案；持仓/成交待交割单字段定稿后入库 SQLite） */
+/** 股票账户（档案由前端维护；成交数据由投资账本 MCP 同步与历史导入存量提供） */
 export interface StockAccount {
   /** 账户唯一 id（uuid） */
   id: string;
@@ -14,43 +14,12 @@ export interface StockAccount {
   createdAt: number;
 }
 
-/** 对账单导入档案（一期落导入档案 + 原文，结构化解析待字段定稿） */
-export interface AccountStatement {
-  /** 唯一 id（uuid） */
-  id: string;
-  /** 所属账户 id */
-  accountId: string;
-  /** 导入文件名 */
-  fileName: string;
-  /** 对账期间起（YYYY-MM-DD，解析待实现时可空） */
-  periodStart?: string | null;
-  /** 对账期间止（YYYY-MM-DD） */
-  periodEnd?: string | null;
-  /** 文件原始文本（先存原文，供后续解析） */
-  rawContent?: string | null;
-  /** 导入时间戳（毫秒） */
-  importedAt: number;
-}
-
-/** 导入类型：trade 交割单 / statement 对账单 */
+/** 数据来源表：trade 交割单 / statement 对账单（历史导入存量，两表同构） */
 export type ImportKind = 'trade' | 'statement';
 
-/** 交割单 / 对账单导入确认载荷 */
-export interface TradeImportPayload {
-  /** 目标账户 id */
-  accountId: string;
-  /** 导入类型 */
-  kind: ImportKind;
-  /** 导入文件（原始 File，供父层解析 GBK TSV） */
-  file: File;
-  /** 导入文件名 */
-  fileName: string;
-  /** 文件大小（字节） */
-  fileSize: number;
-}
-
 /**
- * 成交流水记录（交割单 / 对账单两表同构，字段对齐同花顺导出表头）
+ * 成交流水记录（交割单 / 对账单两表同构，字段对齐同花顺导出表头；
+ * 手工文件导入已下线，现存数据为历史导入存量，后续由投资账本 MCP 同步接管）
  *
  * 数量保留文件原符号：买入为正、卖出为负；发生金额正 = 入金、负 = 出金
  */

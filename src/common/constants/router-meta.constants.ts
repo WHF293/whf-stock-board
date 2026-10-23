@@ -93,12 +93,12 @@ export const MENU_ITEMS: readonly SidebarMenuEntry[] = [
   { path: ROUTE_PATH.HOT_NEWS, title: "热点新闻", icon: MENU_ICON.NEWS, group: SIDEBAR_MENU_GROUP.NEWS },
   // 今天炒什么紧跟热点新闻：同为「盘前 / 盘中扫一眼市场在炒什么」的日常视角
   { path: ROUTE_PATH.WHAT_TO_TRADE, title: "今天炒什么", icon: MENU_ICON.FLAME, group: SIDEBAR_MENU_GROUP.NEWS },
-  // 资金流向（原「板块资金流向」，2026-10-22 王总更名）：原「行情全景-最新板块资金」模块独立成页（2026-10-13），默认排在账户管理前
+  // 资金流向（原「板块资金流向」，2026-10-22 王总更名）：原「行情全景-最新板块资金」模块独立成页（2026-10-13），默认排在账户分析前
   { path: ROUTE_PATH.BOARD_FLOW, title: "资金流向", icon: MENU_ICON.FUNDS, group: SIDEBAR_MENU_GROUP.RANK },
   // 期货·总览：「期货」分组首页（期货市场总览，2026-10-20 新增）；机构行为紧随其后
   { path: ROUTE_PATH.FUTURES_OVERVIEW, title: "期货总览", icon: MENU_ICON.DASHBOARD, group: SIDEBAR_MENU_GROUP.FUTURES },
   { path: ROUTE_PATH.FUTURES_INSTITUTIONAL, title: "机构行为", icon: MENU_ICON.FUTURES, group: SIDEBAR_MENU_GROUP.FUTURES },
-  { path: ROUTE_PATH.STOCK_ACCOUNT, title: "账户管理", icon: MENU_ICON.ACCOUNT, group: SIDEBAR_MENU_GROUP.ACCOUNT },
+  { path: ROUTE_PATH.STOCK_ACCOUNT, title: "账户分析", icon: MENU_ICON.ACCOUNT, group: SIDEBAR_MENU_GROUP.ACCOUNT },
   // 插件工坊：宿主自带的插件自省与管理页，同时是「插件页随插件撤销」的兜底落点
   { path: ROUTE_PATH.PLUGIN_LAB, title: "插件工坊", icon: MENU_ICON.PLUG, fallbackLanding: true, group: SIDEBAR_MENU_GROUP.PLUGIN },
 ];
