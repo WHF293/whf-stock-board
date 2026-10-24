@@ -19,6 +19,7 @@ import DockPanel from "../components/dock/DockPanel.vue";
 import BaseTooltip from "../components/ui/BaseTooltip.vue";
 import MenuIcon from "../components/ui/MenuIcon.vue";
 import NotificationHost from "../components/ui/NotificationHost.vue";
+import TreasuryFab from "../components/business/TreasuryFab.vue";
 import PluginConfirmHost from "../components/plugin/PluginConfirmHost.vue";
 import PluginStockPickerHost from "../components/plugin/PluginStockPickerHost.vue";
 import SidebarPanelHost from "../components/plugin/SidebarPanelHost.vue";
@@ -925,17 +926,17 @@ void marketStatusStore.refresh();
             </BaseButton>
           </div>
         </header>
-        <main class="flex-1 overflow-y-auto">
-          <!-- 内容上限 1600px：报价卡片栅格（quote-card-grid）在上限内按列宽公式排布。
-               页面全屏（详情页铺满）时改为撑满视口高度的 flex 列 + 小留白，
-               详情页据此用 flex-1 拉伸主区（见 StockDetailView 的分模式高度） -->
-          <!-- 顶部留白 = 内容列 gap-2.5（2026-10-22 二次调整：曾按王总要求加 pt-3 加大，
-               后王总反馈所有页面页头岛与内容间隔太大，撤回 pt-3 回落 10px）；
+        <main class="flex-1 overflow-y-auto" :class="pageFullscreen ? '' : 'pb-6'">
+          <!-- pb-6 挂在滚动容器（main）而非内容容器（2026-10-24 双滚动条治理）：
+               内容容器 h-full 定高后，「页面根 h-full 正好填满主区（无双滚动条）」与
+               「长页面（市场总览等）滚动到底仍有底部留白」两者兼得——
+               滚动范围含滚动容器自身的 padding-bottom。页面全屏时不加，保持 p-3 口径。
+               内容上限 1600px：报价卡片栅格（quote-card-grid）在上限内按列宽公式排布；
                横向不留 padding，与页头岛共用 max-w-[1600px] 居中约束（对齐在页头岛类上），
                左右缘严格一致 -->
           <div
-            class="@container w-full"
-            :class="pageFullscreen ? 'pc-page-fs flex h-full min-h-0 flex-col p-3' : 'mx-auto max-w-[1600px] pb-6'"
+            class="@container h-full w-full"
+            :class="pageFullscreen ? 'pc-page-fs flex min-h-0 flex-col p-3' : 'mx-auto max-w-[1600px]'"
           >
             <!-- 页面切换：KeepAlive 缓存页面状态；进入动画由 pageAnim 类名驱动（无离场状态机） -->
             <RouterView v-slot="{ Component, route: routeRecord }">
@@ -988,6 +989,9 @@ void marketStatusStore.refresh();
     <!-- 应用级浮窗（插件经 app:notify 服务发起，跨路由常驻） -->
     <NotificationHost />
 
+    <!-- 大A宝典固钉（右下角全局悬浮入口：icon 常驻、悬停展开字样，点击开口诀弹窗） -->
+    <TreasuryFab />
+
     <!-- 插件确认弹窗（经 app:ui 的 confirm 发起，宿主渲染、答复回到插件的 Promise） -->
     <PluginConfirmHost />
 
@@ -995,6 +999,22 @@ void marketStatusStore.refresh();
     <PluginStockPickerHost />
   </div>
 </template>
+
+<style>
+/* 全局氛围背景（2026-10-24 王总指定「整个界面背景太素」）：整界面叠一层与市场总览
+   指数卡同方向的涨色渐变，但浓度降到 45%（color-mix 掺透明）——王总二次反馈
+   「太深了，红色浅点、和指数卡片区分开」。fixed 钉在视口不随内容滚动；
+   黑金主题的暖金雾按更高特异性在 theme.css 覆盖本条，互不影响。
+   只放 MainLayout：官网 / 移动端 / 小组件窗口不受影响 */
+body {
+  background-image: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--color-up-weak) 45%, transparent),
+    transparent 70%
+  );
+  background-attachment: fixed;
+}
+</style>
 
 <style scoped>
 /* 侧栏分组条目高度过渡：起止高度由 JS 钩子写内联（auto 不可动画），
