@@ -204,7 +204,7 @@ export interface TzzbSyncMeta {
   lastSyncLabel: string;
   /** 数据截止日 yyyy-MM-dd */
   dataDate: string;
-  /** 授权到期文案 */
+  /** 直连通道文案（含最近一次授权时间；上游授权有效期 1 个月，到期需重新授权） */
   authExpireLabel: string;
 }
 
