@@ -28,14 +28,16 @@ const onOpen = (): void => {
 </script>
 
 <template>
+  <!-- 点击/hover 热区与「设置」入口完全同形（px-3 py-2 text-sm gap-3 圆角块，
+       2026-10-24 王总指定：速记等 drawer 面板入口样式对齐设置） -->
   <button
     type="button"
-    class="pressable group relative flex items-center gap-2 rounded-lg py-1 text-xs text-text-secondary hover:bg-flat-weak hover:text-text active:scale-[0.98]"
-    :class="collapsed ? 'justify-center px-1' : 'px-1'"
+    class="pressable group relative flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-text-secondary hover:bg-flat-weak hover:text-text active:scale-[0.98]"
+    :class="collapsed ? 'justify-center px-2' : ''"
     :aria-label="panel.title"
     @click="onOpen"
   >
-    <MenuIcon :name="panel.icon || 'menu'" :size="14" />
+    <MenuIcon :name="panel.icon || 'menu'" :size="16" />
     <span v-if="!collapsed" class="truncate">{{ panel.title }}</span>
     <BaseTooltip v-if="collapsed" :text="panel.title" />
   </button>
