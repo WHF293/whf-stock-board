@@ -261,7 +261,7 @@ const onExportSummary = (): void => {
     />
     <BaseEmpty
       v-else-if="records.length === 0"
-      :text="`暂无${recordKind === 'trade' ? '交割单' : '对账单'}数据：点击上方「导入」按钮上传同花顺导出文件`"
+      :text="`暂无${recordKind === 'trade' ? '交割单' : '对账单'}数据`"
     />
 
     <!-- 全部：明细平铺（单滚动容器：表格自己吃满剩余高度，滚动不外溢） -->

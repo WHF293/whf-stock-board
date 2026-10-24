@@ -12,7 +12,9 @@ import {
 } from '../../../common/constants/stock-indicator.constants.ts';
 
 /**
- * 图表指标配置按钮（股票详情页周期按钮组后）：点击弹出指标勾选弹窗
+ * 图表指标配置按钮（2026-10-24 王总指定：从详情页画线工具条移入应用页头动作区，
+ * 改为与「更多信息 / AI 分析」同款高光玻璃按钮，文案「指标设置」）：
+ * 点击弹出指标勾选弹窗
  *
  * 与 TabConfigButton 的草稿模式不同：无排序需求，**勾选即写 settings store 即生效**
  * （KlineChart watch 指标清单增量重建，无闪烁）。分时/五日指标固定，按钮置灰。
@@ -54,16 +56,16 @@ const onResetDefault = (): void => {
 </script>
 
 <template>
-  <button
-    type="button"
-    class="pressable shrink-0 rounded-lg p-1.5 text-text-tertiary hover:bg-flat-weak hover:text-text active:scale-90 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+  <BaseButton
+    variant="ghost"
     :disabled="disabled"
     :title="disabled ? '分时/五日指标固定' : '配置主图/副图指标'"
     aria-label="配置指标"
     @click="open = true"
   >
-    <MenuIcon name="sliders" :size="15" />
-  </button>
+    <MenuIcon name="sliders" :size="14" />
+    指标设置
+  </BaseButton>
 
   <BaseModal v-model:open="open" title="指标配置" max-width-class="max-w-sm">
     <p class="mb-3 text-xs text-text-tertiary">

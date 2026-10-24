@@ -49,3 +49,6 @@ dist-site
 
 # 历史遗留工作目录（已废除，内容一律进 .ai；不再允许出现）
 local_docs
+
+# 投资账本 UI 稿（含真实账户采样数据，不入公开仓库，确认版式后删除）
+ui-drafts/2026-10-23-tzzb-account-page.html

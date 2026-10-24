@@ -205,6 +205,16 @@ export interface FuturesPositionRateRank {
   lastThree: FuturesPositionRateItem[];
 }
 
+/** 品种主力合约映射条目（getMainContractDetailList result 行，仅保留渲染所需字段） */
+export interface FuturesVarietyContract {
+  /** 品种代码（大写，如 AU / RB / SC） */
+  variety: string;
+  /** 品种名（沪金 / 螺纹钢…，上游 varietyName 原文） */
+  varietyName: string;
+  /** 主力合约代码（au2612 / rb2701…，产业链 F10 页面的 code 参数） */
+  contractCode: string;
+}
+
 /** 期货市场总览（futgwapi v2/home 一次拉齐三个模块） */
 export interface FuturesOverviewHome {
   mainContractOverview: FuturesMainContractOverview;

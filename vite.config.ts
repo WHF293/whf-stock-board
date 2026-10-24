@@ -1,15 +1,26 @@
 import { fileURLToPath, URL } from 'node:url'
 import tailwindcss from '@tailwindcss/vite'
 import vue from '@vitejs/plugin-vue'
-import { defineConfig } from 'vite'
+import { loadEnv, defineConfig } from 'vite'
 import { stockProxyPlugin } from './server/stock-proxy-middleware.ts'
+import { tzzbMcpProxyPlugin } from './server/tzzb-mcp-proxy.ts'
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  // 投资账本 MCP 代理目标来自 .env.local（gitignore 覆盖，上游域名不入库）；
+  // 未配置时 tzzbMcpProxyPlugin 内部对请求回 503，前端落空态
+  const env = loadEnv(mode, process.cwd(), '')
+
+  return {
   // 根路径：Tauri 客户端与常规托管均部署在域名根下
   // （GitHub Pages 子路径托管已关闭；如重启用请改回 '/whf-stock-board/'）
   base: '/',
-  plugins: [tailwindcss(), vue(), stockProxyPlugin()],
+  plugins: [
+    tailwindcss(),
+    vue(),
+    stockProxyPlugin(),
+    tzzbMcpProxyPlugin(env.VITE_TZZB_MCP_URL, env.VITE_TZZB_MCP_TOKEN, env.TZZB_MCP_TOKEN_FILE),
+  ],
   /**
    * dev server 显式绑定 **IPv4 回环**
    *
@@ -65,4 +76,5 @@ export default defineConfig({
       },
     },
   },
+  }
 })

@@ -46,7 +46,7 @@ export const WEBLOG_ACTIONS = {
   // 保留映射让装了插件的用户进入埋点不断档（插件缺席时该 path 不可达，条目空挂无害）
   PAGE_SCREENER: { category: 'page', label: '进入选股器' },
   PAGE_HOT_NEWS: { category: 'page', label: '进入热点新闻' },
-  PAGE_STOCK_ACCOUNT: { category: 'page', label: '进入账户管理' },
+  PAGE_STOCK_ACCOUNT: { category: 'page', label: '进入账户分析' },
   PAGE_SYSTEM_LOG: { category: 'page', label: '进入系统日志' },
   PAGE_STOCK_DETAIL: { category: 'page', label: '进入股票详情' },
   PAGE_AGENT_WINDOW: { category: 'page', label: '进入 Agent 分析' },
@@ -75,7 +75,6 @@ export const WEBLOG_ACTIONS = {
   WATCHLIST_EDIT_GROUPS: { category: 'business', label: '编辑自选股分组归属' },
   WATCHLIST_BATCH_ADD: { category: 'business', label: '批量添加自选股' },
   NEWS_SAVE: { category: 'business', label: '保存新闻' },
-  ACCOUNT_IMPORT: { category: 'business', label: '导入对账单/交割单' },
   ACCOUNT_EXPORT: { category: 'business', label: '导出表格' },
   BOARD_CALENDAR_SYNC: { category: 'business', label: '板块日历采集' },
   // 选股器已改为插件分发（dsh-stock-screener），其页面与业务埋点键随插件迁移；
