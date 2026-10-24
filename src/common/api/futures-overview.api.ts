@@ -1,11 +1,14 @@
 import { proxyFetch } from './proxy-fetch.ts';
 import {
+  FUTURES_CHAIN_CACHE_TTL_MS,
   FUTURES_EM_MARKET_BY_PREFIX,
   FUTURES_EM_SNAPSHOT_HOSTS,
+  FUTURES_MAIN_CONTRACT_API_URL,
   FUTURES_OVERVIEW_API_BASE,
   FUTURES_OVERVIEW_CACHE_TTL_MS,
   FUTURES_RANK_API_BASE,
   FUTURES_RANK_BOARD_SIZE,
+  FUTURES_RECOMMEND_CONTRACT_API_URL,
 } from '../constants/futures.constants.ts';
 import type {
   FuturesCapitalFlowItem,
@@ -15,6 +18,7 @@ import type {
   FuturesRankContract,
   FuturesRankQuoteType,
   FuturesRankRow,
+  FuturesVarietyContract,
 } from '../types/futures.types.ts';
 
 /**
@@ -267,4 +271,87 @@ export const fetchFuturesRankBoards = async (forceRefresh = false): Promise<Futu
 
   cache.set(cacheKey, { at: Date.now(), data: boards });
   return boards;
+};
+
+/* -------------------- 品种基本面（产业链 F10，同花顺期货通 goodsfu 同款） -------------------- */
+
+/** 品种 → 主力合约映射索引（附推荐合约集合，供红点角标判定） */
+export interface FuturesVarietyContractIndex {
+  /** 品种代码（大写） → 主力合约条目 */
+  byVariety: Map<string, FuturesVarietyContract>;
+  /** 推荐合约代码集合（红点角标数据源；装饰性，拉取失败为空集） */
+  recommendedCodes: Set<string>;
+}
+
+/** getMainContractDetailList 响应行（仅声明消费字段） */
+interface MainContractRow {
+  variety?: unknown;
+  varietyName?: unknown;
+  contractCode?: unknown;
+}
+
+/**
+ * 拉取品种 → 主力合约映射（goodsfu「品种基本面」面板同款数据源）
+ *
+ * 附带拉取推荐合约清单做红点角标（装饰性接口，失败降级为空集不阻塞主数据）。
+ * 主力合约切换以日为粒度，会话缓存 5 分钟（FUTURES_CHAIN_CACHE_TTL_MS）。
+ * @param forceRefresh 跳过缓存强制回源
+ * @returns 品种映射索引
+ */
+export const fetchFuturesVarietyContracts = async (
+  forceRefresh = false,
+): Promise<FuturesVarietyContractIndex> => {
+  const cacheKey = 'variety-contracts';
+  const cached = cache.get(cacheKey);
+  if (!forceRefresh && cached && Date.now() - cached.at < FUTURES_CHAIN_CACHE_TTL_MS) {
+    return cached.data as FuturesVarietyContractIndex;
+  }
+
+  const [contractRes, recommendRes] = await Promise.all([
+    proxyFetch(FUTURES_MAIN_CONTRACT_API_URL, { headers: { Accept: 'application/json' } }),
+    proxyFetch(FUTURES_RECOMMEND_CONTRACT_API_URL, { headers: { Accept: 'application/json' } }).catch(
+      (err: unknown) => {
+        console.warn('[futures-overview] 推荐合约清单拉取失败（红点角标降级为无标记）:', err);
+        return null;
+      },
+    ),
+  ]);
+  if (!contractRes.ok) {
+    throw new Error(`[futures-overview] getMainContractDetailList HTTP ${contractRes.status}`);
+  }
+  const contractBody = (await contractRes.json()) as {
+    code: number;
+    data?: { result?: MainContractRow[] };
+  };
+  const byVariety = new Map<string, FuturesVarietyContract>();
+  for (const row of contractBody.data?.result ?? []) {
+    const variety = String(row.variety ?? '').trim().toUpperCase();
+    const varietyName = String(row.varietyName ?? '').trim();
+    const contractCode = String(row.contractCode ?? '').trim();
+    if (!variety || !varietyName || !contractCode || byVariety.has(variety)) continue;
+    byVariety.set(variety, { variety, varietyName, contractCode });
+  }
+
+  const recommendedCodes = new Set<string>();
+  if (recommendRes?.ok) {
+    try {
+      const body = (await recommendRes.json()) as {
+        code: number;
+        data?: { recommendContractCode?: unknown };
+      };
+      const list = body.data?.recommendContractCode;
+      if (Array.isArray(list)) {
+        for (const code of list) {
+          const normalized = String(code).trim();
+          if (normalized) recommendedCodes.add(normalized);
+        }
+      }
+    } catch (err: unknown) {
+      console.warn('[futures-overview] 推荐合约清单解析失败（红点角标降级为无标记）:', err);
+    }
+  }
+
+  const index: FuturesVarietyContractIndex = { byVariety, recommendedCodes };
+  cache.set(cacheKey, { at: Date.now(), data: index });
+  return index;
 };

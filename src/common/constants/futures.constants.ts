@@ -108,6 +108,55 @@ export const FUTURES_EM_MARKET_BY_PREFIX: ReadonlyArray<readonly [string, string
 /** 总览数据会话缓存 TTL（毫秒）：盘中实时变化的数据，缓存 60 秒防抖轮询/快速切换 */
 export const FUTURES_OVERVIEW_CACHE_TTL_MS = 60 * 1000;
 
+/* -------------------- 品种基本面（产业链 F10，同花顺期货通 goodsfu 同款） -------------------- */
+
+/** 同花顺产业链 F10 页面地址模板（`{code}` 由调用方替换为主力合约代码，如 `au2612`） */
+export const FUTURES_CHAIN_PAGE_URL_TEMPLATE =
+  'https://fupage.10jqka.com.cn/industry-chain/index.html#code={code}';
+
+/** 品种 → 主力合约映射接口（goodsfu「品种基本面」面板同款数据源，返回 data.result[]） */
+export const FUTURES_MAIN_CONTRACT_API_URL =
+  'https://ftapi.10jqka.com.cn/futgwapi/api/market/v1/contract/getMainContractDetailList';
+
+/** 推荐合约清单接口（红点角标数据源：品种主力合约出现在推荐清单中则标记热点，装饰性） */
+export const FUTURES_RECOMMEND_CONTRACT_API_URL =
+  'https://ftapi.10jqka.com.cn/futgwapi/api/market/v1/recommend/contract/code?count=12&isDomestic=true';
+
+/** 品种 → 主力合约映射会话缓存 TTL（毫秒）：主力合约切换以日为粒度，缓存 5 分钟防抖即可 */
+export const FUTURES_CHAIN_CACHE_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * 产业链 F10 的暗色模式滤镜（父页面挂到 iframe 元素上的 CSS filter）
+ *
+ * 上游页面无暗色模式且跨域不可注入样式，采用经典反色方案：
+ * invert(1) 整体反色 + hue-rotate(180deg) 抵消色相翻转（涨红跌绿等彩色还原），
+ * 再压一点对比度和亮度减少刺眼。亮色模式传 'none'。
+ */
+export const FUTURES_CHAIN_DARK_FILTER = 'invert(1) hue-rotate(180deg) contrast(0.92) brightness(0.96)';
+
+/**
+ * 品种基本面分类（展示顺序即数组顺序；varieties 为交易所品种代码，大写）
+ *
+ * 与 goodsfu 首页「品种基本面」面板一致（2026-10-24 从 futures-portal-frontend
+ * 前端包逆向核实），能源化工在站点清单基础上补 SC 原油；品种中文名由主力合约
+ * 映射接口的 varietyName 提供，接口缺省时退回展示品种代码。
+ */
+export const FUTURES_CHAIN_CATEGORIES: ReadonlyArray<{
+  /** 分类键（跟踪 / 测试定位用） */
+  key: string;
+  /** 分类名（展示） */
+  name: string;
+  /** 分类强调色（亮暗主题通用的点缀色，仅用于分组标签） */
+  color: string;
+  /** 品种代码清单（大写，展示顺序即数组顺序） */
+  varieties: readonly string[];
+}> = [
+  { key: 'metal', name: '有色金属', color: '#d97706', varieties: ['AU', 'CU', 'AL', 'ZN', 'PB', 'SN', 'AO', 'SI', 'PS', 'LC'] },
+  { key: 'black', name: '黑色系', color: '#6b7280', varieties: ['RB', 'I', 'HC', 'J', 'JM', 'SM', 'SF'] },
+  { key: 'agriculture', name: '农产品', color: '#ea580c', varieties: ['M', 'P', 'CF', 'SR', 'OI', 'A', 'C', 'Y', 'JD', 'CS', 'AP'] },
+  { key: 'energy', name: '能源化工', color: '#2563eb', varieties: ['TA', 'MA', 'SC', 'FU', 'BU', 'RU', 'ZC', 'FG', 'V', 'PP'] },
+];
+
 /** CSV 数据行前三列固定语义（交易日 / 合约 / 排名），用于解析校验 */
 export const CCPM_DATE_CELL_LENGTH = 8;
 

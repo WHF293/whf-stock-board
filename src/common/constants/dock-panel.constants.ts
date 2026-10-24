@@ -12,6 +12,10 @@ export const DOCK_PANEL_CONTENT = {
   STOCK: 'stock',
   /** 插件贡献的停靠面板（具体渲染哪个由 store 的 pluginPanelKey 决定） */
   PLUGIN: 'plugin',
+  /** 期货品种产业链基本面（同花顺产业链 F10 页面 iframe 嵌入，期货总览页发起） */
+  CHAIN: 'chain',
+  /** 个股 F10 资料抽屉（财务 / 资讯 / 基本资料 / 发行相关 / 高管简介 / 参股控股，详情页发起） */
+  F10: 'f10',
 } as const;
 
 /** 面板内容类型 */
