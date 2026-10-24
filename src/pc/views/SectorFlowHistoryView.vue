@@ -166,7 +166,7 @@ const goBack = (): void => {
 </script>
 
 <template>
-  <div class="flex h-[calc(100dvh-6.5rem)] min-h-0 flex-col gap-4">
+  <div class="flex h-full min-h-0 flex-col gap-4">
     <!-- 控制条：返回 / 标题与图例 / 统计 / 刷新 -->
     <div class="flex shrink-0 flex-wrap items-center justify-between gap-2">
       <div class="flex flex-wrap items-center gap-2">

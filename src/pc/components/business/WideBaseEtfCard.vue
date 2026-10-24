@@ -25,11 +25,13 @@ import type { KLineData } from 'klinecharts';
 import type { FullQuote } from '../../../common/types/stock-quote.types.ts';
 
 /**
- * 宽基ETF卡片（国家队监控页）：名称 + 现价/涨跌幅 + K线图
+ * 宽基ETF卡片（国家队监控页 + 自选股图表视图共用）：名称 + 现价/涨跌幅 + K线图
  *
  * - 分时：新浪 1 分钟线（当日窗口），主图分时线 + 均价线，副图成交量（intradayAxis 全天固定轴）
  * - 日K：本地缓存编排层（只读不落库，收窄根数），主图蜡烛 + MA，副图成交量
  * - 数据在模式切换 / 盘中刷新 tick 变化时按需拉取；失败保留上一次成功数据
+ * - 卡片标题可点击（clickableTitle，2026-10-26 王总指定）：点击发射 title-click，
+ *   由调用方写入股票上下文并跳详情整页
  */
 const props = defineProps<{
   /** ETF 条目（symbol + 展示名） */
@@ -40,6 +42,13 @@ const props = defineProps<{
   quote: FullQuote | null;
   /** 盘中刷新 tick（父级每分钟自增，仅分时模式消费） */
   minuteTick: number;
+  /** 卡片标题是否可点击（点击发射 title-click；默认纯文本） */
+  clickableTitle?: boolean;
+}>();
+
+const emit = defineEmits<{
+  /** 点击可点击卡片标题（跳转目标由调用方决定） */
+  'title-click': [];
 }>();
 
 /** K 线序列（时间升序） */
@@ -99,7 +108,7 @@ const hasQuote = computed(() => props.quote?.price !== null && props.quote?.pric
 </script>
 
 <template>
-  <BaseCard :title="item.name">
+  <BaseCard :title="item.name" :clickable-title="clickableTitle" @title-click="emit('title-click')">
     <template #extra>
       <div class="flex min-w-0 items-center gap-2">
         <span class="text-xs tabular-nums text-text-tertiary">{{ item.symbol.toUpperCase() }}</span>

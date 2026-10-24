@@ -666,12 +666,44 @@ export const getTzzbFundTrades = async (month: string): Promise<TzzbFundTrade[]>
   return out;
 };
 
+/** 授权信息响应形态（GET /tzzb-mcp/auth-info，dev server 本地端点，见 server/tzzb-mcp-proxy.ts） */
+interface TzzbAuthInfo {
+  /** 最近一次完整授权时间（毫秒）；无凭据记录时为 null */
+  authorizedAt?: number | null;
+}
+
+/** 直连通道展示前缀（顶栏同步状态第二行） */
+const DIRECT_LABEL = 'MCP 直连';
+
 /**
- * 同步状态（直连阶段为实时拉取口径）
+ * 取最近一次授权时间（上游授权有效期 1 个月，到期需重走浏览器授权，顶栏据此提示重授时点）
+ * @returns 毫秒时间戳；未配置代理 / 请求失败时返回 null
+ */
+const fetchAuthorizedAt = async (): Promise<number | null> => {
+  try {
+    const res = await fetch(`${MCP_PROXY_PATH}/auth-info`);
+    if (!res.ok) return null;
+    const json = (await res.json()) as TzzbAuthInfo;
+    return typeof json.authorizedAt === 'number' && json.authorizedAt > 0
+      ? json.authorizedAt
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * 同步状态（直连阶段为实时拉取口径；第二行附最近一次授权时间——上游授权有效期
+ * 1 个月，供判断何时需要重新授权）
  * @returns 同步状态文案
  */
-export const getTzzbSyncMeta = async (): Promise<TzzbSyncMeta> => ({
-  lastSyncLabel: `${dayjs().format('YYYY-MM-DD HH:mm')}（实时）`,
-  dataDate: dayjs().format('YYYY-MM-DD'),
-  authExpireLabel: 'MCP 直连',
-});
+export const getTzzbSyncMeta = async (): Promise<TzzbSyncMeta> => {
+  const authorizedAt = await fetchAuthorizedAt();
+  return {
+    lastSyncLabel: `${dayjs().format('YYYY-MM-DD HH:mm')}（实时）`,
+    dataDate: dayjs().format('YYYY-MM-DD'),
+    authExpireLabel: authorizedAt
+      ? `${DIRECT_LABEL}-授权时间：${dayjs(authorizedAt).format('YYYY-MM-DD HH:mm')}`
+      : DIRECT_LABEL,
+  };
+};

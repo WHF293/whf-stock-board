@@ -322,7 +322,7 @@ const NOTICE_TEXT =
 </script>
 
 <template>
-  <div class="flex h-[calc(100dvh-6.5rem)] min-h-0 flex-col gap-4">
+  <div class="flex h-full min-h-0 flex-col gap-4">
     <!-- 控制条：返回 / 板块标识 / 排序基准 / 范围 -->
     <div class="flex shrink-0 flex-wrap items-center justify-between gap-2">
       <div class="flex flex-wrap items-center gap-2">

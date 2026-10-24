@@ -16,7 +16,7 @@ const goHome = (): void => {
 </script>
 
 <template>
-  <div class="flex h-[calc(100dvh-6.5rem)] flex-col items-center justify-center gap-3">
+  <div class="flex h-full flex-col items-center justify-center gap-3">
     <p class="text-5xl font-bold tabular-nums text-text-secondary">404</p>
     <p class="text-sm text-text-tertiary">该页面已停牌——路径不存在或已下线</p>
     <BaseButton class="mt-2" @click="goHome">返回市场总览</BaseButton>

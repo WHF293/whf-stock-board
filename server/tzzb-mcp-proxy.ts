@@ -4,6 +4,9 @@ import type { Connect, Plugin } from 'vite';
 /** 同源代理路径（前端 MCP 客户端统一 POST 此路径） */
 export const TZZB_MCP_PROXY_PATH = '/tzzb-mcp';
 
+/** 授权信息子路径（GET <TZZB_MCP_PROXY_PATH>/auth-info；仅本地 dev server 提供，不透传上游） */
+export const TZZB_MCP_AUTH_INFO_PATH = '/auth-info';
+
 /** 上游透传的请求头（MCP 会话 / 协议版本 / 鉴权 / SSE 续传） */
 const PASSTHROUGH_HEADERS = [
   'authorization',
@@ -24,9 +27,16 @@ const UPSTREAM_TIMEOUT_MS = 60_000;
  */
 interface TzzbAuthFile {
   /** 动态注册的客户端信息（client_id / client_secret） */
-  registration?: { client_id?: string; client_secret?: string };
+  registration?: {
+    client_id?: string;
+    client_secret?: string;
+    /** 客户端注册时间（秒级时间戳；授权时间缺记录时的回落值） */
+    client_id_issued_at?: number;
+  };
   /** OAuth token（access_token / refresh_token / expires_at 毫秒时间戳） */
-  tokens?: { access_token?: string; refresh_token?: string; expires_at?: number };
+  tokens?: { access_token?: string; refresh_token?: string; expires_at?: number } | null;
+  /** 最近一次完整浏览器授权完成时间（毫秒；tzzb-auth-helper.mjs 授权成功后落盘） */
+  authorized_at?: number;
 }
 
 /**
@@ -106,7 +116,22 @@ const createAuthProvider = (target: string | undefined, tokenFile: string | unde
     return (await refresh()) ?? token;
   };
 
-  return { getAccessToken, refresh };
+  /**
+   * 取最近一次完整授权时间（上游授权有效期 1 个月，看板顶栏据此提示重授时点）
+   * @returns 毫秒时间戳：优先凭据文件的 authorized_at（tzzb-auth-helper.mjs 完整授权后落盘），
+   *          未记录时回落客户端注册时间 client_id_issued_at；无凭据文件返回 null
+   */
+  const getAuthorizedAt = (): number | null => {
+    const store = load();
+    const authorizedAt = typeof store?.authorized_at === 'number' ? store.authorized_at : 0;
+    const issuedAt =
+      typeof store?.registration?.client_id_issued_at === 'number'
+        ? store.registration.client_id_issued_at * 1000
+        : 0;
+    return authorizedAt || issuedAt || null;
+  };
+
+  return { getAccessToken, refresh, getAuthorizedAt };
 };
 
 /**
@@ -132,6 +157,7 @@ const readRequestBody = (req: Connect.IncomingMessage): Promise<Buffer> =>
  * - 鉴权：优先凭据文件（TZZB_MCP_TOKEN_FILE，oauth.local.json，由
  *   tzzb-auth-helper.mjs 维护，401 自动 refresh_token 续期重试），其次静态 token；
  * - 方法固定透传 POST（MCP Streamable HTTP 仅用 POST + 可选 GET 流）；
+ *   例外：GET <同源路径>/auth-info 为本地元信息端点，返回最近一次授权时间（不透传）；
  * - MCP 会话头双向透传（client → upstream 的 Mcp-Session-Id，upstream → client 的
  *   下发头）；响应体流式回写，SSE 渐进输出不被缓冲卡死
  * @param target 上游 MCP endpoint（未配置时中间件返回 503）
@@ -148,6 +174,14 @@ const createTzzbMcpMiddleware =
     auth: ReturnType<typeof createAuthProvider>,
   ): Connect.NextHandleFunction =>
   async (req, res, _next) => {
+    // 本地元信息端点：GET /tzzb-mcp/auth-info 返回最近一次授权时间（不透传上游；
+    // MCP Streamable HTTP 客户端仅用 POST，GET 分支空闲可用）
+    if (req.method === 'GET' && (req.url ?? '').split('?')[0] === TZZB_MCP_AUTH_INFO_PATH) {
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ authorizedAt: auth.getAuthorizedAt() }));
+      return;
+    }
     if (!target) {
       res.statusCode = 503;
       res.end(JSON.stringify({ error: 'TZZB_MCP_NOT_CONFIGURED' }));

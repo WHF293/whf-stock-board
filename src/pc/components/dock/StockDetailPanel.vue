@@ -24,6 +24,7 @@ import {
 import { ROUTE_PATH } from '../../../common/constants/router-meta.constants.ts';
 import { usePolling } from '../../../common/composables/use-polling';
 import { useChartPeriod } from '../../../common/composables/use-chart-period';
+import { useCrosshairQuote } from '../../../common/composables/use-crosshair-quote';
 import { POLLING_INTERVAL } from '../../../common/constants/polling.constants.ts';
 import type { KLineData } from 'klinecharts';
 import type { FullQuote } from '../../../common/types/stock-quote.types.ts';
@@ -86,38 +87,6 @@ usePolling({
   tradingAware: true,
 });
 
-// ---------- 十字光标联动（K 线悬停 bar -> 行情头临时展示该根 OHLCV） ----------
-/** 十字光标悬停的 K 线（null = 未悬停，展示最新报价） */
-const hoveredBar = ref<KLineData | null>(null);
-const onCrosshairBar = (bar: KLineData | null): void => {
-  hoveredBar.value = bar;
-};
-
-/**
- * 行情头展示数据：悬停时把该根 K 线的开高低收/量/额覆盖到最新报价上
- * （价格与涨跌幅按该根 close 相对昨收重算；其余字段保留实时报价）
- */
-const displayQuote = computed<FullQuote | null>(() => {
-  const quote = quoteRef.value;
-  const bar = hoveredBar.value;
-  if (!quote || !bar) return quote;
-  const prevClose = quote.prevClose;
-  const price = bar.close;
-  const change = prevClose ? price - prevClose : 0;
-  return {
-    ...quote,
-    price,
-    open: bar.open,
-    high: bar.high,
-    low: bar.low,
-    volume: bar.volume ?? quote.volume,
-    amount: (bar.turnover as number | undefined) ?? quote.amount,
-    change,
-    changePercent: prevClose ? (change / prevClose) * 100 : 0,
-  };
-});
-
-
 // ---------- 图表周期（按钮组切换：分时 / 五日 / 5分 / 日K / 周K / 月K，均走新浪源） ----------
 // 周期选项与详情页共用（constants/stock-detail.constants.ts），避免两处漂移；
 // 选择本身也持久化（composables/use-chart-period.ts），下次打开默认回到上次的周期
@@ -159,6 +128,15 @@ const loadKline = async (): Promise<void> => {
     isKlineLoading.value = false;
   }
 };
+
+// ---------- 十字光标联动（K 线悬停 bar -> 行情头临时展示该根 OHLCV） ----------
+// 与个股详情整页（StockDetailView）共用同一组合式函数；悬停时价格 / 涨跌幅
+// 按该根 close 相对自身昨收重算（量纲换算见 use-crosshair-quote），离开图表回落实时报价
+const { onCrosshairBar, displayQuote } = useCrosshairQuote({
+  quote: quoteRef,
+  bars: klines,
+  mode: chartMode,
+});
 
 // ---------- 交易记录 BS/T 标注（本地交割单库，按股票；与详情整页同口径） ----------
 /** 该股成交记录（跨账户；浏览器 dev 无本地库，恒为空列表） */

@@ -237,7 +237,8 @@ body {
  *
  * 与前三个类的区别：那些是「固定 max-height 截断」，本类是「按容器剩余空间撑开」。
  * 高度分配链（缺一环就退化成内容撑开、滚动条跑到页面上）：
- *   页面根部定高 h-[calc(100dvh-6.5rem)]（flex 列）
+ *   页面根部定高 h-full（填满 MainLayout 内容容器，2026-10-24 双滚动条治理；
+ *   原 h-[calc(100dvh-6.5rem)] 视口公式在桌面端会多算出外层滚动条）（flex 列）
  *     → 卡片 BaseCard fill（flex 列，min-h-0）
  *       → 本类（flex: 1 1 0% → 吃掉「卡片高 - 工具条/统计区」）
  *
@@ -463,17 +464,29 @@ textarea {
 }
 
 /* PC 侧栏选中项玻璃气泡（对齐移动端 TabBar 选中胶囊质感）+ 卡片级玻璃（.pc-glass-card，
-   2026-10-16 详情页右栏两卡起用，经 BaseCard 的 glass prop 挂类）：
-   低透明底 + 斜向「光线照在玻璃上」高光带（::after 左上→右下渐隐）+ 边缘描边；
-   亮色投影加深一层（双层投影），暗色用弱化高光带保持通透 */
+   2026-10-16 详情页右栏两卡起用，经 BaseCard 的 glass prop 挂类）。
+   2026-10-24 王总两轮反馈：亮色玻璃「看不出质感」——参考 iOS 液态玻璃定稿：
+   ① 填充改为斜向双段渐变：左上奶白浓 → 右下淡，尾端转**冷灰雾**（slate-300 系）——
+     奶白段在涨色画布上透底显形，冷灰尾让玻璃压在纯白卡片上也「比背景略深略冷」，
+     两类底色都能读出玻璃，而不是白上白隐身；
+   ② 顶缘亮内高光 + 底缘暗内阴影双钩边（玻璃厚度），描边中性深收轮廓；
+   ③ ::after 高光带左上白光、尾端极淡暗部，模拟「光线照在玻璃上」。
+   透明度仍由 --glass-alpha（设置页滑杆）驱动（渐变各档在其基础上加固定偏移）；
+   暗色覆盖不变（深板岩填充在近黑上本就显形） */
 .pc-nav-bubble,
 .pc-glass-card {
   position: relative;
   overflow: hidden;
-  background: rgba(255, 255, 255, var(--glass-alpha));
-  border: 1px solid rgba(255, 255, 255, 0.55);
+  background: linear-gradient(
+    115deg,
+    rgba(255, 255, 255, calc(var(--glass-alpha) + 0.42)) 0%,
+    rgba(255, 255, 255, calc(var(--glass-alpha) + 0.08)) 48%,
+    rgba(203, 213, 225, calc(var(--glass-alpha) + 0.06)) 100%
+  );
+  border: 1px solid rgba(31, 39, 51, 0.1);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -1px 0 rgba(31, 39, 51, 0.06),
     0 3px 14px rgba(0, 0, 0, 0.14),
     0 1px 3px rgba(0, 0, 0, 0.07);
   -webkit-backdrop-filter: blur(16px) saturate(1.9);
@@ -487,9 +500,10 @@ textarea {
   border-radius: inherit;
   background: linear-gradient(
     115deg,
-    rgba(255, 255, 255, 0.45) 0%,
-    rgba(255, 255, 255, 0.12) 26%,
-    rgba(255, 255, 255, 0) 46%
+    rgba(255, 255, 255, 0.55) 0%,
+    rgba(255, 255, 255, 0.16) 30%,
+    rgba(255, 255, 255, 0) 55%,
+    rgba(31, 39, 51, 0.05) 100%
   );
   pointer-events: none;
 }
@@ -536,8 +550,8 @@ textarea {
 
 /* === 页面全屏（2026-10-17 王总：全局入口移到顶栏，任意页面可用） === */
 /* MainLayout 内容容器全屏态挂 .pc-page-fs（flex h-full min-h-0 flex-col p-3），
-   其直接子元素 = 当前页面根节点。!important 压过各页面根的
-   h-[calc(100dvh-6.5rem)] 定高——全屏后页内页头已隐藏，按旧公式算会偏矮留白。 */
+   其直接子元素 = 当前页面根节点。!important 兜底：页面根本身已是 h-full
+   （2026-10-24 双滚动条治理后常规模式同构），此处防个别页面自带高度声明。 */
 .pc-page-fs > * {
   height: 100% !important;
 }

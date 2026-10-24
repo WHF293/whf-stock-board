@@ -123,7 +123,7 @@ onMounted(() => {
   <div
     v-if="!tauriAvailable"
     class="flex items-center justify-center border border-flat-weak bg-surface"
-    :class="standalone ? 'h-dvh' : 'h-[calc(100dvh-6.5rem)] rounded-2xl'"
+    :class="standalone ? 'h-dvh' : 'h-full rounded-2xl'"
   >
     <div class="max-w-sm text-center">
       <p class="text-base font-medium text-text">Agent 分析仅 Tauri 桌面端可用</p>
@@ -137,7 +137,7 @@ onMounted(() => {
   <div
     v-else
     class="flex min-h-0 flex-col"
-    :class="standalone ? 'h-dvh' : 'h-[calc(100dvh-6.5rem)]'"
+    :class="standalone ? 'h-dvh' : 'h-full'"
   >
     <!-- 独立窗口标题栏（decorations:false，主窗口同款三键与拖拽；内嵌不渲染） -->
     <AgentWindowTitlebar v-if="standalone" />

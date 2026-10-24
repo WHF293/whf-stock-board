@@ -15,7 +15,6 @@ import BaseSkeleton from '../components/ui/BaseSkeleton.vue';
 import MenuIcon from '../components/ui/MenuIcon.vue';
 import ChartIndicatorConfigButton from '../components/ui/ChartIndicatorConfigButton.vue';
 import { useSettingsStore } from '../../common/stores/settings';
-import { useUiStore } from '../../common/stores/ui';
 import { useStockContextStore } from '../../common/stores/stock-context';
 import { ROUTE_PATH } from '../../common/constants/router-meta.constants.ts';
 import { HOST_HEADER_ITEM } from '../../common/constants/header.constants.ts';
@@ -38,6 +37,7 @@ import {
 } from '../../common/utils/trade-marks';
 import { usePolling } from '../../common/composables/use-polling';
 import { useChartPeriod } from '../../common/composables/use-chart-period';
+import { useCrosshairQuote } from '../../common/composables/use-crosshair-quote';
 import { useDetailPanelCollapse } from '../../common/composables/use-detail-panel-collapse';
 import {
   PAGE_HEADER_ACTIONS_TARGET,
@@ -55,8 +55,10 @@ import { TREND_TEXT_CLASS } from '../../common/constants/stock-colors.constants.
 /**
  * 股票详情整页（/stock-detail/:symbol，全站双击个股进入）：
  *
- * 顶栏（返回 + 标的 + 报价摘要 + 指标/画线工具）+ 主图 K 线（撑满整列高度，
+ * 顶栏（标的 + 报价摘要 + 指标/画线工具）+ 主图 K 线（撑满整列高度，
  * 周期按钮组在卡头部）+ 右侧信息栏（报价头 + 五档盘口固定展示，≥1280px）。
+ * 十字光标悬停 K 线时，顶栏摘要与右侧报价头临时展示该根的开高低收 /
+ * 成交量 / 成交额（与侧栏面板同款联动），光标离开回落实时报价。
  * 底部页签 2026-10-24 起整体撤销：交易记录 / 成分股与财务 / 资讯 / 基金概况
  * 一并迁入顶栏「更多信息」按钮打开的右侧抽屉（StockF10Drawer）。
  *
@@ -68,15 +70,12 @@ const router = useRouter();
 const dataCache = useDataCacheStore();
 const watchlistStore = useWatchlistStore();
 const settingsStore = useSettingsStore();
-const uiStore = useUiStore();
 const dockPanel = useDockPanelStore();
 
 /**
  * 页面全屏（本页铺满应用窗口）：入口在 K 线卡头部的全屏按钮，
- * 置位后 MainLayout 隐藏侧栏与页内页头，本页 K 线行改 flex-1 拉伸；
- * Esc / 切页由 MainLayout 兜底退出
+ * 置位后 MainLayout 隐藏侧栏与页内页头；Esc / 切页由 MainLayout 兜底退出
  */
-const isPageFullscreen = computed(() => uiStore.pageFullscreen);
 const stockContext = useStockContextStore();
 
 /**
@@ -123,11 +122,6 @@ usePolling({
   intervalMs: POLLING_INTERVAL.QUOTES_INTRADAY,
   tradingAware: true,
 });
-
-/** 报价涨跌趋势色（顶栏摘要用） */
-const quoteTrendClass = computed(() =>
-  TREND_TEXT_CLASS[getTrendByChangePercent(quoteRef.value?.changePercent ?? 0)],
-);
 
 /**
  * 顶栏「更多信息」：打开右侧资料抽屉（交易记录 / 成分股（ETF）/ 财务 / 资讯 /
@@ -193,6 +187,20 @@ const loadKline = async (): Promise<void> => {
   }
 };
 
+// ---------- 十字光标联动（K 线悬停 bar -> 顶栏摘要与报价头临时展示该根 OHLCV） ----------
+// 与侧栏详情面板（StockDetailPanel）共用同一组合式函数；悬停时价格 / 涨跌幅
+// 按该根 close 相对自身昨收重算（量纲换算见 use-crosshair-quote），离开图表回落实时报价
+const { onCrosshairBar, displayQuote } = useCrosshairQuote({
+  quote: quoteRef,
+  bars: klines,
+  mode: chartMode,
+});
+
+/** 顶栏摘要涨跌趋势色（未悬停跟随实时报价；悬停跟随该根 K 线的涨跌幅） */
+const quoteTrendClass = computed(() =>
+  TREND_TEXT_CLASS[getTrendByChangePercent(displayQuote.value?.changePercent ?? 0)],
+);
+
 // ---------- 交易记录（本地成交流水库，按股票） ----------
 // 仅作 K 线 BS/T 标注的数据源；记录列表 UI 在「更多信息」抽屉的
 // 交易记录页签（StockTradeRecordsTab，2026-10-24 王总指定迁入抽屉）
@@ -247,11 +255,6 @@ onActivated(() => {
   void loadKline();
   void loadTradeRecords();
 });
-
-/** 返回上一页（进入来源页；无历史时回退首页由 router 兜底） */
-const goBack = (): void => {
-  void router.back();
-};
 
 /**
  * 列表内切换股票：replace 不堆积历史栈（watch(symbol) 自动全量重拉）
@@ -375,16 +378,16 @@ const pctClass = (value: number | null): string =>
 
 <template>
   <!--
-    页面整体高 = 主区（K 线行）单行，定高 calc(100dvh - 6.5rem)：6.5rem 为
-    MainLayout 顶栏 + p-6。2026-10-24 起底部「交易记录 / 成分股」行撤销——
+    页面整体高 = 主区（K 线行）单行，根节点 h-full 填满 MainLayout 内容容器（定高，
+    2026-10-24 双滚动条治理：原 calc(100dvh - 6.5rem) 视口公式在桌面端多算出外层滚动条）。
+    2026-10-24 起底部「交易记录 / 成分股」行撤销——
     两个页签迁入顶栏「更多信息」抽屉（StockF10Drawer），页面不再滚动，
-    K 线行吃满剩余视口高度。
+    K 线行吃满剩余高度。
 
-    页面全屏（isPageFullscreen，K 线卡头部按钮切换）：MainLayout 已隐藏页头与
-    p-6 并把内容容器改成 h-full flex 列，本页根节点改吃满高度、K 线行改 flex-1
-    拉伸（王总 2026-10-17）
+    页面全屏（K 线卡头部按钮切换）：MainLayout 已隐藏页头，
+    本页根节点同样 h-full 吃满、K 线行 flex-1 拉伸（王总 2026-10-17）
   -->
-  <div class="flex min-h-0 flex-col gap-3" :class="isPageFullscreen ? 'h-full' : ''">
+  <div class="flex h-full min-h-0 flex-col gap-3">
     <!-- 页级动作上移 MainLayout 页头：「AI 分析」按钮（Teleport 投射，本页激活时才挂载；
          弹窗仍留在页内。位置在「插件设置」齿轮之前，王总 2026-10-16 指定。
          2026-10-24 起顶栏动作区仅剩「更多信息 + AI 分析」，自选/指标设置已移入页内顶栏卡） -->
@@ -408,25 +411,18 @@ const pctClass = (value: number | null): string =>
     <BaseCard class="shrink-0">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="flex items-center gap-3">
-          <button
-            type="button"
-            class="pressable rounded-lg p-1.5 text-text-secondary hover:bg-flat-weak hover:text-text active:scale-90"
-            aria-label="返回"
-            @click="goBack"
-          >
-            <MenuIcon name="arrowLeft" :size="18" />
-          </button>
           <div class="flex items-baseline gap-2">
             <span class="text-base font-semibold text-text">{{ quoteRef?.name ?? symbol }}</span>
             <span class="text-xs text-text-tertiary">{{ symbol }}</span>
           </div>
-          <div v-if="quoteRef" class="flex items-baseline gap-2 tabular-nums">
+          <!-- 报价摘要：悬停 K 线时临时展示该根 close 与相对自身昨收的涨跌（十字光标联动） -->
+          <div v-if="displayQuote" class="flex items-baseline gap-2 tabular-nums">
             <span class="text-base font-semibold" :class="quoteTrendClass">
-              {{ quoteRef.price.toFixed(2) }}
+              {{ displayQuote.price.toFixed(2) }}
             </span>
             <span class="text-xs" :class="quoteTrendClass">
-              {{ quoteRef.change >= 0 ? '+' : '' }}{{ quoteRef.change.toFixed(2) }}
-              {{ quoteRef.changePercent >= 0 ? '+' : '' }}{{ quoteRef.changePercent.toFixed(2) }}%
+              {{ displayQuote.change >= 0 ? '+' : '' }}{{ displayQuote.change.toFixed(2) }}
+              {{ displayQuote.changePercent >= 0 ? '+' : '' }}{{ displayQuote.changePercent.toFixed(2) }}%
             </span>
           </div>
         </div>
@@ -507,11 +503,8 @@ const pctClass = (value: number | null): string =>
     </BaseCard>
 
     <!-- 主区：左（来源列表）/ 中（K 线占满整列）/ 右（报价头 + 五档盘口）。
-         常规模式定高滚动、全屏模式 flex-1 吃满剩余高度（见根节点注释） -->
-    <div
-      class="flex min-h-0 gap-3"
-      :class="isPageFullscreen ? 'flex-1' : 'h-[calc(100dvh-6.5rem)] shrink-0'"
-    >
+         flex-1 吃满顶栏卡以外的剩余高度（常规 / 全屏两模式同构，见根节点注释） -->
+    <div class="flex min-h-0 flex-1 gap-3">
       <!-- 左侧来源股票列表：跳转入口写入上下文后展示；为空（如直链进入）不渲染。
            支持展开/收起：收起时仅显示股票名称窄条 -->
       <BaseCard
@@ -617,6 +610,7 @@ const pctClass = (value: number | null): string =>
             :intraday-axis="chartPeriod === 'minute'"
             :trade-marks="chartTradeMarks"
             auto-height
+            @crosshair-bar="onCrosshairBar"
           />
           <BaseSkeleton v-else />
         </div>
@@ -646,7 +640,7 @@ const pctClass = (value: number | null): string =>
             </button>
           </template>
           <StockQuoteHeader
-            :quote="quoteRef"
+            :quote="displayQuote"
             metrics-only
             :compact="isInfoCollapsed"
           />

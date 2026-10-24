@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
+import { useRouter } from "vue-router";
 import BaseButton from "../components/ui/BaseButton.vue";
 import BaseCard from "../components/ui/BaseCard.vue";
 import BaseConfirmModal from "../components/ui/BaseConfirmModal.vue";
@@ -13,10 +14,17 @@ import WatchlistBatchAddModal from "../components/business/WatchlistBatchAddModa
 import WatchlistGroupEditModal from "../components/business/WatchlistGroupEditModal.vue";
 import WatchlistTable from "../components/business/WatchlistTable.vue";
 import WatchlistComparePanel from "../components/business/WatchlistComparePanel.vue";
+import WideBaseEtfCard from "../components/business/WideBaseEtfCard.vue";
 import { fetchFullQuotes } from "../../common/api/quotes.api.ts";
 import { usePolling } from "../../common/composables/use-polling";
 import { POLLING_INTERVAL } from "../../common/constants/polling.constants.ts";
+import { ROUTE_PATH } from "../../common/constants/router-meta.constants.ts";
 import { NOTIFY_SOURCE_WATCHLIST, NOTIFY_TONE } from "../../common/constants/notify.constants.ts";
+import {
+  WIDE_BASE_ETF_MINUTE_REFRESH_MS,
+  WIDE_BASE_ETF_VIEW_MODE,
+  WIDE_BASE_ETF_VIEW_OPTIONS,
+} from "../../common/constants/wide-base-etf.constants.ts";
 import {
   BATCH_ADD_EXISTS_TEMPLATE,
   BATCH_ADD_MISSING_DETAIL_MAX,
@@ -25,7 +33,10 @@ import {
   BATCH_ADD_SKIPPED_TEMPLATE,
   BATCH_ADD_SUCCESS_TEMPLATE,
   DEFAULT_GROUP_ID,
+  WATCHLIST_CONTENT_VIEW,
+  WATCHLIST_CONTENT_VIEW_OPTIONS,
 } from "../../common/constants/watchlist.constants.ts";
+import { useStockContextStore } from "../../common/stores/stock-context";
 import { useWatchlistStore } from "../../common/stores/watchlist";
 import { useNotificationsStore } from "../../common/stores/notifications";
 import { useDataCacheStore } from "../../common/stores/data-cache";
@@ -124,6 +135,55 @@ usePolling({
 watch(activeGroupId, () => {
   void fetchActiveGroupQuotes();
 });
+
+// ---------- 图表 / 列表视图（2026-10-26 王总指定：默认列表，图表 = 迷你K线卡片栅格） ----------
+/** 内容视图：列表（分组表格，默认）/ 图表（复用宽基ETF 的迷你K线卡片） */
+const contentView = ref<string>(WATCHLIST_CONTENT_VIEW.LIST);
+
+/** 图表模式的分时 / 日K（全组统一切换，与宽基ETF 页同规格） */
+const chartMode = ref<string>(WIDE_BASE_ETF_VIEW_MODE.MINUTE);
+
+/** 盘中分时刷新 tick（自增驱动各卡片重拉分钟线；仅图表 + 分时模式消费） */
+const minuteTick = ref(0);
+
+// 分时数据刷新 tick（60s；非图表模式或日K模式下空转）
+usePolling({
+  task: async () => {
+    if (
+      contentView.value === WATCHLIST_CONTENT_VIEW.CHART &&
+      chartMode.value === WIDE_BASE_ETF_VIEW_MODE.MINUTE
+    ) {
+      minuteTick.value += 1;
+    }
+  },
+  intervalMs: WIDE_BASE_ETF_MINUTE_REFRESH_MS,
+  tradingAware: true,
+});
+
+// ---------- 图表卡片头部点击 → 股票详情整页（左侧来源列表 = 当前分组的自选股） ----------
+const router = useRouter();
+const stockContext = useStockContextStore();
+
+/**
+ * 打开个股详情整页：先把**当前分组的全部自选股**写入股票上下文
+ * （详情页左侧「来源列表」即可在本组内一键切换），再路由跳转
+ * @param symbol 目标符号
+ */
+const openStockDetail = (symbol: string): void => {
+  const stocks = activeGroup.value?.stocks ?? [];
+  stockContext.setContext(
+    stocks.map((stock) => {
+      const quote = findQuoteBySymbol(quotesMap.value, stock.symbol);
+      return {
+        symbol: stock.symbol,
+        name: quote?.name ?? stock.name,
+        price: quote?.price ?? null,
+        changePercent: quote?.changePercent ?? null,
+      };
+    }),
+  );
+  void router.push(`${ROUTE_PATH.STOCK_DETAIL}/${symbol}`);
+};
 
 /** 新建分组弹窗开关（2026-10-22 王总指定：页内输入框移除，改弹窗创建） */
 const createGroupOpen = ref(false);
@@ -392,7 +452,7 @@ const onConfirmBatchAdd = (payload: BatchAddResolveResult): void => {
 </script>
 
 <template>
-  <div class="flex h-[calc(100dvh-6.5rem)] min-h-0 flex-col gap-4">
+  <div class="flex h-full min-h-0 flex-col gap-4">
     <!-- 分组 tab -->
     <div class="flex shrink-0 items-center gap-2">
       <div class="min-w-0 flex-1 overflow-x-auto overflow-y-hidden">
@@ -405,7 +465,8 @@ const onConfirmBatchAdd = (payload: BatchAddResolveResult): void => {
     </div>
 
     <!-- 添加股票 / 批量添加 / 新建分组（2026-10-22 王总指定：原右侧「输入框 + 新建」
-         移除，新建分组改为左侧按钮 + 弹窗创建） -->
+         移除，新建分组改为左侧按钮 + 弹窗创建）；右侧为 图表/列表 视图切换
+         （2026-10-26 王总指定，默认列表；图表模式下附带 分时/日K 切换） -->
     <div class="flex shrink-0 flex-wrap items-center gap-2">
       <BaseButton variant="ghost" @click="searchModalOpen = true">
         <MenuIcon name="plus" :size="14" />
@@ -427,11 +488,48 @@ const onConfirmBatchAdd = (payload: BatchAddResolveResult): void => {
         <MenuIcon name="plus" :size="14" />
         新建分组
       </BaseButton>
+      <div class="ml-auto flex items-center gap-2">
+        <BaseTabs
+          v-if="contentView === WATCHLIST_CONTENT_VIEW.CHART"
+          v-model="chartMode"
+          :options="WIDE_BASE_ETF_VIEW_OPTIONS"
+          aria-label="图表模式"
+        />
+        <BaseTabs
+          v-model="contentView"
+          :options="WATCHLIST_CONTENT_VIEW_OPTIONS"
+          aria-label="内容视图"
+        />
+      </div>
     </div>
 
-    <!-- 分组表格（撑满卡片剩余高度；表格容器必须是卡片的直接 flex 子项，
+    <!-- 图表视图：迷你K线卡片栅格（复用宽基ETF 卡片；卡片头部点击进详情整页，
+         详情页左侧来源列表 = 当前分组的全部自选股） -->
+    <div v-if="contentView === WATCHLIST_CONTENT_VIEW.CHART" class="min-h-0 flex-1 overflow-y-auto">
+      <div
+        v-if="(activeGroup?.stocks.length ?? 0) > 0"
+        class="grid grid-cols-1 gap-3 @3xl:grid-cols-2 @5xl:grid-cols-3"
+      >
+        <WideBaseEtfCard
+          v-for="stock in activeGroup?.stocks ?? []"
+          :key="stock.symbol"
+          :item="{ symbol: stock.symbol, name: stock.name, group: activeGroup?.id ?? '' }"
+          :mode="chartMode"
+          :quote="findQuoteBySymbol(quotesMap, stock.symbol) ?? null"
+          :minute-tick="minuteTick"
+          clickable-title
+          @title-click="openStockDetail(stock.symbol)"
+        />
+      </div>
+      <BaseCard v-else fill class="min-h-0">
+        <BaseEmpty text="还没有自选股，搜索代码或名称添加吧" />
+      </BaseCard>
+    </div>
+
+    <!-- 列表视图（默认）：分组表格（撑满卡片剩余高度；表格容器必须是卡片的直接 flex 子项，
          所以这里不留普通 block 包裹层，滚动容器类直接透传给 BaseTable） -->
     <BaseCard
+      v-else
       fill
       class="min-h-0 flex-1"
       :title="`当前分组-${activeGroup?.name ?? ''}（${activeGroup?.stocks.length ?? 0}只股票）`"

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
+import { useRouter } from 'vue-router';
 import BaseEmpty from '../components/ui/BaseEmpty.vue';
 import BaseTabs from '../components/ui/BaseTabs.vue';
 import NoticeBar from '../components/ui/NoticeBar.vue';
@@ -9,6 +10,8 @@ import { fetchFullQuotes } from '../../common/api/quotes.api.ts';
 import { usePolling } from '../../common/composables/use-polling';
 import { useTabConfig } from '../../common/composables/use-tab-config';
 import { POLLING_INTERVAL } from '../../common/constants/polling.constants.ts';
+import { ROUTE_PATH } from '../../common/constants/router-meta.constants.ts';
+import { useStockContextStore } from '../../common/stores/stock-context';
 import {
   WIDE_BASE_ETFS,
   WIDE_BASE_ETF_GROUP,
@@ -101,15 +104,38 @@ usePolling({
   intervalMs: WIDE_BASE_ETF_MINUTE_REFRESH_MS,
   tradingAware: true,
 });
+
+// ---------- 卡片头部点击 → 股票详情整页（2026-10-26 王总指定） ----------
+const router = useRouter();
+const stockContext = useStockContextStore();
+
+/**
+ * 打开个股详情整页：先把**当前分组的全部宽基ETF**写入股票上下文
+ * （详情页左侧「来源列表」即可在本组内一键切换），再路由跳转
+ * @param symbol 目标符号
+ */
+const openStockDetail = (symbol: string): void => {
+  stockContext.setContext(
+    visibleItems.value.map((item) => ({
+      symbol: item.symbol,
+      name: item.name,
+      price: quotes.value[item.symbol]?.price ?? null,
+      changePercent: quotes.value[item.symbol]?.changePercent ?? null,
+    })),
+  );
+  void router.push(`${ROUTE_PATH.STOCK_DETAIL}/${symbol}`);
+};
 </script>
 
 <template>
-  <div class="flex flex-col gap-3">
+  <!-- 根节点 h-full 定高：页头（说明 + 分组/视图页签）固定不动，
+       卡片网格在内容滚动容器内滚动（2026-10-26 王总指定，页签不再随内容滚走） -->
+  <div class="flex h-full min-h-0 flex-col gap-3">
     <!-- 页面用途说明（分时/日K 切换已下移分组页签行，2026-10-22 王总指定） -->
-    <NoticeBar :text="WIDE_BASE_ETF_NOTICE_TEXT" />
+    <NoticeBar :text="WIDE_BASE_ETF_NOTICE_TEXT" class="shrink-0" />
 
     <!-- 分组页签 + 分时/日K 切换 + 页签配置按钮（显隐 / 组内顺序，与盘面雷达同款弹窗） -->
-    <div class="flex flex-wrap items-center gap-3">
+    <div class="flex shrink-0 flex-wrap items-center gap-3">
       <BaseTabs
         v-model="activeGroup"
         :options="WIDE_BASE_ETF_GROUP_OPTIONS"
@@ -128,17 +154,21 @@ usePolling({
       />
     </div>
 
-    <!-- 一行 3 张，容器变窄降 2 列 / 1 列（主区已开 @container） -->
-    <div v-if="visibleItems.length > 0" class="grid grid-cols-1 gap-3 @3xl:grid-cols-2 @5xl:grid-cols-3">
-      <WideBaseEtfCard
-        v-for="item in visibleItems"
-        :key="item.symbol"
-        :item="item"
-        :mode="viewMode"
-        :quote="quotes[item.symbol] ?? null"
-        :minute-tick="minuteTick"
-      />
+    <!-- 内容滚动容器：一行 3 张，容器变窄降 2 列 / 1 列（主区已开 @container） -->
+    <div class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
+      <div v-if="visibleItems.length > 0" class="grid grid-cols-1 gap-3 @3xl:grid-cols-2 @5xl:grid-cols-3">
+        <WideBaseEtfCard
+          v-for="item in visibleItems"
+          :key="item.symbol"
+          :item="item"
+          :mode="viewMode"
+          :quote="quotes[item.symbol] ?? null"
+          :minute-tick="minuteTick"
+          clickable-title
+          @title-click="openStockDetail(item.symbol)"
+        />
+      </div>
+      <BaseEmpty v-else text="当前分组的标的已全部隐藏，点上方「配置页签」重新勾选" />
     </div>
-    <BaseEmpty v-else text="当前分组的标的已全部隐藏，点上方「配置页签」重新勾选" />
   </div>
 </template>

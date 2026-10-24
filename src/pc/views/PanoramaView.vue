@@ -208,7 +208,7 @@ const isEmpty = computed(
 </script>
 
 <template>
-  <div class="flex h-[calc(100dvh-6.5rem)] min-h-0 flex-col gap-4">
+  <div class="flex h-full min-h-0 flex-col gap-4">
     <div class="flex shrink-0 items-center justify-between gap-2">
       <div class="flex items-center gap-1">
         <BaseTabs
@@ -219,41 +219,65 @@ const isEmpty = computed(
         />
         <TabConfigButton page-id="panorama" :options="MODULE_TABS" />
       </div>
-      <span class="text-xs text-text-tertiary">未开盘时展示最近交易日收盘数据</span>
+      <!-- 提示为辅助信息：容器过窄（抽屉打开挤主区）时整体隐藏，避免被挤成一字一行竖排 -->
+      <span class="hidden shrink-0 text-xs text-text-tertiary @4xl:block">未开盘时展示最近交易日收盘数据</span>
     </div>
 
-    <!-- 历史复盘：牛熊模式库面板（数据自管，快照落 appStorage；撑满剩余高度） -->
-    <PanoramaReviewBoard v-if="activeModule === 'review'" class="min-h-0 flex-1" />
+    <!-- 模块内容统一滚动容器：页签行固定不动（2026-10-26 王总指定），
+         宏观卡片组等多内容模块在此滚动，不再把整页撑出去带动页签滚走 -->
+    <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
+      <!-- 历史复盘：牛熊模式库面板（数据自管，快照落 appStorage；撑满剩余高度） -->
+      <PanoramaReviewBoard v-if="activeModule === 'review'" class="min-h-0 flex-1" />
 
-    <!-- A股全景：板块排行组件（数据自管；撑满剩余高度，表格尽量高） -->
-    <PanoramaCnBoard v-else-if="activeModule === 'cn'" class="min-h-0 flex-1" />
+      <!-- A股全景：板块排行组件（数据自管；撑满剩余高度，表格尽量高） -->
+      <PanoramaCnBoard v-else-if="activeModule === 'cn'" class="min-h-0 flex-1" />
 
-    <!-- 全部个股：原侧栏「个股行情」页整卡并入（数据 / 轮询 / 翻页自管，v-if 挂载即启停轮询）；
-         外层滚动容器兜底卡内容超高（.table-scroll 自带 560px 内滚） -->
-    <div v-else-if="activeModule === 'stocks'" class="min-h-0 flex-1 overflow-y-auto">
-      <StockMarketView />
-    </div>
-
-    <PanoramaIpoBoard v-else-if="activeModule === 'ipo'" class="min-h-0 flex-1" />
-
-    <!-- 加载骨架（美股 / 宏观） -->
-    <BaseCard v-else-if="isLoading">
-      <div class="grid grid-cols-4 gap-2" aria-hidden="true">
-        <div v-for="i in 12" :key="i" class="h-11 animate-pulse rounded-lg bg-flat-weak" />
+      <!-- 全部个股：原侧栏「个股行情」页整卡并入（数据 / 轮询 / 翻页自管，v-if 挂载即启停轮询）；
+           外层滚动容器兜底卡内容超高（.table-scroll 自带 560px 内滚） -->
+      <div v-else-if="activeModule === 'stocks'" class="min-h-0 flex-1 overflow-y-auto">
+        <StockMarketView />
       </div>
-    </BaseCard>
 
-    <!-- 失败 / 空态 -->
-    <BaseCard v-else-if="isEmpty">
-      <BaseEmpty text="数据加载失败或暂无数据，请稍后重试（上游可能限频）" />
-    </BaseCard>
+      <PanoramaIpoBoard v-else-if="activeModule === 'ipo'" class="min-h-0 flex-1" />
 
-    <!-- 全球宏观：分组网格 -->
-    <template v-else-if="isMacroModule">
-      <BaseCard v-for="group in macroGroups" :key="group.label" :title="group.label">
+      <!-- 加载骨架（美股 / 宏观） -->
+      <BaseCard v-else-if="isLoading">
+        <div class="grid grid-cols-4 gap-2" aria-hidden="true">
+          <div v-for="i in 12" :key="i" class="h-11 animate-pulse rounded-lg bg-flat-weak" />
+        </div>
+      </BaseCard>
+
+      <!-- 失败 / 空态 -->
+      <BaseCard v-else-if="isEmpty">
+        <BaseEmpty text="数据加载失败或暂无数据，请稍后重试（上游可能限频）" />
+      </BaseCard>
+
+      <!-- 全球宏观：分组网格 -->
+      <template v-else-if="isMacroModule">
+        <BaseCard v-for="group in macroGroups" :key="group.label" :title="group.label">
+          <div class="grid grid-cols-4 gap-2">
+            <div
+              v-for="item in group.items"
+              :key="item.name"
+              class="flex items-center justify-between gap-2 rounded-lg bg-flat-weak px-3 py-2.5"
+            >
+              <span class="truncate text-sm text-text">{{ item.name }}</span>
+              <span
+                class="shrink-0 text-sm font-semibold tabular-nums"
+                :class="TREND_TEXT_CLASS[getTrendByChangePercent(item.changePercent ?? 0)]"
+              >
+                {{ formatPercent(item.changePercent) }}
+              </span>
+            </div>
+          </div>
+        </BaseCard>
+      </template>
+
+      <!-- 美股：扁平网格 -->
+      <BaseCard v-else-if="isUsModule">
         <div class="grid grid-cols-4 gap-2">
           <div
-            v-for="item in group.items"
+            v-for="item in usBoards"
             :key="item.name"
             class="flex items-center justify-between gap-2 rounded-lg bg-flat-weak px-3 py-2.5"
           >
@@ -267,25 +291,6 @@ const isEmpty = computed(
           </div>
         </div>
       </BaseCard>
-    </template>
-
-    <!-- 美股：扁平网格 -->
-    <BaseCard v-else-if="isUsModule">
-      <div class="grid grid-cols-4 gap-2">
-        <div
-          v-for="item in usBoards"
-          :key="item.name"
-          class="flex items-center justify-between gap-2 rounded-lg bg-flat-weak px-3 py-2.5"
-        >
-          <span class="truncate text-sm text-text">{{ item.name }}</span>
-          <span
-            class="shrink-0 text-sm font-semibold tabular-nums"
-            :class="TREND_TEXT_CLASS[getTrendByChangePercent(item.changePercent ?? 0)]"
-          >
-            {{ formatPercent(item.changePercent) }}
-          </span>
-        </div>
-      </div>
-    </BaseCard>
+    </div>
   </div>
 </template>

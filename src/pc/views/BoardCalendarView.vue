@@ -662,7 +662,7 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
 </script>
 
 <template>
-  <div class="flex h-[calc(100dvh-6.5rem)] min-h-0 flex-col gap-4">
+  <div class="flex h-full min-h-0 flex-col gap-4">
     <!-- 板块过滤器上移 MainLayout 页头（Teleport 投射，本页激活时才挂载；弹窗仍留在页内） -->
     <Teleport v-if="headerSlotActive" :to="PAGE_HEADER_ACTIONS_TARGET">
       <BaseButton variant="ghost" @click="filterOpen = true">

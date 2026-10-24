@@ -103,8 +103,11 @@ export const WIDE_BASE_ETF_DAILY_BAR_LIMIT = 140;
 /** 盘中分时数据刷新间隔（毫秒）：11 只 × 每分钟 1 次新浪分钟线，保持克制 */
 export const WIDE_BASE_ETF_MINUTE_REFRESH_MS = 60_000;
 
-/** 卡片图表高度（px）：三列栅格下的紧凑规格，主图 + 成交量副图 */
-export const WIDE_BASE_ETF_CHART_HEIGHT_PX = 300;
+/**
+ * 卡片图表高度（px）：三列栅格下的紧凑规格，主图 + 成交量副图；
+ * 2026-10-26 王总指定由 300 压到约 80%（240），一行放下更多视野不占屏
+ */
+export const WIDE_BASE_ETF_CHART_HEIGHT_PX = 240;
 
 /** 页面顶部公告文案（说明页面用途，可读性优先） */
 export const WIDE_BASE_ETF_NOTICE_TEXT =
