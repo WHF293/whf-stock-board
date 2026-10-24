@@ -85,7 +85,9 @@ const col3Class = (row: FuturesRankRow, kind: 'changePercent' | 'turnover' | 'oi
 </script>
 
 <template>
-  <div class="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2 xl:grid-cols-4">
+  <!-- 四榜单栅格走容器断点（@container 挂在 MainLayout 内容容器）：右侧产业链抽屉
+       挤压主区时按 2×2 换行，而不是按视口断点硬塞四列把表头挤成一字一行 -->
+  <div class="grid grid-cols-1 gap-x-8 gap-y-4 @sm:grid-cols-2 @4xl:grid-cols-4">
     <template v-for="type in BOARD_ORDER" :key="type">
       <div v-if="boards[type]?.length" class="min-w-0">
         <div class="mb-2 flex items-center border-l-2 border-primary pl-2">

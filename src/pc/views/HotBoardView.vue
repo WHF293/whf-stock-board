@@ -469,9 +469,9 @@ const runBoardAnalysis = async (scope?: BoardSource): Promise<void> => {
 <template>
   <!-- 单根容器：MainLayout 通过 :class="pageAnim" 下发页面进入动画类名，
          而多根组件无法继承 attrs（会丢动画并刷 Vue warn），故统一包一层；
-         高度用 100dvh - 6.5rem（扣除 MainLayout 头部与主区内边距，与热点新闻页口径一致），
+         高度 h-full 填满 MainLayout 内容容器（定高，2026-10-24 起双滚动条治理），
          tab 行 shrink-0，两种模式的内容区各撑满剩余高度 -->
-  <div class="flex h-[calc(100dvh-6.5rem)] min-h-0 flex-col gap-4">
+  <div class="flex h-full min-h-0 flex-col gap-4">
     <!-- 页级动作上移 MainLayout 页头：股票热榜专属
          （启用计数 / AI 分析 / 平台设置；ETF 模式的页头动作由 EtfHotBoard 自行投射） -->
     <Teleport v-if="headerSlotActive" :to="PAGE_HEADER_ACTIONS_TARGET">

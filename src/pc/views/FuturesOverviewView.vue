@@ -173,9 +173,11 @@ const sourceNoticeText = computed(() =>
     </BaseCard>
 
     <template v-else>
-      <div class="grid grid-cols-1 gap-3 xl:grid-cols-3">
+      <!-- 三指标卡：容器放得下 3×480 才并排（王总 2026-10-24 指定最小宽度 480px），
+           产业链抽屉挤窄主区时自动换行（2+1 / 竖排），不再按视口断点硬塞三列挤爆图表 -->
+      <div class="flex flex-wrap gap-3">
         <!-- ① 主力流况状况（涨跌家数） -->
-        <BaseCard title="主力流况状况" fill>
+        <BaseCard title="主力流况状况" fill class="min-w-[480px] flex-1">
           <template #extra>
             <span class="text-xs text-text-tertiary">单位：合约个数（主力合约）</span>
           </template>
@@ -200,7 +202,7 @@ const sourceNoticeText = computed(() =>
         </BaseCard>
 
         <!-- ② 品种资金流向 -->
-        <BaseCard title="品种资金流向" fill>
+        <BaseCard title="品种资金流向" fill class="min-w-[480px] flex-1">
           <template #extra>
             <button
               type="button"
@@ -217,7 +219,7 @@ const sourceNoticeText = computed(() =>
         </BaseCard>
 
         <!-- ③ 主力持仓多空比 -->
-        <BaseCard title="主力持仓多空比" fill>
+        <BaseCard title="主力持仓多空比" fill class="min-w-[480px] flex-1">
           <template #extra>
             <button
               type="button"

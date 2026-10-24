@@ -1366,8 +1366,9 @@ const loadMoreLabel = (state: SourceState): string => {
 
 <template>
   <!-- 单根容器：MainLayout 通过 :class="pageAnim" 下发页面进入动画类名，
-         而多根组件无法继承 attrs（会丢动画并刷 Vue warn），故统一包一层 -->
-  <div>
+         而多根组件无法继承 attrs（会丢动画并刷 Vue warn），故统一包一层；
+         h-full 填满 MainLayout 内容容器（定高，2026-10-24 双滚动条治理） -->
+  <div class="h-full">
     <!-- 页级动作上移 MainLayout 页头：启用计数 + AI 分析 + 新闻源设置
          （Teleport 投射，本页激活时才挂载；「新闻源设置」弹窗仍留在页内） -->
     <Teleport v-if="headerSlotActive" :to="PAGE_HEADER_ACTIONS_TARGET">
@@ -1636,9 +1637,9 @@ const loadMoreLabel = (state: SourceState): string => {
     </BaseModal>
 
     <!-- 横向卡片流：每源一张 375px 卡片，超出页面横向滚动 -->
-    <!-- 高度用 100dvh - 6.5rem：扣除 MainLayout 头部 h-14(56px) + main 内部 div 的 p-6 上下(48px)
-         （页级动作工具条已上移页头，不再为其预留高度） -->
-    <div class="flex h-[calc(100dvh-6.5rem)] min-h-0 gap-4 overflow-x-auto p-4">
+    <!-- 高度 h-full 填满 MainLayout 内容容器（2026-10-24 双滚动条治理；
+         页级动作工具条已上移页头，不再为其预留高度） -->
+    <div class="flex h-full min-h-0 gap-4 overflow-x-auto p-4">
       <BaseCard
         v-for="card in cardViews"
         :key="card.value"

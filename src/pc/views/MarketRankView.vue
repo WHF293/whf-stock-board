@@ -486,7 +486,7 @@ const onRankExport = async (): Promise<void> => {
 </script>
 
 <template>
-  <div class="flex h-[calc(100dvh-6.5rem)] min-h-0 flex-col gap-4">
+  <div class="flex h-full min-h-0 flex-col gap-4">
     <!-- 排序维度切换（与行情全景一致的 underline 风格） -->
     <div class="flex shrink-0 items-center gap-1">
       <BaseTabs v-model="sortKey" :options="sortTabOptions" variant="underline" />
