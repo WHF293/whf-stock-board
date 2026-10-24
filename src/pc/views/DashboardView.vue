@@ -8,7 +8,6 @@ import BaseTable from '../components/ui/BaseTable.vue';
 import DistributionChart from '../components/charts/DistributionChart.vue';
 import HeatmapChart from '../components/charts/HeatmapChart.vue';
 import HeatmapBoardList from '../components/business/HeatmapBoardList.vue';
-import MarketFundFlowTrendChart from '../components/charts/MarketFundFlowTrendChart.vue';
 import TurnoverTrendChart from '../components/charts/TurnoverTrendChart.vue';
 import RealtimeTurnoverCard from '../components/business/RealtimeTurnoverCard.vue';
 import MarketBreadthCard from '../components/business/MarketBreadthCard.vue';
@@ -81,13 +80,7 @@ import { ROUTE_PATH } from '../../common/constants/router-meta.constants.ts';
 /** 市场宽度各接口请求间隔（毫秒）：对同一上游串行错峰 */
 const BREADTH_REQUEST_GAP_MS = 500;
 
-/** 大盘资金流保留的交易日数（近 10 日） */
-const MARKET_FLOW_DAYS = 10;
-
-/** 大盘资金流视图高度（像素）：与涨跌分布图表等高（220 × 1.4），保证同排两卡视觉一致 */
-const MARKET_FLOW_VIEW_HEIGHT_PX = 308;
-
-/** 展示形式：图表（默认） / 列表（涨跌分布与大盘资金流共用同一组值） */
+/** 展示形式：图表（默认） / 列表（涨跌分布与成交额共用同一组值） */
 const VIEW_MODE = {
   CHART: 'chart',
   TABLE: 'table',
@@ -102,12 +95,9 @@ const VIEW_MODE_OPTIONS = [
 /** 涨跌分布当前展示形式（局部状态，不持久化） */
 const distributionViewMode = ref<typeof VIEW_MODE[keyof typeof VIEW_MODE]>(VIEW_MODE.CHART);
 
-/** 大盘资金流当前展示形式（局部状态，不持久化） */
-const marketViewMode = ref<typeof VIEW_MODE[keyof typeof VIEW_MODE]>(VIEW_MODE.CHART);
-
 /**
  * 市场总览：指数卡片（轮询，点击跳 K 线详情）+ 全部指数一次渲染、收起只看首行（见 useRowClamp）+
- * 涨跌分布 / 资金速览 + 市场情绪（涨停 / 跌停 / 炸板 / 连板梯队 / 打板溢价）+
+ * 涨跌分布 / 资金速览 + 市场情绪（涨停 / 跌停 / 炸板 / 连板梯队 / 打板溢价）+ 市场宽度 · ARMS +
  * 板块热力（轮询，支持热力图 / 列表两种展示形式，
  * 下钻状态两视图共享；点击下钻成分股 → 点击个股跳详情）
  *
@@ -129,7 +119,7 @@ const goMarketRank = (): void => {
   void router.push(ROUTE_PATH.MARKET_RANK);
 };
 
-/** 跳资金流向页（主力净流入卡标题落点，2026-10-13 起独立成页） */
+/** 跳资金流向页（成交额卡标题落点，2026-10-13 起独立成页） */
 const goBoardFlow = (): void => {
   void router.push(ROUTE_PATH.BOARD_FLOW);
 };
@@ -166,10 +156,8 @@ const indexQuotes = ref<FullQuote[]>([]);
 const distribution = ref<DistributionCount[]>([]);
 /** 行业板块列表 */
 const industryBoards = ref<IndustryBoard[]>([]);
-/** 当日大盘资金流（取最新一条） */
+/** 当日大盘资金流（取最新一条；成交额卡资金速览「主力净流入」消费） */
 const marketFundFlow = ref<MarketFundFlow | null>(null);
-/** 大盘资金流历史（近 10 日，升序；供曲线 / 列表） */
-const marketFlowHistory = ref<MarketFundFlow[]>([]);
 /** 两市成交额合计（万） */
 const totalAmountWan = ref<number | null>(null);
 
@@ -182,7 +170,6 @@ interface BreadthSnapshot {
   totalAmountWan: number;
   boards: IndustryBoard[];
   fundFlow: MarketFundFlow | null;
-  flowHistory: MarketFundFlow[];
 }
 
 // 快照播种：切换回本页先展示上次数据
@@ -196,7 +183,6 @@ if (cachedBreadth) {
   totalAmountWan.value = cachedBreadth.totalAmountWan;
   industryBoards.value = cachedBreadth.boards;
   marketFundFlow.value = cachedBreadth.fundFlow;
-  marketFlowHistory.value = cachedBreadth.flowHistory ?? [];
 }
 
 /** 拉取指数行情（成功后写快照） */
@@ -248,9 +234,6 @@ const {
   toggle: toggleIndexExpanded,
 } = useRowClamp();
 
-/** 市场宽度首载是否失败（且无快照）——供资金流卡片空态展示 */
-const isBreadthError = ref(false);
-
 /** 拉取市场宽度数据（全市场快照 + 板块 + 资金流；成功后写快照） */
 const fetchMarketBreadth = async (): Promise<void> => {
   try {
@@ -260,25 +243,21 @@ const fetchMarketBreadth = async (): Promise<void> => {
     const boards = await fetchIndustryBoards();
     await delay(BREADTH_REQUEST_GAP_MS);
     const flows = await fetchMarketFundFlow();
-
-  distribution.value = countDistribution(quotes.map((quote) => quote.changePercent));
-  totalAmountWan.value = quotes.reduce((acc, quote) => acc + (quote.amount ?? 0), 0);
-  // 市场宽度 · ARMS：与涨跌分布同源快照，ingest 落分钟点 / 收盘定稿日 bar（零新增请求）
-  marketBreadth.value = ingestBreadthSnapshot(quotes);
-  industryBoards.value = boards;
-  marketFundFlow.value = flows.at(-1) ?? null;
-  marketFlowHistory.value = flows.slice(-MARKET_FLOW_DAYS);
+    distribution.value = countDistribution(quotes.map((quote) => quote.changePercent));
+    totalAmountWan.value = quotes.reduce((acc, quote) => acc + (quote.amount ?? 0), 0);
+    // 市场宽度 · ARMS：与涨跌分布同源快照，ingest 落分钟点 / 收盘定稿日 bar（零新增请求）
+    marketBreadth.value = ingestBreadthSnapshot(quotes);
+    industryBoards.value = boards;
+    marketFundFlow.value = flows.at(-1) ?? null;
 
     const snapshot: BreadthSnapshot = {
       distribution: distribution.value,
       totalAmountWan: totalAmountWan.value,
       boards: industryBoards.value,
       fundFlow: marketFundFlow.value,
-      flowHistory: marketFlowHistory.value,
     };
     dataCache.set(DATA_CACHE_KEY.DASHBOARD_BREADTH, snapshot);
   } catch (error) {
-    isBreadthError.value = marketFlowHistory.value.length === 0;
     console.error('[dashboard] breadth', error);
   }
 };
@@ -550,28 +529,6 @@ const distributionTotal = computed(() =>
   distribution.value.reduce((acc, bucket) => acc + bucket.count, 0),
 );
 
-/** 大盘资金流列配置 */
-const marketColumns: TableColumn<MarketFundFlow>[] = [
-  { key: 'date', label: '日期' },
-  {
-    key: 'mainNetInflow',
-    label: '主力净流入',
-    align: 'right',
-    sortable: true,
-    sortValue: (day) => day.mainNetInflow,
-  },
-  { key: 'mainNetInflowPercent', label: '主力占比', align: 'right' },
-  { key: 'superLargeNetInflow', label: '超大单', align: 'right' },
-  { key: 'largeNetInflow', label: '大单', align: 'right' },
-  { key: 'smallNetInflow', label: '小单', align: 'right' },
-];
-
-/** 大盘近 10 日数据（倒序展示） */
-const marketFlowRows = computed(() => [...marketFlowHistory.value].reverse());
-
-/** 大盘近 10 日数据（升序，供折线图） */
-const marketFlowAsc = computed(() => marketFlowHistory.value);
-
 /** 涨跌分布是否就绪（首次加载完成） */
 const isDistributionReady = computed(() => distribution.value.length > 0);
 </script>
@@ -665,34 +622,36 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
         </div>
         <BaseSkeleton v-else-if="!sentiment" />
         <template v-else>
-          <!-- 速览六格：窄容器 3×2，宽容器 6×1（主区已开 @container） -->
-          <div class="grid grid-cols-3 gap-4 @2xl:grid-cols-6">
+          <!-- 速览六格：窄容器 3×2，宽容器（≥1024px）6×1（主区已开 @container；
+               2026-10-24 抽屉挤窄主区时六格单格仅 ~55px，标签逐字竖排，故收窄切六列的档位，
+               标签 nowrap 防一字一行） -->
+          <div class="grid grid-cols-3 gap-4 @5xl:grid-cols-6">
             <div>
-              <p class="text-xs text-text-tertiary">涨停</p>
+              <p class="whitespace-nowrap text-xs text-text-tertiary">涨停</p>
               <p class="mt-1 text-xl font-semibold tabular-nums text-up">
                 {{ sentiment.limitUpCount }}
               </p>
             </div>
             <div>
-              <p class="text-xs text-text-tertiary">跌停</p>
+              <p class="whitespace-nowrap text-xs text-text-tertiary">跌停</p>
               <p class="mt-1 text-xl font-semibold tabular-nums text-down">
                 {{ sentiment.limitDownCount }}
               </p>
             </div>
             <div>
-              <p class="text-xs text-text-tertiary">炸板</p>
+              <p class="whitespace-nowrap text-xs text-text-tertiary">炸板</p>
               <p class="mt-1 text-xl font-semibold tabular-nums text-text">
                 {{ sentiment.brokenCount }}
               </p>
             </div>
             <div>
-              <p class="text-xs text-text-tertiary">炸板率</p>
+              <p class="whitespace-nowrap text-xs text-text-tertiary">炸板率</p>
               <p class="mt-1 text-xl font-semibold tabular-nums text-text">
                 {{ sentiment.brokenRate === null ? '--' : formatPercentUnsigned(sentiment.brokenRate) }}
               </p>
             </div>
             <div>
-              <p class="text-xs text-text-tertiary">连板高度</p>
+              <p class="whitespace-nowrap text-xs text-text-tertiary">连板高度</p>
               <p
                 class="mt-1 text-xl font-semibold tabular-nums"
                 :class="sentiment.maxLadder >= 3 ? 'text-up' : 'text-text'"
@@ -701,7 +660,7 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
               </p>
             </div>
             <div>
-              <p class="text-xs text-text-tertiary">昨日涨停均涨</p>
+              <p class="whitespace-nowrap text-xs text-text-tertiary">昨日涨停均涨</p>
               <p
                 class="mt-1 text-xl font-semibold tabular-nums"
                 :class="
@@ -735,12 +694,12 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
       </BaseCard>
     </div>
 
-    <!-- 成交额（资金速览 + 成交额变化合并为一张卡：两者本质同属市场成交维度；标题跳盘面雷达）。
+    <!-- 成交额（资金速览 + 成交额变化合并为一张卡：两者本质同属市场成交维度；标题跳资金流向页，2026-10-24 王总指定）。
          2026-10-13 实时成交额由独立卡并入本卡，成为图表视图第一个量纲子项（实时成交额/历史成交量/相对成交量） -->
     <BaseCard
       title="成交额"
       clickable-title
-      @title-click="goMarketRank"
+      @title-click="goBoardFlow"
     >
       <template #extra>
         <div class="flex items-center gap-2">
@@ -815,7 +774,9 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
       </BaseTable>
     </BaseCard>
 
-    <!-- 涨跌分布 + 大盘资金流：等宽 flex 左右分布（gap 20px，与上方新行同口径），窄窗 320px 以下换行 -->
+    <!-- 涨跌分布 + 市场宽度：等宽 flex 左右分布（gap 20px，与上方新行同口径），窄窗 320px 以下换行。
+         市场宽度 2026-10-24 起由独占整行改入本行右位、宽度减半（王总指定），
+         原右位「主力净流入（近10日）」卡同日删除（大盘资金流下钻走资金流向页） -->
     <div class="flex flex-wrap gap-5">
       <BaseCard
         title="涨跌分布"
@@ -854,75 +815,19 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
         </BaseTable>
       </BaseCard>
 
-      <!-- 大盘资金流（近10日）：曲线 / 列表；标题跳资金流向页（2026-10-13 起独立成页） -->
-      <BaseCard
-        title="主力净流入（近10日）"
-        clickable-title
+      <!-- 市场宽度 · ARMS（当日分时；近 30/60 日等长历史在右上角「市场宽度详情」入口页；数据随行情快照本地积累） -->
+      <MarketBreadthCard
+        :breadth="marketBreadth"
+        :sentiment="sentiment"
         class="min-w-[320px] flex-1"
-        @title-click="goBoardFlow"
-      >
-        <template #extra>
-          <BaseTabs v-model="marketViewMode" :options="VIEW_MODE_OPTIONS" />
-        </template>
-        <div v-if="isBreadthError" class="py-10">
-          <BaseEmpty text="资金数据加载失败，请稍后重试（上游可能限频或封禁）" />
-        </div>
-        <BaseSkeleton v-else-if="marketFlowHistory.length === 0" />
-        <template v-else>
-          <!-- 曲线视图 -->
-          <div v-if="marketViewMode === VIEW_MODE.CHART">
-            <MarketFundFlowTrendChart :days="marketFlowAsc" :height="MARKET_FLOW_VIEW_HEIGHT_PX" />
-          </div>
-          <!-- 列表视图 -->
-          <BaseTable
-            v-else
-            :columns="marketColumns"
-            :rows="marketFlowRows"
-            :row-key="(day) => day.date"
-            scroll-class="table-scroll-chart"
-          >
-            <template #date="{ row }">
-              <span class="text-text-secondary">{{ row.date.slice(5) }}</span>
-            </template>
-            <template #mainNetInflow="{ row }">
-              <span
-                class="font-medium"
-                :class="(row.mainNetInflow ?? 0) >= 0 ? 'text-up' : 'text-down'"
-              >
-                {{ formatYuanWithSign(row.mainNetInflow) }}
-              </span>
-            </template>
-            <template #mainNetInflowPercent="{ row }">
-              <span class="text-text-secondary">{{ formatPercent(row.mainNetInflowPercent) }}</span>
-            </template>
-            <template #superLargeNetInflow="{ row }">
-              <span :class="(row.superLargeNetInflow ?? 0) >= 0 ? 'text-up' : 'text-down'">
-                {{ formatYuanWithSign(row.superLargeNetInflow) }}
-              </span>
-            </template>
-            <template #largeNetInflow="{ row }">
-              <span :class="(row.largeNetInflow ?? 0) >= 0 ? 'text-up' : 'text-down'">
-                {{ formatYuanWithSign(row.largeNetInflow) }}
-              </span>
-            </template>
-            <template #smallNetInflow="{ row }">
-              <span :class="(row.smallNetInflow ?? 0) >= 0 ? 'text-up' : 'text-down'">
-                {{ formatYuanWithSign(row.smallNetInflow) }}
-              </span>
-            </template>
-          </BaseTable>
-        </template>
-      </BaseCard>
+      />
     </div>
 
-    <!-- 市场宽度 · ARMS（2026-10-21 新增：当日分时 + 近 30/60 日曲线；数据随行情快照本地积累） -->
-    <MarketBreadthCard :breadth="marketBreadth" :sentiment="sentiment" />
-
-    <!-- 板块热力（标题跳行情全景 A 股全景模块） -->
+    <!-- 板块热力（标题跳大盘云图，2026-10-24 王总指定） -->
     <BaseCard
       title="板块热力（按总市值加权）"
       clickable-title
-      @title-click="goPanorama"
+      @title-click="goHeatmap"
     >
       <template #extra>
         <div class="flex flex-wrap items-center gap-2">
