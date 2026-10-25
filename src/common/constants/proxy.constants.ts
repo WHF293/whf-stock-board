@@ -34,6 +34,10 @@ export const STOCK_PROXY_ALLOWED_HOSTS = [
   'xueqiu.com',
   // 中金所（期货·机构行为：CCPM 成交持仓排名每日披露 CSV，仅 HTTP 无 HTTPS）
   'cffex.com.cn',
+  // 上交所（ETF 逐日份额：query.sse.com.cn/commonQuery.do，单日全市场 924 只 ETF）
+  'sse.com.cn',
+  // 深交所（ETF 逐日份额：fund.szse.cn/api/report/ShowReport，CATALOGID=fund_jjgm）
+  'szse.cn',
   // stock-sdk 静态资源（代码表等参考数据）
   'linkdiary.cn',
 ] as const;

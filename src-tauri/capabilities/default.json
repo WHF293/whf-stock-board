@@ -117,6 +117,18 @@
           "url": "http://www.cffex.com.cn/*"
         },
         {
+          "url": "https://*.sse.com.cn/*"
+        },
+        {
+          "url": "https://sse.com.cn/*"
+        },
+        {
+          "url": "https://*.szse.cn/*"
+        },
+        {
+          "url": "https://szse.cn/*"
+        },
+        {
           "url": "https://*.linkdiary.cn/*"
         }
       ]
