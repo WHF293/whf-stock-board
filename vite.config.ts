@@ -36,6 +36,17 @@ export default defineConfig(({ mode }) => {
     host: '127.0.0.1',
     port: 5173,
     strictPort: true,
+    /**
+     * 排除 Rust 构建产物目录。
+     *
+     * `src-tauri/target` 是 cargo 的输出目录：链接阶段 `app.exe` 被链接器独占锁定，
+     * 而 Vite 的 watcher 默认 watch 整个项目根 —— 对被锁文件 `fs.watch` 会抛
+     * `EBUSY: resource busy or locked`，未捕获的 error 事件直接终止 dev server，
+     * 连带 `tauri dev` 因 beforeDevCommand 非零退出而失败。该目录与前端源码无关。
+     */
+    watch: {
+      ignored: ['**/src-tauri/**'],
+    },
   },
   resolve: {
     alias: [
