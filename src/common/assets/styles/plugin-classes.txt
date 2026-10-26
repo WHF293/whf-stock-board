@@ -71,11 +71,13 @@ group-hover:opacity-100
 h-0.5
 h-1
 h-1.5
+h-12
 h-16
 h-24
 h-4
 h-6
 h-7
+h-8
 h-full
 hover:bg-flat-weak
 hover:border-primary
@@ -127,6 +129,7 @@ opacity-0
 opacity-100
 opacity-50
 outline-none
+overflow-hidden
 overflow-y-auto
 p-0.5
 p-1
@@ -195,6 +198,7 @@ text-text-tertiary
 text-up
 text-xs
 top-0
+top-1.5
 transition
 transition-colors
 transition-opacity
