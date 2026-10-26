@@ -17,7 +17,7 @@ bg-flat-weak/60
 bg-primary
 bg-primary-weak
 bg-surface
-bg-surface-secondary
+bg-text
 bg-text-tertiary
 bg-up
 bg-up-weak
@@ -165,6 +165,7 @@ rounded-sm
 rounded-t-[1px]
 select-none
 shadow-lg
+shadow-md
 shadow-sm
 shrink-0
 sm:grid-cols-3
@@ -187,6 +188,7 @@ text-lg
 text-primary
 text-right
 text-sm
+text-surface
 text-text
 text-text-secondary
 text-text-tertiary
