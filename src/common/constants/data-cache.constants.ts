@@ -20,7 +20,6 @@ export const DATA_CACHE_KEY = {
   FUNDS_MARKET_FLOW: 'funds.marketFlow',
   /** 板块资金（行情全景）：板块净流入排名 */
   FUNDS_SECTOR_RANK: 'funds.sectorRank',
-  FUNDS_STOCK_RANK: 'funds.stockRank',
   /** 行业资金曲线（含归属交易日，会话内复用） */
   FUNDS_SECTOR_CURVE: 'funds.sectorCurve',
   /** 股池（前缀 + 池类型） */

@@ -153,7 +153,7 @@ const fileSizeText = computed(() => {
   <BaseModal
     v-model:open="open"
     title="导入数据"
-    max-width-class="max-w-lg"
+    max-width-class="max-w-2xl"
   >
     <!-- 第一步：选择文件 -->
     <div class="flex items-center justify-between gap-4">
@@ -189,7 +189,8 @@ const fileSizeText = computed(() => {
       <p class="mt-4 mb-2 text-xs text-text-tertiary">
         勾选要恢复的数据（仅列出文件中实际包含的类别）
       </p>
-      <div class="space-y-1">
+      <!-- 双列网格（与导出弹窗同款，2026-10-27 王总指定） -->
+      <div class="grid grid-cols-1 gap-x-5 gap-y-1 sm:grid-cols-2">
         <label
           v-for="row in rows"
           :key="row.category.id"

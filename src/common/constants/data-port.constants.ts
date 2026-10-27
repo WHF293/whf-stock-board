@@ -79,6 +79,15 @@ export const DATA_PORT_MANIFEST: readonly DataPortCategory[] = [
     tip: '历史牛市复盘指数月 K 快照 / 板块历史净流入数据',
   },
   {
+    id: 'market-breadth',
+    label: '市场宽度历史',
+    db: 'stock-board',
+    storage: 'local-storage',
+    nsKeys: ['marketBreadth.days', 'marketBreadth.bars'],
+    defaultEnabled: true,
+    tip: '市场宽度页按本地日积累的分钟点序列（滚存 3 日）与日 bar（滚存 250 日），删了需重新积累',
+  },
+  {
     id: 'etf-holdings',
     label: 'ETF 持仓股缓存',
     db: 'stock-board',

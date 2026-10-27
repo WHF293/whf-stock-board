@@ -8,24 +8,11 @@ export const DEFAULT_GROUP_ID = 'default';
 /** 默认自选分组名称 */
 export const DEFAULT_GROUP_NAME = '默认分组';
 
+/** 自选股表格「分组」列：多个分组名称间的分隔符 */
+export const WATCHLIST_GROUP_NAME_SEPARATOR = '，';
+
 /** 删除分组的确认文案 */
 export const REMOVE_GROUP_CONFIRM_TEXT = '确认删除该分组？组内自选股将一并移除';
-
-/** 自选股内容视图值：图表（迷你K线卡片栅格）/ 列表（分组表格，默认） */
-export const WATCHLIST_CONTENT_VIEW = {
-  CHART: 'chart',
-  LIST: 'list',
-} as const;
-
-/** 自选股内容视图类型 */
-export type WatchlistContentView =
-  (typeof WATCHLIST_CONTENT_VIEW)[keyof typeof WATCHLIST_CONTENT_VIEW];
-
-/** 内容视图切换选项（BaseTabs 消费；默认列表，2026-10-26 王总指定） */
-export const WATCHLIST_CONTENT_VIEW_OPTIONS: readonly { label: string; value: string }[] = [
-  { label: '图表', value: WATCHLIST_CONTENT_VIEW.CHART },
-  { label: '列表', value: WATCHLIST_CONTENT_VIEW.LIST },
-] as const;
 
 /**
  * 合法自选符号形态（sh600519 / sz000001 / bj430047 / hk00700 / usAAPL）

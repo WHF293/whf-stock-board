@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onActivated, onMounted, ref } from 'vue';
+import { computed, ref } from 'vue';
 import BaseButton from '../components/ui/BaseButton.vue';
 import BaseCard from '../components/ui/BaseCard.vue';
 import BaseEmpty from '../components/ui/BaseEmpty.vue';
@@ -8,7 +8,6 @@ import BaseTable from '../components/ui/BaseTable.vue';
 import DistributionChart from '../components/charts/DistributionChart.vue';
 import HeatmapChart from '../components/charts/HeatmapChart.vue';
 import HeatmapBoardList from '../components/business/HeatmapBoardList.vue';
-import TurnoverTrendChart from '../components/charts/TurnoverTrendChart.vue';
 import RealtimeTurnoverCard from '../components/business/RealtimeTurnoverCard.vue';
 import MarketBreadthCard from '../components/business/MarketBreadthCard.vue';
 import MarketRatingCard from '../components/business/MarketRatingCard.vue';
@@ -22,7 +21,6 @@ import {
 import { fetchGlobalIndexQuotes } from '../../common/api/panorama.api.ts';
 import { fetchIndustryBoards } from '../../common/api/board.api.ts';
 import { fetchMarketFundFlow } from '../../common/api/flow.api.ts';
-import { fetchMarketTurnover } from '../../common/api/turnover.api.ts';
 import { fetchZtPool } from '../../common/api/event.api.ts';
 import { usePolling } from '../../common/composables/use-polling';
 import {
@@ -33,16 +31,6 @@ import {
   HEATMAP_VIEW_MODE,
   HEATMAP_VIEW_MODE_OPTIONS,
 } from '../../common/constants/heatmap.constants.ts';
-import { YUAN_PER_YI } from '../../common/constants/format.constants.ts';
-import {
-  TURNOVER_CHART_METRIC,
-  TURNOVER_CHART_METRIC_DEFAULT,
-  TURNOVER_CHART_METRIC_OPTIONS,
-  TURNOVER_RANGE_DEFAULT,
-  TURNOVER_RANGE_TAB_OPTIONS,
-  type TurnoverChartMetric,
-  type TurnoverRange,
-} from '../../common/constants/turnover.constants.ts';
 import { POLLING_INTERVAL } from '../../common/constants/polling.constants.ts';
 import { PANORAMA_GLOBAL_INDEX_SECIDS } from '../../common/constants/panorama.constants.ts';
 import { useHeatmapDrill } from '../../common/composables/use-heatmap-drill';
@@ -56,19 +44,16 @@ import type {
   IndustryBoard,
 } from '../../common/types/board.types.ts';
 import type { MarketFundFlow } from '../../common/types/flow.types.ts';
-import type { TurnoverDayItem } from '../../common/types/turnover.types.ts';
 import type { ZTPoolItem } from '../../common/types/event.types.ts';
 import type { MarketSentiment } from '../../common/types/market-sentiment.types.ts';
 import type { MarketBreadth } from '../../common/types/market-breadth.types.ts';
 import { ingestBreadthSnapshot } from '../../common/api/market-breadth-db.api.ts';
-import type { TurnoverTableRow } from '../../common/constants/turnover.constants.ts';
 import type { TableColumn } from '../../common/types/table.types.ts';
 import type { FullQuote } from '../../common/types/stock-quote.types.ts';
 import { formatPercent, formatPercentUnsigned } from '../../common/utils/format-percent';
 import { formatAmount } from '../../common/utils/format-amount';
 import { computeMarketSentiment } from '../../common/utils/compute-market-sentiment';
 import { formatYuanWithSign } from '../../common/utils/format-yuan';
-import { formatTurnoverChange } from '../../common/utils/format-turnover-change';
 import { countDistribution } from '../../common/utils/count-distribution';
 import { delay } from '../../common/utils/delay';
 import { useRouter } from 'vue-router';
@@ -311,136 +296,9 @@ usePolling({
   tradingAware: true,
 });
 
-// ---------- 成交额变化（沪深两市总成交额，挂载拉取一次，不轮询） ----------
-
-/** 两市总成交额历史（近一年日 K，升序；30/60/180 交易日窗口本地切片） */
-const turnoverHistory = ref<TurnoverDayItem[]>([]);
-
-/** 成交额首载是否失败（且无快照）——供卡片空态展示 */
-const isTurnoverError = ref(false);
-
-/** 成交额当前展示形式（局部状态，不持久化） */
-const turnoverViewMode = ref<typeof VIEW_MODE[keyof typeof VIEW_MODE]>(VIEW_MODE.CHART);
-
-/** 成交额当前交易日窗口 */
-const turnoverRange = ref<TurnoverRange>(TURNOVER_RANGE_DEFAULT);
-
-/** 成交额图表量纲口径（成交量 / 相对成交量；仅图表视图消费，切表格不重置） */
-const turnoverChartMetric = ref<TurnoverChartMetric>(TURNOVER_CHART_METRIC_DEFAULT);
-
-/** 交易日窗口按钮组 v-model 适配：BaseTabs 要求字符串 value，窗口存 number */
-const turnoverRangeModel = computed<string>({
-  get: () => String(turnoverRange.value),
-  set: (value) => {
-    turnoverRange.value = Number(value) as TurnoverRange;
-  },
-});
-
-// 快照播种：切换回本页先展示上次数据
-// 校验字段口径——历史版本快照用 totalVolume 等旧字段名，直接播种会让图表拿到
-// undefined 画出空白曲线、且掩盖后续请求失败（必须丢弃）
-const cachedTurnover = dataCache.get<TurnoverDayItem[]>(DATA_CACHE_KEY.DASHBOARD_TURNOVER);
-if (cachedTurnover?.length && typeof cachedTurnover[0].totalAmount === 'number') {
-  turnoverHistory.value = cachedTurnover;
-}
-
-/** 拉取两市总成交额历史（挂载一次；成功后写快照） */
-const fetchTurnoverHistory = async (): Promise<void> => {
-  try {
-    turnoverHistory.value = await fetchMarketTurnover();
-    dataCache.set(DATA_CACHE_KEY.DASHBOARD_TURNOVER, turnoverHistory.value);
-  } catch (error) {
-    isTurnoverError.value = turnoverHistory.value.length === 0;
-    console.error('[dashboard] turnover', error);
-  }
-};
-
-// KeepAlive 下仅首次挂载拉取；历史数据不变性强，无需轮询
-onMounted(() => {
-  void fetchTurnoverHistory();
-});
-
-// KeepAlive 缓存页面：切走再切回不重新挂载，重拉一次成交额历史（跨交易日 / 盘中更新兜底；
-// 首次 onActivated 紧跟 onMounted 触发，跳过避免与首屏重复请求）
-let dashboardActivatedOnce = false;
-onActivated(() => {
-  if (!dashboardActivatedOnce) {
-    dashboardActivatedOnce = true;
-    return;
-  }
-  void fetchTurnoverHistory();
-});
-
-/** 当前窗口内的成交额序列（升序，供折线图与表格） */
-const turnoverRows = computed(() =>
-  turnoverHistory.value.slice(-turnoverRange.value),
-);
-
-/**
- * 图表数据源：相对成交量口径在窗口前多取 1 天基准日，
- * 使首个可见交易日的「较上日差额」有前值可比；成交量口径即窗口切片
- */
-const turnoverChartDays = computed(() =>
-  turnoverChartMetric.value === TURNOVER_CHART_METRIC.RELATIVE
-    ? turnoverHistory.value.slice(-(turnoverRange.value + 1))
-    : turnoverRows.value,
-);
-
-/** 当前窗口内的成交额表格行（升序算较上日变化，再倒序展示 + 亿元换算） */
-const turnoverTableRows = computed<TurnoverTableRow[]>(() => {
-  const asc = turnoverRows.value;
-  const rows = asc.map((day, i) => {
-    const prev = i > 0 ? asc[i - 1].totalAmount : null;
-    let changeAmount: number | null = null;
-    let changePct: number | null = null;
-    if (prev !== null) {
-      changeAmount = day.totalAmount - prev;
-      changePct = prev !== 0 ? (changeAmount / prev) * 100 : null;
-    }
-    return {
-      ...day,
-      totalAmountYi: (day.totalAmount / YUAN_PER_YI).toFixed(2),
-      shanghaiAmountYi: (day.shanghaiAmount / YUAN_PER_YI).toFixed(2),
-      shenzhenAmountYi: (day.shenzhenAmount / YUAN_PER_YI).toFixed(2),
-      changePct,
-      changeText: formatTurnoverChange(changeAmount, changePct),
-    };
-  });
-  return rows.reverse();
-});
-
-/** 成交额列配置（排序用原始元值，展示用亿元字段；较上日按变化率排序、用同名插槽渲染放量/缩量文案） */
-const turnoverColumns: TableColumn<TurnoverTableRow>[] = [
-  { key: 'date', label: '日期' },
-  {
-    key: 'totalAmountYi',
-    label: '总成交额(亿)',
-    align: 'right',
-    sortable: true,
-    sortValue: (day) => day.totalAmount,
-  },
-  {
-    key: 'changePct',
-    label: '较上日',
-    align: 'right',
-    sortable: true,
-    sortValue: (day) => day.changePct ?? -Infinity,
-  },
-  {
-    key: 'shanghaiAmountYi',
-    label: '上证(亿)',
-    align: 'right',
-    sortable: true,
-    sortValue: (day) => day.shanghaiAmount,
-  },
-  {
-    key: 'shenzhenAmountYi',
-    label: '深证(亿)',
-    align: 'right',
-    sortable: true,
-    sortValue: (day) => day.shenzhenAmount,
-  },
-];
+// ---------- 成交额卡（2026-10-27 王总指定：只保留当日成交额曲线 RealtimeTurnoverCard；
+// 历史成交量 / 相对成交量两量纲移除 —— 资金流向页已有完整图表（fetchMarketTurnover 链路随之移除，
+// 该页数据快照键 DASHBOARD_TURNOVER 仍由资金流向页自己读写） ----------
 
 /** 板块热力数据：按总市值排序取用户设置的 Top N（保留完整字段供列表视图消费） */
 const topBoards = computed<IndustryBoard[]>(() =>
@@ -694,36 +552,13 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
       </BaseCard>
     </div>
 
-    <!-- 成交额（资金速览 + 成交额变化合并为一张卡：两者本质同属市场成交维度；标题跳资金流向页，2026-10-24 王总指定）。
-         2026-10-13 实时成交额由独立卡并入本卡，成为图表视图第一个量纲子项（实时成交额/历史成交量/相对成交量） -->
+    <!-- 成交额（资金速览 + 当日成交额曲线合并为一张卡：两者本质同属市场成交维度；标题跳资金流向页，2026-10-24 王总指定）。
+         2026-10-27 王总指定：历史成交量 / 相对成交量两量纲移除（资金流向页已有完整图表），卡片只剩当日成交额曲线 -->
     <BaseCard
       title="成交额"
       clickable-title
       @title-click="goBoardFlow"
     >
-      <template #extra>
-        <div class="flex items-center gap-2">
-          <!-- 交易日窗口：仅历史口径（历史/相对成交量）有意义，实时成交额视图下隐藏 -->
-          <BaseTabs
-            v-if="turnoverViewMode === VIEW_MODE.CHART && turnoverChartMetric !== TURNOVER_CHART_METRIC.REALTIME"
-            v-model="turnoverRangeModel"
-            :options="TURNOVER_RANGE_TAB_OPTIONS"
-          />
-          <!-- 图表/列表切换：实时成交额只有图表形态，视图切换一并隐藏 -->
-          <BaseTabs
-            v-if="turnoverChartMetric !== TURNOVER_CHART_METRIC.REALTIME"
-            v-model="turnoverViewMode"
-            :options="VIEW_MODE_OPTIONS"
-          />
-          <!-- 量纲口径：仅图表视图展示（实时成交额 / 历史成交量 / 相对成交量，2026-10-13 并入实时成交额子功能） -->
-          <BaseTabs
-            v-if="turnoverViewMode === VIEW_MODE.CHART"
-            v-model="turnoverChartMetric"
-            :options="TURNOVER_CHART_METRIC_OPTIONS"
-          />
-        </div>
-      </template>
-
       <!-- 资金速览：当日汇总指标（两市成交额 + 主力净流入） -->
       <div
         v-if="totalAmountWan !== null"
@@ -747,31 +582,8 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
       </div>
       <BaseSkeleton v-else class="mb-4" />
 
-      <BaseEmpty v-if="isTurnoverError" text="成交额数据加载失败，请稍后重试" />
-      <div v-else-if="turnoverHistory.length === 0"><BaseSkeleton /></div>
-      <!-- 图表视图：实时成交额（分时累计双线） / 历史成交量 / 相对成交量 -->
-      <RealtimeTurnoverCard v-else-if="turnoverChartMetric === TURNOVER_CHART_METRIC.REALTIME" />
-      <TurnoverTrendChart
-        v-else-if="turnoverViewMode === VIEW_MODE.CHART"
-        :days="turnoverChartDays"
-        :metric="turnoverChartMetric"
-      />
-      <!-- 表格视图 -->
-      <BaseTable
-        v-else
-        :columns="turnoverColumns"
-        :rows="turnoverTableRows"
-        :row-key="(row) => row.date"
-        scroll-class="table-scroll-chart"
-      >
-        <template #changePct="{ row }">
-          <!-- 量能方向 + 变化额 + 变化率：文案整段不折行，颜色沿用涨红跌绿 -->
-          <span
-            class="whitespace-nowrap"
-            :class="row.changePct === null ? 'text-text-tertiary' : row.changePct >= 0 ? 'text-up' : 'text-down'"
-          >{{ row.changeText ?? '--' }}</span>
-        </template>
-      </BaseTable>
+      <!-- 当日成交额曲线（当日 vs 昨日同时刻分时累计，组件内自管数据） -->
+      <RealtimeTurnoverCard />
     </BaseCard>
 
     <!-- 涨跌分布 + 市场宽度：等宽 flex 左右分布（gap 20px，与上方新行同口径），窄窗 320px 以下换行。

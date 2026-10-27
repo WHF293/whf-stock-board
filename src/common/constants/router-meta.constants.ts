@@ -80,9 +80,11 @@ export const NOT_FOUND_ROUTE_NAME = 'not-found';
  */
 export const MENU_ITEMS: readonly SidebarMenuEntry[] = [
   { path: ROUTE_PATH.DASHBOARD, title: "市场总览", icon: MENU_ICON.DASHBOARD, group: SIDEBAR_MENU_GROUP.MARKET },
-  { path: ROUTE_PATH.MARKET_RANK, title: "盘面雷达", icon: MENU_ICON.RANK, group: SIDEBAR_MENU_GROUP.RANK },
-  // 个股行情已并入行情全景的「全部个股」子 tab（2026-10-22 王总指定，侧栏入口移除）
   { path: ROUTE_PATH.PANORAMA, title: "行情全景", icon: MENU_ICON.PANORAMA, group: SIDEBAR_MENU_GROUP.MARKET },
+  // 盘面雷达 / 资金流向：原「榜单与资金」组撤销，并入市场行情组（2026-10-27 王总指定）
+  { path: ROUTE_PATH.MARKET_RANK, title: "盘面雷达", icon: MENU_ICON.RANK, group: SIDEBAR_MENU_GROUP.MARKET },
+  // 资金流向（原「板块资金流向」，2026-10-22 王总更名）：原「行情全景-最新板块资金」模块独立成页（2026-10-13）
+  { path: ROUTE_PATH.BOARD_FLOW, title: "资金流向", icon: MENU_ICON.FUNDS, group: SIDEBAR_MENU_GROUP.MARKET },
   // 大盘云图侧栏入口已移除（2026-10-22 王总指定），改为市场总览页头「大盘云图」按钮进入（同宽基ETF入口位）
   // 板块日历紧跟行情全景：同为「板块维度的行情视角」
   { path: ROUTE_PATH.BOARD_CALENDAR, title: "题材轮动", icon: MENU_ICON.CALENDAR, group: SIDEBAR_MENU_GROUP.MARKET },
@@ -93,8 +95,6 @@ export const MENU_ITEMS: readonly SidebarMenuEntry[] = [
   { path: ROUTE_PATH.HOT_NEWS, title: "热点新闻", icon: MENU_ICON.NEWS, group: SIDEBAR_MENU_GROUP.NEWS },
   // 今天炒什么紧跟热点新闻：同为「盘前 / 盘中扫一眼市场在炒什么」的日常视角
   { path: ROUTE_PATH.WHAT_TO_TRADE, title: "今天炒什么", icon: MENU_ICON.FLAME, group: SIDEBAR_MENU_GROUP.NEWS },
-  // 资金流向（原「板块资金流向」，2026-10-22 王总更名）：原「行情全景-最新板块资金」模块独立成页（2026-10-13），默认排在账户分析前
-  { path: ROUTE_PATH.BOARD_FLOW, title: "资金流向", icon: MENU_ICON.FUNDS, group: SIDEBAR_MENU_GROUP.RANK },
   // 期货·总览：「期货」分组首页（期货市场总览，2026-10-20 新增）；机构行为紧随其后
   { path: ROUTE_PATH.FUTURES_OVERVIEW, title: "期货总览", icon: MENU_ICON.DASHBOARD, group: SIDEBAR_MENU_GROUP.FUTURES },
   { path: ROUTE_PATH.FUTURES_INSTITUTIONAL, title: "机构行为", icon: MENU_ICON.FUTURES, group: SIDEBAR_MENU_GROUP.FUTURES },

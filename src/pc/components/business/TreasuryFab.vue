@@ -29,7 +29,7 @@ import {
 /**
  * 「大A宝典」全局固钉（2026-10-26 王总指定）
  *
- * 右下角常驻胶囊入口（火焰图标 + 「大A宝典」，80% 不透明度）：
+ * 右下角常驻胶囊入口（火焰图标 + 「大A宝典」，高光玻璃质感）：
  * - 气泡逐句轮播大A宝典内容（正文左对齐、来源在下方右对齐；自动按
  *   TREASURY_CAROUSEL_INTERVAL_MS 轮换），显隐由「轮播设置」模式驱动：
  *   自动 = 常驻轮播（无需悬停）/ hover = 悬停出现（默认）/ 关闭 = 永不出现；
@@ -143,46 +143,47 @@ onBeforeUnmount(stopAutoplay);
     @mouseenter="bubbleVisible = true"
     @mouseleave="bubbleVisible = false"
   >
-    <!-- 悬停气泡：icon 上方逐句轮播（主题色底 80%，正文左对齐、来源右对齐；
+    <!-- 悬停气泡：icon 上方逐句轮播（高光玻璃底 + 主题色描边，正文左对齐、来源右对齐；
+         尖角放在玻璃层外，避免 .pc-nav-bubble 的 overflow:hidden 把它裁掉；
          显隐由「轮播设置」模式驱动：自动常驻 / hover 悬停 / 关闭永不） -->
     <Transition name="treasury-bubble">
-      <div
-        v-if="bubbleShown"
-        class="absolute bottom-full right-0 mb-2 w-72 rounded-lg bg-primary opacity-80 shadow-xl"
-      >
-        <!-- 气泡尖角：指向下方胶囊按钮 -->
-        <span
-          class="absolute -bottom-[5px] right-10 h-2.5 w-2.5 rotate-45 bg-primary"
-          aria-hidden="true"
-        ></span>
-        <div class="flex min-h-[72px] items-center justify-center px-3 py-2.5">
-          <div aria-live="polite" class="w-full">
-            <Transition name="treasury-slide" mode="out-in">
-              <div :key="index" class="flex flex-col gap-1.5">
-                <template v-if="current.kind === 'rule'">
-                  <p class="text-left text-sm font-semibold leading-5 text-on-primary">
-                    {{ current.title }}
+      <div v-if="bubbleShown" class="absolute bottom-full right-0 mb-2 w-72">
+        <!-- 玻璃气泡主体（对齐全站玻璃按钮：pc-nav-bubble + primary 描边变体） -->
+        <div class="pc-nav-bubble pc-nav-bubble--primary rounded-lg">
+          <div class="flex min-h-[72px] items-center justify-center px-3 py-2.5">
+            <div aria-live="polite" class="w-full">
+              <Transition name="treasury-slide" mode="out-in">
+                <div :key="index" class="flex flex-col gap-1.5">
+                  <template v-if="current.kind === 'rule'">
+                    <p class="text-left text-sm font-semibold leading-5 text-primary">
+                      {{ current.title }}
+                    </p>
+                    <p class="text-left text-xs leading-4 text-primary/75">
+                      {{ current.desc }}
+                    </p>
+                  </template>
+                  <p v-else class="text-left text-sm leading-5 text-primary">
+                    <template v-if="current.kind === 'quote'">「{{ current.text }}」</template>
+                    <template v-else>{{ current.text }}</template>
                   </p>
-                  <p class="text-left text-xs leading-4 text-on-primary/80">
-                    {{ current.desc }}
-                  </p>
-                </template>
-                <p v-else class="text-left text-sm leading-5 text-on-primary">
-                  <template v-if="current.kind === 'quote'">「{{ current.text }}」</template>
-                  <template v-else>{{ current.text }}</template>
-                </p>
-                <p class="text-right text-xs text-on-primary/70">—— {{ sourceLabel }}</p>
-              </div>
-            </Transition>
+                  <p class="text-right text-xs text-primary/60">—— {{ sourceLabel }}</p>
+                </div>
+              </Transition>
+            </div>
           </div>
         </div>
+        <!-- 气泡尖角：指向下方胶囊按钮（半透明底 + 同色描边近似玻璃延续） -->
+        <span
+          class="absolute -bottom-[5px] right-10 h-2.5 w-2.5 rotate-45 border-b border-r border-[rgba(16,185,129,0.45)] bg-white/75 dark:border-[rgba(16,185,129,0.5)] dark:bg-[rgba(34,42,54,0.85)]"
+          aria-hidden="true"
+        ></span>
       </div>
     </Transition>
 
-    <!-- 固钉本体：icon + 文字常驻胶囊（点击打开完整列表弹窗） -->
+    <!-- 固钉本体：icon + 文字常驻胶囊（高光玻璃底 + 主题色描边，点击打开完整列表弹窗） -->
     <button
       type="button"
-      class="pressable flex h-10 items-center gap-1.5 rounded-full bg-primary pl-3 pr-3.5 text-on-primary opacity-80 shadow-lg transition-colors hover:shadow-xl"
+      class="pressable pc-nav-bubble pc-nav-bubble--primary flex h-10 items-center gap-1.5 rounded-full pl-3 pr-3.5 text-primary"
       aria-label="大A宝典"
       @click="open = true"
     >

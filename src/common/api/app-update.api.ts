@@ -7,10 +7,12 @@ import { APP_VERSION } from '../constants/app-info.constants.ts';
 import {
   UPDATE_API_ACCEPT,
   UPDATE_ASSET_SUFFIX,
+  UPDATE_ASSET_URL_TEMPLATE,
   UPDATE_CHECK_TIMEOUT_MS,
   UPDATE_DIR_NAME,
   UPDATE_LATEST_API,
   UPDATE_PROGRESS_THROTTLE_MS,
+  UPDATE_RELEASE_PAGE_URL,
   UPDATE_WRITE_CHUNK_BYTES,
 } from '../constants/update.constants.ts';
 import type { GithubReleasePayload, LatestReleaseInfo, ReleaseAssetInfo } from '../types/app-update.types.ts';
@@ -20,10 +22,11 @@ import { buildUpdateProxyInit } from '../utils/update-proxy.ts';
  * 应用自动更新（GitHub Releases）· API
  *
  * 检测与下载均经 tauri-plugin-http（Rust 直连，无 CORS / 稳定跟随系统代理）：
- * 检测：GET releases/latest（未认证，仓库开源后免鉴权；失败返回 null，
- * 由调用方按「无新版本」静默处理）；下载：browser_download_url 流式拉取
+ * 检测：主通道 = releases/latest 发布页 302 重定向解析版本号（无 API 匿名配额限制，
+ * 直连可用），兜底 = releases/latest API（匿名按 IP 限流，可能 403）；失败抛错带原因，
+ * 由调用方按手动 / 自动检测分流展示或静默。下载：安装包下载地址流式拉取
  * NSIS 安装包到 $APPDATA/updates/，边下边按分块落盘并回报进度；安装：调 Rust 命令
- * `install_update` 以 /S + /R 参数启动安装包并退出当前应用（装完自动重启）。
+ * `install_update` 以 cmd 链「等退出 → /S 静默安装回原目录 → 重启新版本」并退出当前应用。
  *
  * 全链路仅 Tauri 桌面端可用；浏览器端所有函数为空操作。
  */
@@ -88,29 +91,86 @@ const findSetupAsset = (release: GithubReleasePayload): ReleaseAssetInfo | null 
 };
 
 /**
- * 检测 GitHub Releases 最新版本（未认证请求；仓库未开源 / 限流 / 无网都返回 null）
- * @returns 最新 release 信息（版本号 + 安装包资产）；检测不到返回 null
+ * 按版本号构造安装包资产（版本号来自发布页重定向；下载地址按产物命名模板拼出）
+ * @param version 版本号（不带 v 前缀，如 4.21.0）
+ * @returns 最新 release 信息
  */
-export const fetchLatestRelease = async (): Promise<LatestReleaseInfo | null> => {
-  if (!isTauri()) return null;
+const buildReleaseFromVersion = (version: string): LatestReleaseInfo => ({
+  version,
+  asset: {
+    assetId: 0,
+    name: `stock-board_${version}_x64-setup.exe`,
+    downloadUrl: UPDATE_ASSET_URL_TEMPLATE.replace('{version}', version),
+    // 字节数未知：下载以响应 content-length 为准（0 = 跳过预校验）
+    size: 0,
+  },
+});
+
+/**
+ * 从发布页重定向解析最新版本：`/releases/latest` 302 → `/tag/vX.Y.Z`，
+ * 跟随重定向后 response.url 即最终地址（github.com 网页无 API 匿名配额限制）
+ * @param signal 取消信号（超时控制）
+ * @returns 最新 release 信息；解析不出版本号返回 null（交由调用方走 API 兜底）
+ * @throws 网络失败（超时 / DNS / 连接失败），原因交由调用方聚合展示
+ */
+const fetchLatestFromReleasePage = async (signal: AbortSignal): Promise<LatestReleaseInfo | null> => {
+  const response = await netFetch(UPDATE_RELEASE_PAGE_URL, {
+    signal,
+    redirect: 'follow',
+    ...buildUpdateProxyInit(),
+  });
+  if (!response.ok) {
+    throw new Error(`发布页请求异常 HTTP ${response.status}`);
+  }
+  const match = /\/tag\/v?(\d+\.\d+\.\d+)/.exec(response.url);
+  return match ? buildReleaseFromVersion(match[1]) : null;
+};
+
+/**
+ * 检测 GitHub Releases 最新版本（主通道 = 发布页重定向；API 为兜底）
+ *
+ * 检测失败**抛错**并带具体原因（2026-10-27 王总指定不再静默吞掉）——
+ * 原先失败一律返回 null 被「静默按无新版本」口径吞掉，匿名 API 403 限流时
+ * 更新永远失败且无任何提示
+ * @returns 最新 release 信息（版本号 + 安装包资产）
+ * @throws 检测失败（两通道都失败时聚合各自原因）
+ */
+export const fetchLatestRelease = async (): Promise<LatestReleaseInfo> => {
+  if (!isTauri()) {
+    throw new Error('仅桌面端支持检查更新');
+  }
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), UPDATE_CHECK_TIMEOUT_MS);
   try {
+    // 主通道：发布页重定向（直连可用，不受 API 配额限制）
+    const fromPage = await fetchLatestFromReleasePage(controller.signal);
+    if (fromPage) return fromPage;
+
+    // 兜底通道：Releases API（匿名按 IP 限流，可能 403）
     const response = await netFetch(UPDATE_LATEST_API, {
       signal: controller.signal,
       headers: { Accept: UPDATE_API_ACCEPT },
-      // 设置页配置了更新代理时显式走代理（打包版对系统代理跟随不稳定，见 update-proxy.ts）
       ...buildUpdateProxyInit(),
     });
-    if (!response.ok) return null;
+    if (!response.ok) {
+      throw new Error(
+        response.status === 403 || response.status === 429
+          ? `GitHub 接口限流（HTTP ${response.status}），请稍后再试或配置更新代理`
+          : `GitHub 接口异常 HTTP ${response.status}`,
+      );
+    }
     const release = (await response.json()) as GithubReleasePayload;
     const tag = release.tag_name ?? '';
     const asset = findSetupAsset(release);
-    if (!tag || !asset) return null;
+    if (!tag || !asset) {
+      throw new Error('最新版本未提供安装包（*_x64-setup.exe）');
+    }
     return { version: tag.replace(/^v/i, ''), asset };
-  } catch {
-    // 网络口径（用户指定）：检测失败一律静默按「无新版本」处理
-    return null;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('检测超时（网络不可用或 GitHub 不可达），可尝试配置更新代理', { cause: error });
+    }
+    throw error;
   } finally {
     window.clearTimeout(timer);
   }

@@ -16,7 +16,6 @@
  */
 import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { useDark } from '@vueuse/core';
 import type { EChartsCoreOption } from 'echarts/core';
 import {
   ARMS_NEUTRAL_LINE,
@@ -44,6 +43,7 @@ import { classifyArms, type ArmsStateResult } from '../../common/utils/classify-
 import { readTrendColors } from '../../common/utils/trend-colors';
 import { toDayKey } from '../../common/utils/to-day-key';
 import { useMobilePolling } from '../composables/use-mobile-polling';
+import { useTheme } from '../../common/composables/use-theme';
 import MobileEChart from '../components/MobileEChart.vue';
 
 const router = useRouter();
@@ -190,7 +190,10 @@ const infoParts = (kind: BreadthIndicatorKind): [string, string] => {
 
 // ---------- 副图 option 构建（与 PC BreadthIndicatorChart 同逻辑，尺寸口径按移动端收紧） ----------
 
-const isDark = useDark();
+// ⚠️ 必须走 useTheme（与宿主同一 storage 键），禁用裸 useDark()：
+// 裸调用读的是 vueuse 默认键（vueuse-color-scheme，本应用从不写），
+// 键不存在时回落系统偏好并直接改 <html class>，切到本页会把全局明暗强行翻转
+const { isDark } = useTheme();
 
 /** 视图窗口切片下标起点（全部积累时为 0） */
 const startIndex = computed(() => {
