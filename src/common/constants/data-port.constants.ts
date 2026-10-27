@@ -64,9 +64,10 @@ export const DATA_PORT_MANIFEST: readonly DataPortCategory[] = [
     label: '插件与用户插件',
     db: 'stock-board',
     storage: 'local-storage',
-    nsKeys: ['plugin', 'plugin.user'],
+    // plugin.market.catalog 是可重拉的网络缓存，不参与迁移（镜像类缓存不登记）
+    nsKeys: ['plugin', 'plugin.user', 'plugin.market'],
     defaultEnabled: true,
-    tip: '插件禁用黑名单 / 侧栏折叠态 / 应用内安装的插件代码',
+    tip: '插件禁用黑名单 / 侧栏折叠态 / 应用内安装的插件代码 / 插件市场的插件源列表',
   },
   {
     id: 'market-snapshots',

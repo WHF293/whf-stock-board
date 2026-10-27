@@ -290,6 +290,26 @@ zip 包模式支持**多选 / 拖拽批量上传**，选中即自动解析，无
   安装途中关窗 = 作废剩余安装（`cancelPendingInstalls()`），已经发出去的那次收不回来，跑完即止
 - **信任级别**：插件代码与应用同权限执行（无沙箱），安装弹窗有固定风险提示；写操作类插件需自行确认来源
 
+### 插件市场（多源在线安装，2026-10-27 起）
+
+插件工坊页的两个获取插件入口分工：「插件市场」（在线，多源）与「安装自定义插件」（本地 zip / 粘贴代码）。
+市场实现是 common 层六件套：`types/plugin-market.types.ts` / `constants/plugin-market.constants.ts` /
+`api/plugin-market.api.ts` / `stores/plugin-market.ts` / `composables/use-plugin-market.ts` /
+`pc/components/plugin/PluginMarketModal.vue`。改这块前先读 `.ai/开发方案/2026-10-27-客户端-插件市场与安装入口改名开发方案.md`，要点：
+
+- **主数据统一走 Releases API 解析**（`api.github.com/repos/<repo>/releases`，zip 资产按
+  `<插件id>-<版本>.zip` 文件名口径解析聚合出「最新版 + 历史版本」）——**任何源都不要求提供 `index.json`**，
+  第三方仓库才能即填即用；官方源的 `index.json` 只是 sha256 / changelog 的**增强通道**（失败静默跳过）。
+  内置官方源与在线更新链路同仓库（`PLUGIN_UPDATE_REPO`，即分发仓库而非源码仓库）
+- **多源模型**：源列表（内置官方源 + 用户自定义源，上限 10）持久化在 `plugin.market` 命名空间，
+  已登记数据迁移；目录缓存 per-repo 一小时（`plugin.market.catalog`，缓存不参与迁移）；
+  未缓存的自定义源懒加载（选中它的筛选 chip 才拉），控 api.github.com 匿名 60 次/h/IP
+- **安装语义**：默认装最新版，历史版本选装 = 覆盖降级（同一条 `useUserPlugins().install()` 链路，
+  `source: USER_PLUGIN_SOURCE.MARKET`）；每次安装先弹确认；**全局串行**（持久化单 key 全量回写，并行互踩）；
+  多源合并展示时同 id 插件官方源优先，避免同 id 双卡
+- 网络实现与更新链路同规：Tauri 走 plugin-http、浏览器原生 fetch，**禁用 `proxyFetch`**，
+  支持设置页配置的更新代理（`buildUpdateProxyInit`）
+
 ### 「两种安装」的分工（先分清，再谈卸载）
 
 同一个词「安装 / 卸载」在两个完全不同的层面上用，混着说必出误会：
