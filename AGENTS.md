@@ -511,6 +511,12 @@ tauri fetch 绕 webview CORS）。
    `src/docs/**` / 官网配置 / 白皮书单源文件等路径时自动部署到
    <https://whf293.github.io/whf-stock-board/>（首次需在仓库 Settings → Pages 把 Source 设为
    「GitHub Actions」）；官网不发版、不打 tag，下载中心运行时直连 GitHub Releases API
+7. **发版成功后清理本地构建缓存（硬性，王总 2026-10-27 指定）**：确认 GitHub Release 构建
+   完成、产物上传成功后，清理 `src-tauri/target/` 构建缓存——`cd src-tauri && cargo clean`
+   （或直接删除 `target/` 下 debug / release 及 aarch64 / armv7 / i686 / x86_64-linux-android
+   等交叉编译目标目录）。`target/` 是 Cargo 构建产物缓存（debug 含完整符号 `.pdb` +
+   增量编译缓存 + 依赖升级残留），只增不减，曾积累 20GB+；删除仅导致下次编译全量重来
+   （首次 5–15 分钟），不影响任何源码与用户数据。CI 产物在 GitHub Release 远端，本地无需保留
 
 注意：tag 必须打在**已推送的最新 commit** 上（先 push 后打 tag）；若 push 后有他人新提交，先用 `git pull --rebase` 再走流程。`pnpm lint` 与 `pnpm build` 必须在 commit 前全绿（改了官网再跑 `pnpm build:site`）。
 
