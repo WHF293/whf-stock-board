@@ -42,33 +42,54 @@ fn get_work_area() -> Option<(i32, i32, i32, i32)> {
 
 /// 启动下载好的安装包执行更新（自动更新链路最后一步，仅 Windows 有实现）
 ///
-/// 以 `/S`（NSIS 静默安装）+ `/R`（安装成功后自动重启应用，见 NSIS 模板
-/// `.onInstSuccess`）参数 detached 启动安装包，随即退出当前应用：先退出
-/// 释放主程序文件锁，安装包检测不到运行中的应用，静默安装无需弹窗交互。
-/// spawn 失败返回 Err（前端保持运行并可重试）；spawn 成功后本进程退出。
+/// 起独立 cmd 链「等当前进程退出 → `/S` 静默安装回当前安装目录 → 启动新版本」，
+/// 随后延迟退出当前应用（youtube-desktop 实测同款方案，2026-10-27 照搬）：
+/// 安装器替换文件前应用必须先退出，否则 exe 被占用会失败；spawn 失败返回 Err
+/// （前端保持运行并可重试）；spawn 成功后本进程延迟退出。
 #[tauri::command]
 fn install_update(app: tauri::AppHandle, installer_path: String) -> Result<(), String> {
   run_installer_and_exit(&app, &installer_path)
 }
 
-/// Windows 实现：detached 启动安装包（不随父进程退出而被杀）+ 退出本应用
+/// Windows 实现：cmd 链等待退出 + 静默安装回原目录 + 重启新版本，本应用延迟退出
 #[cfg(windows)]
 fn run_installer_and_exit(app: &tauri::AppHandle, installer_path: &str) -> Result<(), String> {
   use std::os::windows::process::CommandExt;
   use std::process::Command;
+  use std::thread;
+  use std::time::Duration;
 
   /// 子进程不继承控制台（无窗口闪烁）
   const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-  /// 子进程与父进程生命周期解耦（父进程 exit(0) 后安装包继续运行）
-  const DETACHED_PROCESS: u32 = 0x0000_0008;
 
-  Command::new(installer_path)
-    .args(["/S", "/R"])
-    .creation_flags(DETACHED_PROCESS | CREATE_NO_WINDOW)
+  let current_exe = std::env::current_exe()
+    .map_err(|error| format!("读取当前程序路径失败: {error}"))?;
+  let install_dir = current_exe
+    .parent()
+    .map(|path| path.to_string_lossy().to_string())
+    .unwrap_or_default();
+  // ping -n 4 ≈ 等 3 秒让当前应用退出；/S 静默安装；/D= 指定安装目录
+  // （NSIS 规范：/D= 必须是最后一个参数且不加引号，含空格也原样取到行尾），
+  // 保证更新安装回当前安装位置；完成后重新打开新版本。
+  // 注意：必须用 raw_arg 原样传整条命令——普通 arg 会把整条命令转义出 \"，
+  // 而 cmd 不认 \" 转义，引号语义错乱会导致安装器被当成命令名执行失败。
+  let script = format!(
+    "ping 127.0.0.1 -n 4 >nul & \"{}\" /S /D={} & start \"\" \"{}\"",
+    installer_path, install_dir, current_exe.display()
+  );
+  Command::new("cmd")
+    .arg("/C")
+    .raw_arg(&script)
+    .creation_flags(CREATE_NO_WINDOW)
     .spawn()
     .map(|_| ())
-    .map_err(|error| format!("启动安装包失败: {error}"))?;
-  app.exit(0);
+    .map_err(|error| format!("启动安装脚本失败: {error}"))?;
+  // 留出时间给 cmd 链启动后再退出（立即退出可能把 cmd 链一并带走）
+  let app_handle = app.clone();
+  thread::spawn(move || {
+    thread::sleep(Duration::from_millis(500));
+    app_handle.exit(0);
+  });
   Ok(())
 }
 

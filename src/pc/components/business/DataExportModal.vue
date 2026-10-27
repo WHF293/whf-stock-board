@@ -163,13 +163,14 @@ const onCopySnippet = async (): Promise<void> => {
   <BaseModal
     v-model:open="open"
     title="导出数据"
-    max-width-class="max-w-lg"
+    max-width-class="max-w-2xl"
   >
     <p class="mb-3 text-xs text-text-tertiary">
       勾选要导出的本地数据，确认后选择保存位置，生成单个 JSON 文件（可在另一台电脑的「数据导入」中恢复）；
       「复制 JSON 片段」把同样内容直接进剪贴板，手机端「自选 → 导入」粘贴即可恢复自选股
     </p>
-    <div class="space-y-1">
+    <!-- 双列网格（2026-10-27 王总指定：类别清单由单列改双列，缩短弹窗高度） -->
+    <div class="grid grid-cols-1 gap-x-5 gap-y-1 sm:grid-cols-2">
       <label
         v-for="row in rows"
         :key="row.category.id"

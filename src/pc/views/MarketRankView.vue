@@ -1,24 +1,13 @@
 <script setup lang="ts">
-import { computed, onActivated, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import BaseButton from '../components/ui/BaseButton.vue';
-import BaseCard from '../components/ui/BaseCard.vue';
-import BaseEmpty from '../components/ui/BaseEmpty.vue';
-import BaseSkeleton from '../components/ui/BaseSkeleton.vue';
-import BaseTable from '../components/ui/BaseTable.vue';
-import BaseTabs from '../components/ui/BaseTabs.vue';
 import MenuIcon from '../components/ui/MenuIcon.vue';
-import TabConfigButton from '../components/ui/TabConfigButton.vue';
-import MarketEventView from './MarketEventView.vue';
-import DragonTigerView from './DragonTigerView.vue';
-import { useTabConfig } from '../../common/composables/use-tab-config';
-import type { TableColumn } from '../../common/types/table.types.ts';
-import { sdk } from '../../common/api/sdk';
+import MarketRankTiledBoard from '../components/business/MarketRankTiledBoard.vue';
+import MarketRankTabSettingsModal from '../components/business/MarketRankTabSettingsModal.vue';
 import { usePolling } from '../../common/composables/use-polling';
 import { useDataCacheStore } from '../../common/stores/data-cache';
 import { useSettingsStore } from '../../common/stores/settings';
 import { useNotificationsStore } from '../../common/stores/notifications';
-import { useTabConfigStore } from '../../common/stores/tab-config';
-import { useStockOpen } from '../../common/composables/use-stock-open';
 import { usePageHeaderSlot, PAGE_HEADER_ACTIONS_TARGET } from '../../common/composables/use-page-header-slot';
 import { requestAgentAnalysis } from '../agent/agent-bridge';
 import { buildRankAnalysisPrompt } from '../../common/utils/build-rank-analysis-prompt';
@@ -27,118 +16,44 @@ import { DATA_CACHE_KEY } from '../../common/constants/data-cache.constants.ts';
 import { HOST_HEADER_ITEM } from '../../common/constants/header.constants.ts';
 import { NOTIFY_TONE } from '../../common/constants/notify.constants.ts';
 import { POLLING_INTERVAL } from '../../common/constants/polling.constants.ts';
-import type { RankDataset } from '../../common/types/rank-dataset.types.ts';
-import { fetchFundFlowRank } from '../../common/api/flow.api.ts';
-import { getTrendByChangePercent } from '../../common/constants/trend.constants.ts';
-import { TREND_PILL_CLASS, TREND_TEXT_CLASS } from '../../common/constants/stock-colors.constants.ts';
-import { formatAmount } from '../../common/utils/format-amount';
-import { formatPercent, formatPercentUnsigned } from '../../common/utils/format-percent';
-import { formatPrice } from '../../common/utils/format-price';
-import { formatVolume } from '../../common/utils/format-volume';
-import { formatYuanWithSign } from '../../common/utils/format-yuan';
+import { STORAGE_NS_MARKET_RANK_TABS } from '../../common/constants/storage-key.constants.ts';
+import { appStorage } from '../../common/utils/app-local-storage';
 import type { FullQuote } from '../../common/types/stock-quote.types.ts';
-import type { FundFlowRankItem } from '../../common/types/flow.types.ts';
-import { delay } from '../../common/utils/delay';
+import type { RankDataset } from '../../common/types/rank-dataset.types.ts';
+import { sdk } from '../../common/api/sdk';
 
 /**
- * 盘面雷达（原「市场榜单」，2026-10-22 更名；原「市场异动」页已并入为页签）：
- * 个股主力资金榜 → 连板 / 异动 / 龙虎榜 / 大宗交易（自管数据，重接口不轮询）
- * → 全 A 报价排序榜（涨跌幅 / 成交额 / 换手率）。
- * 板块维度的资金流向（板块净流入 / 行业资金曲线）已在「行情全景-板块资金」模块。
+ * 盘面雷达（原「市场榜单」，2026-10-22 更名；原「市场异动」页已并入）：
+ * 2026-10-27 王总指定 —— Tab 模式已删除，页面主体 = 页签平铺看板（只读）：
+ * 一个可见页签一列（375px 卡片流，参考热点新闻页样式），
+ * 列顺序与显隐经「页签设置」弹窗调整（热点新闻源设置同款交互），持久化；
+ * 页头保留 AI 分析 / 导出 Excel（作用于全部可见页签，多数据段 = 多工作表）。
  *
  * 报价排序榜数据源 stock-sdk `getAllAShareQuotes`（上游东方财富 push2，代理通道）：
- * 一次拉取全市场报价（约 5k+ 只），前端按 sortKey 排序展示前 N 条，
- * 默认轮询 30 秒（与市场宽度一致）；行点击打开右侧个股详情
+ * 一次拉取全市场报价（约 5k+ 只），默认轮询 30 秒（与市场宽度一致）；
+ * 其余页签（股池 / 异动 / 龙虎榜 / 大宗）的数据由看板组件自管
  */
-const { openSidebar, openPage, toContextList } = useStockOpen();
-
-/** 资金流表上下文列表（双击进详情页时整批带入） */
-const flowContextList = computed(() =>
-  toContextList(currentFlowItems.value, (row) => String(row.code)),
-);
-const dataCache = useDataCacheStore();
-
-/** 列表展示条数（Top N） */
-const DISPLAY_COUNT = 100;
 
   /**
-   * 页签：三组式布局（2026-10-22，组间分隔线见 BaseTabs groupStart）——
-   * 排行（同一份全 A 报价换 sortKey）｜股池事件（连板 / 异动）｜席位与大宗（龙虎榜 / 大宗交易）。
-   * 原「市场异动」页并入本页；北向持股已下线——上游长期无数据，
-   * 接口仍保留给 Agent MCP 工具；板块净流入已迁至「行情全景-板块资金」
+   * 页签全集：三组式布局（组名仅供设置弹窗文案参考，看板列平铺不分组）——
+   * 排行（同一份全 A 报价换 sortKey）｜股池事件（连板 / 盘口异动 / 板块异动）｜席位与大宗（龙虎榜 / 大宗交易）。
+   * 2026-10-27 王总指定：个股主力列删除；原「异动」列的盘口 / 板块子视图拆成两个独立列
    */
 const SORT_TAB_OPTIONS = [
-  { label: '个股主力', value: 'stock', groupStart: true, groupName: '排行' },
   { label: '涨幅榜', value: 'changePercent' },
   { label: '跌幅榜', value: 'changePercentDesc' },
   { label: '成交额榜', value: 'amount' },
   { label: '换手率榜', value: 'turnoverRate' },
-  { label: '连板', value: 'event', groupStart: true, groupName: '股池事件' },
-  { label: '异动', value: 'events' },
-  { label: '龙虎榜', value: 'dragon-tiger', groupStart: true, groupName: '席位与大宗' },
+  { label: '连板', value: 'event' },
+  { label: '盘口异动', value: 'stock-changes' },
+  { label: '板块异动', value: 'board-changes' },
+  { label: '龙虎榜', value: 'dragon-tiger' },
   { label: '大宗交易', value: 'block-trade' },
 ] as const;
 
-/** 原市场异动页并入的四个页签值（页签配置迁移用） */
-const MOOD_TAB_VALUES: readonly string[] = [
-  'event',
-  'events',
-  'dragon-tiger',
-  'block-trade',
-];
+const dataCache = useDataCacheStore();
 
-// 旧「市场异动」页（market-mood）的页签自定义并入本页（一次性迁移；
-// 旧键保留不清理，读取侧永远走 market-rank，无害）
-const tabConfigStore = useTabConfigStore();
-const moodStored = tabConfigStore.configs['market-mood'];
-if (moodStored) {
-  const rankStored = tabConfigStore.configs['market-rank'];
-  const moodOrder = moodStored.order.filter((value) => MOOD_TAB_VALUES.includes(value));
-  const moodHidden = moodStored.hidden.filter((value) => MOOD_TAB_VALUES.includes(value));
-  const rankOrder = (rankStored?.order ?? []).filter((value) => !MOOD_TAB_VALUES.includes(value));
-  const rankHidden = (rankStored?.hidden ?? []).filter((value) => !MOOD_TAB_VALUES.includes(value));
-  tabConfigStore.setConfig('market-rank', {
-    order: [...rankOrder, ...moodOrder],
-    hidden: [...rankHidden, ...moodHidden],
-  });
-}
-
-// 2026-10-22 页签三组式重排：旧自定义顺序与新分组（排行｜股池事件｜席位与大宗）不兼容，
-// 一次性重置顺序、保留显隐自定义（旧值残留由 normalizeTabConfig 丢弃，无害）
-const rankStoredConfig = tabConfigStore.configs['market-rank'];
-if (rankStoredConfig) {
-  tabConfigStore.setConfig('market-rank', {
-    order: SORT_TAB_OPTIONS.map((option) => option.value as string),
-    hidden: [...rankStoredConfig.hidden],
-  });
-}
-
-/** 页签值 */
-type RankTab = (typeof SORT_TAB_OPTIONS)[number]['value'];
-
-// 页签显隐 + 顺序可配置（持久化）；激活值被隐藏时自动回退首个可见 tab
-const { visibleOptions: sortTabOptions, activeValue: sortKey } = useTabConfig<RankTab>(
-  'market-rank',
-  SORT_TAB_OPTIONS,
-);
-
-/** 是否为资金流榜单类页签（个股主力） */
-const isFlowTab = computed(() => sortKey.value === 'stock');
-
-/** 是否为原「市场异动」类页签（连板 / 异动 / 龙虎榜 / 大宗；自管数据，重接口不轮询） */
-const isMoodTab = computed(() =>
-  sortKey.value === 'event' ||
-  sortKey.value === 'events' ||
-  sortKey.value === 'dragon-tiger' ||
-  sortKey.value === 'block-trade',
-);
-
-/** 龙虎榜受控页签（大宗交易复用同一视图组件，切换时隐藏其龙虎榜子页） */
-const dragonTab = computed<'dragon-tiger' | 'block-trade'>(() =>
-  sortKey.value === 'block-trade' ? 'block-trade' : 'dragon-tiger',
-);
-
-// 快照播种
+/** 全 A 报价快照（报价排序类页签列消费；页面轮询写入） */
 const allQuotes = ref<FullQuote[]>(
   dataCache.get<FullQuote[]>(DATA_CACHE_KEY.MARKET_RANK_QUOTES) ?? [],
 );
@@ -168,263 +83,105 @@ usePolling({
   tradingAware: true,
 });
 
-// ---------- 个股主力资金榜（自管数据，进页签拉一次） ----------
-/** 各接口请求间隔（毫秒）：对同一上游串行错峰 */
-const FLOW_REQUEST_GAP_MS = 500;
+// ---------- 页签列顺序与显隐（页签设置弹窗，热点新闻源设置同款交互） ----------
 
-/** 表格展示条数 */
-const RANK_DISPLAY_COUNT = 15;
-
-const stockRank = ref<FundFlowRankItem[]>(
-  dataCache.get<FundFlowRankItem[]>(DATA_CACHE_KEY.FUNDS_STOCK_RANK) ?? [],
-);
-const isFlowLoading = ref(false);
-const flowError = ref(false);
+/** 页签设置（顺序 + 显隐；appStorage 持久化） */
+interface RankTabSettings {
+  /** 页签值顺序（缺失的页签按默认顺序补在末尾） */
+  order: string[];
+  /** 隐藏的页签值 */
+  hidden: string[];
+}
 
 /**
- * 拉取个股主力资金榜（成功写快照；进行中调用共享同一任务防重入）
+ * 归一化页签设置：剔除已不存在的页签值，补齐新出现的页签（按默认顺序排末尾）
+ * @param settings 持久化读出的设置
+ * @returns 归一化后的设置
  */
-let flowRanksTask: Promise<void> | null = null;
-const loadFlowRanks = (): Promise<void> => {
-  if (!flowRanksTask) {
-    flowRanksTask = (async () => {
-      isFlowLoading.value = true;
-      flowError.value = false;
-      try {
-        stockRank.value = await fetchFundFlowRank();
-        dataCache.set(DATA_CACHE_KEY.FUNDS_STOCK_RANK, stockRank.value);
-      } catch (error) {
-        flowError.value = stockRank.value.length === 0;
-        console.error('[market-rank] flow', error);
-      } finally {
-        isFlowLoading.value = false;
-      }
-    })().finally(() => {
-      flowRanksTask = null;
-    });
-  }
-  return flowRanksTask;
-};
-
-// 首次切到个股主力页签时拉取（快照已有数据则跳过；重复触发由共享任务防重入）
-watch(isFlowTab, (active) => {
-  if (active && stockRank.value.length === 0) {
-    void loadFlowRanks();
-  }
-});
-void (async () => {
-  // 首屏即处于个股主力页签（如路由记忆）时补拉
-  await delay(FLOW_REQUEST_GAP_MS);
-  if (isFlowTab.value && stockRank.value.length === 0) {
-    void loadFlowRanks();
-  }
-})();
-
-// KeepAlive 缓存页面：切走再切回不重新挂载，重拉个股主力榜（快照秒出后静默覆盖；
-// 首次 onActivated 紧跟首屏触发，跳过避免重复请求；重复触发由共享任务防重入兜住）
-let rankActivatedOnce = false;
-onActivated(() => {
-  if (!rankActivatedOnce) {
-    rankActivatedOnce = true;
-    return;
-  }
-  if (isFlowTab.value && !isFlowLoading.value) {
-    void loadFlowRanks();
-  }
-});
-
-/**
- * 当前排序维度的可比数值（null 视为 -Infinity 排到末尾）
- * @param quote 个股报价
- * @returns 用于比较的数值
- */
-const sortValueOf = (quote: FullQuote): number => {
-  switch (sortKey.value) {
-    case 'changePercent':
-    case 'changePercentDesc':
-      return quote.changePercent ?? 0;
-    case 'amount':
-      return quote.amount ?? 0;
-    case 'turnoverRate':
-      return quote.turnoverRate ?? 0;
-    default:
-      return 0;
-  }
-};
-
-/** 按当前排序维度取前 N 条；涨跌幅榜按降序，跌幅榜按升序，其余按降序 */
-const displayedRows = computed<FullQuote[]>(() => {
-  const arr = [...allQuotes.value];
-  const isDesc =
-    sortKey.value === 'changePercent' ||
-    sortKey.value === 'amount' ||
-    sortKey.value === 'turnoverRate';
-  arr.sort((a, b) => {
-    const va = sortValueOf(a);
-    const vb = sortValueOf(b);
-    if (isDesc) return vb - va;
-    return va - vb;
-  });
-  return arr.slice(0, DISPLAY_COUNT);
-});
-
-/** 当前资金流榜单数据（个股主力） */
-const currentFlowItems = computed<FlowRow[]>(() => stockRank.value);
-
-/** 当前资金流榜单列配置（行对象按联合类型宽松消费） */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type FlowRow = any;
-
-const currentFlowColumns = computed<TableColumn<FlowRow>[]>(() => stockColumns);
-
-/** 表格列（按当前排序维度动态决定涨跌着色） */
-const columns = computed<TableColumn<FullQuote>[]>(() => {
-  return [
-    { key: 'name', label: '个股' },
-    {
-      key: 'price',
-      label: '最新价',
-      align: 'right',
-      sortable: false,
-    },
-    {
-      key: 'changePercent',
-      label: sortKey.value === 'changePercentDesc' ? '涨跌幅 ↓' : '涨跌幅',
-      align: 'right',
-      sortable: true,
-      sortValue: (row) => row.changePercent,
-    },
-    {
-      key: 'change',
-      label: '涨跌额',
-      align: 'right',
-      sortable: true,
-      sortValue: (row) => row.change,
-    },
-    {
-      key: 'volume',
-      label: '成交量',
-      align: 'right',
-      sortable: true,
-      sortValue: (row) => row.volume,
-    },
-    {
-      key: 'amount',
-      label: '成交额',
-      align: 'right',
-      sortable: true,
-      sortValue: (row) => row.amount,
-    },
-    {
-      key: 'turnoverRate',
-      label: '换手率',
-      align: 'right',
-      sortable: true,
-      sortValue: (row) => row.turnoverRate,
-    },
-    { key: 'volumeRatio', label: '量比', align: 'right' },
-    { key: 'pe', label: '市盈率', align: 'right' },
+const normalizeTabSettings = (settings: RankTabSettings): RankTabSettings => {
+  const known = new Set<string>(SORT_TAB_OPTIONS.map((option) => option.value));
+  const order = [
+    ...settings.order.filter((value) => known.has(value)),
+    ...SORT_TAB_OPTIONS.map((option) => option.value).filter(
+      (value) => !settings.order.includes(value),
+    ),
   ];
-});
-
-/** 个股主力排名列配置 */
-const stockColumns: TableColumn<FundFlowRankItem>[] = [
-  { key: 'name', label: '个股' },
-  { key: 'price', label: '现价', align: 'right' },
-  {
-    key: 'mainNetInflow',
-    label: '主力净流入',
-    sortable: true,
-    sortValue: (stock) => stock.mainNetInflow,
-  },
-];
-
-/**
- * 个股代码跳详情（6 位纯代码 -> 完整符号）
- * @param code 个股 6 位代码
- */
-const openDetail = (code: string): void => {
-  openSidebar(code);
+  return { order, hidden: settings.hidden.filter((value) => known.has(value)) };
 };
 
-// ---------- 榜单工具条：AI 分析 + 导出 Excel（所有页签共用，数据取当前页签榜单；
-// ---------- 按钮上移 MainLayout 页头，经 Teleport 投射） ----------
+/** 页签设置（appStorage 持久化，进页归一化一次；损坏数据回退默认全显） */
+const tabSettings = ref<RankTabSettings>(
+  normalizeTabSettings(
+    (() => {
+      try {
+        return JSON.parse(appStorage.getItem(STORAGE_NS_MARKET_RANK_TABS) ?? 'null') as
+          | RankTabSettings
+          | null;
+      } catch {
+        return null;
+      }
+    })() ?? { order: SORT_TAB_OPTIONS.map((option) => option.value), hidden: [] },
+  ),
+);
+
+// 设置整包持久化（下次进页恢复上次的列顺序与显隐）
+watch(
+  tabSettings,
+  (value) => {
+    appStorage.setItem(STORAGE_NS_MARKET_RANK_TABS, JSON.stringify(value));
+  },
+  { deep: true },
+);
+
+/** 可见页签列（顺序 = 设置顺序；看板 props 直接消费） */
+const visibleTabs = computed(() =>
+  tabSettings.value.order
+    .filter((value) => !tabSettings.value.hidden.includes(value))
+    .map((value) => SORT_TAB_OPTIONS.find((option) => option.value === value))
+    .filter((option): option is (typeof SORT_TAB_OPTIONS)[number] => option !== undefined),
+);
+
+/** 页签设置弹窗条目（勾选 + 拖拽草稿的数据源） */
+const tabSettingsItems = computed(() =>
+  tabSettings.value.order.map((value) => {
+    const option = SORT_TAB_OPTIONS.find((item) => item.value === value);
+    return {
+      value,
+      label: option?.label ?? value,
+      enabled: !tabSettings.value.hidden.includes(value),
+    };
+  }),
+);
+
+/** 页签设置弹窗开关 */
+const tabSettingsOpen = ref(false);
+
+/**
+ * 页签设置确认：按拖拽结果更新顺序，勾选结果更新显隐（watch 自动持久化）
+ * @param items 弹窗回传的页签设置（顺序即展示顺序）
+ */
+const onTabSettingsConfirm = (items: { value: string; enabled: boolean }[]): void => {
+  tabSettings.value = {
+    order: items.map((item) => item.value),
+    hidden: items.filter((item) => !item.enabled).map((item) => item.value),
+  };
+};
+
+// ---------- 榜单工具条：AI 分析 + 导出 Excel（页头 Teleport；作用于全部可见页签） ----------
+
 const settingsStore = useSettingsStore();
 const notifications = useNotificationsStore();
 
 /** 页头动作挂载守卫：只有本页激活时按钮才出现在页头（KeepAlive 缓存页切走不残留） */
 const { active: headerSlotActive } = usePageHeaderSlot();
 
-/** 连板 / 异动子视图（数据在其组件内，按钮点击时经 expose 方法获取） */
-const eventViewRef = ref<InstanceType<typeof MarketEventView> | null>(null);
-/** 龙虎榜 / 大宗子视图（同上） */
-const dragonViewRef = ref<InstanceType<typeof DragonTigerView> | null>(null);
+/** 看板组件引用（榜单数据出口在其 expose 上） */
+const boardRef = ref<InstanceType<typeof MarketRankTiledBoard> | null>(null);
 
 /** 「AI 分析」入口跟随顶栏「Agent 分析」条目的显隐开关（设置 → 布局编排 → 右上角工具编排） */
 const agentEntryVisible = computed(
   () => !settingsStore.hiddenHeaderItems.includes(HOST_HEADER_ITEM.AGENT),
 );
-
-/** 当前页签的榜单类型名（AI 分析提示词与导出文件名共用） */
-const currentRankLabel = computed(
-  () => SORT_TAB_OPTIONS.find((option) => option.value === sortKey.value)?.label ?? '盘面雷达',
-);
-
-/** 报价排序榜导出列（表格列 + 代码；成交额单位万 / 成交量单位手，导出与 AI 分析共用） */
-const quoteExportColumns: { label: string; key: string }[] = [
-  { key: 'name', label: '个股' },
-  { key: 'code', label: '代码' },
-  { key: 'price', label: '最新价' },
-  { key: 'changePercent', label: '涨跌幅(%)' },
-  { key: 'change', label: '涨跌额' },
-  { key: 'volume', label: '成交量(手)' },
-  { key: 'amount', label: '成交额(万)' },
-  { key: 'turnoverRate', label: '换手率(%)' },
-  { key: 'volumeRatio', label: '量比' },
-  { key: 'pe', label: '市盈率' },
-];
-
-/** 个股主力榜导出列（表格列 + 代码 / 涨跌幅 / 净占比） */
-const stockExportColumns: { label: string; key: string }[] = [
-  { key: 'name', label: '个股' },
-  { key: 'code', label: '代码' },
-  { key: 'price', label: '现价' },
-  { key: 'changePercent', label: '涨跌幅(%)' },
-  { key: 'mainNetInflow', label: '主力净流入(元)' },
-  { key: 'mainNetInflowPercent', label: '主力净占比(%)' },
-];
-
-/**
- * 汇总当前页签的榜单数据段（AI 分析与导出 Excel 共用的数据出口）。
- * 连板 / 异动 / 龙虎榜 / 大宗四页签的数据在子视图组件内，经 expose 方法获取
- * @returns 数据段列表；子视图未挂载 / 尚无数据时为空数组
- */
-const collectRankDatasets = (): RankDataset[] => {
-  switch (sortKey.value) {
-    case 'stock':
-      return [
-        {
-          title: currentRankLabel.value,
-          columns: stockExportColumns,
-          rows: stockRank.value as unknown as Record<string, unknown>[],
-        },
-      ];
-    case 'event':
-    case 'events':
-      return eventViewRef.value?.getRankDatasets() ?? [];
-    case 'dragon-tiger':
-    case 'block-trade':
-      return dragonViewRef.value?.getRankDatasets() ?? [];
-    default:
-      return [
-        {
-          title: currentRankLabel.value,
-          columns: quoteExportColumns,
-          rows: displayedRows.value as unknown as Record<string, unknown>[],
-        },
-      ];
-  }
-};
 
 /**
  * 导出文件名时间戳
@@ -439,13 +196,19 @@ const exportStamp = (): string => {
   );
 };
 
-/** 「AI 分析」：把当前页签榜单数据 + 榜单类型交给 Agent 分析 */
+/**
+ * 汇总全部可见页签的榜单数据段（AI 分析与导出 Excel 共用的数据出口）
+ * @returns 数据段列表；看板未挂载 / 数据未加载时为空数组
+ */
+const collectRankDatasets = (): RankDataset[] => boardRef.value?.getRankDatasets() ?? [];
+
+/** 「AI 分析」：把全部可见页签的榜单数据交给 Agent 分析 */
 const onRankAiAnalysis = (): void => {
-  const prompt = buildRankAnalysisPrompt(currentRankLabel.value, collectRankDatasets());
+  const prompt = buildRankAnalysisPrompt('盘面雷达', collectRankDatasets());
   if (prompt === '') {
     notifications.push({
       title: '暂无可分析的榜单数据',
-      body: '请等待当前榜单数据加载完成后再发起 AI 分析',
+      body: '请等待榜单数据加载完成后再发起 AI 分析',
       tone: NOTIFY_TONE.FLAT,
     });
     return;
@@ -453,13 +216,13 @@ const onRankAiAnalysis = (): void => {
   void requestAgentAnalysis(prompt);
 };
 
-/** 「导出 Excel」：把当前页签榜单数据导出为 .xlsx（多数据段 = 多工作表） */
+/** 「导出 Excel」：把全部可见页签的榜单数据导出为 .xlsx（多数据段 = 多工作表） */
 const onRankExport = async (): Promise<void> => {
   const datasets = collectRankDatasets();
   if (datasets.every((dataset) => dataset.rows.length === 0)) {
     notifications.push({
       title: '暂无可导出的榜单数据',
-      body: '请等待当前榜单数据加载完成后再导出',
+      body: '请等待榜单数据加载完成后再导出',
       tone: NOTIFY_TONE.FLAT,
     });
     return;
@@ -471,7 +234,7 @@ const onRankExport = async (): Promise<void> => {
         rows: dataset.rows,
         columns: dataset.columns,
       })),
-      `盘面雷达-${currentRankLabel.value}-${exportStamp()}`,
+      `盘面雷达-${exportStamp()}`,
     );
   } catch (error) {
     console.error('[market-rank] export', error);
@@ -482,20 +245,17 @@ const onRankExport = async (): Promise<void> => {
     });
   }
 };
-
 </script>
 
 <template>
   <div class="flex h-full min-h-0 flex-col gap-4">
-    <!-- 排序维度切换（与行情全景一致的 underline 风格） -->
-    <div class="flex shrink-0 items-center gap-1">
-      <BaseTabs v-model="sortKey" :options="sortTabOptions" variant="underline" />
-      <TabConfigButton page-id="market-rank" :options="SORT_TAB_OPTIONS" />
-    </div>
-
-    <!-- 榜单工具条上移页头：AI 分析 + 导出 Excel（Teleport 投射，本页激活时才挂载） -->
+    <!-- 榜单工具条上移页头：页签设置 + AI 分析 + 导出 Excel（Teleport 投射，本页激活时才挂载） -->
     <Teleport v-if="headerSlotActive" :to="PAGE_HEADER_ACTIONS_TARGET">
       <div class="flex items-center gap-2">
+        <BaseButton variant="ghost" data-track="MARKET_RANK_TAB_SETTINGS" @click="tabSettingsOpen = true">
+          <MenuIcon name="settings" :size="14" />
+          页签设置
+        </BaseButton>
         <BaseButton v-if="agentEntryVisible" variant="ghost" @click="onRankAiAnalysis">
           <MenuIcon name="agent" :size="14" />
           AI 分析
@@ -507,125 +267,26 @@ const onRankExport = async (): Promise<void> => {
       </div>
     </Teleport>
 
-    <!-- 原市场异动页签：连板 / 异动 / 龙虎榜 / 大宗交易（自管数据，重接口不轮询） -->
-    <MarketEventView v-if="sortKey === 'event'" ref="eventViewRef" mode="zt" class="min-h-0 flex-1" />
-    <MarketEventView v-else-if="sortKey === 'events'" ref="eventViewRef" mode="events" class="min-h-0 flex-1" />
-    <DragonTigerView v-else-if="isMoodTab" ref="dragonViewRef" v-model="dragonTab" class="min-h-0 flex-1" />
+    <!-- 页签平铺看板：一个可见页签一列（只读，不支持拖拽；列头内嵌子筛选，
+         参考热点新闻卡片内部分组策略；列顺序/显隐 = 页签设置） -->
+    <MarketRankTiledBoard
+      ref="boardRef"
+      class="min-h-0 flex-1"
+      :tabs="visibleTabs"
+      :quotes="allQuotes"
+      :quotes-loading="isLoading"
+    />
 
-    <!-- 个股主力资金榜 -->
-    <BaseCard v-else-if="isFlowTab" fill class="min-h-0 flex-1">
-      <div v-if="isFlowLoading && currentFlowItems.length === 0"><BaseSkeleton /></div>
-      <div v-else-if="flowError && currentFlowItems.length === 0" class="py-10">
-        <BaseEmpty text="资金流榜单加载失败，请稍后重试" />
-      </div>
-      <BaseTable
-        v-else-if="currentFlowItems.length > 0"
-        :columns="currentFlowColumns"
-        :rows="currentFlowItems.slice(0, RANK_DISPLAY_COUNT)"
-        :row-key="(row: FlowRow) => String(row.code)"
-        min-width="720px"
-        scroll-class="table-scroll-fill"
-        row-clickable
-        :enable-dblclick-nav="true"
-        @row-click="(row: FlowRow) => openDetail(String(row.code))"
-        @row-dblclick="(row: FlowRow) => openPage(String(row.code), flowContextList)"
-      >
-        <template #name="{ row }: { row: FlowRow }">
-          <span class="font-medium text-text">{{ row.name }}</span>
-          <span v-if="row.code" class="ml-1 text-xs text-text-tertiary">{{ row.code }}</span>
-        </template>
-        <template #price="{ row }: { row: FlowRow }">
-          <span :class="TREND_TEXT_CLASS[getTrendByChangePercent(row.changePercent ?? 0)]">
-            {{ formatPrice(row.price) }}
-          </span>
-        </template>
-        <template #changePercent="{ row }: { row: FlowRow }">
-          <span
-            class="rounded-full px-2 py-0.5 font-semibold"
-            :class="TREND_PILL_CLASS[getTrendByChangePercent(row.changePercent ?? 0)]"
-          >
-            {{ formatPercent(row.changePercent) }}
-          </span>
-        </template>
-        <template #mainNetInflow="{ row }: { row: FlowRow }">
-          <span
-            class="font-medium"
-            :class="(row.mainNetInflow ?? 0) >= 0 ? 'text-up' : 'text-down'"
-          >
-            {{ formatYuanWithSign(row.mainNetInflow) }}
-          </span>
-        </template>
-      </BaseTable>
-      <BaseEmpty v-else text="暂无数据" />
-    </BaseCard>
+    <!-- 报价榜加载失败的兜底提示（上游可能限频或封禁；其余页签的失败态在看板列内） -->
+    <p v-if="isError" class="shrink-0 text-xs text-down" role="alert">
+      报价榜加载失败，请稍后重试（上游可能限频或封禁）
+    </p>
 
-    <!-- 报价排序榜 -->
-    <BaseCard v-else fill class="min-h-0 flex-1">
-      <div v-if="isLoading && allQuotes.length === 0"><BaseSkeleton /></div>
-      <div v-else-if="isError && allQuotes.length === 0" class="py-10">
-        <BaseEmpty text="盘面雷达加载失败，请稍后重试（上游可能限频或封禁）" />
-      </div>
-      <BaseTable
-        v-else-if="displayedRows.length > 0"
-        :columns="columns"
-        :rows="displayedRows"
-        :row-key="(row) => row.code"
-        min-width="900px"
-        scroll-class="table-scroll-fill"
-        row-clickable
-        @row-click="(row) => openDetail(row.code)"
-        :enable-dblclick-nav="true"
-        @row-dblclick="(row) => openPage(row.code, toContextList(displayedRows, (item) => item.code))"
-      >
-        <template #name="{ row }">
-          <span class="font-medium text-text">{{ row.name }}</span>
-          <span class="ml-1 text-xs text-text-tertiary">{{ row.code }}</span>
-        </template>
-        <template #price="{ row }">
-          <span
-            class="tabular-nums"
-            :class="TREND_TEXT_CLASS[getTrendByChangePercent(row.changePercent ?? 0)]"
-          >
-            {{ formatPrice(row.price) }}
-          </span>
-        </template>
-        <template #changePercent="{ row }">
-          <span
-            class="rounded-full px-2 py-0.5 text-xs font-semibold"
-            :class="TREND_PILL_CLASS[getTrendByChangePercent(row.changePercent ?? 0)]"
-          >
-            {{ formatPercent(row.changePercent) }}
-          </span>
-        </template>
-        <template #change="{ row }">
-          <span
-            class="tabular-nums"
-            :class="(row.change ?? 0) >= 0 ? 'text-up' : 'text-down'"
-          >
-            {{ row.change > 0 ? '+' : '' }}{{ formatPrice(row.change) }}
-          </span>
-        </template>
-        <template #volume="{ row }">
-          <span class="tabular-nums text-text-secondary">{{ formatVolume(row.volume) }}</span>
-        </template>
-        <template #amount="{ row }">
-          <span class="tabular-nums text-text-secondary">{{ formatAmount(row.amount) }}</span>
-        </template>
-        <template #turnoverRate="{ row }">
-          <span class="tabular-nums text-text-secondary">{{ formatPercentUnsigned(row.turnoverRate) }}</span>
-        </template>
-        <template #volumeRatio="{ row }">
-          <span class="tabular-nums text-text-secondary">
-            {{ row.volumeRatio === null ? '--' : row.volumeRatio.toFixed(2) }}
-          </span>
-        </template>
-        <template #pe="{ row }">
-          <span class="tabular-nums text-text-secondary">
-            {{ row.pe === null ? '--' : row.pe.toFixed(2) }}
-          </span>
-        </template>
-      </BaseTable>
-      <BaseEmpty v-else text="暂无数据" />
-    </BaseCard>
+    <!-- 页头「页签设置」弹窗（拖拽排序 + 勾选显隐） -->
+    <MarketRankTabSettingsModal
+      v-model:open="tabSettingsOpen"
+      :items="tabSettingsItems"
+      @confirm="onTabSettingsConfirm"
+    />
   </div>
 </template>

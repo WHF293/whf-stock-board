@@ -115,6 +115,56 @@ export const useWatchlistStore = defineStore('watchlist', {
     },
 
     /**
+     * 跨分组移动一只股票（平铺看板拖拽落列后调用）
+     *
+     * 语义 = 从源分组移除 + 加入目标分组（原条目的 `addedAt` 与名称原样保留）；
+     * 目标分组已有该票时等价于只从源分组移除（跨组去重，不产生重复条目）
+     * @param fromGroupId 源分组 id
+     * @param toGroupId 目标分组 id
+     * @param symbol 股票符号（sh600519 完整形态）
+     * @returns 是否发生移动（false = 分组不存在 / 同组 / 源组内找不到该票）
+     */
+    moveStockToGroup(fromGroupId: string, toGroupId: string, symbol: string): boolean {
+      if (fromGroupId === toGroupId) {
+        return false;
+      }
+      const from = this.groups.find((group) => group.id === fromGroupId);
+      const to = this.groups.find((group) => group.id === toGroupId);
+      if (!from || !to) {
+        return false;
+      }
+      const index = from.stocks.findIndex((stock) => stock.symbol === symbol);
+      if (index < 0) {
+        return false;
+      }
+      const [moved] = from.stocks.splice(index, 1);
+      if (!to.stocks.some((stock) => stock.symbol === symbol)) {
+        to.stocks.push(moved);
+      }
+      this.$persist();
+      return true;
+    },
+
+    /**
+     * 按 id 顺序重排分组（分组设置弹窗拖拽确认后调用）
+     *
+     * 语义 = 全量重排：`order` 里给出的 id 按其顺序排列，store 里存在但
+     * 未出现在 `order` 里的分组（如弹窗打开期间新建的）按原相对顺序排在末尾，
+     * 不丢任何分组；默认组不做保护（允许排到任意位置）
+     * @param order 目标分组 id 顺序
+     */
+    reorderGroups(order: readonly string[]): void {
+      const rankOf = new Map(order.map((id, index) => [id, index]));
+      const stableIndex = new Map(this.groups.map((group, index) => [group.id, index]));
+      this.groups.sort((a, b) => {
+        const ra = rankOf.get(a.id) ?? order.length + (stableIndex.get(a.id) ?? 0);
+        const rb = rankOf.get(b.id) ?? order.length + (stableIndex.get(b.id) ?? 0);
+        return ra - rb;
+      });
+      this.$persist();
+    },
+
+    /**
      * 新建自定义分组
      * @param name 分组名称
      * @returns 新建的分组对象

@@ -9,9 +9,27 @@
  * 不弹任何报错；仅设置页手动检查时在按钮文案上给轻提示。
  */
 
-/** GitHub Releases 最新版 API（复用 app-info.constants 的仓库地址口径） */
+/** GitHub Releases 最新版 API（兜底通道：匿名请求按出口 IP 限流 60 次/时，易 403） */
 export const UPDATE_LATEST_API =
   'https://api.github.com/repos/WHF293/whf-stock-board/releases/latest';
+
+/**
+ * GitHub Releases 最新版网页地址（检测主通道，2026-10-27 实测切换）：
+ * `/releases/latest` 302 → `/tag/vX.Y.Z`，跟随重定向后从 response.url 解析版本号。
+ * 不走 api.github.com 的按 IP 匿名配额（王总网络出口 IP 配额常态耗尽，直连与
+ * 走代理都 403，是「更新一直失败」的根因），且直连可用、无需代理。
+ */
+export const UPDATE_RELEASE_PAGE_URL =
+  'https://github.com/WHF293/whf-stock-board/releases/latest';
+
+/**
+ * NSIS 安装包下载地址模板（`{version}` 替换为版本号，如 4.21.0）
+ *
+ * 与 CI release 产物命名规则一致：productName_version_x64-setup.exe
+ * （tauri.conf.json productName=stock-board）。改 productName / 发版产物命名时同步此模板
+ */
+export const UPDATE_ASSET_URL_TEMPLATE =
+  'https://github.com/WHF293/whf-stock-board/releases/download/v{version}/stock-board_{version}_x64-setup.exe';
 
 /** GitHub Accept 头（REST 惯例，稳定返回 JSON） */
 export const UPDATE_API_ACCEPT = 'application/vnd.github+json';

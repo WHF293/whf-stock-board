@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { useDark } from '@vueuse/core';
 import type { EChartsCoreOption } from 'echarts/core';
 import {
   CHART_AXIS_LINE_COLOR,
@@ -21,6 +20,7 @@ import {
 } from '../../../common/constants/market-breadth.constants.ts';
 import type { BreadthDayBar, BreadthIndicatorSeries } from '../../../common/types/market-breadth.types.ts';
 import { useSettingsStore } from '../../../common/stores/settings';
+import { useTheme } from '../../../common/composables/use-theme';
 import { interpretBreadthValue } from '../../../common/utils/interpret-breadth';
 import { readTrendColors } from '../../../common/utils/trend-colors';
 import BaseChart from './BaseChart.vue';
@@ -56,7 +56,10 @@ const {
 }>();
 
 const settingsStore = useSettingsStore();
-const isDark = useDark();
+// ⚠️ 必须走 useTheme（与宿主同一 storage 键），禁用裸 useDark()：
+// 裸调用读的是 vueuse 默认键（vueuse-color-scheme，本应用从不写），
+// 键不存在时回落系统偏好并直接改 <html class>，切到本页会把全局明暗强行翻转
+const { isDark } = useTheme();
 
 /** 视图窗口切片下标起点（全部积累时为 0） */
 const startIndex = computed(() => {

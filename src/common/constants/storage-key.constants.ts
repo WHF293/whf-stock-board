@@ -111,6 +111,12 @@ export const STORAGE_NS_COMMAND_PALETTE_RECENT = 'pc.commandPaletteRecent';
 /** 自选 · 叠加对比组合（勾选符号 + 区间交易日数，JSON：{ symbols, rangeDays }） */
 export const STORAGE_NS_WATCHLIST_COMPARE = 'pc.watchlistCompare';
 
+/** 自选 · 隐藏的分组 id 列表（分组设置弹窗勾选显隐，JSON：string[]） */
+export const STORAGE_NS_WATCHLIST_GROUP_HIDDEN = 'pc.watchlistGroupHidden';
+
+/** 盘面雷达 · 页签列设置（顺序 + 显隐，JSON：{ order: string[]; hidden: string[] }） */
+export const STORAGE_NS_MARKET_RANK_TABS = 'pc.marketRankTabs';
+
 /** 市场宽度 · 分钟点序列（按本地日积累；值 = { [date]: BreadthPoint[] }，滚存最近 3 日） */
 export const STORAGE_NS_MARKET_BREADTH_DAYS = 'marketBreadth.days';
 

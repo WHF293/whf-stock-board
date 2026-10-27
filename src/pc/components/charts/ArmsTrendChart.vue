@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { useDark } from '@vueuse/core';
 import dayjs from 'dayjs';
 import type { EChartsCoreOption } from 'echarts/core';
 import {
@@ -13,6 +12,7 @@ import { MINUTE_AXIS_RANGES } from '../../../common/constants/kline.constants.ts
 import { ARMS_NEUTRAL_LINE } from '../../../common/constants/market-breadth.constants.ts';
 import type { BreadthPoint } from '../../../common/types/market-breadth.types.ts';
 import { useSettingsStore } from '../../../common/stores/settings';
+import { useTheme } from '../../../common/composables/use-theme';
 import { readTrendColors } from '../../../common/utils/trend-colors';
 import BaseChart from './BaseChart.vue';
 
@@ -31,7 +31,10 @@ const { points = [] } = defineProps<{
 }>();
 
 const settingsStore = useSettingsStore();
-const isDark = useDark();
+// ⚠️ 必须走 useTheme（与宿主同一 storage 键），禁用裸 useDark()：
+// 裸调用读的是 vueuse 默认键（vueuse-color-scheme，本应用从不写），
+// 键不存在时回落系统偏好并直接改 <html class>，切到本页会把全局明暗强行翻转
+const { isDark } = useTheme();
 
 /** 平衡线文案（tooltip / markLine） */
 const NEUTRAL_LINE_LABEL = '平衡线 1.0';

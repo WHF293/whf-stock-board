@@ -30,6 +30,7 @@ cursor-pointer
 filter
 flex
 flex-1
+flex-col
 flex-wrap
 focus:border-primary
 focus:outline-none
