@@ -248,6 +248,11 @@ jobs:
       - name: Init Android project
         run: pnpm tauri android init
 
+      # 小米自由窗口适配原生补丁（幂等）：init 重建后必须重打——
+      # manifest multi-resume/resizeable + MainActivity 生命周期重排（小窗失焦轮询不停摆）
+      - name: Patch Android shell (free-window adaptation)
+        run: node scripts/patch-android.mjs
+
       # android init 只出 Tauri 模板默认图标，用仓库提交的 K 线图标集覆盖
       - name: Apply app icons
         run: cp -r src-tauri/android-res-icons/. src-tauri/gen/android/app/src/main/res/

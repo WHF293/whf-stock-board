@@ -1473,3 +1473,189 @@ a.m-row--link {
   color: inherit;
   text-decoration: none;
 }
+
+/* ============================================================
+   小米自由窗口 / 大屏断点适配（2026-10-28，方案见 .ai/开发方案/ 同日文档）
+   三档：Compact <600（现状单列 + 底部 TabBar）/ Medium 600-840（左侧 Rail + 2 列）/
+   Expanded ≥840（Rail + 3 列 + 个股详情双栏）。
+   阈值与 src/mobile/constants.ts 的 MOBILE_BREAKPOINT_MD_PX / MOBILE_BREAKPOINT_LG_PX
+   保持一致（CSS 侧无法引用 TS 常量，两侧以注释互指，改一处必须同步另一处）
+   ============================================================ */
+
+/* 左侧导航 Rail（≥600px 替代底部 TabBar；Compact 档由组件 v-if 不渲染）：
+   玻璃 token 与 .m-tabbar 同源，悬浮圆角面板贴左缘、高度随内容自适应垂直居中 */
+.m-rail {
+  position: fixed;
+  left: calc(10px + env(safe-area-inset-left, 0px));
+  top: 50%;
+  bottom: auto;
+  transform: translateY(-50%);
+  width: 66px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 6px;
+  border-radius: 999px;
+  --glass-blur: 32px;
+  --glass-saturate: 2.4;
+  --glass-light: rgba(255, 255, 255, 0.28);
+  --glass-light-strong: rgba(255, 255, 255, 0.72);
+  --glass-border: rgba(255, 255, 255, 0.75);
+  --glass-highlight: rgba(255, 255, 255, 0.9);
+  --glass-shadow: 0 12px 32px rgba(31, 39, 51, 0.2), 0 4px 12px rgba(31, 39, 51, 0.12);
+  background: var(--glass-light);
+  border: 1px solid var(--glass-border);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  box-shadow:
+    inset 0 1px 0 var(--glass-highlight),
+    var(--glass-shadow);
+}
+.dark .m-rail {
+  --glass-light: rgba(40, 41, 46, 0.42);
+  --glass-light-strong: rgba(52, 53, 60, 0.8);
+  --glass-border: rgba(255, 255, 255, 0.14);
+  --glass-highlight: rgba(255, 255, 255, 0.22);
+  --glass-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  box-shadow:
+    inset 0 1px 0 var(--glass-highlight),
+    var(--glass-shadow);
+}
+.m-rail__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 9px 0;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--color-text-2);
+  text-decoration: none;
+  border-radius: 999px;
+  transition: color 0.25s ease;
+}
+.m-rail__item--active {
+  color: var(--color-primary);
+  background: var(--glass-light-strong);
+}
+.m-rail__icon {
+  font-size: 19px;
+  line-height: 1.2;
+}
+
+/* 个股详情双栏骨架（仅 ≥840 生效双栏；窄档保持单列纵排，占位零样式） */
+.m-stk-duo {
+  display: flex;
+  flex-direction: column;
+}
+.m-stk-duo__l,
+.m-stk-duo__r {
+  min-width: 0;
+}
+
+@media (min-width: 600px) {
+  /* 底部 TabBar 退役换左 Rail：主内容整体让位（fixed 元素不受父级 padding 影响，
+     Rail 自行 fixed 定位；.m-rail-w = Rail 左缘 inset 10 + 宽 66 + 右缘间距 10） */
+  :root {
+    --m-rail-w: 86px;
+  }
+  .m-tabbar {
+    display: none;
+  }
+  .m-root {
+    padding-left: var(--m-rail-w);
+  }
+  /* TabBar 让位高度全部收回：面板底距 / 尾部占位改小间距 */
+  .m-page-flex .van-tab__panel {
+    padding-bottom: 20px;
+  }
+  .m-tab-safe {
+    padding-bottom: 20px;
+  }
+  .m-home-tail {
+    height: 20px;
+  }
+  .m-sub-tail {
+    height: 16px;
+  }
+  /* 底部弹层不再贴满整屏：从 Rail 右缘起铺到屏幕右缘（Vant slide-up 动画不受影响） */
+  .van-popup--bottom {
+    left: var(--m-rail-w);
+    right: 0;
+    width: auto;
+  }
+  /* fixed 导航栏（设置 / 主题等二级页）同理让位：fixed 元素不受父级 padding 影响，
+     不让位会整条压在 Rail 下面 */
+  .van-nav-bar--fixed {
+    left: var(--m-rail-w);
+    width: auto;
+  }
+  /* 内容限宽：滚动容器自身对称 padding-inline（百分比基于父级宽）实现居中限宽，
+     避免平板 / 折叠屏上单列被无限拉长（对齐小米 UX 指南的缩进策略）。
+     不用「子项 max-width + auto margin」：flex 列容器里 auto margin 会把
+     子块宽度收缩成 fit-content（卡片不再通栏）。普通块流容器（m-tab-safe /
+     m-sub-page）仍用子项方案，两者等效 */
+  .m-sub-scroll,
+  .m-home-scroll .van-pull-refresh__track,
+  .m-page-flex .m-tabs .van-pull-refresh__track {
+    padding-inline: max(0px, calc((100% - 720px) / 2));
+  }
+  .m-tab-safe > *,
+  .m-sub-page > * {
+    max-width: 720px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  /* 列表断点列数（自选 m-cols）：独立圆角卡两列（对齐 UI 稿 V2），容器卡壳退化为
+     透明网格底（投影/圆角移交每个子卡），行间 border-top 失效 */
+  .m-cols {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    background: transparent;
+    box-shadow: none;
+    border-radius: 0;
+    overflow: visible;
+  }
+  .m-cols > * {
+    background: var(--color-surface);
+    border-radius: 12px;
+    box-shadow: var(--m-card-shadow);
+    overflow: hidden;
+  }
+  .m-cols .m-row + .m-row {
+    border-top: 0;
+  }
+}
+
+@media (min-width: 840px) {
+  .m-cols {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .m-sub-scroll,
+  .m-home-scroll .van-pull-refresh__track,
+  .m-page-flex .m-tabs .van-pull-refresh__track {
+    padding-inline: max(0px, calc((100% - 1080px) / 2));
+  }
+  .m-tab-safe > *,
+  .m-sub-page > * {
+    max-width: 1080px;
+  }
+  .m-home-scroll .van-pull-refresh__track > *,
+  .m-page-flex .m-tabs .van-pull-refresh__track > * {
+    max-width: 1080px;
+  }
+  /* 个股详情双栏：左 报价头 + K 线（信息主轴），右 五档 + 底部页签区 */
+  .m-stk-duo {
+    flex-direction: row;
+    gap: 0 6px;
+    align-items: flex-start;
+  }
+  .m-stk-duo__l {
+    flex: 1.15;
+  }
+  .m-stk-duo__r {
+    flex: 1;
+  }
+}

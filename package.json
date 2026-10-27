@@ -14,8 +14,8 @@
     "preview": "vite preview",
     "lint": "eslint src server",
     "tauri": "tauri",
-    "build:apk": "tauri android build --apk --target aarch64",
-    "build:apk:debug": "tauri android build --apk --target aarch64 --debug",
+    "build:apk": "node scripts/patch-android.mjs && tauri android build --apk --target aarch64",
+    "build:apk:debug": "node scripts/patch-android.mjs && tauri android build --apk --target aarch64 --debug",
     "sign:apk": "node scripts/sign-apk.mjs",
     "build:site": "vue-tsc -b && vite build --config vite.config.site.ts"
   },

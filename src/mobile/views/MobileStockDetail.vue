@@ -270,180 +270,186 @@ const back = (): void => {
         <span class="retry" @click="loadQuote()">重试</span>
       </div>
       <template v-else>
-        <div class="m-stk-head m-card">
-          <div class="m-stk-head__main">
-            <div class="m-stk-head__nm">
-              {{ quote.name }}<span class="code">{{ symbol }}</span>
+        <!-- ≥840px 双栏（mobile.css 断点适配分档）：左 报价头+K 线 / 右 五档+页签区；窄档单列纵排 -->
+        <div class="m-stk-duo">
+          <div class="m-stk-duo__l">
+            <div class="m-stk-head m-card">
+              <div class="m-stk-head__main">
+                <div class="m-stk-head__nm">
+                  {{ quote.name }}<span class="code">{{ symbol }}</span>
+                </div>
+                <div class="m-stk-head__px" :class="pctClass(quote.changePercent)">
+                  {{ quote.price?.toFixed(2) ?? '--' }}
+                </div>
+                <div class="m-stk-head__chg" :class="pctClass(quote.changePercent)">
+                  {{ chgText }}
+                </div>
+              </div>
+              <div class="m-stk-grid">
+                <div v-for="g in headGrid" :key="g.t">
+                  <div class="m-stk-grid__t">{{ g.t }}</div>
+                  <div class="m-stk-grid__v" :class="g.cls">{{ g.v }}</div>
+                </div>
+              </div>
             </div>
-            <div class="m-stk-head__px" :class="pctClass(quote.changePercent)">
-              {{ quote.price?.toFixed(2) ?? '--' }}
-            </div>
-            <div class="m-stk-head__chg" :class="pctClass(quote.changePercent)">
-              {{ chgText }}
-            </div>
-          </div>
-          <div class="m-stk-grid">
-            <div v-for="g in headGrid" :key="g.t">
-              <div class="m-stk-grid__t">{{ g.t }}</div>
-              <div class="m-stk-grid__v" :class="g.cls">{{ g.v }}</div>
-            </div>
-          </div>
-        </div>
 
-        <!-- === 周期 chips + K 线图 === -->
-        <div class="m-chips" style="padding-top: 10px">
-          <button
-            v-for="opt in CHART_PERIOD_OPTIONS"
-            :key="opt.value"
-            class="m-chip"
-            :class="{ 'm-chip--active': period === opt.value }"
-            @click="period = opt.value"
-          >
-            {{ opt.label }}
-          </button>
-        </div>
-        <div class="m-card">
-          <div v-if="klineLoading" class="m-state">K 线加载中…</div>
-          <div v-else-if="klineError" class="m-state">
-            K 线加载失败
-            <span class="retry" @click="loadKline()">重试</span>
-          </div>
-          <div v-else-if="!bars.length" class="m-state">暂无 K 线数据</div>
-          <div v-else class="m-stk-chart">
-            <KlineChart
-              :key="`${symbol}-${period}`"
-              :bars="bars"
-              :mode="chartMode"
-              :pre-close="quote.prevClose ?? null"
-              :symbol="symbol"
-              :intraday-axis="period === 'minute'"
-              auto-height
-            />
-          </div>
-        </div>
-
-        <!-- === 五档盘口 === -->
-        <div class="m-sec"><span class="m-sec__t">五档盘口</span></div>
-        <div class="m-card">
-          <div class="m-stk-ob">
-            <div v-for="r in obRows" :key="r.lbl" class="m-stk-ob__row">
-              <span class="lbl">{{ r.lbl }}</span>
-              <span :class="r.dir">{{ r.p?.toFixed(2) ?? '--' }}</span>
-              <span class="lbl">{{ fmtVol(r.v) }}</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- === 底部页签区：交易记录 / ETF 持仓股 / 财务 / 基金概况 / 资讯（按标的类型裁剪，同 PC 口径） === -->
-        <div class="m-chips" style="padding-top: 10px">
-          <button
-            v-for="t in BOTTOM_TABS"
-            :key="t.key"
-            class="m-chip"
-            :class="{ 'm-chip--active': bottomTab === t.key }"
-            @click="onBottomTab(t.key)"
-          >
-            {{ t.label }}
-          </button>
-        </div>
-        <div class="m-card">
-          <!-- 财务：四张 datacenter 报表，页签切入才挂载拉数（快照 TTL 内秒出），与 PC 同口径 -->
-          <MobileFinancialPanel v-if="bottomTab === 'financial'" :symbol="symbol" />
-          <template v-else>
-            <div v-if="bottomLoading" class="m-state">加载中…</div>
-            <template v-else-if="bottomTab === 'trade'">
-              <div v-if="!tradeRecords.length" class="m-state">暂无交易记录</div>
-              <div
-                v-for="rec in tradeRecords"
-                :key="rec.id"
-                class="m-row"
+            <!-- === 周期 chips + K 线图 === -->
+            <div class="m-chips" style="padding-top: 10px">
+              <button
+                v-for="opt in CHART_PERIOD_OPTIONS"
+                :key="opt.value"
+                class="m-chip"
+                :class="{ 'm-chip--active': period === opt.value }"
+                @click="period = opt.value"
               >
-                <div class="m-row__nm">
-                  {{ rec.action }} {{ rec.quantity }}股 @ {{ rec.price?.toFixed(2) ?? '--' }}
-                  <span class="sub">{{ rec.tradeDate }} {{ rec.tradeTime || '' }}</span>
+                {{ opt.label }}
+              </button>
+            </div>
+            <div class="m-card">
+              <div v-if="klineLoading" class="m-state">K 线加载中…</div>
+              <div v-else-if="klineError" class="m-state">
+                K 线加载失败
+                <span class="retry" @click="loadKline()">重试</span>
+              </div>
+              <div v-else-if="!bars.length" class="m-state">暂无 K 线数据</div>
+              <div v-else class="m-stk-chart">
+                <KlineChart
+                  :key="`${symbol}-${period}`"
+                  :bars="bars"
+                  :mode="chartMode"
+                  :pre-close="quote.prevClose ?? null"
+                  :symbol="symbol"
+                  :intraday-axis="period === 'minute'"
+                  auto-height
+                />
+              </div>
+            </div>
+          </div>
+          <div class="m-stk-duo__r">
+            <!-- === 五档盘口 === -->
+            <div class="m-sec"><span class="m-sec__t">五档盘口</span></div>
+            <div class="m-card">
+              <div class="m-stk-ob">
+                <div v-for="r in obRows" :key="r.lbl" class="m-stk-ob__row">
+                  <span class="lbl">{{ r.lbl }}</span>
+                  <span :class="r.dir">{{ r.p?.toFixed(2) ?? '--' }}</span>
+                  <span class="lbl">{{ fmtVol(r.v) }}</span>
                 </div>
-                <span class="m-row__val" :class="rec.action.includes('买') ? 'm-up' : 'm-down'">
-                  {{ rec.amount ? `${(rec.amount / 1e4).toFixed(2)}万` : '--' }}
-                </span>
               </div>
-            </template>
-            <template v-else-if="bottomTab === 'etf'">
-              <div v-if="!etfHoldings.length" class="m-state">暂无 ETF 持仓数据</div>
-              <div v-for="h in etfHoldings" :key="h.symbol" class="m-row">
-                <div class="m-row__nm">
-                  {{ h.name }}
-                  <span class="sub">{{ h.symbol }}</span>
-                </div>
-                <span class="m-row__val sm">
-                  {{ h.holdShares ? `${h.holdShares.toFixed(2)}万股` : '--' }}
-                </span>
-                <span class="m-row__val sm">
-                  {{ h.holdMarketValue ? `${(h.holdMarketValue / 1e4).toFixed(2)}亿` : '--' }}
-                </span>
-              </div>
-            </template>
-            <!-- 资讯：公告 + 个股新闻（东财源；进页签拉一次，不轮询），点行跳原文 -->
-            <template v-else-if="bottomTab === 'news'">
-              <div class="m-chips" style="padding: 10px 12px 0">
-                <button
-                  class="m-chip m-chip--sub"
-                  :class="{ 'm-chip--active': newsSubTab === 'ann' }"
-                  @click="newsSubTab = 'ann'"
-                >
-                  公告
-                </button>
-                <button
-                  class="m-chip m-chip--sub"
-                  :class="{ 'm-chip--active': newsSubTab === 'news' }"
-                  @click="newsSubTab = 'news'"
-                >
-                  新闻
-                </button>
-              </div>
-              <template v-if="newsSubTab === 'ann'">
-                <div v-if="!newsAnnouncements.length" class="m-state">暂无公告</div>
-                <a
-                  v-for="a in newsAnnouncements"
-                  :key="a.url"
-                  class="m-row m-row--link"
-                  :href="a.url"
-                  target="_blank"
-                  rel="noopener"
-                >
-                  <div class="m-row__nm">
-                    {{ a.title }}
-                    <span class="sub">{{ a.date }}</span>
-                  </div>
-                </a>
-              </template>
+            </div>
+
+            <!-- === 底部页签区：交易记录 / ETF 持仓股 / 财务 / 基金概况 / 资讯（按标的类型裁剪，同 PC 口径） === -->
+            <div class="m-chips" style="padding-top: 10px">
+              <button
+                v-for="t in BOTTOM_TABS"
+                :key="t.key"
+                class="m-chip"
+                :class="{ 'm-chip--active': bottomTab === t.key }"
+                @click="onBottomTab(t.key)"
+              >
+                {{ t.label }}
+              </button>
+            </div>
+            <div class="m-card">
+              <!-- 财务：四张 datacenter 报表，页签切入才挂载拉数（快照 TTL 内秒出），与 PC 同口径 -->
+              <MobileFinancialPanel v-if="bottomTab === 'financial'" :symbol="symbol" />
               <template v-else>
-                <div v-if="!newsItems.length" class="m-state">暂无新闻</div>
-                <a
-                  v-for="n in newsItems"
-                  :key="n.oid"
-                  class="m-row m-row--link"
-                  :href="n.url"
-                  target="_blank"
-                  rel="noopener"
-                >
-                  <div class="m-row__nm">
-                    {{ n.title }}
-                    <span class="sub">{{ n.media }} {{ formatNewsTime(n.ctime) }}</span>
+                <div v-if="bottomLoading" class="m-state">加载中…</div>
+                <template v-else-if="bottomTab === 'trade'">
+                  <div v-if="!tradeRecords.length" class="m-state">暂无交易记录</div>
+                  <div
+                    v-for="rec in tradeRecords"
+                    :key="rec.id"
+                    class="m-row"
+                  >
+                    <div class="m-row__nm">
+                      {{ rec.action }} {{ rec.quantity }}股 @ {{ rec.price?.toFixed(2) ?? '--' }}
+                      <span class="sub">{{ rec.tradeDate }} {{ rec.tradeTime || '' }}</span>
+                    </div>
+                    <span class="m-row__val" :class="rec.action.includes('买') ? 'm-up' : 'm-down'">
+                      {{ rec.amount ? `${(rec.amount / 1e4).toFixed(2)}万` : '--' }}
+                    </span>
                   </div>
-                </a>
+                </template>
+                <template v-else-if="bottomTab === 'etf'">
+                  <div v-if="!etfHoldings.length" class="m-state">暂无 ETF 持仓数据</div>
+                  <div v-for="h in etfHoldings" :key="h.symbol" class="m-row">
+                    <div class="m-row__nm">
+                      {{ h.name }}
+                      <span class="sub">{{ h.symbol }}</span>
+                    </div>
+                    <span class="m-row__val sm">
+                      {{ h.holdShares ? `${h.holdShares.toFixed(2)}万股` : '--' }}
+                    </span>
+                    <span class="m-row__val sm">
+                      {{ h.holdMarketValue ? `${(h.holdMarketValue / 1e4).toFixed(2)}亿` : '--' }}
+                    </span>
+                  </div>
+                </template>
+                <!-- 资讯：公告 + 个股新闻（东财源；进页签拉一次，不轮询），点行跳原文 -->
+                <template v-else-if="bottomTab === 'news'">
+                  <div class="m-chips" style="padding: 10px 12px 0">
+                    <button
+                      class="m-chip m-chip--sub"
+                      :class="{ 'm-chip--active': newsSubTab === 'ann' }"
+                      @click="newsSubTab = 'ann'"
+                    >
+                      公告
+                    </button>
+                    <button
+                      class="m-chip m-chip--sub"
+                      :class="{ 'm-chip--active': newsSubTab === 'news' }"
+                      @click="newsSubTab = 'news'"
+                    >
+                      新闻
+                    </button>
+                  </div>
+                  <template v-if="newsSubTab === 'ann'">
+                    <div v-if="!newsAnnouncements.length" class="m-state">暂无公告</div>
+                    <a
+                      v-for="a in newsAnnouncements"
+                      :key="a.url"
+                      class="m-row m-row--link"
+                      :href="a.url"
+                      target="_blank"
+                      rel="noopener"
+                    >
+                      <div class="m-row__nm">
+                        {{ a.title }}
+                        <span class="sub">{{ a.date }}</span>
+                      </div>
+                    </a>
+                  </template>
+                  <template v-else>
+                    <div v-if="!newsItems.length" class="m-state">暂无新闻</div>
+                    <a
+                      v-for="n in newsItems"
+                      :key="n.oid"
+                      class="m-row m-row--link"
+                      :href="n.url"
+                      target="_blank"
+                      rel="noopener"
+                    >
+                      <div class="m-row__nm">
+                        {{ n.title }}
+                        <span class="sub">{{ n.media }} {{ formatNewsTime(n.ctime) }}</span>
+                      </div>
+                    </a>
+                  </template>
+                </template>
+                <!-- 基金概况：披露口径键值行（字段与 PC EtfProfileCard 同源） -->
+                <template v-else-if="bottomTab === 'fund'">
+                  <div v-if="!etfProfile" class="m-state">暂无基金概况数据</div>
+                  <template v-else>
+                    <div v-for="kv in fundKvRows" :key="kv.k" class="m-kv">
+                      <span class="m-kv__k">{{ kv.k }}</span>
+                      <span class="m-kv__v">{{ kv.v }}</span>
+                    </div>
+                  </template>
+                </template>
               </template>
-            </template>
-            <!-- 基金概况：披露口径键值行（字段与 PC EtfProfileCard 同源） -->
-            <template v-else-if="bottomTab === 'fund'">
-              <div v-if="!etfProfile" class="m-state">暂无基金概况数据</div>
-              <template v-else>
-                <div v-for="kv in fundKvRows" :key="kv.k" class="m-kv">
-                  <span class="m-kv__k">{{ kv.k }}</span>
-                  <span class="m-kv__v">{{ kv.v }}</span>
-                </div>
-              </template>
-            </template>
-          </template>
+            </div>
+          </div>
         </div>
       </template>
       <div class="m-sub-tail"></div>

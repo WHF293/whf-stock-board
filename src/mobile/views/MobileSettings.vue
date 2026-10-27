@@ -119,7 +119,8 @@ const toggleAbout = (key: 'disclaimer' | 'source'): void => {
 </script>
 
 <template>
-  <div>
+  <!-- m-sub-page：≥600px 大屏限宽居中（mobile.css 断点适配分档） -->
+  <div class="m-sub-page">
     <van-nav-bar title="设置" class="m-nav" fixed placeholder safe-area-inset-top left-arrow @click-left="router.back()" />
 
     <div class="m-set-label">通用</div>

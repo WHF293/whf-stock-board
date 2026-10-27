@@ -342,7 +342,8 @@ const onSheetRemove = (): void => {
           自选
         </button>
       </div>
-      <div v-else class="m-card">
+      <!-- m-cols：≥600px 断点起列表 2 列 / ≥840px 3 列（mobile.css 断点适配分档） -->
+      <div v-else class="m-card m-cols">
         <van-swipe-cell v-for="row in activeRows" :key="row.stock.symbol" class="m-wl-cell">
           <div
             class="m-row m-wl-row"
