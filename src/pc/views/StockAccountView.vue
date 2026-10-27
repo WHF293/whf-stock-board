@@ -1,9 +1,15 @@
 <script setup lang="ts">
+import { ref } from 'vue';
+import dayjs from 'dayjs';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { PAGE_HEADER_ACTIONS_TARGET, usePageHeaderSlot } from '../../common/composables/use-page-header-slot';
 import tzzbFavicon from '../../common/assets/tzzb-favicon.ico';
 import { TZZB_OFFICIAL_SITE_URL } from '../../common/types/tzzb.types.ts';
+import { fetchAuthorizedAt, startTzzbMcpAuth, waitTzzbMcpAuthorized } from '../../common/api/tzzb.api.ts';
+import { NOTIFY_TONE } from '../../common/constants/notify.constants.ts';
+import { useNotificationsStore } from '../../common/stores/notifications';
 import BaseButton from '../components/ui/BaseButton.vue';
+import MenuIcon from '../components/ui/MenuIcon.vue';
 import TzzbDashboard from '../components/account/tzzb/TzzbDashboard.vue';
 
 /**
@@ -19,6 +25,12 @@ import TzzbDashboard from '../components/account/tzzb/TzzbDashboard.vue';
 /** 页头挂载守卫（KeepAlive 缓存页：激活才投射，防按钮残留） */
 const { active: headerSlotActive } = usePageHeaderSlot();
 
+/** 浮窗（鉴权发起 / 完成 / 失败反馈） */
+const notifications = useNotificationsStore();
+
+/** 鉴权进行中（防重入 + 按钮态） */
+const authRunning = ref(false);
+
 /**
  * 系统默认浏览器打开投资账本官网（plugin-opener；纯浏览器 dev 环境兜底新标签页）
  */
@@ -27,11 +39,45 @@ const openOfficialSite = (): void => {
     window.open(TZZB_OFFICIAL_SITE_URL, '_blank', 'noopener'),
   );
 };
+
+/**
+ * 重新触发 MCP 浏览器鉴权：dev server 起回调监听 → 拉起系统浏览器到授权页 →
+ * 轮询授权时间直到落盘（浮窗反馈结果；页面顶栏同步状态的授权时间随之刷新）
+ */
+const runMcpAuth = async (): Promise<void> => {
+  if (authRunning.value) return;
+  authRunning.value = true;
+  try {
+    const beforeAt = (await fetchAuthorizedAt()) ?? 0;
+    const authorizeUrl = await startTzzbMcpAuth();
+    await openUrl(authorizeUrl).catch(() => window.open(authorizeUrl, '_blank', 'noopener'));
+    notifications.push({
+      title: 'MCP 鉴权',
+      body: '已打开同花顺授权页，完成登录后自动检测',
+      tone: NOTIFY_TONE.PRIMARY,
+    });
+    const authorizedAt = await waitTzzbMcpAuthorized(beforeAt);
+    notifications.push({
+      title: 'MCP 鉴权完成',
+      body: `授权时间 ${dayjs(authorizedAt).format('YYYY-MM-DD HH:mm')}`,
+      tone: NOTIFY_TONE.UP,
+    });
+  } catch (err) {
+    notifications.push({
+      title: 'MCP 鉴权失败',
+      body: err instanceof Error ? err.message : String(err),
+      tone: NOTIFY_TONE.DOWN,
+    });
+  } finally {
+    authRunning.value = false;
+  }
+};
 </script>
 
 <template>
   <!-- 官网入口上移 MainLayout 页头：高光玻璃按钮（BaseButton ghost，与「插件设置」
-       同款玻璃底），官网 favicon + 常驻文案（王总 2026-10-23 指定） -->
+       同款玻璃底），官网 favicon + 常驻文案（王总 2026-10-23 指定）；
+       MCP鉴权 = 重新触发浏览器授权（王总 2026-10-27 指定，位于官网按钮右侧） -->
   <Teleport v-if="headerSlotActive" :to="PAGE_HEADER_ACTIONS_TARGET">
     <BaseButton
       variant="ghost"
@@ -40,6 +86,15 @@ const openOfficialSite = (): void => {
     >
       <img :src="tzzbFavicon" alt="投资账本" class="h-4 w-4 shrink-0" />
       <span class="text-text-secondary">投资账本官网</span>
+    </BaseButton>
+    <BaseButton
+      variant="ghost"
+      :disabled="authRunning"
+      :title="authRunning ? '鉴权进行中，请在浏览器完成登录' : '重新触发投资账本 MCP 浏览器授权'"
+      @click="void runMcpAuth()"
+    >
+      <MenuIcon name="plug" :size="14" />
+      <span class="text-text-secondary">{{ authRunning ? '鉴权中…' : 'MCP鉴权' }}</span>
     </BaseButton>
   </Teleport>
 

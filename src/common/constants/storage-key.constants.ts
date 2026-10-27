@@ -54,6 +54,12 @@ export const STORAGE_NS_PANORAMA_REVIEW = 'panorama.review';
 /** 用户安装插件命名空间（应用内安装的插件代码持久化） */
 export const STORAGE_NS_USER_PLUGINS = 'plugin.user';
 
+/** 插件市场源列表命名空间（内置官方源 + 用户添加的第三方源） */
+export const STORAGE_NS_PLUGIN_MARKET = 'plugin.market';
+
+/** 插件市场目录缓存命名空间（per-repo 的 Releases 解析结果；缓存不参与数据迁移） */
+export const STORAGE_NS_PLUGIN_MARKET_CATALOG = 'plugin.market.catalog';
+
 /** 盘面雷达页（原市场榜单）- 板块历史净流入独立存储 key（不走 whf:app 整包：历史数据量随使用增长，避免整包写放大） */
 export const STORAGE_KEY_SECTOR_FLOW_HISTORY = 'whf:sector-flow-history';
 

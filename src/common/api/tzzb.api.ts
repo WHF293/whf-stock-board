@@ -670,7 +670,23 @@ export const getTzzbFundTrades = async (month: string): Promise<TzzbFundTrade[]>
 interface TzzbAuthInfo {
   /** 最近一次完整授权时间（毫秒）；无凭据记录时为 null */
   authorizedAt?: number | null;
+  /** 最近一次鉴权流失败原因（鉴权流进行中 / 失败时透出，成功或重新发起时为 null） */
+  authError?: string | null;
 }
+
+/** 鉴权启动响应形态（POST /tzzb-mcp/auth-start，dev server 本地端点） */
+interface TzzbAuthStart {
+  /** 浏览器打开的同花顺授权页地址 */
+  authorizeUrl?: string;
+  /** 非 2xx 时的错误码（AUTH_FLOW_IN_PROGRESS / TZZB_MCP_NOT_CONFIGURED / 上游错误摘要） */
+  error?: string;
+}
+
+/** MCP 鉴权轮询间隔（毫秒） */
+const AUTH_POLL_INTERVAL_MS = 2_000;
+
+/** MCP 鉴权整体超时（毫秒）：浏览器登录 + 确认授权给 5 分钟足够 */
+const AUTH_WAIT_TIMEOUT_MS = 300_000;
 
 /** 直连通道展示前缀（顶栏同步状态第二行） */
 const DIRECT_LABEL = 'MCP 直连';
@@ -679,7 +695,7 @@ const DIRECT_LABEL = 'MCP 直连';
  * 取最近一次授权时间（上游授权有效期 1 个月，到期需重走浏览器授权，顶栏据此提示重授时点）
  * @returns 毫秒时间戳；未配置代理 / 请求失败时返回 null
  */
-const fetchAuthorizedAt = async (): Promise<number | null> => {
+export const fetchAuthorizedAt = async (): Promise<number | null> => {
   try {
     const res = await fetch(`${MCP_PROXY_PATH}/auth-info`);
     if (!res.ok) return null;
@@ -691,6 +707,54 @@ const fetchAuthorizedAt = async (): Promise<number | null> => {
     return null;
   }
 };
+
+/**
+ * 发起 MCP 浏览器鉴权（dev/preview server 本地端点；server 起回环回调监听，
+ * 浏览器完成授权后自动做 code 交换并把凭据落盘 oauth.local.json）
+ * @returns 授权页地址（调用方负责拉起系统浏览器）
+ * @throws 鉴权流进行中 / 未配置 / 注册失败等（错误码或上游错误摘要）
+ */
+export const startTzzbMcpAuth = async (): Promise<string> => {
+  const res = await fetch(`${MCP_PROXY_PATH}/auth-start`, { method: 'POST' });
+  const json = (await res.json().catch(() => ({}))) as TzzbAuthStart;
+  if (!res.ok || json.error) throw new Error(json.error ?? `auth-start HTTP ${res.status}`);
+  if (!json.authorizeUrl) throw new Error('auth-start 未返回授权地址');
+  return json.authorizeUrl;
+};
+
+/**
+ * 等待鉴权完成：轮询 auth-info，直到 authorizedAt 晚于起点（成功）或透出 authError（失败）
+ * @param sinceMs 发起鉴权前的授权时间（毫秒；无记录传 0）
+ * @param timeoutMs 整体超时（毫秒）
+ * @returns resolve 完成后的授权时间（毫秒）
+ * @throws 超时 / 服务端透出的鉴权失败原因
+ */
+export const waitTzzbMcpAuthorized = (sinceMs: number, timeoutMs: number = AUTH_WAIT_TIMEOUT_MS): Promise<number> =>
+  new Promise((resolve, reject) => {
+    const startedAt = Date.now();
+    const tick = async (): Promise<void> => {
+      try {
+        const res = await fetch(`${MCP_PROXY_PATH}/auth-info`);
+        const json = (await res.json().catch(() => ({}))) as TzzbAuthInfo;
+        if (json.authError) {
+          reject(new Error(json.authError));
+          return;
+        }
+        if (typeof json.authorizedAt === 'number' && json.authorizedAt > sinceMs) {
+          resolve(json.authorizedAt);
+          return;
+        }
+      } catch {
+        // 网络抖动继续轮询，直到整体超时
+      }
+      if (Date.now() - startedAt >= timeoutMs) {
+        reject(new Error('等待授权超时'));
+        return;
+      }
+      window.setTimeout(() => void tick(), AUTH_POLL_INTERVAL_MS);
+    };
+    void tick();
+  });
 
 /**
  * 同步状态（直连阶段为实时拉取口径；第二行附最近一次授权时间——上游授权有效期

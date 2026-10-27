@@ -8,6 +8,7 @@ import BaseEmpty from '../components/ui/BaseEmpty.vue';
 import BaseSwitch from '../components/ui/BaseSwitch.vue';
 import BaseTag from '../components/ui/BaseTag.vue';
 import PluginInstallModal from '../components/plugin/PluginInstallModal.vue';
+import PluginMarketModal from '../components/plugin/PluginMarketModal.vue';
 import PluginUpdateBar from '../components/plugin/PluginUpdateBar.vue';
 import { pluginKernel } from '../plugin/index';
 import { BUILTIN_PLUGINS } from '../plugins/index';
@@ -20,10 +21,12 @@ import {
   PLUGIN_STATUS,
   PLUGIN_STATUS_LABEL,
   PLUGIN_STATUS_TONE,
+  USER_PLUGIN_INSTALL_CUSTOM_LABEL,
   USER_PLUGIN_INTAKE_UPGRADE_HINT,
   USER_PLUGIN_SOURCE,
   USER_PLUGIN_SOURCE_LABEL,
 } from '../../common/constants/plugin.constants.ts';
+import { PLUGIN_MARKET_OPEN_LABEL } from '../../common/constants/plugin-market.constants.ts';
 import {
   PLUGIN_UPDATE_ACTION_BUSY_LABEL,
   PLUGIN_UPDATE_ACTION_LABEL,
@@ -82,8 +85,11 @@ const {
   applyAll,
 } = usePluginUpdate();
 
-/** 插件安装弹窗显隐 */
+/** 插件安装弹窗显隐（本地 zip / 粘贴代码通道） */
 const installModalOpen = ref(false);
+
+/** 插件市场弹窗显隐（多源在线安装通道） */
+const marketModalOpen = ref(false);
 
 /**
  * 打开官网「软件文档」并直达「开发者指南」tab（白皮书已迁官网；插件开发 / 插件包格式的完整约定在那边）
@@ -352,10 +358,17 @@ const contributionSummary = (info: PluginRuntimeInfo): string => {
           </BaseButton>
           <BaseButton
             variant="ghost"
+            data-track="PLUGIN_MARKET_OPEN"
+            @click="marketModalOpen = true"
+          >
+            {{ PLUGIN_MARKET_OPEN_LABEL }}
+          </BaseButton>
+          <BaseButton
+            variant="ghost"
             data-track="PLUGIN_INSTALL_OPEN"
             @click="installModalOpen = true"
           >
-            安装插件
+            {{ USER_PLUGIN_INSTALL_CUSTOM_LABEL }}
           </BaseButton>
         </div>
       </div>
@@ -554,6 +567,10 @@ const contributionSummary = (info: PluginRuntimeInfo): string => {
     <!-- 插件安装弹窗：zip 包批量入队即自动解析（六步进度 + 包间冲突仲裁）→ 单装 / 批量装；
          粘贴代码走「解析预览 → 确认安装」（与设置页共用同一组件） -->
     <PluginInstallModal v-model:open="installModalOpen" />
+
+    <!-- 插件市场弹窗：多源 GitHub Releases 在线安装（默认最新版，可选历史版本）；
+         已加载目录与进行中的安装是模块级单例状态，关弹窗不丢 -->
+    <PluginMarketModal v-model:open="marketModalOpen" />
 
     <!-- 更新确认弹窗：必须先确认再下载（否则用户一点「更新」就静默装了远程代码） -->
     <BaseConfirmModal

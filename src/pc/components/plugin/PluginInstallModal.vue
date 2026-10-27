@@ -21,13 +21,14 @@ import {
   USER_PLUGIN_INTAKE_INSTALL_ALL_LABEL,
   USER_PLUGIN_INTAKE_WARN_LINE,
   USER_PLUGIN_INTAKE_WARN_TITLE,
+  USER_PLUGIN_INSTALL_CUSTOM_LABEL,
   USER_PLUGIN_PACKAGE_ACCEPT,
   USER_PLUGIN_SOURCE,
 } from '../../../common/constants/plugin.constants.ts';
 import type { PluginDefinition } from '../../../common/types/plugin.types.ts';
 
 /**
- * 插件安装弹窗（应用内安装用户插件）
+ * 插件安装弹窗（应用内安装用户插件的**本地通道**，与「插件市场」的在线通道并列）
  *
  * 两种来源，两条不同的交互节奏：
  * - **zip 插件包**（第三方分发的常态）：拖拽 / 多选入队，**选中即自动解析** ——
@@ -334,7 +335,7 @@ const onInstallAll = async (): Promise<void> => {
 <template>
   <BaseModal
     v-model:open="open"
-    title="安装插件"
+    :title="USER_PLUGIN_INSTALL_CUSTOM_LABEL"
     :max-width-class="mode === 'package' ? 'max-w-2xl' : 'max-w-xl'"
   >
     <div class="rounded-card border border-primary/30 bg-primary-weak/60 px-3 py-2 text-xs text-text-secondary">

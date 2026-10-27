@@ -201,3 +201,112 @@ export const filterCcpmRowsByInstrument = (
   instrumentId === undefined
     ? [...data.rows]
     : data.rows.filter((row) => row.instrumentId === instrumentId);
+
+/**
+ * 单合约口径：除指定会员外其余上榜会员的汇总行
+ *
+ * 直接对其余会员原始行求和（与 computeCcpmMemberStats 同一空值口径：null 侧按 0），
+ * 占比分母仍用该合约整体合计；汇总后多空两侧必非空，标签照常判定。
+ *
+ * @param rows 三榜并集归并并计算指标后的行（同一合约）
+ * @param totals 该合约整体合计（占比分母）
+ * @param memberName 排除的会员（当前选中席位）
+ * @returns 汇总行；除目标会员外无其他上榜会员时为 null
+ */
+export const computeCcpmOthersStats = (
+  rows: readonly CcpmMemberStats[],
+  totals: CcpmInstrumentTotals,
+  memberName: string,
+): CcpmMemberStats | null => {
+  const others = rows.filter((row) => row.memberName !== memberName);
+  if (others.length === 0) {
+    return null;
+  }
+  const sumBy = (pick: (row: CcpmMemberStats) => number | null): number =>
+    others.reduce((sum, row) => sum + (pick(row) ?? 0), 0);
+  const buyPos = sumBy((row) => row.buyPos);
+  const sellPos = sumBy((row) => row.sellPos);
+  const buyChg = sumBy((row) => row.buyChg);
+  const sellChg = sumBy((row) => row.sellChg);
+  const result = detectBehaviorTag({ buyPos, sellPos, buyChg, sellChg });
+  return {
+    instrumentId: totals.instrumentId,
+    memberName: '其他机构汇总',
+    volume: sumBy((row) => row.volume),
+    volumeChg: sumBy((row) => row.volumeChg),
+    buyPos,
+    buyChg,
+    sellPos,
+    sellChg,
+    netPos: buyPos - sellPos,
+    netChg: buyChg - sellChg,
+    buyRatio: totals.buy > 0 ? (buyPos / totals.buy) * 100 : null,
+    sellRatio: totals.sell > 0 ? (sellPos / totals.sell) * 100 : null,
+    tag: result.tag,
+    tagReason: result.reason,
+  };
+};
+
+/**
+ * 聚合口径：除指定会员外其余全部上榜会员的汇总行
+ *
+ * 与 aggregateCcpmByMember 同一套累加规则（null 侧按 0、跨品种不合成交量），
+ * 只是把目标从单会员换成「非该会员的其余会员」；完整性按其余会员覆盖的
+ * 合约数计——某合约若仅被排除会员上榜，会如实体现为部分头寸。
+ *
+ * @param data 参与聚合的品种单日数据列表
+ * @param memberName 排除的会员（当前选中席位；null = 不排除，全部求和）
+ * @returns 汇总行；无任何可计入行时为 null
+ */
+export const aggregateCcpmOthers = (
+  data: readonly CcpmProductDayData[],
+  memberName: string | null,
+): CcpmAggregateRow | null => {
+  const safeData = data.filter((day) => !!day && Array.isArray(day.instruments));
+  const totalCount = safeData.reduce((sum, day) => sum + day.instruments.length, 0);
+  let totalBuy = 0;
+  let totalSell = 0;
+  let totalBuyChg = 0;
+  let totalSellChg = 0;
+  let totalVolume = 0;
+  const covered = new Set<string>();
+  for (const day of safeData) {
+    for (const row of day.rows) {
+      if (row.memberName === memberName) {
+        continue;
+      }
+      totalBuy += row.buyPos ?? 0;
+      totalSell += row.sellPos ?? 0;
+      totalBuyChg += row.buyChg ?? 0;
+      totalSellChg += row.sellChg ?? 0;
+      if (safeData.length === 1) {
+        totalVolume += row.volume ?? 0;
+      }
+      covered.add(`${day.product}|${row.instrumentId}`);
+    }
+  }
+  if (covered.size === 0) {
+    return null;
+  }
+  const result = detectBehaviorTag({
+    buyPos: totalBuy,
+    sellPos: totalSell,
+    buyChg: totalBuyChg,
+    sellChg: totalSellChg,
+  });
+  return {
+    memberName: '其他机构汇总',
+    totalBuy,
+    totalSell,
+    totalNet: totalBuy - totalSell,
+    totalBuyChg,
+    totalSellChg,
+    totalNetChg: totalBuyChg - totalSellChg,
+    totalVolume,
+    coveredCount: covered.size,
+    totalCount,
+    isPartial: covered.size < totalCount,
+    tag: result.tag,
+    tagReason: result.reason,
+  };
+};

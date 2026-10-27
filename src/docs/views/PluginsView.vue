@@ -110,8 +110,10 @@ onMounted(async () => {
       <div class="mt-3 flex gap-2.5 rounded-lg bg-flat-weak px-3.5 py-2.5 text-[11px] leading-relaxed text-text-secondary">
         <span aria-hidden="true">✓</span>
         <span>
-          <b class="text-text">安装方式：</b>打开应用 → 插件工坊（或 设置 →「插件」）→「安装插件」→ 选择下载的 .zip 包，
-          解析预览通过后确认安装；与已装插件同 id 时为升级覆盖（插件数据保留）。只安装来源可信的插件。
+          <b class="text-text">安装方式：</b>打开应用 → 插件工坊 →「插件市场」可**在线安装**（默认最新版，
+          可展开历史版本选装旧版；还支持添加第三方 GitHub 插件仓库源）；
+          或「安装自定义插件」→ 选择下载的 .zip 包，解析预览通过后确认安装；
+          与已装插件同 id 时为升级覆盖（插件数据保留）。只安装来源可信的插件。
         </span>
       </div>
 

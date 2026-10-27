@@ -22,7 +22,13 @@ import {
   CCPM_EQUITY_PRODUCT_ORDER,
   FUTURES_PAGE_TEXT,
 } from '../../common/constants/futures.constants.ts';
-import { aggregateCcpmByMember, computeCcpmMemberStats, filterCcpmRowsByInstrument } from '../../common/utils/ccpm-compute.ts';
+import {
+  aggregateCcpmByMember,
+  aggregateCcpmOthers,
+  computeCcpmMemberStats,
+  computeCcpmOthersStats,
+  filterCcpmRowsByInstrument,
+} from '../../common/utils/ccpm-compute.ts';
 import type {
   CcpmAggregateRow,
   CcpmMemberSeries,
@@ -268,6 +274,39 @@ const selectedStats = computed<CcpmMemberStats | null>(
 const selectedAggregate = computed<CcpmAggregateRow | null>(
   () => aggregates.value.find((row) => row.memberName === selectedMember.value) ?? null,
 );
+
+/* -------------------- 其他机构汇总（除选中席位外，画像卡底部展示） -------------------- */
+
+/** 单合约口径：其余上榜会员汇总 */
+const othersStats = computed<CcpmMemberStats | null>(() => {
+  const data = dayData.value;
+  if (scope.value !== 'contract' || !selectedMember.value || !data) {
+    return null;
+  }
+  const target = instrument.value || data.instruments[0] || '';
+  const totals = data.totals[target];
+  if (!totals || stats.value.length === 0) {
+    return null;
+  }
+  return computeCcpmOthersStats(stats.value, totals, selectedMember.value);
+});
+
+/** 聚合口径：其余全部上榜会员汇总 */
+const othersAggregate = computed<CcpmAggregateRow | null>(() => {
+  if (scope.value === 'contract' || !selectedMember.value) {
+    return null;
+  }
+  return aggregateCcpmOthers(activeDataList.value, selectedMember.value);
+});
+
+/** 其他机构家数（当前口径下除选中席位外的上榜会员数） */
+const othersCount = computed<number>(() => {
+  if (!selectedMember.value) {
+    return 0;
+  }
+  const list = scope.value === 'contract' ? stats.value : aggregates.value;
+  return list.filter((row) => row.memberName !== selectedMember.value).length;
+});
 
 /** 选中席位在当前口径下的全部上榜原始行（分解表数据源） */
 const selectedBreakdownRows = computed(() => {
@@ -547,6 +586,9 @@ const sourceNoticeText = computed(() =>
           :scope="scope"
           :stats="selectedStats"
           :aggregate="selectedAggregate"
+          :others-stats="othersStats"
+          :others-aggregate="othersAggregate"
+          :others-count="othersCount"
         />
       </div>
 
