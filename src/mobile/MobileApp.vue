@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router';
 import { useDocumentThemeSync } from '../common/composables/use-document-theme';
 import { initBoardCalendarSync } from '../common/composables/use-board-calendar-sync';
 import MobileTabBar from './components/MobileTabBar.vue';
+import MobileNavigationRail from './components/MobileNavigationRail.vue';
 import DebugOverlay from './debug/DebugOverlay.vue';
 import { isDebugMode } from './debug/debug-mode';
 import { MOBILE_TAB_PATHS } from './router';
@@ -74,6 +75,8 @@ watch(
       </keep-alive>
     </router-view>
     <MobileTabBar />
+    <!-- ≥600px 大屏形态（小米自由窗口 / 平板）改用左侧 Rail，TabBar 由 CSS 隐藏 -->
+    <MobileNavigationRail />
     <!-- 调试模式覆盖层（「我的」页应用卡连点 10 次开启）：悬浮球 + 网络请求面板，
          放 router-view 之外，任意页面可唤起 -->
     <DebugOverlay v-if="isDebugMode" />

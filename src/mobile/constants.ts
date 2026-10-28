@@ -152,6 +152,18 @@ export const MOBILE_TAB_ITEMS: readonly { path: string; label: string; icon: str
 export const MOBILE_DISCLAIMER =
   '行情与资讯数据来自第三方公开接口，仅供个人学习参考，不构成任何投资建议。请以官方行情软件为准。';
 
+/* ---- 小米自由窗口 / 大屏断点（2026-10-28，方案见 .ai/开发方案/ 同日文档）----
+ * 三档：Compact <600（现状单列 + 底部 TabBar）/ Medium 600-840（Rail + 2 列）/
+ * Expanded ≥840（Rail + 3 列 + 个股详情双栏）。
+ * 数值必须与 mobile.css 末尾「断点适配」分档的 @media 阈值一致（CSS 侧无法引用
+ * TS 常量，两侧以注释互指，改这里必须同步改那边） */
+
+/** Medium 档下限（px）：底部 TabBar 换左侧 NavigationRail、列表 2 列 */
+export const MOBILE_BREAKPOINT_MD_PX = 600;
+
+/** Expanded 档下限（px）：列表 3 列、个股详情双栏 */
+export const MOBILE_BREAKPOINT_LG_PX = 840;
+
 /* ---- TabBar 指示胶囊切换动效（DESIGN-MOBILE.md §3）----
  * 行程：位移 + 均匀缩小至 65% + 降低不透明度；接近落点时回弹放大恢复默认。
  * 规格来源：.ai/项目资源/stock-board-mobile-ui-clean-v2.html 附录 §1-② */

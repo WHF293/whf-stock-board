@@ -21,9 +21,11 @@ import type { FullQuote, SearchResult } from '../../common/types/stock-quote.typ
 import type { WatchlistStock } from '../../common/types/watchlist.types';
 import { mobileCacheGetStale, mobileCacheSet } from '../cache';
 import { useMobilePolling } from '../composables/use-mobile-polling';
+import { useBreakpoint } from '../composables/use-breakpoint';
 
 const router = useRouter();
 const store = useWatchlistStore();
+const { lg } = useBreakpoint();
 
 /** 当前分组 id（容错：分组被删后回落默认组） */
 const activeGroupId = ref(store.groups[0]?.id ?? DEFAULT_GROUP_ID);
@@ -40,8 +42,9 @@ const quotesLoading = ref(false);
 const cached = mobileCacheGetStale<Record<string, FullQuote>>(WL_CACHE_KEY);
 if (cached) quotesMap.value = cached.value;
 
+/** 拉取行情：全部分组符号一次拉齐（大屏卡片列所有组同屏展示，切组也免重拉） */
 const loadQuotes = async (): Promise<void> => {
-  const symbols = activeGroup.value?.stocks.map((stock) => stock.symbol) ?? [];
+  const symbols = [...new Set(store.groups.flatMap((group) => group.stocks.map((s) => s.symbol)))];
   if (symbols.length === 0) {
     quotesMap.value = {};
     return;
@@ -76,8 +79,13 @@ interface WatchRowView {
   pillCls: string;
 }
 
-const activeRows = computed<WatchRowView[]>(() =>
-  (activeGroup.value?.stocks ?? []).map((stock) => {
+/**
+ * 指定分组的行视图（窄屏取当前组、大屏卡片列每列各取各的组）
+ * @param groupId 分组 id
+ * @returns 行视图列表
+ */
+const rowsOfGroup = (groupId: string): WatchRowView[] =>
+  (store.groups.find((group) => group.id === groupId)?.stocks ?? []).map((stock) => {
     const quote = findQuoteBySymbol(quotesMap.value, stock.symbol);
     const pct = quote?.changePercent ?? null;
     return {
@@ -88,8 +96,10 @@ const activeRows = computed<WatchRowView[]>(() =>
       pctCls: pct === null || pct === 0 ? 'm-flat' : pct > 0 ? 'm-up' : 'm-down',
       pillCls: pct !== null && pct !== 0 ? (pct > 0 ? 'up' : 'down') : '',
     };
-  }),
-);
+  });
+
+/** 窄屏当前分组行视图 */
+const activeRows = computed(() => rowsOfGroup(activeGroupId.value));
 
 /** 行点击进个股详情（长按弹层触发后吞掉本次 click）
  * @param symbol 完整符号（如 sh600519） */
@@ -101,12 +111,15 @@ const goStock = (symbol: string): void => {
   void router.push(`/stock/${symbol}`);
 };
 
-/* === 添加股票（搜索弹层） === */
+/* === 添加股票（搜索弹层；2026-10-28 起落点可指定分组——大屏列头 + 号） === */
 const searchOpen = ref(false);
 const keyword = ref('');
 const searching = ref(false);
 const results = ref<SearchResult[]>([]);
 let searchTimer: number | undefined;
+
+/** 本次搜索弹层的落点分组（默认当前选中组；大屏列头 + 号打开时指向该列） */
+const searchTargetGroupId = ref(activeGroupId.value);
 
 /** 搜索输入防抖 300ms（>=2 字符才请求）
  * @param value 输入关键词 */
@@ -130,21 +143,27 @@ const onSearchInput = (value: string): void => {
   }, 300);
 };
 
-const openSearch = (): void => {
+/**
+ * 打开搜索弹层
+ * @param groupId 落点分组 id（缺省 = 当前选中组）
+ */
+const openSearch = (groupId: string = activeGroupId.value): void => {
+  searchTargetGroupId.value = groupId;
   keyword.value = '';
   results.value = [];
   searchOpen.value = true;
 };
 
-/** 选中搜索结果加入当前分组（组内去重由 store 负责）
+/** 选中搜索结果加入目标分组（组内去重由 store 负责）
  * @param item 搜索结果条目 */
 const onPick = async (item: SearchResult): Promise<void> => {
+  const target = store.groups.find((group) => group.id === searchTargetGroupId.value);
   const ok = store.addStock(
     { symbol: item.code, name: item.name, addedAt: Date.now() },
-    activeGroupId.value,
+    searchTargetGroupId.value,
   );
   if (ok) {
-    showToast(`已加入「${activeGroup.value?.name ?? '默认'}」`);
+    showToast(`已加入「${target?.name ?? '默认'}」`);
     await loadQuotes();
   } else {
     showToast('该分组已有此股');
@@ -184,11 +203,15 @@ const onRemoveGroup = (): void => {
     .catch(() => {});
 };
 
-/** 左滑删除：从当前分组移除
- * @param row 行视图条目 */
-const onRemoveStock = (row: WatchRowView): void => {
-  store.removeStock(activeGroupId.value, row.stock.symbol);
-  showToast('已从当前分组移除');
+/**
+ * 左滑删除：从指定分组移除（大屏卡片列传所在列分组，窄屏 = 当前选中组）
+ * @param row 行视图条目
+ * @param groupId 分组 id
+ */
+const onRemoveStock = (row: WatchRowView, groupId: string = activeGroupId.value): void => {
+  const groupName = store.groups.find((group) => group.id === groupId)?.name ?? '当前分组';
+  store.removeStock(groupId, row.stock.symbol);
+  showToast(`已从「${groupName}」移除`);
 };
 
 /* === 导入 JSON（PC「数据迁移 → 复制 JSON 片段」粘贴恢复自选，按分组 id 合并） === */
@@ -308,66 +331,129 @@ const onSheetRemove = (): void => {
         <div class="m-wl-nav-acts">
           <van-icon name="description" size="18" @click="openImport" />
           <van-icon name="delete-o" size="18" @click="onRemoveGroup" />
-          <van-icon name="plus" size="19" @click="openSearch" />
+          <van-icon name="plus" size="19" @click="openSearch()" />
         </div>
       </template>
     </van-nav-bar>
 
-    <!-- 分组 chips + 新建 -->
-    <div class="m-chips m-wl-chips">
-      <button
+    <!-- ≥840px 大屏（2026-10-28 王总指定：样式参考 PC 分组卡片列）：
+         全部分组并排卡片列（横向滚动，列体各自纵向滚动），列头 = 分组名 + 数量 + 添加号
+         （落点 = 本分组）；点列头选中该组（nav 删除按钮作用对象），末尾虚线卡新建分组 -->
+    <div v-if="lg" class="m-wl-board">
+      <section
         v-for="group in store.groups"
         :key="group.id"
-        class="m-chip"
-        :class="{ 'm-chip--active': group.id === activeGroupId }"
+        class="m-wl-col"
+        :class="{ 'm-wl-col--active': group.id === activeGroupId }"
         @click="activeGroupId = group.id"
       >
-        {{ group.name }}<span class="m-wl-chip__n">{{ group.stocks.length }}</span>
+        <header class="m-wl-col__head">
+          <span class="nm">{{ group.name }}</span>
+          <span class="n">{{ group.stocks.length }} 只</span>
+          <button
+            type="button"
+            class="m-wl-col__add"
+            :aria-label="`添加股票到「${group.name}」`"
+            @click.stop="openSearch(group.id)"
+          >
+            <van-icon name="plus" size="15" />
+          </button>
+        </header>
+        <div class="m-wl-col__body">
+          <van-swipe-cell v-for="row in rowsOfGroup(group.id)" :key="row.stock.symbol">
+            <div
+              class="m-row m-wl-row"
+              @click="goStock(row.stock.symbol)"
+              @touchstart.passive="onTouchStart(row.stock)"
+              @touchmove.passive="onTouchMove"
+              @touchend.passive="onTouchEnd"
+              @touchcancel.passive="onTouchEnd"
+            >
+              <div class="m-row__nm">
+                {{ row.stock.name }}
+                <span class="sub">{{ row.stock.symbol }}</span>
+              </div>
+              <span class="m-row__val" :class="row.priceCls">{{ row.price }}</span>
+              <span class="m-row__pct pill" :class="[row.pctCls, row.pillCls]">{{ row.pct }}</span>
+            </div>
+            <template #right>
+              <van-button
+                square
+                type="danger"
+                class="m-wl-del"
+                @click.stop="onRemoveStock(row, group.id)"
+              >
+                删除
+              </van-button>
+            </template>
+          </van-swipe-cell>
+          <p v-if="group.stocks.length === 0" class="m-wl-col__empty">空分组</p>
+        </div>
+      </section>
+      <button type="button" class="m-wl-col-new" @click="groupDlg = true">
+        <van-icon name="plus" size="16" />
+        新建分组
       </button>
-      <button class="m-chip m-chip--sub" @click="groupDlg = true">＋</button>
     </div>
 
-    <div class="m-sub-scroll">
-      <div v-if="quotesLoading && activeRows.length === 0" class="m-card m-skel-fill">
-        <div v-for="i in 10" :key="i" class="m-skel-row"></div>
-      </div>
-      <div v-else-if="activeRows.length === 0" class="m-wl-empty">
-        <span class="m-wl-empty__icon"><van-icon name="star-o" size="26" /></span>
-        <div class="m-wl-empty__title">还没有自选股</div>
-        <div class="m-wl-empty__sub">
-          把关注的股票加进「{{ activeGroup?.name ?? '默认' }}」分组，行情、热度、资金流向一屏跟踪
-        </div>
-        <button class="m-wl-empty__btn" @click="openSearch">
-          <van-icon name="plus" size="14" />
-          自选
+    <template v-else>
+      <!-- 分组 chips + 新建 -->
+      <div class="m-chips m-wl-chips">
+        <button
+          v-for="group in store.groups"
+          :key="group.id"
+          class="m-chip"
+          :class="{ 'm-chip--active': group.id === activeGroupId }"
+          @click="activeGroupId = group.id"
+        >
+          {{ group.name }}<span class="m-wl-chip__n">{{ group.stocks.length }}</span>
         </button>
+        <button class="m-chip m-chip--sub" @click="groupDlg = true">＋</button>
       </div>
-      <div v-else class="m-card">
-        <van-swipe-cell v-for="row in activeRows" :key="row.stock.symbol" class="m-wl-cell">
-          <div
-            class="m-row m-wl-row"
-            @click="goStock(row.stock.symbol)"
-            @touchstart.passive="onTouchStart(row.stock)"
-            @touchmove.passive="onTouchMove"
-            @touchend.passive="onTouchEnd"
-            @touchcancel.passive="onTouchEnd"
-          >
-            <div class="m-row__nm">
-              {{ row.stock.name }}
-              <span class="sub">{{ row.stock.symbol }}</span>
-            </div>
-            <span class="m-row__val" :class="row.priceCls">{{ row.price }}</span>
-            <span class="m-row__pct pill" :class="[row.pctCls, row.pillCls]">{{ row.pct }}</span>
+
+      <div class="m-sub-scroll">
+        <div v-if="quotesLoading && activeRows.length === 0" class="m-card m-skel-fill">
+          <div v-for="i in 10" :key="i" class="m-skel-row"></div>
+        </div>
+        <div v-else-if="activeRows.length === 0" class="m-wl-empty">
+          <span class="m-wl-empty__icon"><van-icon name="star-o" size="26" /></span>
+          <div class="m-wl-empty__title">还没有自选股</div>
+          <div class="m-wl-empty__sub">
+            把关注的股票加进「{{ activeGroup?.name ?? '默认' }}」分组，行情、热度、资金流向一屏跟踪
           </div>
-          <template #right>
-            <van-button square type="danger" class="m-wl-del" @click.stop="onRemoveStock(row)">
-              删除
-            </van-button>
-          </template>
-        </van-swipe-cell>
+          <button class="m-wl-empty__btn" @click="openSearch()">
+            <van-icon name="plus" size="14" />
+            自选
+          </button>
+        </div>
+        <!-- m-cols：≥600px 断点起列表 2 列 / 840 以下 2 列封顶（大屏走上方分组卡片列） -->
+        <div v-else class="m-card m-cols">
+          <van-swipe-cell v-for="row in activeRows" :key="row.stock.symbol" class="m-wl-cell">
+            <div
+              class="m-row m-wl-row"
+              @click="goStock(row.stock.symbol)"
+              @touchstart.passive="onTouchStart(row.stock)"
+              @touchmove.passive="onTouchMove"
+              @touchend.passive="onTouchEnd"
+              @touchcancel.passive="onTouchEnd"
+            >
+              <div class="m-row__nm">
+                {{ row.stock.name }}
+                <span class="sub">{{ row.stock.symbol }}</span>
+              </div>
+              <span class="m-row__val" :class="row.priceCls">{{ row.price }}</span>
+              <span class="m-row__pct pill" :class="[row.pctCls, row.pillCls]">{{ row.pct }}</span>
+            </div>
+            <template #right>
+              <van-button square type="danger" class="m-wl-del" @click.stop="onRemoveStock(row)">
+                删除
+              </van-button>
+            </template>
+          </van-swipe-cell>
+        </div>
+        <div class="m-home-tail"></div>
       </div>
-      <div class="m-home-tail"></div>
-    </div>
+    </template>
 
     <!-- 添加股票：底部搜索弹层 -->
     <van-popup v-model:show="searchOpen" position="bottom" round class="m-wl-search">
