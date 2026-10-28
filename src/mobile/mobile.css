@@ -1482,67 +1482,10 @@ a.m-row--link {
    保持一致（CSS 侧无法引用 TS 常量，两侧以注释互指，改一处必须同步另一处）
    ============================================================ */
 
-/* 左侧导航 Rail（≥600px 替代底部 TabBar；Compact 档由组件 v-if 不渲染）：
-   玻璃 token 与 .m-tabbar 同源，悬浮圆角面板贴左缘、高度随内容自适应垂直居中 */
-.m-rail {
-  position: fixed;
-  left: calc(10px + env(safe-area-inset-left, 0px));
-  top: 50%;
-  bottom: auto;
-  transform: translateY(-50%);
-  width: 66px;
-  z-index: 100;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 10px 6px;
-  border-radius: 999px;
-  --glass-blur: 32px;
-  --glass-saturate: 2.4;
-  --glass-light: rgba(255, 255, 255, 0.28);
-  --glass-light-strong: rgba(255, 255, 255, 0.72);
-  --glass-border: rgba(255, 255, 255, 0.75);
-  --glass-highlight: rgba(255, 255, 255, 0.9);
-  --glass-shadow: 0 12px 32px rgba(31, 39, 51, 0.2), 0 4px 12px rgba(31, 39, 51, 0.12);
-  background: var(--glass-light);
-  border: 1px solid var(--glass-border);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  box-shadow:
-    inset 0 1px 0 var(--glass-highlight),
-    var(--glass-shadow);
-}
-.dark .m-rail {
-  --glass-light: rgba(40, 41, 46, 0.42);
-  --glass-light-strong: rgba(52, 53, 60, 0.8);
-  --glass-border: rgba(255, 255, 255, 0.14);
-  --glass-highlight: rgba(255, 255, 255, 0.22);
-  --glass-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
-  box-shadow:
-    inset 0 1px 0 var(--glass-highlight),
-    var(--glass-shadow);
-}
-.m-rail__item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  padding: 9px 0;
-  font-size: 10.5px;
-  font-weight: 600;
-  color: var(--color-text-2);
-  text-decoration: none;
-  border-radius: 999px;
-  transition: color 0.25s ease;
-}
-.m-rail__item--active {
-  color: var(--color-primary);
-  background: var(--glass-light-strong);
-}
-.m-rail__icon {
-  font-size: 19px;
-  line-height: 1.2;
-}
+/* 左侧导航栏（≥600px 替代底部 TabBar）：2026-10-28 重构为通栏贴边侧栏
+   （YouTube Desktop 式，全高、顶部 app 标 + 竖排五主 Tab），
+   样式已 scoped 进 MobileNavigationRail.vue，此处仅保留让位宽度约定：
+   --m-rail-w = 侧栏宽 72（左缘贴 0，无外距） */
 
 /* 个股详情双栏骨架（仅 ≥840 生效双栏；窄档保持单列纵排，占位零样式） */
 .m-stk-duo {
@@ -1554,11 +1497,155 @@ a.m-row--link {
   min-width: 0;
 }
 
+/* 热点新闻主从布局壳（≥840 左4右6，2026-10-28）：
+   窄档为纯纵向壳（对 .m-tabs 的高度链透明——.m-page-flex .m-tabs 的 flex:1
+   依赖父级 flex column，这里保持 column 让高度链原样成立） */
+.m-news-duo {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.m-news-duo__l {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 个股详情右栏（资料页签区）：页签对齐 PC 更多信息口径后最多 7 个，
+   横向滚动不便 → 允许换行（窄/宽档同理，2026-10-28） */
+.m-stk-duo__r .m-chips {
+  flex-wrap: wrap;
+  overflow-x: visible;
+}
+
+/* 个股详情滚动区顶距：m-card 无 top margin（margin: 0 12px 10px），
+   报价头会贴死 navbar——补 12px 与 m-sec 顶部节奏统一（2026-10-28 王总） */
+.m-stk-scroll {
+  padding-top: 12px;
+}
+
+/* === 自选 ≥840px 大屏：PC 分组卡片列流（2026-10-28 王总指定） ===
+   全部分组并排一列一卡（横向滚动），间距与顶部统一 12px（对齐 m-sec 节奏）；
+   列头 = 分组名 + 数量 + 添加号，列体各自纵向滚动，行样式复用 .m-row */
+.m-wl-board {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  padding: 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.m-wl-col {
+  width: 300px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  box-shadow: var(--m-card-shadow);
+  overflow: hidden;
+}
+.m-wl-col--active {
+  border-color: var(--color-primary);
+}
+.m-wl-col__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 12px 11px 14px;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+.m-wl-col__head .nm {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.m-wl-col__head .n {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--color-text-3);
+}
+.m-wl-col__add {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  color: var(--color-text-2);
+  background: transparent;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+.m-wl-col__add:active {
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+.m-wl-col__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+}
+.m-wl-col__body .m-row {
+  /* 列内行：比通栏行收紧（padding 16→10），圆角 + 相邻行 2px 间距（PC 列同节奏） */
+  margin: 0;
+  padding: 9px 10px;
+  border-radius: 8px;
+}
+.m-wl-col__body .van-swipe-cell + .van-swipe-cell .m-row {
+  margin-top: 2px;
+}
+.m-wl-col__empty {
+  margin: 8px 4px;
+  padding: 22px 8px;
+  border: 1px dashed var(--color-border);
+  border-radius: 10px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--color-text-3);
+}
+.m-wl-col-new {
+  flex-shrink: 0;
+  width: 132px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px dashed var(--color-border);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--color-text-2);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.m-wl-col-new:active {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
 @media (min-width: 600px) {
-  /* 底部 TabBar 退役换左 Rail：主内容整体让位（fixed 元素不受父级 padding 影响，
-     Rail 自行 fixed 定位；.m-rail-w = Rail 左缘 inset 10 + 宽 66 + 右缘间距 10） */
+  /* 底部 TabBar 退役换左导航栏：主内容整体让位（fixed 元素不受父级 padding 影响，
+     侧栏自行 fixed 定位；--m-rail-w = 侧栏宽 72，左缘贴 0 无外距） */
   :root {
-    --m-rail-w: 86px;
+    --m-rail-w: 72px;
   }
   .m-tabbar {
     display: none;
@@ -1657,5 +1744,17 @@ a.m-row--link {
   }
   .m-stk-duo__r {
     flex: 1;
+  }
+  /* 热点新闻主从布局：左列表（4/10）右原文（6/10），中缝细线分隔 */
+  .m-news-duo {
+    flex-direction: row;
+  }
+  .m-news-duo__l {
+    flex: 4;
+  }
+  .m-news-duo__r {
+    flex: 6;
+    min-width: 0;
+    border-left: 1px solid var(--color-border);
   }
 }

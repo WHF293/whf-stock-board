@@ -178,44 +178,73 @@ const onAddGroup = (): void => {
   createGroupOpen.value = false;
 };
 
-// ---------- 添加 / 批量添加（Tab 模式删除后统一落默认分组） ----------
+// ---------- 添加 / 批量添加（2026-10-28 王总指定：入口移到各分组列头，落点 = 点的分组） ----------
 
-/** 默认分组名（弹窗提示与浮窗文案共用） */
-const defaultGroupName = computed(
-  () =>
-    watchlistStore.groups.find((group) => group.id === DEFAULT_GROUP_ID)?.name ??
-    '默认分组',
-);
+/**
+ * 分组名（通知 / 批量弹窗提示用；未知 id 回落「默认分组」）
+ * @param groupId 分组 id
+ * @returns 分组名
+ */
+const groupNameOf = (groupId: string): string =>
+  watchlistStore.groups.find((group) => group.id === groupId)?.name ?? '默认分组';
 
 /** 添加股票弹窗开关 */
 const searchModalOpen = ref(false);
 
+/** 添加股票的落点分组（列头 icon 点击时写入） */
+const searchTargetGroupId = ref<string>(DEFAULT_GROUP_ID);
+
 /**
- * 搜索结果加入默认分组自选
+ * 从分组列头打开添加弹窗（落点 = 该分组）
+ * @param groupId 分组 id
+ */
+const onColumnAdd = (groupId: string): void => {
+  searchTargetGroupId.value = groupId;
+  searchModalOpen.value = true;
+};
+
+/**
+ * 搜索结果加入目标分组自选
  * @param result 搜索结果
  */
 const onAddStock = (result: SearchResult): void => {
   watchlistStore.addStock(
     { symbol: result.code, name: result.name, addedAt: Date.now() },
-    DEFAULT_GROUP_ID,
+    searchTargetGroupId.value,
   );
 };
 
 /** 批量添加弹窗开关 */
 const batchAddOpen = ref(false);
 
+/** 批量添加的落点分组（列头 icon 点击时写入） */
+const batchTargetGroupId = ref<string>(DEFAULT_GROUP_ID);
+
+/** 批量弹窗提示用落点分组名 */
+const batchTargetGroupName = computed(() => groupNameOf(batchTargetGroupId.value));
+
 /**
- * 批量添加确认：把校验通过的标的逐个加入默认分组，并提示查不到的代码
+ * 从分组列头打开批量添加弹窗（落点 = 该分组）
+ * @param groupId 分组 id
+ */
+const onColumnBatchAdd = (groupId: string): void => {
+  batchTargetGroupId.value = groupId;
+  batchAddOpen.value = true;
+};
+
+/**
+ * 批量添加确认：把校验通过的标的逐个加入目标分组，并提示查不到的代码
  * @param payload 弹窗回传的校验结果
  */
 const onConfirmBatchAdd = (payload: BatchAddResolveResult): void => {
+  const groupId = batchTargetGroupId.value;
   const base = Date.now();
   let added = 0;
   let skipped = 0;
   payload.items.forEach((item, index) => {
     const ok = watchlistStore.addStock(
       { symbol: item.symbol, name: item.name, addedAt: base + index },
-      DEFAULT_GROUP_ID,
+      groupId,
     );
     if (ok) {
       added += 1;
@@ -228,7 +257,7 @@ const onConfirmBatchAdd = (payload: BatchAddResolveResult): void => {
     notifyStore.push({
       title: BATCH_ADD_SUCCESS_TEMPLATE.replace('{count}', String(added)).replace(
         '{group}',
-        defaultGroupName.value,
+        batchTargetGroupName.value,
       ),
       body: skipped > 0 ? BATCH_ADD_SKIPPED_TEMPLATE.replace('{skipped}', String(skipped)) : '',
       tone: NOTIFY_TONE.PRIMARY,
@@ -238,7 +267,7 @@ const onConfirmBatchAdd = (payload: BatchAddResolveResult): void => {
     notifyStore.push({
       title: BATCH_ADD_EXISTS_TEMPLATE.replace('{count}', String(skipped)).replace(
         '{group}',
-        defaultGroupName.value,
+        batchTargetGroupName.value,
       ),
       tone: NOTIFY_TONE.FLAT,
       source: NOTIFY_SOURCE_WATCHLIST,
@@ -376,46 +405,31 @@ const onConfirmStockGroups = (groupIds: string[]): void => {
 
 <template>
   <div class="flex h-full min-h-0 flex-col gap-4">
-    <!-- 页头：分组设置（列顺序 / 显隐，热点新闻源设置同款交互） -->
+    <!-- 页头：分组设置 + 新建分组（2026-10-28 王总指定：新建分组从内容区移到页头，与分组设置同处） -->
     <Teleport v-if="headerSlotActive" :to="PAGE_HEADER_ACTIONS_TARGET">
-      <BaseButton variant="ghost" data-track="WATCHLIST_GROUP_SETTINGS" @click="groupSettingsOpen = true">
-        <MenuIcon name="settings" :size="14" />
-        分组设置
-      </BaseButton>
+      <div class="flex items-center gap-2">
+        <BaseButton variant="ghost" data-track="WATCHLIST_GROUP_CREATE_OPEN" @click="onCreateGroupOpen">
+          <MenuIcon name="plus" :size="14" />
+          新建分组
+        </BaseButton>
+        <BaseButton variant="ghost" data-track="WATCHLIST_GROUP_SETTINGS" @click="groupSettingsOpen = true">
+          <MenuIcon name="settings" :size="14" />
+          分组设置
+        </BaseButton>
+      </div>
     </Teleport>
 
-    <!-- 添加股票 / 批量添加 / 新建分组（统一落默认分组；跨分组整理走看板拖拽 / 编辑弹窗） -->
-    <div class="flex shrink-0 flex-wrap items-center gap-2">
-      <BaseButton variant="ghost" @click="searchModalOpen = true">
-        <MenuIcon name="plus" :size="14" />
-        添加股票
-      </BaseButton>
-      <BaseButton
-        variant="ghost"
-        data-track="WATCHLIST_BATCH_ADD"
-        @click="batchAddOpen = true"
-      >
-        <MenuIcon name="tradeImport" :size="14" />
-        批量添加
-      </BaseButton>
-      <BaseButton
-        variant="ghost"
-        data-track="WATCHLIST_GROUP_CREATE_OPEN"
-        @click="onCreateGroupOpen"
-      >
-        <MenuIcon name="plus" :size="14" />
-        新建分组
-      </BaseButton>
-    </div>
-
     <!-- 分组平铺看板：一个分组一列（列顺序/显隐 = 分组设置），卡片 = 名称/现价/涨跌幅，
-         hover 展开全部字段并浮现操作按钮；卡片拖到别的分组列即修改归属 -->
+         hover 展开全部字段并浮现操作按钮；卡片拖到别的分组列即修改归属；
+         列头 icon 打开添加/批量添加弹窗（落点 = 该分组，2026-10-28） -->
     <WatchlistTiledBoard
       class="min-h-0 flex-1"
       :groups="visibleGroups"
       :quotes-map="quotesMap"
       @edit="onEditStockGroups"
       @remove="onRemoveStock"
+      @add="onColumnAdd"
+      @batch-add="onColumnBatchAdd"
     />
 
     <!-- 页头「分组设置」弹窗（拖拽排序 + 勾选显隐 + 删除入口） -->
@@ -477,10 +491,10 @@ const onConfirmStockGroups = (groupIds: string[]): void => {
       "
     />
 
-    <!-- 批量添加弹窗（粘贴代码 → 校验存在性 → 回传后落库并提示） -->
+    <!-- 批量添加弹窗（粘贴代码 → 校验存在性 → 回传后落库并提示；落点 = 触发列的分组） -->
     <WatchlistBatchAddModal
       v-model:open="batchAddOpen"
-      :group-name="defaultGroupName"
+      :group-name="batchTargetGroupName"
       @confirm="onConfirmBatchAdd"
     />
 

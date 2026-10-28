@@ -4,8 +4,10 @@
  *
  * 结构：报价头（大字现价 + 4×2 指标网格）→ 周期 chips（分时/日K/周K/月K/5分/五日，
  * 值与 PC CHART_PERIOD_OPTIONS 一致）→ KlineChart（复用 PC 纯展示组件，已迁 common）
- * → 五档盘口（FullQuote.bid/ask）→ 底部 Tab（交易记录 / ETF 持仓 / 财务 / 基金概况 / 资讯，
- * 按标的类型裁剪，与 PC 详情页口径对齐；交易记录与持仓在 Tauri 库不可用时降级）
+ * → 五档盘口（FullQuote.bid/ask）→ 底部 Tab（2026-10-28 王总指定对齐 PC「更多信息」抽屉
+ * 口径：交易记录 / 基本资料 / 资讯 / 财务（基金为基金概况）/ 高管简介 / 发行相关 /
+ * 参股控股 / ETF 持仓，按标的类型裁剪；四个 F10 信息页签直接复用 PC 抽屉组件，
+ * 组件内部自拉数；交易记录与持仓在 Tauri 库不可用时降级）
  * 全站股票行点击统一落点 /stock/:code
  */
 import { computed, ref, watch } from 'vue';
@@ -19,6 +21,12 @@ import {
   CHART_PERIOD_OPTIONS,
   CHART_PERIOD_DEFAULT,
 } from '../../common/constants/stock-detail.constants';
+import {
+  ETF_F10_TAB_ORDER,
+  STOCK_F10_TAB_ORDER,
+  STOCK_F10_TAB_OPTIONS,
+  type StockF10Tab,
+} from '../../common/constants/stock-f10.constants.ts';
 import { listTradeRecordsBySymbol } from '../../common/api/account-records-db.api';
 import { getEtfHoldings } from '../../common/api/etf-holdings.api';
 import type { AccountTradeRecord } from '../../common/types/account.types';
@@ -27,6 +35,9 @@ import type { FullQuote } from 'stock-sdk';
 import { pctClass, formatNewsTime } from '../utils/format';
 import { isEtfSymbol } from '../../common/utils/is-etf-symbol';
 import MobileFinancialPanel from '../components/MobileFinancialPanel.vue';
+import StockF10BaseInfoTab from '../../pc/components/business/stock-f10/StockF10BaseInfoTab.vue';
+import StockF10ExecutiveTab from '../../pc/components/business/stock-f10/StockF10ExecutiveTab.vue';
+import StockF10HoldTab from '../../pc/components/business/stock-f10/StockF10HoldTab.vue';
 import { fetchStockAnnouncements, fetchStockNews } from '../../common/api/stock-news.api';
 import { getEtfProfile } from '../../common/api/etf-profile.api';
 import type { StockAnnouncement } from '../../common/types/stock-news.types';
@@ -125,28 +136,25 @@ const obRows = computed(() => {
 const fmtVol = (v: number | null): string =>
   v === null || v === undefined ? '--' : v >= 1e6 ? `${(v / 1e6).toFixed(1)}万` : String(v);
 
-/* === 底部 Tab：与 PC 详情页页签口径对齐 ===
- * 普通股票：交易记录 / 财务 / 资讯；场内基金：ETF 持仓股 / 交易记录 / 基金概况 / 资讯
- * （场内基金无财务报表概念不加财务页签；基金概况承接披露口径，同 PC）
- * 财务页签的数据装配在 MobileFinancialPanel 内部（随 v-if 惰性拉数），不走 loadBottom */
-type BottomTab = 'trade' | 'etf' | 'financial' | 'news' | 'fund';
-const bottomTab = ref<BottomTab>('trade');
+/* === 底部 Tab：对齐 PC「更多信息」抽屉口径（2026-10-28 王总指定） ===
+ * 页签集直接取 PC StockF10Drawer 同款常量（交易记录 / 基本资料 / 资讯 / 财务 /
+ * 高管简介 / 发行相关 / 参股控股，场内基金为 ETF 持仓 + 基金概况、无参股控股）；
+ * 四个 F10 信息页签（基本资料/发行相关/高管简介/参股控股）复用 PC 抽屉组件，
+ * 组件内部自拉数，不走 loadBottom */
+const bottomTab = ref<StockF10Tab>('trade');
 
 const isEtf = computed(() => isEtfSymbol(symbol.value));
 
-const BOTTOM_TABS = computed<ReadonlyArray<{ key: BottomTab; label: string }>>(() =>
-  isEtf.value
-    ? [
-        { key: 'etf', label: 'ETF 持仓股' },
-        { key: 'trade', label: '交易记录' },
-        { key: 'fund', label: '基金概况' },
-        { key: 'news', label: '资讯' },
-      ]
-    : [
-        { key: 'trade', label: '交易记录' },
-        { key: 'financial', label: '财务' },
-        { key: 'news', label: '资讯' },
-      ],
+/** 页签值 → 标签（取自 PC 同款选项表） */
+const F10_LABEL_BY_TAB = new Map(
+  STOCK_F10_TAB_OPTIONS.map((option) => [option.value, option.label]),
+);
+
+const BOTTOM_TABS = computed<ReadonlyArray<{ key: StockF10Tab; label: string }>>(() =>
+  (isEtf.value ? ETF_F10_TAB_ORDER : STOCK_F10_TAB_ORDER).map((key) => ({
+    key,
+    label: F10_LABEL_BY_TAB.get(key) ?? key,
+  })),
 );
 
 const tradeRecords = ref<AccountTradeRecord[]>([]);
@@ -154,7 +162,7 @@ const etfHoldings = ref<EtfHoldingItem[]>([]);
 const bottomLoading = ref(false);
 const bottomError = ref(false);
 /** 已加载过的 tab（切回不重复请求） */
-const loadedTabs = new Set<BottomTab>();
+const loadedTabs = new Set<StockF10Tab>();
 
 /* === 资讯 / 基金概况页签的数据态（与交易记录共用 bottomLoading 加载口径） === */
 const newsAnnouncements = ref<StockAnnouncement[]>([]);
@@ -163,7 +171,12 @@ const newsItems = ref<HotNewsItem[]>([]);
 const newsSubTab = ref<'ann' | 'news'>('ann');
 const etfProfile = ref<EtfProfileRecord | null>(null);
 
-const loadBottom = async (tab: BottomTab, force = false): Promise<void> => {
+const loadBottom = async (tab: StockF10Tab, force = false): Promise<void> => {
+  // 四个 F10 信息页签：数据装配在 PC 组件内部（随 v-if 惰性拉数），这里只登记已加载
+  if (tab === 'baseInfo' || tab === 'publish' || tab === 'executive' || tab === 'hold') {
+    loadedTabs.add(tab);
+    return;
+  }
   if (!force && loadedTabs.has(tab)) return;
   loadedTabs.add(tab);
   bottomLoading.value = true;
@@ -200,7 +213,7 @@ const loadBottom = async (tab: BottomTab, force = false): Promise<void> => {
   }
 };
 
-const onBottomTab = (tab: BottomTab): void => {
+const onBottomTab = (tab: StockF10Tab): void => {
   bottomTab.value = tab;
   void loadBottom(tab);
 };
@@ -260,7 +273,7 @@ const back = (): void => {
       @click-left="back"
     />
 
-    <div class="m-sub-scroll">
+    <div class="m-sub-scroll m-stk-scroll">
       <!-- === 报价头 === -->
       <div v-if="quoteLoading" class="m-card m-skel-fill">
         <div v-for="i in 4" :key="i" class="m-skel-row"></div>
@@ -324,10 +337,9 @@ const back = (): void => {
                 />
               </div>
             </div>
-          </div>
-          <div class="m-stk-duo__r">
-            <!-- === 五档盘口 === -->
-            <div class="m-sec"><span class="m-sec__t">五档盘口</span></div>
+
+            <!-- === 五档盘口（2026-10-28 王总指定：大屏放 K 线下面，右栏让给资料页签区） === -->
+            <div class="m-sec" style="padding-top: 10px"><span class="m-sec__t">五档盘口</span></div>
             <div class="m-card">
               <div class="m-stk-ob">
                 <div v-for="r in obRows" :key="r.lbl" class="m-stk-ob__row">
@@ -337,9 +349,12 @@ const back = (): void => {
                 </div>
               </div>
             </div>
-
-            <!-- === 底部页签区：交易记录 / ETF 持仓股 / 财务 / 基金概况 / 资讯（按标的类型裁剪，同 PC 口径） === -->
-            <div class="m-chips" style="padding-top: 10px">
+          </div>
+          <div class="m-stk-duo__r">
+            <!-- === 底部页签区：对齐 PC「更多信息」抽屉口径（2026-10-28）：
+                 交易记录 / 基本资料 / 资讯 / 财务（基金为基金概况）/ 高管简介 / 发行相关 /
+                 参股控股 / ETF 持仓，按标的类型裁剪 === -->
+            <div class="m-chips">
               <button
                 v-for="t in BOTTOM_TABS"
                 :key="t.key"
@@ -353,6 +368,14 @@ const back = (): void => {
             <div class="m-card">
               <!-- 财务：四张 datacenter 报表，页签切入才挂载拉数（快照 TTL 内秒出），与 PC 同口径 -->
               <MobileFinancialPanel v-if="bottomTab === 'financial'" :symbol="symbol" />
+              <!-- F10 信息页签：直接复用 PC 抽屉组件（组件内自拉数 + 自带加载/空态/重试） -->
+              <StockF10BaseInfoTab
+                v-else-if="bottomTab === 'baseInfo' || bottomTab === 'publish'"
+                :symbol="symbol"
+                :section="bottomTab === 'publish' ? 'publish' : 'baseInfo'"
+              />
+              <StockF10ExecutiveTab v-else-if="bottomTab === 'executive'" :symbol="symbol" />
+              <StockF10HoldTab v-else-if="bottomTab === 'hold'" :symbol="symbol" />
               <template v-else>
                 <div v-if="bottomLoading" class="m-state">加载中…</div>
                 <template v-else-if="bottomTab === 'trade'">

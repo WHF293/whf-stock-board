@@ -34,6 +34,10 @@ const emit = defineEmits<{
   edit: [stock: WatchlistStock];
   /** 点击移除按钮（由宿主弹二次确认后只从该分组移除） */
   remove: [payload: { groupId: string; symbol: string }];
+  /** 点击列头「添加股票」icon（由宿主打开搜索弹窗，落点 = 该分组） */
+  add: [groupId: string];
+  /** 点击列头「批量添加」icon（由宿主打开批量弹窗，落点 = 该分组） */
+  batchAdd: [groupId: string];
 }>();
 
 const watchlistStore = useWatchlistStore();
@@ -74,10 +78,19 @@ const dragOverGroupId = ref<string | null>(null);
 
 /**
  * 卡片拖起：记录符号与源分组
+ *
+ * ⚠️ 必须往 dataTransfer 写入数据并设 effectAllowed（2026-10-28 修复）：
+ * 空数据拖拽在 Chromium / WebView2 下会被判为无效拖拽源——光标全程「禁止」、
+ * drop 链路不可靠，这是「拖拽改分组不可用」的根因
  * @param symbol 股票符号
  * @param groupId 源分组 id
+ * @param event 原生 dragstart 事件（写 dataTransfer 用）
  */
-const onDragStart = (symbol: string, groupId: string): void => {
+const onDragStart = (symbol: string, groupId: string, event: DragEvent): void => {
+  event.dataTransfer?.setData("text/plain", symbol);
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+  }
   dragState.value = { symbol, fromGroupId: groupId };
 };
 
@@ -114,11 +127,33 @@ const onDropToGroup = (groupId: string): void => {
       @dragleave.self="dragOverGroupId === group.id && (dragOverGroupId = null)"
       @drop.prevent="onDropToGroup(group.id)"
     >
-      <!-- 列头：分组名 + 数量（与热点新闻卡片头同规格） -->
+      <!-- 列头：分组名 + 列内添加/批量添加 icon（2026-10-28 王总指定：落点 = 本分组）+ 数量 -->
       <header
         class="flex shrink-0 items-center justify-between gap-2 border-b border-flat-weak px-4 py-3"
       >
         <h2 class="min-w-0 truncate text-sm font-semibold text-text">{{ group.name }}</h2>
+        <span class="flex shrink-0 items-center gap-0.5">
+          <button
+            type="button"
+            data-track="WATCHLIST_GROUP_ADD"
+            class="pressable rounded p-1 text-text-tertiary hover:bg-flat-weak hover:text-text active:scale-90"
+            :title="`添加股票到「${group.name}」`"
+            :aria-label="`添加股票到「${group.name}」`"
+            @click="emit('add', group.id)"
+          >
+            <MenuIcon name="plus" :size="14" />
+          </button>
+          <button
+            type="button"
+            data-track="WATCHLIST_GROUP_BATCH_ADD"
+            class="pressable rounded p-1 text-text-tertiary hover:bg-flat-weak hover:text-text active:scale-90"
+            :title="`批量添加到「${group.name}」`"
+            :aria-label="`批量添加到「${group.name}」`"
+            @click="emit('batchAdd', group.id)"
+          >
+            <MenuIcon name="tradeImport" :size="14" />
+          </button>
+        </span>
         <span class="shrink-0 text-xs tabular-nums text-text-tertiary">
           {{ group.stocks.length }} 只
         </span>
@@ -132,7 +167,7 @@ const onDropToGroup = (groupId: string): void => {
           draggable="true"
           class="group cursor-grab rounded-xl border border-flat-weak bg-flat-weak/40 p-2 transition-colors hover:bg-flat-weak active:cursor-grabbing"
           :aria-label="`拖拽 ${stock.name} 到其他分组`"
-          @dragstart="onDragStart(stock.symbol, group.id)"
+          @dragstart="onDragStart(stock.symbol, group.id, $event)"
           @dragend="onDragEnd"
           @click="openDetail(stock.symbol)"
         >
@@ -150,12 +185,8 @@ const onDropToGroup = (groupId: string): void => {
             >
               {{ formatPercent(findQuote(stock.symbol)?.changePercent) }}
             </span>
-            <MenuIcon
-              name="grip"
-              :size="12"
-              class="shrink-0 text-text-tertiary opacity-40 group-hover:opacity-100"
-            />
-            <!-- hover 操作：编辑分组归属（可多选）/ 从本组移除（宿主弹二次确认） -->
+            <!-- hover 操作：编辑、删除、拖拽把手（2026-10-28 王总指定顺序；
+                 把手恒在最右且 shrink-0，按钮出现时由左侧名称 truncate 吸收宽度，不顶把手） -->
             <span class="hidden shrink-0 items-center gap-0.5 group-hover:flex">
               <button
                 type="button"
@@ -178,6 +209,11 @@ const onDropToGroup = (groupId: string): void => {
                 <MenuIcon name="trash" :size="13" />
               </button>
             </span>
+            <MenuIcon
+              name="grip"
+              :size="12"
+              class="shrink-0 text-text-tertiary opacity-40 group-hover:opacity-100"
+            />
           </div>
           <!-- hover 展开：补齐表格里被省略的字段（代码 / 成交额 / 换手率） -->
           <div class="hidden flex-col gap-0.5 border-t border-flat-weak pt-1.5 text-xs text-text-secondary group-hover:flex">
