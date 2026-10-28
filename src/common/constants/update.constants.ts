@@ -1,9 +1,9 @@
 /**
  * 应用自动更新（GitHub Releases）常量
  *
- * 链路：启动延迟检测 latest release → 发现有新版（titlebar 徽标）→ 点击流式下载
- * NSIS 安装包到 $APPDATA/updates/ → 下载完变「立即更新」→ 点击后 Rust 侧以
- * /S（静默）+ /R（装完自动重启）启动安装包并退出当前应用。
+ * 链路：启动延迟检测 latest release → 发现有新版（titlebar 版本号标签亮「新版本」）
+ * → 点击流式下载 NSIS 安装包到 $APPDATA/updates/（进度实时显示）→ 下载完立即
+ * Rust 侧以 /S（静默）+ /R（装完自动重启）启动安装包并退出当前应用，一站完成。
  *
  * 网络口径（用户指定）：检测请求失败 / 无网 / 限流 一律静默按「无新版本」处理，
  * 不弹任何报错；仅设置页手动检查时在按钮文案上给轻提示。
@@ -57,3 +57,6 @@ export const UPDATE_AUTO_CHECK_DELAY_MS = 6_000;
 
 /** 下载进度精确到整数百分比即可 */
 export const UPDATE_PROGRESS_PRECISION = 100;
+
+/** 顶栏版本号标签的瞬态反馈展示时长（毫秒）：「已是最新」/ 失败原因展示后复位回版本号 */
+export const UPDATE_FEEDBACK_RESET_MS = 2_500;

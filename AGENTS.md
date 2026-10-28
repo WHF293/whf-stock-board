@@ -95,7 +95,7 @@ server/           # vite 中间件：/stock-proxy（仅浏览器 dev 使用）
 宿主不硬编码任何具体插件，新增能力应当写成插件而不是改宿主（`MainLayout.vue` 里只保留面板承载与命令转发）。
 
 > **API 文档在根目录 [`PLUGIN_API.md`](./PLUGIN_API.md)**（九个贡献点字段与默认值、ctx 数据层、
-> 十七个宿主服务、六个内置事件、配额与红线的完整清单）。本节只留架构约定；
+> 二十一个宿主服务、六个内置事件、配额与红线的完整清单）。本节只留架构约定；
 > 写插件前先看那份文档，改本节涉及的能力时同步它。
 >
 > **面向第三方（应用内安装）插件作者的独立 wiki 在 [`PLUGIN_WIKI.md`](./PLUGIN_WIKI.md)**（能力边界、
@@ -155,9 +155,9 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
 ### 宿主接线（别绕开）
 
 - `main.ts` 在 `app.use(router)` **之前**调 `installPlugins(pinia)`（`plugin/setup.ts`）：
-  先 provide 十七个宿主服务（`app:version` / `kernel:runtime` / `app:navigate` / `panel:open` / `panel:close` /
+  先 provide 二十一个宿主服务（`app:version` / `kernel:runtime` / `app:navigate` / `panel:open` / `panel:close` /
   `app:notify` / `app:stock-search` / `app:stock-picker` / `app:stock-open` / `app:watchlist` / `app:polling` /
-  `app:ui` / `app:http` / `app:quotes` / `app:market` / `app:format`，清单以
+  `app:ui` / `app:http` / `app:quotes` / `app:market` / `app:format` / `app:agent-ask`，清单以
   `types/plugin.types.ts` 的 `AppServiceMap` 为准），再挂插件，
   再 `attachPluginRoutes(router, { onVanishedRoute })`（订阅路由注册表版本号，把插件注册 / 卸载翻译成 `addRoute` / 摘除；
   **用户正停留的插件页随插件被撤销时**回调 `onVanishedRoute`，宿主在 `recoverVanishedRoute` 里按

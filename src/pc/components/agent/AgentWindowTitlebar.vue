@@ -10,7 +10,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
  * 颜色走应用主题 token，跟随应用内明暗模式。
  *
  * 刻意不复用主窗口 TitleBar：它耦合品牌区（回市场总览）、侧栏开关、顶栏工具
- * slots、UpdateBadge 与「关闭到托盘」同步——这些对 Agent 独立窗口都没有意义。
+ * slots、VersionTag 与「关闭到托盘」同步——这些对 Agent 独立窗口都没有意义。
  */
 
 const appWindow = getCurrentWindow();

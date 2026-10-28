@@ -8,6 +8,7 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{Manager, State};
 use tauri_plugin_sql::{Migration, MigrationKind};
 
+mod mobile_update;
 mod window_syscmd;
 
 /// 「关闭按钮最小化到托盘」开关（前端设置页经 `set_close_to_tray` 命令实时同步；
@@ -954,7 +955,10 @@ pub fn run() {
     .invoke_handler(tauri::generate_handler![
       set_close_to_tray,
       get_work_area,
-      install_update
+      install_update,
+      mobile_update::download_apk,
+      mobile_update::apk_download_status,
+      mobile_update::install_apk
     ])
     .on_window_event(|window, event| {
       // 关闭语义统一在 Rust 侧收口：自绘标题栏 × / Alt+F4 / 任务栏关闭都触发

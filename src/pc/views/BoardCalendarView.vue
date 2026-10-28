@@ -44,7 +44,10 @@ import {
 import {
   ROTATION_DEFAULT_RANGE,
   ROTATION_RANGES,
+  ROTATION_TOP_N,
 } from '../../common/constants/board-rotation.constants.ts';
+import { HOST_HEADER_ITEM } from '../../common/constants/header.constants.ts';
+import { NOTIFY_TONE } from '../../common/constants/notify.constants.ts';
 import { DATA_CACHE_KEY } from '../../common/constants/data-cache.constants.ts';
 import { POLLING_INTERVAL } from '../../common/constants/polling.constants.ts';
 import { ROUTE_PATH } from '../../common/constants/router-meta.constants.ts';
@@ -72,6 +75,11 @@ import {
 } from '../../common/utils/board-order';
 import { applyBoardScoreWeights } from '../../common/utils/apply-board-score-weights';
 import { buildBoardMainlineMatrix } from '../../common/utils/build-board-mainline-matrix';
+import { buildBoardRotation } from '../../common/utils/build-board-rotation';
+import { buildBoardRotationAnalysisPrompt } from '../../common/utils/build-board-rotation-analysis-prompt';
+import type { RankDataset } from '../../common/types/rank-dataset.types';
+import { requestAgentAnalysis } from '../agent/agent-bridge';
+import { useNotificationsStore } from '../../common/stores/notifications';
 import {
   getBoardBucketBackground,
   resolveBoardScoreBucket,
@@ -459,6 +467,220 @@ const mainlineMatrix = computed(() =>
   buildBoardMainlineMatrix(weightedDailyRows.value, mainlineDates.value, BOARD_MAINLINE_TOP_N, 'amount'),
 );
 
+/* ------------------------------ 页级 AI 分析 ------------------------------ */
+
+/** 「AI 分析」入口跟随顶栏「Agent 分析」条目的显隐开关（设置 → 布局编排 → 右上角工具编排） */
+const agentEntryVisible = computed(
+  () => !settingsStore.hiddenHeaderItems.includes(HOST_HEADER_ITEM.AGENT),
+);
+
+const notifications = useNotificationsStore();
+
+/** 「AI 分析」运行态：防重入 */
+const aiRunning = ref(false);
+
+/**
+ * 题材段数据段（AI 分析口径）：bump 图的每条线 = 一个题材段，
+ * 名次序列截到当前轮动范围窗口内
+ * @returns 数据段
+ */
+const buildSegmentDataset = (): RankDataset => {
+  const model = buildBoardRotation(weightedDailyRows.value, limitRows.value, metaRows.value, {
+    topN: ROTATION_TOP_N,
+    minScoreRate: settingsStore.rotationMinScoreRate,
+  });
+  const windowStart = model.days.length - Number(rotationRange.value);
+  const windowDateSet = new Set(model.days.slice(windowStart).map((day) => day.tradeDate));
+  return {
+    title: '题材段（bump 图，一条线一个题材）',
+    columns: [
+      { label: '板块', key: 'board' },
+      { label: '状态', key: 'active' },
+      { label: '名次序列（日期:名次/涨停数）', key: 'ranks' },
+      { label: '累计涨停家次', key: 'totalLimitUp' },
+      { label: '段内最高龙头', key: 'leader' },
+      { label: '接棒题材', key: 'successor' },
+    ],
+    rows: model.segments
+      .filter((segment) => segment.points.some((point) => windowDateSet.has(point.tradeDate)))
+      .map((segment) => ({
+        board: segment.boardName,
+        active: segment.isActive ? '进行中' : '已断线',
+        ranks: segment.points
+          .filter((point) => windowDateSet.has(point.tradeDate))
+          .map((point) => `${point.tradeDate.slice(5)}:${point.rank}名/${point.limitUp}涨停`)
+          .join(' → '),
+        totalLimitUp: segment.totalLimitUp,
+        leader:
+          segment.topLeader === null
+            ? '无'
+            : `${segment.topLeader.name} ${segment.topLeader.limitStreak}连板`,
+        successor: segment.successorName ?? '无',
+      })),
+  };
+};
+
+/**
+ * 每日市场概览数据段（AI 分析口径）：全市场涨跌停与上涨下跌家数、主线判定
+ * @returns 数据段
+ */
+const buildOverviewDataset = (): RankDataset => {
+  const model = buildBoardRotation(weightedDailyRows.value, limitRows.value, metaRows.value, {
+    topN: ROTATION_TOP_N,
+    minScoreRate: settingsStore.rotationMinScoreRate,
+  });
+  return {
+    title: '每日市场概览',
+    columns: [
+      { label: '交易日', key: 'date' },
+      { label: '全市场涨停', key: 'limitUp' },
+      { label: '全市场跌停', key: 'limitDown' },
+      { label: '上涨家数', key: 'up' },
+      { label: '下跌家数', key: 'down' },
+      { label: '主线判定', key: 'mainline' },
+      { label: 'Top1板块', key: 'top' },
+    ],
+    rows: model.days
+      .slice(-Number(rotationRange.value))
+      .map((day) => ({
+        date: day.tradeDate,
+        limitUp: day.limitUpCnt,
+        limitDown: day.limitDownCnt,
+        up: day.upCount,
+        down: day.downCount,
+        mainline: day.isLowVolume ? '缩量日' : day.isMainline ? '主线日' : '否',
+        top: day.topBoardName,
+      })),
+  };
+};
+
+/**
+ * 板块Top 数据段（AI 分析口径）：行 = 当日成交额名次、列 = 交易日
+ * @returns 数据段
+ */
+const buildMainlineDataset = (): RankDataset => ({
+  title: '板块Top（每日成交额前 N 名矩阵）',
+  columns: [
+    { label: '名次', key: 'rank' },
+    ...mainlineMatrix.value.dates.map((date) => ({ label: date.slice(5), key: date })),
+  ],
+  rows: mainlineMatrix.value.ranks.map((cells, index) => {
+    const row: Record<string, unknown> = { rank: index + 1 };
+    cells.forEach((cell, cellIndex) => {
+      row[mainlineMatrix.value.dates[cellIndex]] =
+        cell === null ? null : `${cell.boardName}(${cell.limitUp}涨停)`;
+    });
+    return row;
+  }),
+});
+
+/**
+ * 板块日历矩阵数据段（AI 分析口径）：一行一个板块、列 = 交易日
+ * @returns 数据段
+ */
+const buildMatrixDataset = (): RankDataset => ({
+  title: '板块日历矩阵（涨停x/跌停y，得分率）',
+  columns: [
+    { label: '板块', key: 'board' },
+    ...matrix.value.dates.map((date) => ({ label: date.slice(5), key: date })),
+  ],
+  rows: matrix.value.rows.map((row) => {
+    const record: Record<string, unknown> = { board: row.name };
+    row.cells.forEach((cell, cellIndex) => {
+      record[matrix.value.dates[cellIndex]] =
+        cell === null
+          ? null
+          : `${cell.limitUp}/${cell.limitDown}（${cell.scoreRate.toFixed(2)}）`;
+    });
+    return record;
+  }),
+});
+
+/**
+ * 赚钱效应数据段（AI 分析口径）：聚焦日全板块得分降序排行
+ * @returns 数据段
+ */
+const buildProfitDataset = (): RankDataset => {
+  const rows = [...profitView.value.rows].sort((a, b) => b.score - a.score);
+  return {
+    title: `赚钱效应排行（${profitView.value.tradeDate}${profitView.value.isFullSnapshot ? '' : '，回补日口径不可比'}）`,
+    columns: [
+      { label: '板块', key: 'board' },
+      { label: '得分', key: 'score' },
+      { label: '得分率', key: 'scoreRate' },
+      { label: '涨停', key: 'limitUp' },
+      { label: '跌停', key: 'limitDown' },
+      { label: '上涨家数', key: 'upCount' },
+      { label: '下跌家数', key: 'downCount' },
+      { label: '成交额', key: 'amount' },
+    ],
+    rows: rows.map((row) => ({
+      board: row.boardName,
+      score: row.score,
+      scoreRate: row.scoreRate,
+      limitUp: row.limitUp,
+      limitDown: row.limitDown,
+      upCount: row.upCount,
+      downCount: row.downCount,
+      amount: row.amount,
+    })),
+  };
+};
+
+/**
+ * 风格跷跷板数据段：交由 StyleSeesawPanel 自身口径，此处以每日概览兜底
+ * @returns 数据段
+ */
+const buildSeesawDatasets = (): RankDataset[] => [buildOverviewDataset()];
+
+/**
+ * 收集当前激活视图的 AI 分析数据段
+ * @returns 数据段列表
+ */
+const collectAiDatasets = (): RankDataset[] => {
+  switch (calendarView.value) {
+    case BOARD_CALENDAR_VIEW.ROTATION:
+      return [buildOverviewDataset(), buildSegmentDataset(), buildMainlineDataset()];
+    case BOARD_CALENDAR_VIEW.LIST:
+      return [buildMatrixDataset()];
+    case BOARD_CALENDAR_VIEW.BUBBLE:
+      return [buildProfitDataset()];
+    case BOARD_CALENDAR_VIEW.SEESAW:
+      return buildSeesawDatasets();
+    default:
+      return [buildOverviewDataset()];
+  }
+};
+
+/**
+ * 发起「AI 分析」：把当前视图数据交给 Agent
+ * （指数印证 / 政策日历 / 地缘映射由提示词驱动 Agent 自行查证）
+ */
+const runAiAnalysis = async (): Promise<void> => {
+  if (aiRunning.value) return;
+  const viewLabel =
+    BOARD_CALENDAR_VIEW_OPTIONS.find((option) => option.value === calendarView.value)?.label ?? '';
+  const prompt = buildBoardRotationAnalysisPrompt(
+    calendarView.value,
+    viewLabel,
+    collectAiDatasets(),
+  );
+  if (prompt === '') {
+    notifications.push({
+      title: '暂无可分析的数据',
+      body: '请等待页面数据加载完成后再发起 AI 分析',
+      tone: NOTIFY_TONE.FLAT,
+    });
+    return;
+  }
+  aiRunning.value = true;
+  try {
+    await requestAgentAnalysis(prompt);
+  } finally {
+    aiRunning.value = false;
+  }
+};
+
 /** 题材轮动取数窗口（交易日数）：覆盖轮动最大档位，不随日历范围档位缩水 */
 const ROTATION_WINDOW_DAYS = Math.max(...ROTATION_RANGES);
 
@@ -663,15 +885,26 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
 
 <template>
   <div class="flex h-full min-h-0 flex-col gap-4">
-    <!-- 板块过滤器上移 MainLayout 页头（Teleport 投射，本页激活时才挂载；弹窗仍留在页内） -->
+    <!-- 板块过滤器 + AI 分析上移 MainLayout 页头（Teleport 投射，本页激活时才挂载；弹窗仍留在页内） -->
     <Teleport v-if="headerSlotActive" :to="PAGE_HEADER_ACTIONS_TARGET">
-      <BaseButton variant="ghost" @click="filterOpen = true">
-        <MenuIcon name="filter" :size="14" />
-        板块过滤器
-        <span class="tabular-nums text-text-tertiary">
-          {{ matrix.rows.length }}/{{ CALENDAR_BOARDS.length }}
-        </span>
-      </BaseButton>
+      <div class="flex items-center gap-3">
+        <BaseButton variant="ghost" @click="filterOpen = true">
+          <MenuIcon name="filter" :size="14" />
+          板块过滤器
+          <span class="tabular-nums text-text-tertiary">
+            {{ matrix.rows.length }}/{{ CALENDAR_BOARDS.length }}
+          </span>
+        </BaseButton>
+        <BaseButton
+          v-if="agentEntryVisible"
+          variant="ghost"
+          :disabled="aiRunning"
+          @click="runAiAnalysis"
+        >
+          <MenuIcon name="agent" :size="14" />
+          {{ aiRunning ? '分析中…' : 'AI 分析' }}
+        </BaseButton>
+      </div>
     </Teleport>
     <!-- 视图页签行（参考行情全景：underline 页签独立成行，右侧状态与刷新） -->
     <div class="flex shrink-0 items-center justify-between gap-2">
@@ -710,6 +943,10 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
       >
         恢复热门排序
       </button>
+      <!-- 补数据入口（2026-10-28 王总指定：从板块日历卡片表头移到工具条右侧，高光玻璃按钮） -->
+      <div class="ml-auto">
+        <BoardDataSyncMenu @applied="onSyncApplied" />
+      </div>
     </div>
 
     <!-- 规则提示条描述的是日历矩阵口径，题材轮动 / 赚钱效应视图不显示 -->
@@ -729,7 +966,7 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
       class="min-h-0 flex-1"
       :title="`板块日历 · 板块 ${matrix.rows.length}/${CALENDAR_BOARDS.length} 个 · 覆盖 ${coveredDateCount} 个交易日`"
     >
-      <!-- 图例入口（问号气泡）+ 表头数据维护入口（获取 / 刷新板块数据） -->
+      <!-- 图例入口（问号气泡） -->
       <template #extra>
         <div class="flex items-center gap-3">
           <div class="relative">
@@ -776,8 +1013,6 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
               </ul>
             </div>
           </div>
-          <!-- 应用 = 采集数据已写入本地库，重读即可（交易日轴未变，无需强制重拉） -->
-          <BoardDataSyncMenu @applied="onSyncApplied" />
         </div>
       </template>
 

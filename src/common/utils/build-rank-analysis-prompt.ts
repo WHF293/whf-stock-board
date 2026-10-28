@@ -59,6 +59,20 @@ const buildDatasetSection = (dataset: RankDataset): string => {
 };
 
 /**
+ * 榜单数据段列表转拼接文本（供其他页面的 AI 分析提示词复用）
+ *
+ * 每段 = 标题行 + 表头行 + 前 N 行（大额数值换算万 / 亿），段间空行分隔；
+ * 全部段落都无行时返回空串。不做整体字符截断，由调用方按各自上限处理。
+ * @param datasets 榜单数据段列表
+ * @returns 拼接后的数据文本；无有效数据返回空串
+ */
+export const buildRankDatasetSections = (datasets: readonly RankDataset[]): string =>
+  datasets
+    .map(buildDatasetSection)
+    .filter((section) => section !== '')
+    .join('\n\n');
+
+/**
  * 把盘面雷达榜单数据组装成「AI 分析」提示词
  *
  * 每个数据段 = 标题行 + 表头行 + 前 N 行（大额数值换算万 / 亿），
@@ -72,15 +86,13 @@ export const buildRankAnalysisPrompt = (
   rank: string,
   datasets: readonly RankDataset[],
 ): string => {
-  const sections = datasets
-    .map(buildDatasetSection)
-    .filter((section) => section !== '');
-  if (sections.length === 0) {
+  const data = buildRankDatasetSections(datasets);
+  if (data === '') {
     return '';
   }
-  let data = sections.join('\n\n');
-  if (data.length > RANK_ANALYSIS_MAX_CHARS) {
-    data = data.slice(0, RANK_ANALYSIS_MAX_CHARS) + '\n…（已截断）';
-  }
-  return RANK_ANALYSIS_PROMPT_TEMPLATE.replace('{rank}', rank).replace('{data}', data);
+  const capped =
+    data.length > RANK_ANALYSIS_MAX_CHARS
+      ? data.slice(0, RANK_ANALYSIS_MAX_CHARS) + '\n…（已截断）'
+      : data;
+  return RANK_ANALYSIS_PROMPT_TEMPLATE.replace('{rank}', rank).replace('{data}', capped);
 };

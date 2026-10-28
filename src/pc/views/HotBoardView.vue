@@ -424,31 +424,27 @@ const { active: headerSlotActive } = usePageHeaderSlot();
 const aiRunning = ref(false);
 
 /**
- * 收集当前启用平台的榜单数据段（AI 分析口径：各平台当前选中分组）
- * @returns 榜单数据段列表（顺序 = 卡片顺序）
+ * 收集单个平台当前选中分组的榜单数据段（AI 分析口径）
+ * @param source 平台
+ * @returns 榜单数据段
  */
-const collectBoardSections = (): BoardPromptSection[] =>
-  visibleSources.value.map(({ value }) => {
-    const group = selectedGroups.value[value];
-    return {
-      boardLabel: BOARD_SOURCE_LABELS[value],
-      groupLabel:
-        BOARD_GROUPS[value].find((option) => option.value === group)?.label ?? group,
-      items: getOrCreateState(value, group).items,
-    };
-  });
+const collectBoardSection = (source: BoardSource): BoardPromptSection => {
+  const group = selectedGroups.value[source];
+  return {
+    boardLabel: BOARD_SOURCE_LABELS[source],
+    groupLabel:
+      BOARD_GROUPS[source].find((option) => option.value === group)?.label ?? group,
+    items: getOrCreateState(source, group).items,
+  };
+};
 
 /**
- * 发起「AI 分析」：把当前启用平台的榜单清单投递 Agent 窗口
- * @param scope 指定平台时只分析该平台当前分组；省略分析全部启用平台
+ * 发起「AI 分析」：把该平台当前分组的榜单清单投递 Agent 窗口
+ * @param scope 目标平台（只分析该平台当前分组）
  */
-const runBoardAnalysis = async (scope?: BoardSource): Promise<void> => {
+const runBoardAnalysis = async (scope: BoardSource): Promise<void> => {
   if (aiRunning.value) return;
-  const sections =
-    scope === undefined
-      ? collectBoardSections()
-      : collectBoardSections().filter((section) => section.boardLabel === BOARD_SOURCE_LABELS[scope]);
-  const prompt = buildHotBoardPrompt(sections);
+  const prompt = buildHotBoardPrompt([collectBoardSection(scope)]);
   if (prompt === '') {
     notifications.push({
       title: '暂无可分析的榜单',
@@ -473,17 +469,13 @@ const runBoardAnalysis = async (scope?: BoardSource): Promise<void> => {
          tab 行 shrink-0，两种模式的内容区各撑满剩余高度 -->
   <div class="flex h-full min-h-0 flex-col gap-4">
     <!-- 页级动作上移 MainLayout 页头：股票热榜专属
-         （启用计数 / AI 分析 / 平台设置；ETF 模式的页头动作由 EtfHotBoard 自行投射） -->
+         （启用计数 / 平台设置；ETF 模式的页头动作由 EtfHotBoard 自行投射） -->
     <Teleport v-if="headerSlotActive" :to="PAGE_HEADER_ACTIONS_TARGET">
       <div class="flex items-center gap-3">
         <template v-if="mode === 'stock'">
           <span class="text-xs text-text-tertiary">
             已启用 {{ visibleSources.length }} / {{ sourceItems.length }} 个平台
           </span>
-          <BaseButton v-if="agentEntryVisible" variant="ghost" :disabled="aiRunning" @click="runBoardAnalysis()">
-            <MenuIcon name="agent" :size="14" />
-            {{ aiRunning ? '分析中...' : 'AI 分析' }}
-          </BaseButton>
           <BaseButton variant="ghost" @click="sourceModalOpen = true">
             <MenuIcon name="settings" :size="14" />
             平台设置
@@ -545,6 +537,7 @@ const runBoardAnalysis = async (scope?: BoardSource): Promise<void> => {
         :key="card.source"
         v-bind="card"
         :ai-running="aiRunning"
+        :ai-visible="agentEntryVisible"
         @select-group="selectGroup"
         @refresh="forceRefresh"
         @expand="openExpanded"

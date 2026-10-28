@@ -16,7 +16,6 @@ import {
   fetchEmHotKeywords,
   fetchEmLeadingConcepts,
   fetchEmRecommendNews,
-  fetchNewsBodies,
   fetchSinaHotNews,
   fetchTdxHotNews,
   fetchThepaperHotList,
@@ -267,37 +266,20 @@ const agentEntryVisible = computed(() =>
 /** 页头动作挂载守卫：只有本页激活时按钮才出现在页头（KeepAlive 缓存页切走不残留） */
 const { active: headerSlotActive } = usePageHeaderSlot();
 
-/**
- * 收集当前已加载展示的新闻条目（「AI 分析」全量口径）：六个通用通道 +
- * 东财推荐 / 财联社深度 / 通达信当前栏目三个快照通道的条目拍平，去重限量后返回
- * （热搜 / 热榜 / 领涨概念是榜单数据而非新闻条目，不参与分析）
- * @returns 去重限量后的新闻条目列表
- */
-const collectDisplayedNews = (): HotNewsItem[] =>
-  dedupeHotNews([
-    ...Object.values(states.value).flatMap((state) => state.items),
-    ...emRecState.value.items,
-    ...clsDepthState.value.items,
-    ...tdxStates.value[tdxSubView.value].items,
-  ]);
-
-/** 「AI 分析」运行态：抓正文进度展示 + 防重入（scope 区分全部 / 单卡片源） */
-const aiAnalysis = ref<{ running: boolean; done: number; total: number; scope: "all" | NewsSource }>({
+/** 「AI 分析」运行态：防重入（scope = 当前正在分析的新闻源卡片） */
+const aiAnalysis = ref<{ running: boolean; scope: NewsSource | null }>({
   running: false,
-  done: 0,
-  total: 0,
-  scope: "all",
+  scope: null,
 });
 
 /**
- * 「AI 分析」共通骨架：抓新闻正文（带进度）→ 组装提示词（正文优先，
- * 抓取失败回退标题 + 摘要）→ 投递 Agent 窗口分析
- * @param scope "all" = 全部新闻源；否则为单个新闻源卡片
+ * 「AI 分析」共通骨架：收集该新闻源当前子视图的新闻（标题 + 链接）→
+ * 组装提示词 → 投递 Agent 窗口分析（正文由 Agent 用 fetch_news_content 按需抓取）
+ * @param scope 单个新闻源卡片
  */
-const runNewsAnalysis = async (scope: "all" | NewsSource): Promise<void> => {
+const runNewsAnalysis = async (scope: NewsSource): Promise<void> => {
   if (aiAnalysis.value.running) return;
-  const items =
-    scope === "all" ? collectDisplayedNews() : collectCardNews(scope);
+  const items = collectCardNews(scope);
   if (items.length === 0) {
     notifications.push({
       title: "暂无可总结的新闻",
@@ -306,31 +288,14 @@ const runNewsAnalysis = async (scope: "all" | NewsSource): Promise<void> => {
     });
     return;
   }
-  aiAnalysis.value = { running: true, done: 0, total: items.length, scope };
+  aiAnalysis.value = { running: true, scope };
   try {
-    const bodies = await fetchNewsBodies(items, (done) => {
-      aiAnalysis.value.done = done;
-    });
-    await requestAgentAnalysis(buildNewsAnalysisPrompt(items, bodies));
+    await requestAgentAnalysis(
+      buildNewsAnalysisPrompt(items, SOURCE_LABELS[scope]),
+    );
   } finally {
     aiAnalysis.value.running = false;
   }
-};
-
-/** 「AI 分析」：把当前展示的全部新闻交给 Agent 分析利好 / 利空板块与个股 */
-const onAiSummary = (): void => {
-  void runNewsAnalysis("all");
-};
-
-/**
- * 「AI 分析」按钮文案（进行中且是本按钮发起的批次时展示抓取进度）
- * @param scope 目标范围（与运行态的 scope 比对）
- * @returns 按钮文字
- */
-const aiAnalysisLabel = (scope: "all" | NewsSource): string => {
-  const { running, done, total, scope: active } = aiAnalysis.value;
-  if (!running || active !== scope) return "AI 分析";
-  return `抓正文 ${done}/${total}`;
 };
 
 /** 弹窗用的源选项（含展示名；顺序 = 卡片顺序） */
@@ -921,13 +886,13 @@ const onCardAiSummary = (card: NewsSource): void => {
 };
 
 /**
- * 卡片标题栏「AI 分析」icon 的悬浮提示（进行中展示抓取进度）
+ * 卡片标题栏「AI 分析」icon 的悬浮提示（进行中提示分析中）
  * @param card 卡片源
  * @returns 提示文案
  */
 const cardAiTitle = (card: NewsSource): string => {
-  const { running, done, total, scope } = aiAnalysis.value;
-  if (running && scope === card) return `正在抓取正文 ${done}/${total}...`;
+  const { running, scope } = aiAnalysis.value;
+  if (running && scope === card) return "正在分析…";
   return `AI 分析${SOURCE_LABELS[card]}`;
 };
 
@@ -1369,22 +1334,13 @@ const loadMoreLabel = (state: SourceState): string => {
          而多根组件无法继承 attrs（会丢动画并刷 Vue warn），故统一包一层；
          h-full 填满 MainLayout 内容容器（定高，2026-10-24 双滚动条治理） -->
   <div class="h-full">
-    <!-- 页级动作上移 MainLayout 页头：启用计数 + AI 分析 + 新闻源设置
+    <!-- 页级动作上移 MainLayout 页头：启用计数 + 新闻源设置
          （Teleport 投射，本页激活时才挂载；「新闻源设置」弹窗仍留在页内） -->
     <Teleport v-if="headerSlotActive" :to="PAGE_HEADER_ACTIONS_TARGET">
       <div class="flex items-center gap-3">
         <span class="text-xs text-text-tertiary">
           已启用 {{ visibleCards.length }} / {{ sourceItems.length }} 个新闻源
         </span>
-        <BaseButton
-          v-if="agentEntryVisible"
-          variant="ghost"
-          :disabled="aiAnalysis.running"
-          @click="onAiSummary"
-        >
-          <MenuIcon name="agent" :size="14" />
-          {{ aiAnalysisLabel("all") }}
-        </BaseButton>
         <BaseButton variant="ghost" @click="sourceModalOpen = true">
           <MenuIcon name="settings" :size="14" />
           新闻源设置
@@ -1659,7 +1615,7 @@ const loadMoreLabel = (state: SourceState): string => {
               />
               {{ card.label }}
             </h2>
-            <!-- 单源 AI 分析：只分析本卡片当前子视图的新闻（与顶部全量入口同骨架） -->
+            <!-- 单源 AI 分析：只分析本卡片当前子视图的新闻（标题 + 链接，正文由 Agent 按需抓取） -->
             <button
               v-if="agentEntryVisible"
               type="button"

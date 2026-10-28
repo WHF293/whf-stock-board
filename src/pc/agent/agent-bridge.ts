@@ -20,12 +20,13 @@ import {
   AGENT_ASK_EVENT,
   AGENT_ASK_HANDSHAKE_TIMEOUT_MS,
   AGENT_READY_EVENT,
+  type AgentAskSource,
 } from '@/common/constants/agent-ask.constants';
 import { AGENT_WINDOW_LABEL, openAgentAnalysisWindow } from '@/common/utils/agent-window';
 import { router } from '@/pc/router';
 
 /** 浏览器回退路径下暂存的待消费请求（同窗路由跳转后由 AgentAnalysisView 取走） */
-let pendingAsk: string | null = null;
+let pendingAsk: { prompt: string; source?: AgentAskSource } | null = null;
 
 /**
  * 发起一次 AI 分析请求（主窗口页面入口）
@@ -33,34 +34,41 @@ let pendingAsk: string | null = null;
  * 送达后 Agent 侧行为：切回对话视图；未配置模型 → 提示 + 自动打开 Model 管理；
  * 已配置 → **新开一个会话**直接发送（分析请求自包含，不复用当前选中会话的上下文）。
  * @param prompt 完整提示词（调用方用 utils/build-*-analysis-prompt 组装）
+ * @param source 来源标识（可选；插件经 `app:agent-ask` 唤起时带上，Agent 侧浮窗注明来源）
+ * @returns 是否成功送达（浏览器路由跳转失败时为 false；Tauri 通路握手后 emit 即视为送达）
  */
-export const requestAgentAnalysis = async (prompt: string): Promise<void> => {
+export const requestAgentAnalysis = async (
+  prompt: string,
+  source?: AgentAskSource,
+): Promise<boolean> => {
   if (!isTauri()) {
-    pendingAsk = prompt;
+    pendingAsk = { prompt, source };
     await router.push(ROUTE_PATH.AGENT_WINDOW);
-    return;
+    return true;
   }
   const existing = await WebviewWindow.getByLabel(AGENT_WINDOW_LABEL);
   if (existing) {
     await existing.setFocus();
-    await emit(AGENT_ASK_EVENT, { prompt });
-    return;
+    await emit(AGENT_ASK_EVENT, { prompt, source });
+    return true;
   }
   const opened = await openAgentAnalysisWindow();
   if (!opened) {
-    pendingAsk = prompt;
+    pendingAsk = { prompt, source };
     await router.push(ROUTE_PATH.AGENT_WINDOW);
-    return;
+    return true;
   }
-  await waitReadyThenEmit(prompt);
+  await waitReadyThenEmit(prompt, source);
+  return true;
 };
 
 /**
  * 新建 Agent 窗口后的握手投递：等 `agent:ready`（监听一次）再 emit；
  * 超时（Agent 侧异常未回执）按尽力投递 emit，丢了自己重点一次即可
  * @param prompt 提示词
+ * @param source 来源标识（可选）
  */
-const waitReadyThenEmit = async (prompt: string): Promise<void> => {
+const waitReadyThenEmit = async (prompt: string, source?: AgentAskSource): Promise<void> => {
   await new Promise<void>((resolve) => {
     const unlisten = listen(AGENT_READY_EVENT, () => {
       clearTimeout(timer);
@@ -72,20 +80,20 @@ const waitReadyThenEmit = async (prompt: string): Promise<void> => {
       resolve();
     }, AGENT_ASK_HANDSHAKE_TIMEOUT_MS);
   });
-  await emit(AGENT_ASK_EVENT, { prompt });
+  await emit(AGENT_ASK_EVENT, { prompt, source });
 };
 
 /**
  * Agent 侧：订阅跨窗口分析请求（AgentAnalysisView 挂载时调用）
- * @param handler 收到请求的回调（prompt 已解包）
+ * @param handler 收到请求的回调（prompt 已解包；source 仅插件唤起时有值）
  * @returns 取消订阅函数（非 Tauri 环境返回空操作）
  */
 export const listenAgentAsk = async (
-  handler: (prompt: string) => void,
+  handler: (prompt: string, source?: AgentAskSource) => void,
 ): Promise<UnlistenFn> => {
   if (!isTauri()) return () => undefined;
-  return listen<{ prompt: string }>(AGENT_ASK_EVENT, (event) => {
-    handler(event.payload.prompt);
+  return listen<{ prompt: string; source?: AgentAskSource }>(AGENT_ASK_EVENT, (event) => {
+    handler(event.payload.prompt, event.payload.source);
   });
 };
 
@@ -99,10 +107,10 @@ export const notifyAgentReady = async (): Promise<void> => {
 
 /**
  * Agent 侧：取走浏览器回退路径暂存的待消费请求（读后即清）
- * @returns 提示词；无暂存返回 null
+ * @returns 提示词与来源；无暂存返回 null
  */
-export const consumePendingAgentAsk = (): string | null => {
-  const prompt = pendingAsk;
+export const consumePendingAgentAsk = (): { prompt: string; source?: AgentAskSource } | null => {
+  const pending = pendingAsk;
   pendingAsk = null;
-  return prompt;
+  return pending;
 };

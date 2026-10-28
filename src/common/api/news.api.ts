@@ -1,8 +1,6 @@
 import { proxyFetch } from './proxy-fetch';
 import { TDX_TQLEX_URL } from '../constants/hot-board.constants.ts';
 import {
-  NEWS_BODY_FETCH_CONCURRENCY,
-  NEWS_BODY_FETCH_INTERVAL_MS,
   NEWS_BODY_UNFETCHABLE_URL_PREFIXES,
   NEWS_CONTENT_CACHE_MAX_ENTRIES,
   NEWS_CONTENT_FETCH_TIMEOUT_MS,
@@ -11,8 +9,6 @@ import {
   NEWS_CONTENT_REPLACEMENT_MAX_RATIO,
 } from '../constants/news-content.constants.ts';
 import { extractNewsBody } from '../utils/extract-news-body';
-import { delay } from '../utils/delay';
-import { mapWithConcurrency } from '../utils/map-with-concurrency';
 
 /**
  * 新浪财经滚动热点新闻（feed.mix.sina.com.cn，非官方接口；文档见 .ai/项目资源/新浪新闻接口文档.md）
@@ -1191,7 +1187,7 @@ export const fetchTdxHotNews = async (
     .slice(0, num);
 };
 
-// ---------- 新闻正文抓取（AI 分析带正文 / Agent fetch_news_content 工具共用） ----------
+// ---------- 新闻正文抓取（Agent fetch_news_content 工具用；新闻 AI 分析由 Agent 按需调用） ----------
 // 按原文 url 抓详情页 HTML → 容器级抽取正文纯文本；正文发布后不变，会话内按 url 缓存。
 // 域名覆盖：Tauri 走 Rust 直连（http scope 为 https://*）；浏览器走 /stock-proxy
 // （白名单覆盖五大新闻站主域，转载到第三方域的链接在浏览器态抓取失败 → 回退标题 + 摘要）。
@@ -1232,6 +1228,11 @@ const isUnfetchableNewsUrl = (url: string): boolean =>
 export const fetchNewsContent = async (url: string): Promise<string> => {
   const cached = newsContentCache.get(url);
   if (cached !== undefined) return cached;
+  // 站内搜索页等合成链接不是原文页，直接按「无正文」处理（连请求都不发）
+  if (isUnfetchableNewsUrl(url)) {
+    putNewsContentCache(url, '');
+    return '';
+  }
   try {
     const response = await proxyFetch(url, {
       signal: AbortSignal.timeout(NEWS_CONTENT_FETCH_TIMEOUT_MS),
@@ -1252,41 +1253,4 @@ export const fetchNewsContent = async (url: string): Promise<string> => {
     putNewsContentCache(url, '');
     return '';
   }
-};
-
-/**
- * 批量抓取新闻正文（AI 分析前置步骤）
- *
- * 按 url 去重后走并发上限 + 请求间隔的 worker 池（新闻站红线口径），
- * 未命中的 url 先错峰再发请求；缓存命中零延迟。逐条失败返回空串，
- * 不中断整批。返回结果以 url 为键，正文为值（无正文的条目不在结果里或为空串）。
- * @param items 新闻条目（内部按 url 去重、剔除无链接 / 不可抓链接）
- * @param onProgress 每完成一条回调（completed / total，total 为实际待抓条数）
- * @returns url → 正文文本的映射（含空串结果）
- */
-export const fetchNewsBodies = async (
-  items: readonly HotNewsItem[],
-  onProgress?: (completed: number, total: number) => void,
-): Promise<Map<string, string>> => {
-  const urls = [
-    ...new Set(
-      items
-        .map((item) => item.url)
-        .filter((url) => url !== '' && !isUnfetchableNewsUrl(url)),
-    ),
-  ];
-  const results = new Map<string, string>();
-  if (urls.length === 0) return results;
-  await mapWithConcurrency(
-    urls,
-    async (url) => {
-      if (!newsContentCache.has(url)) {
-        await delay(NEWS_BODY_FETCH_INTERVAL_MS);
-      }
-      results.set(url, await fetchNewsContent(url));
-      return url;
-    },
-    { concurrency: NEWS_BODY_FETCH_CONCURRENCY, onProgress },
-  );
-  return results;
 };
