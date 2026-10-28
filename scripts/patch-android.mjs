@@ -23,7 +23,9 @@
  *      enableEdgeToEdge 后 WebView 全屏绘制到状态栏底下，而 Android WebView 的
  *      env(safe-area-inset-*) 恒为 0，CSS 让位全部失效（平板横屏下状态栏压住
  *      navbar）。OnApplyWindowInsetsListener 量出 systemBars 后经 evaluateJavascript
- *      写入页面 CSS 变量 --m-inset-top / --m-inset-bottom（mobile.css 消费）。
+ *      写入页面 CSS 变量 --m-inset-top / --m-inset-bottom（mobile.css 消费）；
+ *      原始值是物理像素，按屏幕密度换算成 CSS px 再注入（高密度手机不除会把
+ *      navbar 上方撑出约 3 倍空白，youtube-desktop 已验证的坑）。
  *      WebView 创建早于 DOM 就绪，evaluateJavascript 在无页面时静默丢弃，
  *      故 600ms / 2s 两次延迟幂等重放；旋转等 insets 变化会重新触发监听器。
  *
@@ -110,9 +112,21 @@ class MainActivity : TauriActivity() {
     // env(safe-area-inset-*) 恒为 0，把 systemBars 高度写进页面 CSS 变量
     // --m-inset-top / --m-inset-bottom（mobile.css 消费，:root 内联值覆盖 env 回退）
     window.decorView.setOnApplyWindowInsetsListener { v, insets ->
-      val sys = insets.getInsets(WindowInsets.Type.systemBars())
-      insetTop = sys.top
-      insetBottom = sys.bottom
+      // sys.top/bottom 是设备物理像素，CSS px 需除以屏幕密度（dpr）：
+      // 高密度手机（dpr≈3）不除会把 navbar 上方撑出约 3 倍空白（youtube-desktop 已验证的坑）
+      val density = resources.displayMetrics.density
+      // getInsets(Type) 是 API 30+（minSdk 24），低版本回退 deprecated 但全版本可用的旧 API，
+      // 返回值同为物理像素，密度换算两条分支共用
+      if (android.os.Build.VERSION.SDK_INT >= 30) {
+        val sys = insets.getInsets(WindowInsets.Type.systemBars())
+        insetTop = Math.round(sys.top / density)
+        insetBottom = Math.round(sys.bottom / density)
+      } else {
+        @Suppress("DEPRECATION")
+        val legacy = insets.getSystemWindowInsets()
+        insetTop = Math.round(legacy.top / density)
+        insetBottom = Math.round(legacy.bottom / density)
+      }
       scheduleInsetApply()
       v.onApplyWindowInsets(insets)
     }
