@@ -28,6 +28,7 @@ import type {
   PluginUpdateIndexEntry,
 } from '../types/plugin-update.types.ts';
 import { buildUpdateProxyInit } from '../utils/update-proxy.ts';
+import { trackApiRequest } from '../../pc/weblog/weblogActions';
 
 /**
  * 网络实现：桌面端走 Rust 直连（绕 CORS），浏览器回退原生 fetch
@@ -59,16 +60,39 @@ const httpGet = async (
   const outer = init.signal;
   const onOuterAbort = (): void => controller.abort();
   if (outer) outer.addEventListener('abort', onOuterAbort);
+  // 本次请求实际生效的代理（设置页更新代理；空串 = 直连跟随系统代理），随埋点落日志
+  const proxyConfig = buildUpdateProxyInit().proxy;
+  const proxyUrl = typeof proxyConfig?.all === 'string' ? proxyConfig.all : '';
+  const startedAt = Date.now();
+  let status: number | null = null;
+  let ok = false;
+  let error: unknown = null;
   try {
-    return await netFetch(url, {
+    const response = await netFetch(url, {
       ...init,
       signal: controller.signal,
       // 设置页配置了更新代理时显式走代理（与应用更新共用，见 update-proxy.ts）
       ...buildUpdateProxyInit(),
     });
+    status = response.status;
+    ok = response.ok;
+    return response;
+  } catch (err) {
+    error = err;
+    throw err;
   } finally {
     window.clearTimeout(timer);
     if (outer) outer.removeEventListener('abort', onOuterAbort);
+    // 成功失败都记：排查「有没有走代理 / 代理配了没生效」时这是唯一线索
+    trackApiRequest({
+      url,
+      method: 'GET',
+      durationMs: Date.now() - startedAt,
+      status,
+      ok,
+      error,
+      proxy: proxyUrl,
+    });
   }
 };
 

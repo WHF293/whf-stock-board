@@ -17,6 +17,7 @@ import {
 } from '../constants/update.constants.ts';
 import type { GithubReleasePayload, LatestReleaseInfo, ReleaseAssetInfo } from '../types/app-update.types.ts';
 import { buildUpdateProxyInit } from '../utils/update-proxy.ts';
+import { trackApiRequest } from '../../pc/weblog/weblogActions';
 
 /**
  * 应用自动更新（GitHub Releases）· API
@@ -114,16 +115,40 @@ const buildReleaseFromVersion = (version: string): LatestReleaseInfo => ({
  * @throws 网络失败（超时 / DNS / 连接失败），原因交由调用方聚合展示
  */
 const fetchLatestFromReleasePage = async (signal: AbortSignal): Promise<LatestReleaseInfo | null> => {
-  const response = await netFetch(UPDATE_RELEASE_PAGE_URL, {
-    signal,
-    redirect: 'follow',
-    ...buildUpdateProxyInit(),
-  });
-  if (!response.ok) {
-    throw new Error(`发布页请求异常 HTTP ${response.status}`);
+  const proxyConfig = buildUpdateProxyInit().proxy;
+  const proxyUrl = typeof proxyConfig?.all === 'string' ? proxyConfig.all : '';
+  const startedAt = Date.now();
+  let status: number | null = null;
+  let ok = false;
+  let error: unknown = null;
+  try {
+    const response = await netFetch(UPDATE_RELEASE_PAGE_URL, {
+      signal,
+      redirect: 'follow',
+      ...buildUpdateProxyInit(),
+    });
+    status = response.status;
+    if (!response.ok) {
+      throw new Error(`发布页请求异常 HTTP ${response.status}`);
+    }
+    ok = true;
+    const match = /\/tag\/v?(\d+\.\d+\.\d+)/.exec(response.url);
+    return match ? buildReleaseFromVersion(match[1]) : null;
+  } catch (err) {
+    error = err;
+    throw err;
+  } finally {
+    // 成功失败都记：排查「有没有走代理 / 代理配了没生效」时这是唯一线索
+    trackApiRequest({
+      url: UPDATE_RELEASE_PAGE_URL,
+      method: 'GET',
+      durationMs: Date.now() - startedAt,
+      status,
+      ok,
+      error,
+      proxy: proxyUrl,
+    });
   }
-  const match = /\/tag\/v?(\d+\.\d+\.\d+)/.exec(response.url);
-  return match ? buildReleaseFromVersion(match[1]) : null;
 };
 
 /**
@@ -147,25 +172,46 @@ export const fetchLatestRelease = async (): Promise<LatestReleaseInfo> => {
     if (fromPage) return fromPage;
 
     // 兜底通道：Releases API（匿名按 IP 限流，可能 403）
-    const response = await netFetch(UPDATE_LATEST_API, {
-      signal: controller.signal,
-      headers: { Accept: UPDATE_API_ACCEPT },
-      ...buildUpdateProxyInit(),
-    });
-    if (!response.ok) {
-      throw new Error(
-        response.status === 403 || response.status === 429
-          ? `GitHub 接口限流（HTTP ${response.status}），请稍后再试或配置更新代理`
-          : `GitHub 接口异常 HTTP ${response.status}`,
-      );
+    const apiStartedAt = Date.now();
+    let apiStatus: number | null = null;
+    let apiOk = false;
+    let apiError: unknown = null;
+    try {
+      const response = await netFetch(UPDATE_LATEST_API, {
+        signal: controller.signal,
+        headers: { Accept: UPDATE_API_ACCEPT },
+        ...buildUpdateProxyInit(),
+      });
+      apiStatus = response.status;
+      if (!response.ok) {
+        throw new Error(
+          response.status === 403 || response.status === 429
+            ? `GitHub 接口限流（HTTP ${response.status}），请稍后再试或配置更新代理`
+            : `GitHub 接口异常 HTTP ${response.status}`,
+        );
+      }
+      const release = (await response.json()) as GithubReleasePayload;
+      apiOk = true;
+      const tag = release.tag_name ?? '';
+      const asset = findSetupAsset(release);
+      if (!tag || !asset) {
+        throw new Error('最新版本未提供安装包（*_x64-setup.exe）');
+      }
+      return { version: tag.replace(/^v/i, ''), asset };
+    } catch (err) {
+      apiError = err;
+      throw err;
+    } finally {
+      trackApiRequest({
+        url: UPDATE_LATEST_API,
+        method: 'GET',
+        durationMs: Date.now() - apiStartedAt,
+        status: apiStatus,
+        ok: apiOk,
+        error: apiError,
+        proxy: ((): string => { const p = buildUpdateProxyInit().proxy; return typeof p?.all === 'string' ? p.all : ''; })(),
+      });
     }
-    const release = (await response.json()) as GithubReleasePayload;
-    const tag = release.tag_name ?? '';
-    const asset = findSetupAsset(release);
-    if (!tag || !asset) {
-      throw new Error('最新版本未提供安装包（*_x64-setup.exe）');
-    }
-    return { version: tag.replace(/^v/i, ''), asset };
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') {
       throw new Error('检测超时（网络不可用或 GitHub 不可达），可尝试配置更新代理', { cause: error });
@@ -197,6 +243,12 @@ export const downloadReleaseAsset = async (
   const controller = new AbortController();
   const onOuterAbort = (): void => controller.abort();
   signal.addEventListener('abort', onOuterAbort, { once: true });
+  const proxyConfig = buildUpdateProxyInit().proxy;
+  const proxyUrl = typeof proxyConfig?.all === 'string' ? proxyConfig.all : '';
+  const startedAt = Date.now();
+  let status: number | null = null;
+  let ok = false;
+  let error: unknown = null;
   try {
     const response = await tauriFetch(asset.downloadUrl, {
       signal: controller.signal,
@@ -204,6 +256,7 @@ export const downloadReleaseAsset = async (
       // 检测与下载同通道：检测走通了代理，下载也必须走同一个，否则装包拉不下来
       ...buildUpdateProxyInit(),
     });
+    status = response.status;
     if (!response.ok || !response.body) {
       throw new Error(`下载响应异常 HTTP ${response.status}`);
     }
@@ -245,13 +298,25 @@ export const downloadReleaseAsset = async (
     if (asset.size > 0 && received !== asset.size) {
       throw new Error(`下载不完整：${received}/${asset.size} 字节`);
     }
+    ok = true;
     return filePath;
-  } catch (error) {
+  } catch (err) {
+    error = err;
     // 半截文件不保留（下次重试从头下载）
     await remove(relativePath, { baseDir: BaseDirectory.AppData }).catch(() => {});
-    throw error;
+    throw err;
   } finally {
     signal.removeEventListener('abort', onOuterAbort);
+    // 成功失败都记：排查「有没有走代理 / 代理配了没生效」时这是唯一线索
+    trackApiRequest({
+      url: asset.downloadUrl,
+      method: 'GET',
+      durationMs: Date.now() - startedAt,
+      status,
+      ok,
+      error,
+      proxy: proxyUrl,
+    });
   }
 };
 

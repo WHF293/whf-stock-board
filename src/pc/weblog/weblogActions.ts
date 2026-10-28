@@ -69,6 +69,8 @@ export interface TrackApiRequestInput {
   ok: boolean;
   /** 失败原因（ok=false 时传入） */
   error?: unknown;
+  /** 本次请求实际使用的代理地址（空 = 直连；GitHub 通道为设置页更新代理，行情通道恒为直连） */
+  proxy?: string | null;
 }
 
 /** 采集开关（运行期可切；设置页持久化在 settings store） */
@@ -327,6 +329,7 @@ export const trackPageView = (path: string, title: string): void => {
 export const trackApiRequest = (input: TrackApiRequestInput): void => {
   const method = (input.method ?? 'GET').toUpperCase();
   const shortUrl = toShortUrl(input.url);
+  const proxyLabel = input.proxy?.trim() ? `代理 ${input.proxy.trim()}` : '直连';
   trackAction('API_REQUEST', {
     target: `${method} ${shortUrl}`,
     detail: buildApiDetail(input),
@@ -338,7 +341,7 @@ export const trackApiRequest = (input: TrackApiRequestInput): void => {
     reportError({
       level: 'error',
       kind: 'api-error',
-      message: `${method} ${shortUrl} 请求失败：${describeError(input.error, input.status)}`,
+      message: `${method} ${shortUrl} 请求失败（${proxyLabel}）：${describeError(input.error, input.status)}`,
       stack: input.error instanceof Error ? input.error.stack ?? null : null,
       pagePath: currentPagePath,
       pageTitle: currentPageTitle,
@@ -373,6 +376,7 @@ const buildApiDetail = (input: TrackApiRequestInput): string =>
     method: (input.method ?? 'GET').toUpperCase(),
     status: input.status ?? null,
     ok: input.ok,
+    proxy: input.proxy?.trim() ? input.proxy.trim() : '直连',
     error: input.ok ? null : describeError(input.error, input.status),
   });
 
