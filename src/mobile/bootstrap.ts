@@ -6,6 +6,7 @@ import 'vant/lib/index.css';
 import { mobileRouter } from './router';
 import MobileApp from './MobileApp.vue';
 import './mobile.css';
+import { disablePinchZoom } from '@/utils/disable-pinch-zoom';
 
 /**
  * 移动端启动（main.ts 在 --mode mobile 构建下动态加载，桌面构建整树剔除）
@@ -18,6 +19,8 @@ import './mobile.css';
 
 /** 移动端应用装配与挂载 */
 export const bootstrapMobile = (): void => {
+  disablePinchZoom();
+
   const app = createApp(MobileApp);
 
   const pinia = createPinia();

@@ -10,9 +10,13 @@ import { initWeblog } from './weblog/index';
 import { installPlugins } from './plugin/setup';
 import { startWatchlistDbSync } from '../common/composables/use-watchlist-db-sync';
 import { useSettingsStore } from '../common/stores/settings';
+import { disablePinchZoom } from '../utils/disable-pinch-zoom';
 
 /** 桌面端（Windows 客户端 / 浏览器）应用装配与挂载 */
 export const bootstrapDesktop = (): void => {
+  // 禁用双指 / 触控板捏合与 Ctrl+加减键缩放页面
+  disablePinchZoom();
+
   // 线上禁用开发者工具常见入口（F12 / Ctrl+Shift+I|J|C / 右键菜单）
   if (import.meta.env.PROD) {
     disableDevtools();

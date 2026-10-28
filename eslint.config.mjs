@@ -19,7 +19,7 @@ export default tseslint.config(
    * 备份里存的是**源码副本**（含 .vue / .mjs），跑 `eslint .` 时会冒出大量与本仓库无关
    * 的告警（`process is not defined` / JSDoc 缺失…），遮住真问题 —— 这里直接整棵忽略。
    */
-  { ignores: ['dist/**', 'node_modules/**', '.ai/**', '*.vue'] },
+  { ignores: ['dist/**', 'dist-site/**', 'node_modules/**', '.ai/**', 'src-tauri/target/**', '*.vue'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   ...pluginVue.configs['flat/recommended'],
