@@ -1,7 +1,7 @@
 name: Release App (Desktop / Android)
 
 # 发布口径（2026-10-11 起，替代原 release.yml + mobile-release.yml 两个分离流程）：
-# - 推送 v* tag  → 全量发布：桌面（msi / nsis）+ 安卓（apk）进同一个 GitHub Release
+# - 推送 v* tag  → 全量发布：桌面（nsis exe）+ 安卓（apk）进同一个 GitHub Release
 # - Actions 手动触发 → 按需选择 target：all（桌面+安卓）/ desktop（仅桌面）/ android（仅安卓）
 #   ref 默认 main，也可选已有的 v* tag（补传产物场景）
 # 官网（GitHub Pages）独立走 site-release.yml，与应用版本发布完全解耦：
@@ -45,7 +45,7 @@ concurrency:
 
 jobs:
   desktop:
-    name: Desktop（Windows msi / nsis）
+    name: Desktop（Windows nsis exe）
     runs-on: windows-latest
     timeout-minutes: 60
     if: >-
