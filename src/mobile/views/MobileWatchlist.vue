@@ -270,17 +270,37 @@ const clearPress = (): void => {
 /** 长按触发后吞掉紧随其后的 click（否则弹层关闭时会误跳个股详情） */
 const suppressClick = ref(false);
 
+/** 打开长按操作层（触摸计时器到点 / 鼠标长按到点 / 右键三类入口共用）
+ * @param stock 行内自选条目 */
+const openSheet = (stock: WatchlistStock): void => {
+  suppressClick.value = true;
+  sheetStock.value = stock;
+  sheetOpen.value = true;
+};
+
 /** 触摸开始：按住 500ms 弹出操作层（touchmove 即取消，不与滚动 / 左滑删除冲突）
  * @param stock 行内自选条目 */
 const onTouchStart = (stock: WatchlistStock): void => {
   clearPress();
   pressTimer = window.setTimeout(() => {
     pressTimer = undefined;
-    suppressClick.value = true;
-    sheetStock.value = stock;
-    sheetOpen.value = true;
+    openSheet(stock);
   }, 500);
 };
+
+/** 鼠标长按：桌面浏览器 / 鼠标设备没有 touch 事件，按下 500ms 走同一弹层
+ * （v4.23.1 大屏适配后经常在桌面窗口里看移动端，触摸-only 会被当成功能丢失）
+ * @param stock 行内自选条目 */
+const onMouseDown = (stock: WatchlistStock): void => {
+  clearPress();
+  pressTimer = window.setTimeout(() => {
+    pressTimer = undefined;
+    openSheet(stock);
+  }, 500);
+};
+
+/** 鼠标抬起 / 移出行：未到 500ms 即取消（与 touchend/touchmove 同语义） */
+const onMouseUp = clearPress;
 
 const onTouchMove = clearPress;
 const onTouchEnd = clearPress;
@@ -368,6 +388,10 @@ const onSheetRemove = (): void => {
               @touchmove.passive="onTouchMove"
               @touchend.passive="onTouchEnd"
               @touchcancel.passive="onTouchEnd"
+              @mousedown="onMouseDown(row.stock)"
+              @mouseup="onMouseUp"
+              @mouseleave="onMouseUp"
+              @contextmenu.prevent="openSheet(row.stock)"
             >
               <div class="m-row__nm">
                 {{ row.stock.name }}
@@ -436,6 +460,10 @@ const onSheetRemove = (): void => {
               @touchmove.passive="onTouchMove"
               @touchend.passive="onTouchEnd"
               @touchcancel.passive="onTouchEnd"
+              @mousedown="onMouseDown(row.stock)"
+              @mouseup="onMouseUp"
+              @mouseleave="onMouseUp"
+              @contextmenu.prevent="openSheet(row.stock)"
             >
               <div class="m-row__nm">
                 {{ row.stock.name }}
