@@ -19,6 +19,13 @@
  *      多窗口内失焦（paused 但仍可见）跳过 WebView.onPause 保住 JS 定时器
  *      （轮询不停摆，Stop Playback 适配 §6/§7），真不可见 onStop 才暂停、
  *      onStart 成对恢复（后台省电红线不破坏）。
+ *   3. MainActivity.kt —— 系统栏 inset 注入（平板 edge-to-edge 遮挡修复，2026-10-28）：
+ *      enableEdgeToEdge 后 WebView 全屏绘制到状态栏底下，而 Android WebView 的
+ *      env(safe-area-inset-*) 恒为 0，CSS 让位全部失效（平板横屏下状态栏压住
+ *      navbar）。OnApplyWindowInsetsListener 量出 systemBars 后经 evaluateJavascript
+ *      写入页面 CSS 变量 --m-inset-top / --m-inset-bottom（mobile.css 消费）。
+ *      WebView 创建早于 DOM 就绪，evaluateJavascript 在无页面时静默丢弃，
+ *      故 600ms / 2s 两次延迟幂等重放；旋转等 insets 变化会重新触发监听器。
  *
  * 幂等性：MainActivity 整文件覆盖（内容恒定）；manifest 按字符串检测缺失才插入，
  * 重复执行无副作用。重 init / 换机后直接重跑即可。
@@ -84,20 +91,52 @@ if (manifestPatched) {
 const MAIN_ACTIVITY_KT = `package ${identifier}
 
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.view.WindowInsets
 import android.webkit.WebView
 import androidx.activity.enableEdgeToEdge
 
 class MainActivity : TauriActivity() {
   private var wv: WebView? = null
+  private var insetTop = 0
+  private var insetBottom = 0
+  private val mainHandler = Handler(Looper.getMainLooper())
 
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
+    // 系统栏 inset 注入（平板 edge-to-edge 遮挡修复）：Android WebView 的
+    // env(safe-area-inset-*) 恒为 0，把 systemBars 高度写进页面 CSS 变量
+    // --m-inset-top / --m-inset-bottom（mobile.css 消费，:root 内联值覆盖 env 回退）
+    window.decorView.setOnApplyWindowInsetsListener { v, insets ->
+      val sys = insets.getInsets(WindowInsets.Type.systemBars())
+      insetTop = sys.top
+      insetBottom = sys.bottom
+      scheduleInsetApply()
+      v.onApplyWindowInsets(insets)
+    }
+  }
+
+  // WebView 创建早于 DOM 就绪，evaluateJavascript 在无页面时静默丢弃，
+  // 两次延迟幂等重放兜底；重复 setProperty 无副作用，旋转后随 insets 变化重触发
+  private fun scheduleInsetApply() {
+    mainHandler.postDelayed({ applyInsets() }, 600L)
+    mainHandler.postDelayed({ applyInsets() }, 2000L)
+  }
+
+  private fun applyInsets() {
+    val webView = wv ?: return
+    // 注意：本文件是 Node 脚本的 JS 模板字符串，Kotlin 里禁用反引号与 \\${'$'}{...} 插值
+    val js = "document.documentElement.style.setProperty('--m-inset-top','" + insetTop +
+      "px');document.documentElement.style.setProperty('--m-inset-bottom','" + insetBottom + "px');"
+    webView.evaluateJavascript(js, null)
   }
 
   // WryActivity 的 open 钩子：持有 WebView 引用（wry 的 mWebView 为 private lateinit）
   override fun onWebViewCreate(webView: WebView) {
     wv = webView
+    scheduleInsetApply()
   }
 
   // 小米自由窗口适配（Stop Playback，窗口文档 §6/§7）：

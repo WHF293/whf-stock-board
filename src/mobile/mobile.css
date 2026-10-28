@@ -17,6 +17,11 @@
   --van-border-color: var(--color-border);
   --van-nav-bar-height: 48px;
   --van-cell-background: var(--color-surface);
+  /* 系统栏让位（edge-to-edge）：Android WebView 的 env(safe-area-inset-*) 恒为 0，
+     真值由 MainActivity 经 OnApplyWindowInsetsListener 量出后以内联样式写进
+     documentElement（scripts/patch-android.mjs），覆盖这里的 env() 回退值 */
+  --m-inset-top: env(safe-area-inset-top, 0px);
+  --m-inset-bottom: env(safe-area-inset-bottom, 0px);
   --van-toast-background: rgba(31, 39, 51, 0.9);
 
   --font-num: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
@@ -133,11 +138,11 @@ body {
   touch-action: pan-y;
   box-sizing: border-box;
   /* 底部悬浮玻璃 TabBar + 全面屏手势区让位 */
-  padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(88px + var(--m-inset-bottom));
 }
 
 /* 主 Tab 页内无 Tabs 的页面（我的）同样留出悬浮 TabBar 高度 */
-.m-tab-safe { padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px)); }
+.m-tab-safe { padding-bottom: calc(88px + var(--m-inset-bottom)); }
 
 /* 底部 TabBar：iOS 柔光玻璃风格——悬浮胶囊 + 磨砂 blur + 边缘高光，
    激活项独立亮胶囊（参考 iOS 26 液态玻璃 tab bar）。
@@ -146,7 +151,7 @@ body {
   position: fixed;
   left: 14px;
   right: 14px;
-  bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(10px + var(--m-inset-bottom));
   z-index: 100;
   display: grid;
   /* 5 等分 = 五主 Tab（2026-10-20，与 constants.ts MOBILE_TAB_ITEMS.length 同步；
@@ -278,6 +283,10 @@ body {
 }
 
 /* 顶部导航（van-nav-bar 之上补来源标注位） */
+/* Vant safe-area 修饰类的让位改走 --m-inset-*（env() 在 Android WebView 恒为 0，
+   见 :root 注释）；选择器提一级特异性压过 Vant 自带声明 */
+.van-nav-bar.van-safe-area-top { padding-top: var(--m-inset-top); }
+.van-nav-bar.van-safe-area-bottom { padding-bottom: var(--m-inset-bottom); }
 .m-nav {
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
@@ -1044,7 +1053,7 @@ body {
 
 /* 首页滚动宿主：面板内部原生滚动 + 底部让位（无 Tabs 结构的简化版 m-page-flex） */
 .m-home-scroll { flex: 1; overflow-y: auto; overscroll-behavior: contain; }
-.m-home-tail { height: calc(88px + env(safe-area-inset-bottom, 0px)); }
+.m-home-tail { height: calc(88px + var(--m-inset-bottom)); }
 
 /* ============================================================
    v2 二期二级页通用（v3 起卡片化，见 DESIGN-MOBILE.md §2.3）
@@ -1063,7 +1072,7 @@ body {
 .m-sub-scroll .van-pull-refresh__track > * { flex-shrink: 0; width: auto; }
 /* loading 骨架撑满内容区（避免半屏空白的观感）；track 不再拉伸后用 min-height 兜底 */
 .m-skel-fill { flex: 1; min-height: 62vh; }
-.m-sub-tail { height: calc(16px + env(safe-area-inset-bottom, 0px)); }
+.m-sub-tail { height: calc(16px + var(--m-inset-bottom)); }
 
 /* 区块标题行（左右 12px 与卡片边对齐） */
 .m-sec { display: flex; align-items: baseline; justify-content: space-between; padding: 12px 12px 8px; }
@@ -1251,7 +1260,7 @@ body {
 }
 
 /* 长按个股弹层：分组归属点选 + 删除自选 */
-.m-wl-sheet { padding: 6px 16px calc(10px + env(safe-area-inset-bottom, 0px)); }
+.m-wl-sheet { padding: 6px 16px calc(10px + var(--m-inset-bottom)); }
 .m-wl-sheet__head { display: flex; align-items: baseline; gap: 8px; padding: 8px 2px 2px; }
 .m-wl-sheet__head .nm { font-size: 15px; font-weight: 700; }
 .m-wl-sheet__head .sub { font-family: var(--font-num); font-size: 11px; color: var(--color-text-3); }
@@ -1275,7 +1284,7 @@ body {
 }
 .dark .m-wl-sheet__del { background: rgba(210, 60, 60, 0.16); }
 /* 搜索弹层 */
-.m-wl-search { padding-bottom: env(safe-area-inset-bottom, 0px); }
+.m-wl-search { padding-bottom: var(--m-inset-bottom); }
 .m-wl-search__list { max-height: 46vh; overflow-y: auto; padding-bottom: 12px; }
 
 /* ============================================================
