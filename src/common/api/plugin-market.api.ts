@@ -16,6 +16,7 @@ import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
 import { isTauri } from '@tauri-apps/api/core';
 import { appStorage } from '../utils/app-local-storage';
 import { buildUpdateProxyInit } from '../utils/update-proxy';
+import { trackApiRequest } from '../../pc/weblog/weblogActions';
 import { compareVersion } from '../utils/plugin-version';
 import {
   PLUGIN_MARKET_BUILTIN_REPO,
@@ -106,6 +107,13 @@ const httpGetJson = async <T>(
   const timer = window.setTimeout(() => controller.abort(), timeoutMs);
   const onOuterAbort = (): void => controller.abort();
   signal?.addEventListener('abort', onOuterAbort);
+  // 本次请求实际生效的代理（设置页更新代理；空串 = 直连跟随系统代理），随埋点落日志
+  const proxyConfig = buildUpdateProxyInit().proxy;
+  const proxyUrl = typeof proxyConfig?.all === 'string' ? proxyConfig.all : '';
+  const startedAt = Date.now();
+  let status: number | null = null;
+  let ok = false;
+  let error: unknown = null;
   try {
     const response = await netFetch(url, {
       headers: { Accept: 'application/vnd.github+json' },
@@ -113,12 +121,39 @@ const httpGetJson = async <T>(
       // 设置页配置了更新代理时显式走代理（与应用更新同一条 GitHub 通道）
       ...buildUpdateProxyInit(),
     });
+    status = response.status;
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return (await response.json()) as T;
+    const json = (await response.json()) as T;
+    ok = true;
+    return json;
+  } catch (err) {
+    error = err;
+    throw err;
   } finally {
     window.clearTimeout(timer);
     signal?.removeEventListener('abort', onOuterAbort);
+    // 成功失败都记：排查「有没有走代理 / 代理配了没生效」时这是唯一线索
+    trackApiRequest({
+      url,
+      method: 'GET',
+      durationMs: Date.now() - startedAt,
+      status,
+      ok,
+      error,
+      proxy: proxyUrl,
+    });
   }
+};
+
+/**
+ * 把未知异常压成可展示的原因（Tauri Rust 层错误 reject 的是字符串，必须 String 化，否则只剩「未知错误」）
+ * @param error 抛出的异常
+ * @returns 原因文案
+ */
+const toReason = (error: unknown): string => {
+  if (error instanceof Error) return error.message;
+  const text = String(error).trim();
+  return text.length > 0 ? text : '未知错误';
 };
 
 /**
@@ -465,8 +500,7 @@ export const fetchSourceCatalog = async (
   } catch (error) {
     // 限流 / 网络失败：有过期缓存就先兜底展示，绝不白屏
     if (cached) return cached.catalog;
-    const reason = error instanceof Error ? error.message : '未知错误';
-    throw new Error(`${PLUGIN_MARKET_ERR_FETCH}（${reason}）`, { cause: error });
+    throw new Error(`${PLUGIN_MARKET_ERR_FETCH}（${toReason(error)}）`, { cause: error });
   }
 };
 
