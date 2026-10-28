@@ -29,6 +29,7 @@ import {
   ROUTE_PATH,
 } from '../../common/constants/router-meta.constants.ts';
 import { STOCK_PROXY_ALLOWED_HOSTS } from '../../common/constants/proxy.constants.ts';
+import { requestAgentAnalysis } from '../agent/agent-bridge';
 import { APP_VERSION } from '../../common/constants/app-info.constants.ts';
 import { resolveRouteFallback } from '../../common/utils/resolve-route-fallback';
 import { searchStocks } from '../../common/api/search.api.ts';
@@ -345,6 +346,13 @@ export const installPlugins = (pinia?: Pinia): void => {
     notify: (options) => notificationsStore.push(options),
     dismiss: (id) => notificationsStore.dismiss(id),
     dismissBySource: (source) => notificationsStore.dismissBySource(source),
+  });
+
+  // 唤起 Agent 分析窗口：插件把一条自包含 prompt 送进 Agent（窗口创建 / 握手 /
+  // 未配模型引导都由宿主的 agent-bridge 代办）。来源由插件自报（同一权限模型，
+  // 内核无法替它签名），Agent 侧浮窗据此注明「来自插件 xxx」
+  pluginKernel.services.provide('app:agent-ask', {
+    ask: (prompt, source) => requestAgentAnalysis(prompt, source),
   });
 
   // 2. 清理已下线插件的残留偏好，再按黑名单挂载

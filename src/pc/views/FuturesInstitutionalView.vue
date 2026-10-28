@@ -36,6 +36,13 @@ import type {
   CcpmProductDayData,
   CcpmScopeMode,
 } from '../../common/types/futures.types.ts';
+import type { RankDataset } from '../../common/types/rank-dataset.types';
+import { HOST_HEADER_ITEM } from '../../common/constants/header.constants.ts';
+import { useSettingsStore } from '../../common/stores/settings';
+import { useNotificationsStore } from '../../common/stores/notifications';
+import { NOTIFY_TONE } from '../../common/constants/notify.constants.ts';
+import { requestAgentAnalysis } from '../agent/agent-bridge';
+import { buildCcpmAnalysisPrompt } from '../../common/utils/build-ccpm-analysis-prompt';
 
 /**
  * 期货 · 机构行为（侧栏「期货」分组首页）
@@ -486,6 +493,113 @@ const resolvedDayText = computed(() =>
   resolvedDay.value ? resolvedDay.value.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3') : '',
 );
 
+/* ------------------------------ 页级 AI 分析 ------------------------------ */
+
+/** 「AI 分析」入口跟随顶栏「Agent 分析」条目的显隐开关（设置 → 布局编排 → 右上角工具编排） */
+const settingsStore = useSettingsStore();
+const agentEntryVisible = computed(
+  () => !settingsStore.hiddenHeaderItems.includes(HOST_HEADER_ITEM.AGENT),
+);
+
+const notifications = useNotificationsStore();
+
+/** 「AI 分析」运行态：防重入 */
+const aiRunning = ref(false);
+
+/** 口径展示名（提示词用） */
+const SCOPE_LABELS: Record<CcpmScopeMode, string> = {
+  contract: '品种合约（单合约席位榜）',
+  product: '同品种合并（会员跨合约合并）',
+  all: '全部品种合并（四股指品种去重会员）',
+};
+
+/**
+ * 收集机构行为的 AI 分析数据段：概览指标 + 席位排行 + 选中席位明细
+ * @returns 数据段列表
+ */
+const collectAiDatasets = (): RankDataset[] => {
+  const overview: RankDataset = {
+    title: '概览指标',
+    columns: [
+      { label: '指标', key: 'k' },
+      { label: '数值（手）', key: 'v' },
+    ],
+    rows: statCards.value.map((card) => ({ k: card.label, v: `${card.value} ${card.sub ?? ''}`.trim() })),
+  };
+  const rankRows: Record<string, unknown>[] = [];
+  for (const list of rankLists.value) {
+    for (const item of list.items) {
+      rankRows.push({ rank: list.title, member: item.name, value: item.value });
+    }
+  }
+  const ranks: RankDataset = {
+    title: '衍生榜单（净多 / 净空 / 多空增减仓 TOP）',
+    columns: [
+      { label: '榜单', key: 'rank' },
+      { label: '席位', key: 'member' },
+      { label: '数值（手）', key: 'value' },
+    ],
+    rows: rankRows,
+  };
+  const datasets: RankDataset[] = [overview, ranks];
+  if (selectedMember.value) {
+    const memberRows: Record<string, unknown>[] =
+      scope.value === 'contract'
+        ? selectedBreakdownRows.value.map((row) => ({
+            instrument: row.instrumentId,
+            buy: row.buyPos,
+            buyChg: row.buyChg,
+            sell: row.sellPos,
+            sellChg: row.sellChg,
+            volume: row.volume,
+          }))
+        : (selectedAggregate.value === null
+          ? []
+          : [{
+              buy: selectedAggregate.value.totalBuy,
+              buyChg: selectedAggregate.value.totalBuyChg,
+              sell: selectedAggregate.value.totalSell,
+              sellChg: selectedAggregate.value.totalSellChg,
+              net: selectedAggregate.value.totalNet,
+            }]);
+    if (memberRows.length > 0) {
+      datasets.push({
+        title: `选中席位明细：${selectedMember.value}`,
+        columns: Object.keys(memberRows[0]).map((key) => ({ label: key, key })),
+        rows: memberRows,
+      });
+    }
+  }
+  return datasets;
+};
+
+/**
+ * 发起「AI 分析」：把 CCPM 席位持仓数据交给 Agent
+ * （指数印证 / 政策日历 / 地缘由提示词驱动 Agent 自行查证，非单纯多空单分析）
+ */
+const runAiAnalysis = async (): Promise<void> => {
+  if (aiRunning.value) return;
+  const prompt = buildCcpmAnalysisPrompt(
+    SCOPE_LABELS[scope.value],
+    resolvedDayText.value,
+    collectAiDatasets(),
+  );
+  if (prompt === '') {
+    notifications.push({
+      title: '暂无可分析的持仓数据',
+      body: '请等待席位数据加载完成后再发起 AI 分析',
+      tone: NOTIFY_TONE.FLAT,
+    });
+    return;
+  }
+  aiRunning.value = true;
+  try {
+    await requestAgentAnalysis(prompt);
+  } finally {
+    aiRunning.value = false;
+  }
+};
+
 /** 数据来源公告条文案（NoticeBar 纯文本 prop，披露交易日随数据就绪拼接） */
 const sourceNoticeText = computed(() =>
   resolvedDayText.value
@@ -496,12 +610,23 @@ const sourceNoticeText = computed(() =>
 
 <template>
   <div class="flex flex-col gap-3">
-    <!-- 刷新按钮上移 MainLayout 页头（Teleport 投射，本页激活时才挂载） -->
+    <!-- 刷新 + AI 分析按钮上移 MainLayout 页头（Teleport 投射，本页激活时才挂载） -->
     <Teleport v-if="headerSlotActive" :to="PAGE_HEADER_ACTIONS_TARGET">
-      <BaseButton variant="ghost" :disabled="loading" data-track="FUTURES_INSTITUTIONAL_REFRESH" @click="void loadDay(dayInput, false, true)">
-        <MenuIcon name="refresh" :size="14" />
-        {{ loading ? '刷新中…' : '刷新' }}
-      </BaseButton>
+      <div class="flex items-center gap-3">
+        <BaseButton variant="ghost" :disabled="loading" data-track="FUTURES_INSTITUTIONAL_REFRESH" @click="void loadDay(dayInput, false, true)">
+          <MenuIcon name="refresh" :size="14" />
+          {{ loading ? '刷新中…' : '刷新' }}
+        </BaseButton>
+        <BaseButton
+          v-if="agentEntryVisible"
+          variant="ghost"
+          :disabled="aiRunning"
+          @click="runAiAnalysis"
+        >
+          <MenuIcon name="agent" :size="14" />
+          {{ aiRunning ? '分析中…' : 'AI 分析' }}
+        </BaseButton>
+      </div>
     </Teleport>
 
     <!-- 数据来源公告条（原底部披露行移除：来源改 NoticeBar、刷新上移页头） -->

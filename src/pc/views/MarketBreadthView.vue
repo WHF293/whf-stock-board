@@ -31,6 +31,13 @@ import { toDayKey } from '../../common/utils/to-day-key';
 import { usePolling } from '../../common/composables/use-polling';
 import { usePageHeaderSlot, PAGE_HEADER_ACTIONS_TARGET } from '../../common/composables/use-page-header-slot';
 import { useTabConfig, type TabOption } from '../../common/composables/use-tab-config';
+import { useSettingsStore } from '../../common/stores/settings';
+import { HOST_HEADER_ITEM } from '../../common/constants/header.constants.ts';
+import { useNotificationsStore } from '../../common/stores/notifications';
+import { NOTIFY_TONE } from '../../common/constants/notify.constants.ts';
+import { requestAgentAnalysis } from '../agent/agent-bridge';
+import { buildBreadthAnalysisPrompt } from '../../common/utils/build-breadth-analysis-prompt';
+import type { RankDataset } from '../../common/types/rank-dataset.types';
 
 /**
  * 市场宽度页（PC，2026-10-22 由「市场广度指标」改名）
@@ -181,6 +188,106 @@ const summaryItems = computed(() => {
 /** 总结弹窗副标题：最新交易日（MM-DD） */
 const summaryDateLabel = computed(() => series.value.dates.at(-1)?.slice(5) ?? '--');
 
+/* ------------------------------ 页级 AI 分析 ------------------------------ */
+
+/** 「AI 分析」入口跟随顶栏「Agent 分析」条目的显隐开关（设置 → 布局编排 → 右上角工具编排） */
+const settingsStore = useSettingsStore();
+const agentEntryVisible = computed(
+  () => !settingsStore.hiddenHeaderItems.includes(HOST_HEADER_ITEM.AGENT),
+);
+
+const notifications = useNotificationsStore();
+
+/** 「AI 分析」运行态：防重入 */
+const aiRunning = ref(false);
+
+/**
+ * 序列末 N 日的「日期 | 涨/跌/平家数 | ARMS | 活跃占比」趋势行（AI 分析口径）
+ * @param days 取末尾多少个交易日
+ * @returns 行文本列表（倒序，最近在前）
+ */
+const recentTrendLines = (days: number): string[] => {
+  const s = series.value;
+  const start = Math.max(0, s.dates.length - days);
+  const lines: string[] = [];
+  for (let index = s.dates.length - 1; index >= start; index -= 1) {
+    const bar = bars.value.find((item) => item.date === s.dates[index]);
+    if (!bar) continue;
+    const active =
+      bar.activeCount !== undefined && bar.activeTotal
+        ? `${((bar.activeCount / bar.activeTotal) * 100).toFixed(1)}%`
+        : '--';
+    lines.push(
+      `${bar.date.slice(5)} | 涨${bar.upCount} 跌${bar.downCount} | ARMS ${bar.arms === null ? '--' : bar.arms.toFixed(2)} | 活跃占比 ${active}`,
+    );
+  }
+  return lines;
+};
+
+/**
+ * 收集市场宽度的 AI 分析数据段：最新截面 + 近 10 / 30 日趋势
+ * @returns 数据段列表
+ */
+const collectAiDatasets = (): RankDataset[] => {
+  const s = series.value;
+  const last = s.dates.length - 1;
+  if (last < 0) return [];
+  const at = (values: ReadonlyArray<number | null>): number | null => values[last] ?? null;
+  const snapshot: RankDataset = {
+    title: '最新交易日截面',
+    columns: [
+      { label: '指标', key: 'k' },
+      { label: '数值', key: 'v' },
+    ],
+    rows: [
+      { k: '数据截至', v: s.dates[last] },
+      {
+        k: '当日概览（末分钟点）',
+        v:
+          todayPoint.value === null
+            ? null
+            : `涨${todayPoint.value.upCount} / 跌${todayPoint.value.downCount} / 平${todayPoint.value.flatCount}`,
+      },
+      { k: 'ARMS 现值', v: todayPoint.value?.arms ?? null },
+      { k: 'ARMS 状态', v: armsState.value?.label ?? null },
+      { k: '活跃占比（%）', v: todayActiveRatio.value },
+      { k: 'ADL 腾落线', v: at(s.adl) },
+      { k: 'ADR 涨跌比率', v: at(s.adr) },
+      { k: 'OBOS 超买超卖', v: at(s.obos) },
+      { k: 'ARMS 平滑均线', v: at(s.armsMa) },
+      { k: 'MCO 麦克莱伦震荡', v: at(s.mco) },
+    ],
+  };
+  return [
+    snapshot,
+    { title: '近 10 日趋势（日期 | 涨/跌 | ARMS | 活跃占比）', columns: [{ label: '行', key: 'line' }], rows: recentTrendLines(10).map((line) => ({ line })) },
+    { title: '近 30 日趋势（同上格式）', columns: [{ label: '行', key: 'line' }], rows: recentTrendLines(30).map((line) => ({ line })) },
+  ];
+};
+
+/**
+ * 发起「AI 分析」：把广度指标摘要交给 Agent
+ * （指数印证 / 政策日历 / 地缘由提示词驱动 Agent 自行查证）
+ */
+const runAiAnalysis = async (): Promise<void> => {
+  if (aiRunning.value) return;
+  const prompt = buildBreadthAnalysisPrompt(accumDays.value, collectAiDatasets());
+  if (prompt === '') {
+    notifications.push({
+      title: '暂无可分析的宽度数据',
+      body: '请等待广度数据积累后再发起 AI 分析',
+      tone: NOTIFY_TONE.FLAT,
+    });
+    return;
+  }
+  aiRunning.value = true;
+  try {
+    await requestAgentAnalysis(prompt);
+  } finally {
+    aiRunning.value = false;
+  }
+};
+
 /**
  * 解读行语义色（跟随涨跌配色主题的 CSS 变量类）
  * @param tone 语义档位
@@ -297,11 +404,22 @@ const { visibleOptions: indicatorCardOptions } = useTabConfig<BreadthIndicatorKi
 
 <template>
   <div class="flex flex-col gap-3">
-    <!-- 「当日总结」按钮上移 MainLayout 页头（Teleport 投射，本页激活时才挂载） -->
+    <!-- 「当日总结」+「AI 分析」按钮上移 MainLayout 页头（Teleport 投射，本页激活时才挂载） -->
     <Teleport v-if="headerSlotActive" :to="PAGE_HEADER_ACTIONS_TARGET">
-      <BaseButton variant="ghost" data-track="MARKET_BREADTH_SUMMARY" @click="summaryOpen = true">
-        当日总结
-      </BaseButton>
+      <div class="flex items-center gap-3">
+        <BaseButton variant="ghost" data-track="MARKET_BREADTH_SUMMARY" @click="summaryOpen = true">
+          当日总结
+        </BaseButton>
+        <BaseButton
+          v-if="agentEntryVisible"
+          variant="ghost"
+          :disabled="aiRunning"
+          @click="runAiAnalysis"
+        >
+          <MenuIcon name="agent" :size="14" />
+          {{ aiRunning ? '分析中…' : 'AI 分析' }}
+        </BaseButton>
+      </div>
     </Teleport>
 
     <BaseCard title="市场宽度 · 当日概览">

@@ -353,16 +353,16 @@ const shortDate = (tradeDate: string): string => tradeDate.slice(5);
 
 <template>
   <div v-if="isDbAvailable" class="relative shrink-0">
-    <!-- 表头入口图标 -->
-    <button
-      type="button"
-      class="pressable rounded p-1 text-text-tertiary hover:bg-flat-weak hover:text-text active:scale-90"
-      aria-label="板块数据维护"
+    <!-- 工具条入口：高光玻璃按钮（BaseButton 三变体自带 .pc-nav-bubble 玻璃底） -->
+    <BaseButton
+      variant="ghost"
+      aria-label="获取 / 刷新板块数据"
       title="获取 / 刷新板块数据"
       @click="menuOpen = !menuOpen"
     >
       <MenuIcon name="database" :size="14" />
-    </button>
+      补数据
+    </BaseButton>
 
     <!-- 透明遮罩：点外部收起气泡菜单 -->
     <div v-if="menuOpen" class="fixed inset-0 z-30" @click="menuOpen = false" />

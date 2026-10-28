@@ -45,3 +45,8 @@ windows-sys = { version = "0.59", features = [
   "Win32_UI_WindowsAndMessaging",
   "Win32_UI_Input_KeyboardAndMouse",
 ] }
+
+# 安卓在线更新（系统 DownloadManager + 安装意图，见 src/mobile_update.rs；桌面目标不编译）
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+ndk-context = "0.1"

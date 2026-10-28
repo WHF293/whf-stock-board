@@ -43,6 +43,8 @@ defineProps<{
   state: CardState;
   /** 单卡「AI 分析」进行中（icon 转圈提示） */
   aiRunning: boolean;
+  /** 单卡「AI 分析」icon 是否展示（跟随顶栏「Agent 分析」条目显隐开关） */
+  aiVisible?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -71,6 +73,7 @@ const emit = defineEmits<{
           {{ label }}
         </h2>
         <button
+          v-if="aiVisible !== false"
           type="button"
           class="pressable shrink-0 rounded p-1 text-text-tertiary hover:bg-flat-weak hover:text-text active:scale-90 disabled:cursor-not-allowed disabled:opacity-50"
           :aria-label="`AI 分析${label}`"

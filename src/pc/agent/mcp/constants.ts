@@ -41,4 +41,6 @@ export const BUILTIN_MCP_IDS = {
   marketData: -3,
   /** 财务数据（financial-data）：财务摘要/资产负债表/现金流/业绩预告 */
   financialData: -4,
+  /** 投资账本（tzzb）：账户/持仓/盈亏/流水（上游经 /tzzb-mcp 同源代理） */
+  tzzb: -5,
 } as const;

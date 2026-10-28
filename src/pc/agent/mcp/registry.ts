@@ -24,6 +24,7 @@ import { APP_MCP_SERVER } from './app-tools';
 import { FINANCIAL_DATA_MCP_SERVER } from './financial-tools';
 import { MARKET_DATA_MCP_SERVER } from './market-tools';
 import { STOCK_SDK_MCP_SERVER } from './stocksdk-tools';
+import { TZZB_MCP_SERVER } from './tzzb-tools';
 import { connectRemoteMcp } from './remote';
 import { UI_RESOURCE_PREFIX } from './constants';
 import type {
@@ -44,6 +45,7 @@ export const BUILTIN_MCP_SERVERS: readonly BuiltinMcpServer[] = [
   STOCK_SDK_MCP_SERVER,
   MARKET_DATA_MCP_SERVER,
   FINANCIAL_DATA_MCP_SERVER,
+  TZZB_MCP_SERVER,
 ];
 
 /**
