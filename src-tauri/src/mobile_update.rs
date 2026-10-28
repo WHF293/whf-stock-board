@@ -7,15 +7,14 @@
 //! 全部经 JNI 调 Android 框架 API，不引入原生插件工程（CI 里 gen/android
 //! 由 `tauri android init` 重建，自定义 Kotlin 不可靠，Rust 侧 JNI 才是可入库形态）。
 
-/// 附加结果：JNI 环境守卫（持有线程附加状态，Drop 时分离）+ Activity Context
-/// （全局 Context 足够：DownloadManager / startActivity 均可用）
-#[cfg(target_os = "android")]
-type JniAttach = (
-    jni::AttachGuard<'static>,
-    jni::objects::JObject<'static>,
-);
-
-/// 进程内共享的 JavaVM 句柄（jni 的 JavaVM 是 Arc 内核，Clone 便宜；OnceLock 只做一次 from_raw）
+/// 进程内共享的 JavaVM 句柄（jni 的 JavaVM 是 Arc 内核；OnceLock 只做一次 from_raw）
+///
+/// ⚠️ 必须用 `attach_current_thread_permanently` / `get_env` 取 JNIEnv，**绝不**
+/// 用 `attach_current_thread` 的 AttachGuard：它 Drop 时会 DetachCurrentThread，
+/// 而 Tauri 命令跑在 tokio 线程池上——反复 attach/detach 会把线程上其他组件
+/// （tauri / wry 自己）建立的 JVM 附加一并拆掉，之后任何 Java 回调直接 native
+/// abort（v4.24.0 实测「点更新后闪退」即此因）。永久附加只增不减，线程退出
+/// 由 ART 自行清理，tokio 池线程与进程同寿，无泄漏之虞。
 #[cfg(target_os = "android")]
 static JAVA_VM: std::sync::OnceLock<jni::JavaVM> = std::sync::OnceLock::new();
 
@@ -35,16 +34,17 @@ const INTENT_FLAGS: i32 = 0x1000_0000 | 0x0000_0001;
 #[cfg(target_os = "android")]
 const APK_MIME: &str = "application/vnd.android.package-archive";
 
-/// 附加当前线程拿 JNIEnv 与 Activity
+/// 拿当前线程的 JNIEnv（首次调用永久附加当前线程，之后 get_env 直取）
 #[cfg(target_os = "android")]
-fn attach() -> Result<JniAttach, String> {
+fn attach() -> Result<jni::JNIEnv<'static>, String> {
     let ctx = ndk_context::android_context();
     let vm = JAVA_VM.get_or_init(|| {
         unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }.expect("JavaVM from_raw failed")
     });
-    let guard: jni::AttachGuard<'static> = vm.attach_current_thread().map_err(|e| e.to_string())?;
-    let activity = unsafe { jni::objects::JObject::from_raw(ctx.context().cast()) };
-    Ok((guard, activity))
+    if let Ok(env) = vm.get_env() {
+        return Ok(env);
+    }
+    vm.attach_current_thread_permanently().map_err(|e| e.to_string())
 }
 
 /// 便捷新建 Java String
@@ -78,10 +78,12 @@ fn download_manager<'local>(
 /// 把 APK 下载交给系统 DownloadManager，返回下载任务 id
 #[cfg(target_os = "android")]
 fn enqueue(url: &str, title: &str) -> Result<u64, String> {
-    let (mut guard, activity) = attach()?;
-    let env: &mut jni::JNIEnv = &mut guard;
-    let dm = download_manager(env, &activity)?;
-    let jurl = jstr(env, url)?;
+    let activity = unsafe {
+        jni::objects::JObject::from_raw(ndk_context::android_context().context().cast())
+    };
+    let mut env = attach()?;
+    let dm = download_manager(&mut env, &activity)?;
+    let jurl = jstr(&mut env, url)?;
     let uri = env
         .call_static_method(
             "android/net/Uri",
@@ -99,7 +101,7 @@ fn enqueue(url: &str, title: &str) -> Result<u64, String> {
             &[jni::objects::JValue::Object(&uri)],
         )
         .map_err(|e| e.to_string())?;
-    let jtitle = jstr(env, title)?;
+    let jtitle = jstr(&mut env, title)?;
     let title_value = jni::objects::JValue::Object(&jtitle);
     env.call_method(
         &request,
@@ -131,9 +133,11 @@ fn enqueue(url: &str, title: &str) -> Result<u64, String> {
 /// 查询下载任务：`(status, bytes_so_far, total_bytes)`，status ∈ pending/running/successful/failed
 #[cfg(target_os = "android")]
 fn query(id: u64) -> Result<(String, i32, i32), String> {
-    let (mut guard, activity) = attach()?;
-    let env: &mut jni::JNIEnv = &mut guard;
-    let dm = download_manager(env, &activity)?;
+    let activity = unsafe {
+        jni::objects::JObject::from_raw(ndk_context::android_context().context().cast())
+    };
+    let mut env = attach()?;
+    let dm = download_manager(&mut env, &activity)?;
     let query_obj = env
         .new_object("android/app/DownloadManager$Query", "()V", &[])
         .map_err(|e| e.to_string())?;
@@ -163,7 +167,7 @@ fn query(id: u64) -> Result<(String, i32, i32), String> {
         return Ok(("pending".into(), 0, 0));
     }
     // 列序号逐个取（避免嵌套闭包共享 env 的借用冲突）
-    let j_status = jstr(env, "status")?;
+    let j_status = jstr(&mut env, "status")?;
     let status_idx = env
         .call_method(
             &cursor,
@@ -174,7 +178,7 @@ fn query(id: u64) -> Result<(String, i32, i32), String> {
         .map_err(|e| e.to_string())?
         .i()
         .map_err(|e| e.to_string())?;
-    let j_so_far = jstr(env, "bytes_so_far")?;
+    let j_so_far = jstr(&mut env, "bytes_so_far")?;
     let so_far_idx = env
         .call_method(
             &cursor,
@@ -185,7 +189,7 @@ fn query(id: u64) -> Result<(String, i32, i32), String> {
         .map_err(|e| e.to_string())?
         .i()
         .map_err(|e| e.to_string())?;
-    let j_total = jstr(env, "total_size_bytes")?;
+    let j_total = jstr(&mut env, "total_size_bytes")?;
     let total_idx = env
         .call_method(
             &cursor,
@@ -220,61 +224,25 @@ fn query(id: u64) -> Result<(String, i32, i32), String> {
 /// 下载完成后拉起系统安装界面（复用下载器 content:// Uri，无需自建 FileProvider）
 #[cfg(target_os = "android")]
 fn install(id: u64) -> Result<(), String> {
-    let (mut guard, activity) = attach()?;
-    let env: &mut jni::JNIEnv = &mut guard;
-    let dm = download_manager(env, &activity)?;
-    let query_obj = env
-        .new_object("android/app/DownloadManager$Query", "()V", &[])
-        .map_err(|e| e.to_string())?;
-    env.call_method(
-        &query_obj,
-        "setFilterById",
-        "(J)Landroid/app/DownloadManager$Query;",
-        &[jni::objects::JValue::Long(id as i64)],
-    )
-    .map_err(|e| e.to_string())?;
-    let cursor = env
-        .call_method(
-            &dm,
-            "query",
-            "(Landroid/app/DownloadManager$Query;)Landroid/database/Cursor;",
-            &[jni::objects::JValue::Object(&query_obj)],
+    let activity = unsafe {
+        jni::objects::JObject::from_raw(ndk_context::android_context().context().cast())
+    };
+    let mut env = attach()?;
+    // 直接用下载器规范 Uri，不读 cursor 的 uri 列（个别设备完成态可能返回
+    // file:// 形态，传给 ACTION_VIEW 会被 Android 7+ 拒掉）
+    let content_uri = format!("content://downloads/my_downloads/{id}");
+    let j_uri_str = jstr(&mut env, &content_uri)?;
+    let parsed = env
+        .call_static_method(
+            "android/net/Uri",
+            "parse",
+            "(Ljava/lang/String;)Landroid/net/Uri;",
+            &[jni::objects::JValue::Object(&j_uri_str)],
         )
         .map_err(|e| e.to_string())?
         .l()
         .map_err(|e| e.to_string())?;
-    let moved = env
-        .call_method(&cursor, "moveToFirst", "()Z", &[])
-        .map_err(|e| e.to_string())?
-        .z()
-        .map_err(|e| e.to_string())?;
-    if !moved {
-        return Err("下载任务不存在".into());
-    }
-    let j_uri = jstr(env, "uri")?;
-    let uri_idx = env
-        .call_method(
-            &cursor,
-            "getColumnIndexOrThrow",
-            "(Ljava/lang/String;)I",
-            &[jni::objects::JValue::Object(&j_uri)],
-        )
-        .map_err(|e| e.to_string())?
-        .i()
-        .map_err(|e| e.to_string())?;
-    let local_uri = env
-        .call_method(
-            &cursor,
-            "getString",
-            "(I)Ljava/lang/String;",
-            &[jni::objects::JValue::Int(uri_idx)],
-        )
-        .map_err(|e| e.to_string())?
-        .l()
-        .map_err(|e| e.to_string())?;
-    env.call_method(&cursor, "close", "()V", &[])
-        .map_err(|e| e.to_string())?;
-    let j_action = jstr(env, "android.intent.action.VIEW")?;
+    let j_action = jstr(&mut env, "android.intent.action.VIEW")?;
     let intent = env
         .new_object(
             "android/content/Intent",
@@ -282,17 +250,7 @@ fn install(id: u64) -> Result<(), String> {
             &[jni::objects::JValue::Object(&j_action)],
         )
         .map_err(|e| e.to_string())?;
-    let parsed = env
-        .call_static_method(
-            "android/net/Uri",
-            "parse",
-            "(Ljava/lang/String;)Landroid/net/Uri;",
-            &[jni::objects::JValue::Object(&local_uri)],
-        )
-        .map_err(|e| e.to_string())?
-        .l()
-        .map_err(|e| e.to_string())?;
-    let j_mime = jstr(env, APK_MIME)?;
+    let j_mime = jstr(&mut env, APK_MIME)?;
     let uri_value = jni::objects::JValue::Object(&parsed);
     let mime_value = jni::objects::JValue::Object(&j_mime);
     env.call_method(
