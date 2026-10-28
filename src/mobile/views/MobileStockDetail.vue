@@ -12,6 +12,8 @@
  */
 import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { showToast } from 'vant';
+import { useWatchlistStore } from '../../common/stores/watchlist';
 import KlineChart from '../../common/components/charts/KlineChart.vue';
 import type { KLineData } from 'klinecharts';
 import { fetchFullQuotes } from '../../common/api/quotes.api';
@@ -244,6 +246,40 @@ const fundKvRows = computed<Array<{ k: string; v: string }>>(() => {
   return rows.filter((r): r is { k: string; v: string } => Boolean(r.v));
 });
 
+/* === 自选：导航栏星标 + 分组归属切换弹层（与自选页长按弹层同模型，2026-10-28 王总指定） === */
+const wlStore = useWatchlistStore();
+const wlSheetOpen = ref(false);
+
+/** 本股是否已在自选（任意分组）——星标实心/空心切换 */
+const inWatchlist = computed(() => wlStore.groupIdsOfSymbol(symbol.value).length > 0);
+
+/** 弹层里的分组清单（含归属状态） */
+const wlGroups = computed(() =>
+  wlStore.groups.map((group) => ({
+    id: group.id,
+    name: group.name,
+    joined: group.stocks.some((stock) => stock.symbol === symbol.value),
+  })),
+);
+
+/** 切换本股在某分组的归属（在组内则移出，不在则加入）
+ * @param groupId 目标分组 id */
+const toggleWlGroup = (groupId: string): void => {
+  const group = wlStore.groups.find((item) => item.id === groupId);
+  if (!group) return;
+  const joined = group.stocks.some((item) => item.symbol === symbol.value);
+  if (joined) {
+    wlStore.removeStock(groupId, symbol.value);
+    showToast(`已移出「${group.name}」`);
+  } else {
+    const ok = wlStore.addStock(
+      { symbol: symbol.value, name: quote.value?.name ?? symbol.value, addedAt: Date.now() },
+      groupId,
+    );
+    showToast(ok ? `已加入「${group.name}」` : '操作失败');
+  }
+};
+
 /* === 生命周期联动 === */
 watch(symbol, () => {
   quote.value = null;
@@ -271,7 +307,17 @@ const back = (): void => {
       safe-area-inset-top
       left-arrow
       @click-left="back"
-    />
+    >
+      <template #right>
+        <van-icon
+          :name="inWatchlist ? 'star' : 'star-o'"
+          size="20"
+          :style="inWatchlist ? 'color: var(--color-primary)' : undefined"
+          :aria-label="inWatchlist ? '编辑自选分组' : '加入自选'"
+          @click="wlSheetOpen = true"
+        />
+      </template>
+    </van-nav-bar>
 
     <div class="m-sub-scroll m-stk-scroll">
       <!-- === 报价头 === -->
@@ -477,5 +523,33 @@ const back = (): void => {
       </template>
       <div class="m-sub-tail"></div>
     </div>
+
+    <!-- 自选分组归属弹层（与自选页长按弹层同模型：点选切换归属，全移出即删自选） -->
+    <van-action-sheet
+      v-model:show="wlSheetOpen"
+      :close-on-click-action="false"
+      cancel-text="取消"
+      teleport="body"
+    >
+      <div class="m-wl-sheet">
+        <div class="m-wl-sheet__head">
+          <span class="nm">{{ quote?.name ?? symbol }}</span>
+          <span class="sub">{{ symbol }}</span>
+        </div>
+        <div class="m-wl-sheet__label">所属分组（点选切换归属）</div>
+        <div class="m-wl-sheet__groups">
+          <button
+            v-for="group in wlGroups"
+            :key="group.id"
+            class="m-wl-sheet__g"
+            :class="{ on: group.joined }"
+            @click="toggleWlGroup(group.id)"
+          >
+            <van-icon :name="group.joined ? 'checked' : 'circle'" />
+            {{ group.name }}
+          </button>
+        </div>
+      </div>
+    </van-action-sheet>
   </div>
 </template>
