@@ -62,7 +62,9 @@ const check = async (silent: boolean): Promise<void> => {
     const currentVersion = await getCurrentAppVersion();
     // 检测失败抛错带具体原因（2026-10-27 起，原先静默吞掉导致「更新一直失败」无从排查）
     const info = await fetchLatestRelease();
-    if (compareVersion(currentVersion, info.version) >= 0) {
+    // compareVersion 约定「远端（第二参）更新返回 1」：远端 <= 本地才算已是最新。
+    // 此前写成 >= 0 把条件整个反了——有新版时恒判「已是最新」，v4.23.3 检测不到即此因
+    if (compareVersion(currentVersion, info.version) <= 0) {
       status.value = 'up-to-date';
       return;
     }
