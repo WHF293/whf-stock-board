@@ -129,9 +129,6 @@ export const PLUGIN_MARKET_RETRY_LABEL = '重试';
 
 // ——— 工具栏 / 列表文案 ———
 
-/** 工坊页「插件市场」入口按钮 / 市场弹窗标题 */
-export const PLUGIN_MARKET_OPEN_LABEL = '插件市场';
-
 /** 搜索框占位文案 */
 export const PLUGIN_MARKET_SEARCH_PLACEHOLDER = '搜索插件名 / id / 描述';
 
@@ -183,6 +180,9 @@ export const PLUGIN_MARKET_SOURCE_BADGE = (label: string, builtin: boolean): str
 
 /** 空态文案（当前筛选下没有任何插件） */
 export const PLUGIN_MARKET_EMPTY_TEXT = '当前源还没有可安装的插件';
+
+/** 空态文案（「未安装」视图下全部市场插件本地都已安装） */
+export const PLUGIN_MARKET_EMPTY_NOT_INSTALLED_TEXT = '没有未安装的插件';
 
 /** 加载失败（按源展示；带具体原因） */
 export const PLUGIN_MARKET_FAIL_PREFIX = '加载失败：';

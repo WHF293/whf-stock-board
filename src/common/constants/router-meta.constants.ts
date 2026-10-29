@@ -19,7 +19,7 @@ export const ROUTE_PATH = {
   MARKET_RANK: "/market-rank",
   STOCK_MARKET: "/stock-market", // 个股行情（已并入行情全景「全部个股」子 tab，2026-10-22；旧路径由 404 兜底页承接）
   BOARD_FLOW: "/board-flow", // 板块资金流向（原「行情全景-最新板块资金」独立成页，2026-10-13）
-  HEATMAP: "/heatmap", // 大盘云图（原「行情全景-大盘云图」tab 独立成页，dapanyuntu.com iframe 直嵌，2026-10-13）
+  HEATMAP: "/heatmap", // 大盘云图（2026-10-29 起转插件分发：dsh-dapanyuntu 注册本路径；总览「板块热力」卡标题入口仍指向这里）
   MARKET_BREADTH: "/market-breadth", // 市场宽度（2026-10-29 起转插件分发：dsh-market-breadth 注册本路径；总览宽度卡的深化页入口仍指向这里）
   SECTOR_FLOW_HISTORY: "/sector-flow-history", // 板块历史净流入（行情全景-板块资金 → 「查看历史净流入」，不入菜单）
   FUTURES_OVERVIEW: "/futures/overview", // 期货·总览（期货市场总览：主力流况 / 资金流向 / 多空比，同花顺期货通数据）
@@ -43,7 +43,6 @@ export const MENU_ICON = {
   CALENDAR: "calendar",
   FUNDS: "funds",
   FLAME: "flame",
-  HEATMAP: "cloud",
   TROPHY: "trophy",
   FILTER: "filter",
   NEWS: "news",
@@ -83,7 +82,8 @@ export const MENU_ITEMS: readonly SidebarMenuEntry[] = [
   { path: ROUTE_PATH.MARKET_RANK, title: "盘面雷达", icon: MENU_ICON.RANK, group: SIDEBAR_MENU_GROUP.MARKET },
   // 资金流向（原「板块资金流向」，2026-10-22 王总更名）：原「行情全景-最新板块资金」模块独立成页（2026-10-13）
   { path: ROUTE_PATH.BOARD_FLOW, title: "资金流向", icon: MENU_ICON.FUNDS, group: SIDEBAR_MENU_GROUP.MARKET },
-  // 大盘云图侧栏入口已移除（2026-10-22 王总指定），改为市场总览页头「大盘云图」按钮进入（同宽基ETF入口位）
+  // 大盘云图侧栏入口已移除（2026-10-22 王总指定），改为市场总览页头「大盘云图」按钮进入（同宽基ETF入口位）；
+  // 页面 2026-10-29 起转插件分发（dsh-dapanyuntu 注册 /heatmap，不入菜单）
   // 板块日历紧跟行情全景：同为「板块维度的行情视角」
   { path: ROUTE_PATH.BOARD_CALENDAR, title: "题材轮动", icon: MENU_ICON.CALENDAR, group: SIDEBAR_MENU_GROUP.MARKET },
   // 市场广度指标：五大广度副图（ADL/ADR/OBOS/ARMS/MCO），市场总览宽度卡的深化页

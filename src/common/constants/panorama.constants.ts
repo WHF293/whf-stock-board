@@ -1,22 +1,9 @@
 /**
  * 行情全景页常量集中管理
- */
-
-/** 大盘云图嵌入页 URL（dapanyuntu.com，A 股板块/个股树图；iframe 直嵌，
- * 2026-10-13 实测响应头无 X-Frame-Options / CSP frame-ancestors，可被嵌入） */
-export const DAPANYUNTU_EMBED_URL = 'https://dapanyuntu.com/';
-
-/** 大盘云图原站地址（云图页提示条「访问原站」跳转用；当前与嵌入页同源） */
-export const DAPANYUNTU_SITE_URL = 'https://dapanyuntu.com/';
-
-/**
- * 大盘云图主题同步 postMessage 信源标识
  *
- * 宿主 ↔ iframe 双向消息都以 `source` 字段声明来源，接收方校验该值后才处理，
- * 防止同页其他 postMessage 误触发。协议细节与 Rust 注入脚本约定一致
- * （src-tauri/src/lib.rs 的 HEATMAP_THEME_INIT_SCRIPT，两端改动必须同步）。
+ * 大盘云图三常量（嵌入 URL / 原站 URL / postMessage 信源）已于 2026-10-29
+ * 随页面转插件分发迁往插件仓库 dsh-dapanyuntu
  */
-export const HEATMAP_THEME_MESSAGE_SOURCE = 'whf-stock-board';
 
 /** 东财 clist 单次拉取条数（上游单页上限 100，全球指数 63 条一页拿尽） */
 export const PANORAMA_CLIST_PAGE_SIZE = 100;

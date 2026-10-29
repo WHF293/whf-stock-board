@@ -893,18 +893,21 @@ fn stock_board_db_migrations() -> Vec<Migration> {
 /// （含跨域 iframe）的每个 document 创建时、页面自身脚本执行前运行，
 /// 因此用 hostname 门控，只在第三方云图页面内生效。
 ///
+/// 大盘云图页 2026-10-29 起转插件分发（dsh-dapanyuntu）：本脚本按域名匹配、
+/// 不感知页面由谁承载，插件页内嵌 iframe 照常生效，**留在宿主**不随插件走。
+///
 /// 第三方主题机制（2026-10-13 抓取原站 HTML 查证）：Tailwind class 模式——
 /// `<html class="dark">` + `style.colorScheme`，持久化键为
 /// `localStorage["heatmap-display-mode"]`（无值或非 "light" 一律暗色）。
 ///
-/// 同步协议（宿主 HeatmapView.vue 经 postMessage 发起，与 `heatmap.constants.ts`
-/// 的 `HEATMAP_THEME_MESSAGE_SOURCE` 约定一致，两端改动必须同步）：
+/// 同步协议（插件页经 postMessage 发起；信源常量 `'whf-stock-board'` 现存
+/// **三端**——本脚本、插件仓库 dsh-dapanyuntu 的 constants，任一改动必须同步）：
 /// - iframe → 宿主 `{ source, type: 'heatmap-theme-ready' }`：脚本就绪，宿主收到即回发当前主题
 ///   （早于 iframe load 完成首次同步，减少明暗闪烁）；
 /// - 宿主 → iframe `{ source, type: 'heatmap-theme', dark: boolean }`：应用主题并写入
 ///   localStorage，使原站自身 theme-init / 后续导航读到与宿主一致的值。
 ///
-/// 纯浏览器 dev / 移动端不注入（无此机制），宿主侧 postMessage 无接收方、静默失效。
+/// 纯浏览器 dev / 移动端不注入（无此机制），插件页 postMessage 无接收方、静默失效。
 const HEATMAP_THEME_INIT_SCRIPT: &str = r#"
 (function () {
   if (!/(^|\.)dapanyuntu\.com$/.test(location.hostname)) return;
@@ -980,8 +983,9 @@ pub fn run() {
         )?;
       }
       // 主窗口改为 Rust 侧构建（tauri.conf.json 声明 create:false）：只有构建期
-      // 才能挂 initialization_script_for_all_frames——这是跨域 iframe（大盘云图页）
-      // 内执行脚本的唯一通道，用于把宿主明暗主题同步给第三方站点。
+      // 才能挂 initialization_script_for_all_frames——这是跨域 iframe（大盘云图
+      // 插件页，见 plugins 仓库 dsh-dapanyuntu）内执行脚本的唯一通道，
+      // 用于把宿主明暗主题同步给第三方站点。
       // 窗口几何 / 装饰等仍以 tauri.conf.json 为唯一事实源（from_config 原样取用）。
       let window_config = app
         .config()

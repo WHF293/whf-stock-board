@@ -10,6 +10,7 @@ active:scale-90
 active:scale-95
 active:scale-[0.98]
 bg-current
+bg-down
 bg-down-weak
 bg-flat
 bg-flat-weak
@@ -21,6 +22,7 @@ bg-surface
 bg-up
 bg-up-weak
 border
+border-0
 border-b
 border-border
 border-current
@@ -73,9 +75,12 @@ group-hover:opacity-100
 h-0.5
 h-1
 h-1.5
+h-3
+h-3.5
 h-4
 h-6
 h-7
+h-full
 hover:bg-flat-weak
 hover:border-primary
 hover:border-primary/40
@@ -83,6 +88,7 @@ hover:text-down
 hover:text-primary
 hover:text-text
 hover:text-up
+hover:underline
 inline-block
 inline-flex
 items-baseline
@@ -92,6 +98,7 @@ items-start
 items-stretch
 justify-between
 justify-center
+leading-5
 leading-none
 leading-relaxed
 line-through
@@ -116,6 +123,7 @@ md:grid-cols-4
 min-[900px]:grid-cols-3
 min-[900px]:grid-cols-5
 min-[900px]:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]
+min-h-0
 min-w-0
 min-w-14
 min-w-[140px]
@@ -135,6 +143,7 @@ opacity-0
 opacity-100
 opacity-50
 outline-none
+overflow-hidden
 overflow-y-auto
 p-0.5
 p-1
@@ -173,7 +182,9 @@ rounded-card
 rounded-full
 rounded-lg
 rounded-md
+rounded-xl
 select-none
+self-start
 shadow-card
 shadow-lg
 shrink-0
@@ -212,6 +223,8 @@ truncate
 w-1
 w-1.5
 w-16
+w-3
+w-3.5
 w-36
 w-4
 w-40
