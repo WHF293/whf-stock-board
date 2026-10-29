@@ -40,6 +40,7 @@ import { fetchAllMarketQuotes } from '../../common/api/quotes.api.ts';
 import { ingestBreadthSnapshot, readBreadthBars, readBreadthDay } from '../../common/api/market-breadth-db.api';
 import { computeBreadthIndicatorSeries } from '../../common/utils/compute-breadth-indicators';
 import { classifyArms, type ArmsStateResult } from '../../common/utils/classify-arms';
+import { interpretBreadthValue } from '../../common/utils/interpret-breadth';
 import { readTrendColors } from '../../common/utils/trend-colors';
 import { toDayKey } from '../../common/utils/to-day-key';
 import { useMobilePolling } from '../composables/use-mobile-polling';
@@ -166,6 +167,56 @@ const readinessBadges = computed(() => [
 
 /** 窗口内是否无任何数据（整页空态判定） */
 const isPageEmpty = computed(() => series.value.dates.length === 0);
+
+// ---------- 今日总结弹窗（navbar 右侧入口；与 PC 当日总结同一解读口径） ----------
+
+/** 弹窗显隐 */
+const summaryOpen = ref(false);
+
+/** 总结弹窗副标题：最新交易日（MM-DD） */
+const summaryDateLabel = computed(() => series.value.dates.at(-1)?.slice(5) ?? '--');
+
+/** 今日总结条目：指标名 / 最新值文案 / 白话解读（interpretBreadthValue 与 PC 同源） */
+const summaryItems = computed(() => {
+  const s = series.value;
+  const last = s.dates.length - 1;
+  /**
+   * 序列末位取值（最新交易日；空序列 null）
+   * @param values 指标序列
+   * @returns 末位值；全空为 null
+   */
+  const at = (values: ReadonlyArray<number | null>): number | null =>
+    last < 0 ? null : (values[last] ?? null);
+  /**
+   * 构造一条总结条目
+   * @param kind 指标种类（解读口径的键）
+   * @param label 指标名
+   * @param value 最新值
+   * @param digits 小数位
+   * @param ma ADL 用均线值
+   * @returns 展示条目（解读可能为 null）
+   */
+  const build = (
+    kind: BreadthIndicatorKind,
+    label: string,
+    value: number | null,
+    digits: number,
+    ma?: number | null,
+  ) => ({
+    label,
+    display: value === null ? '--' : fmt(value, digits),
+    interpret: interpretBreadthValue(kind, value, ma)?.text ?? null,
+    tone: interpretBreadthValue(kind, value, ma)?.tone ?? null,
+  });
+  return [
+    build('adl', 'ADL 腾落线', at(s.adl), 0, at(s.adlMa)),
+    build('adr', 'ADR 涨跌比率', at(s.adr), 2),
+    build('obos', 'OBOS 超买超卖', at(s.obos), 0),
+    build('arms', 'TRIN 阿姆氏（ARMS）', at(s.armsMa), 2),
+    build('mco', '麦克莱伦震荡（MCO）', at(s.mco), 1),
+    build('active', '活跃占比', at(s.activeRatio), 1),
+  ];
+});
 
 /** 当前展开说明的指标（再次点击收起；移动端无 hover，说明走点击展开） */
 const expandedKind = ref<BreadthIndicatorKind | null>(null);
@@ -478,7 +529,39 @@ const chartCards = computed(() => [
       safe-area-inset-top
       left-arrow
       @click-left="router.back()"
-    />
+    >
+      <template #right>
+        <button type="button" class="m-bd-summary-btn" @click="summaryOpen = true">今日总结</button>
+      </template>
+    </van-nav-bar>
+
+    <!-- 今日总结弹窗：六大指标最新值 + 一句白话解读（解读口径与 PC 当日总结同源） -->
+    <van-popup v-model:show="summaryOpen" position="bottom" round style="max-height: 75dvh">
+      <div class="m-bd-summary">
+        <div class="m-bd-summary__head">
+          <span class="m-bd-summary__title">今日总结</span>
+          <span class="m-bd-summary__date">截至 {{ summaryDateLabel }}</span>
+        </div>
+        <div
+          v-for="item in summaryItems"
+          :key="item.label"
+          class="m-bd-summary__row"
+        >
+          <div class="m-bd-summary__line">
+            <span class="m-bd-summary__label">{{ item.label }}</span>
+            <b class="m-num">{{ item.display }}</b>
+          </div>
+          <p
+            v-if="item.interpret"
+            class="m-bd-summary__interpret"
+            :class="item.tone === 'up' ? 'm-up' : item.tone === 'down' ? 'm-down' : ''"
+          >
+            {{ item.interpret }}
+          </p>
+          <p v-else class="m-bd-summary__interpret">暂无数据（本地逐日积累后出解读）</p>
+        </div>
+      </div>
+    </van-popup>
 
     <div class="m-sub-scroll m-bd-scroll">
       <van-pull-refresh v-model="refreshing" @refresh="onRefresh">
@@ -580,6 +663,61 @@ const chartCards = computed(() => [
 </template>
 
 <style scoped>
+/* 今日总结：navbar 右侧入口 + 弹窗条目 */
+.m-bd-summary-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-primary);
+}
+.m-bd-summary {
+  padding: 16px 14px calc(16px + env(safe-area-inset-bottom));
+}
+.m-bd-summary__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.m-bd-summary__title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-text-1);
+}
+.m-bd-summary__date {
+  font-size: 11px;
+  color: var(--color-text-3);
+}
+.m-bd-summary__row {
+  padding: 9px 0;
+  border-top: 1px solid var(--color-flat-weak);
+}
+.m-bd-summary__line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.m-bd-summary__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-1);
+}
+.m-bd-summary__interpret {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-text-2);
+}
+.m-bd-summary__interpret.m-up {
+  color: var(--color-up-strong);
+}
+.m-bd-summary__interpret.m-down {
+  color: var(--color-down-strong);
+}
+
 /* 当日概览条：三格纵排（移动端窄屏不横挤），格间分隔线 */
 .m-bd-today {
   display: flex;

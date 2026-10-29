@@ -61,6 +61,30 @@ const profileRow = computed<CcpmAggregateRow | null>(
   () => rows.value.find((row) => row.memberName === selectedMember.value) ?? null,
 );
 
+/**
+ * 其他机构汇总（除选中席位外逐字段求和，口径对齐 PC 画像卡底部「其他机构汇总」）
+ */
+const othersAggregate = computed<null | {
+  count: number;
+  totalBuy: number;
+  totalSell: number;
+  totalNet: number;
+  totalNetChg: number;
+}>(() => {
+  if (!selectedMember.value || rows.value.length === 0) return null;
+  const others = rows.value.filter((row) => row.memberName !== selectedMember.value);
+  if (others.length === 0) return null;
+  const sum = (pick: (row: CcpmAggregateRow) => number): number =>
+    others.reduce((acc, row) => acc + pick(row), 0);
+  return {
+    count: others.length,
+    totalBuy: sum((row) => row.totalBuy),
+    totalSell: sum((row) => row.totalSell),
+    totalNet: sum((row) => row.totalNet),
+    totalNetChg: sum((row) => row.totalNetChg),
+  };
+});
+
 /* === 席位合并净持仓时序（近 N 披露日，按需加载——逐日拉上游 CSV，重接口不自动跑） === */
 const series = ref<CcpmMemberSeries | null>(null);
 const seriesLoading = ref(false);
@@ -283,6 +307,29 @@ const sortedRows = computed<CcpmAggregateRow[]>(() => {
   return [...rows.value].sort((a, b) => Math.abs(b.totalNetChg) - Math.abs(a.totalNetChg));
 });
 
+// ---------- 席位列表折叠（2026-10-29 王总指定：默认只显示前 5，查看更多展开全部） ----------
+
+/** 默认展示的席位数 */
+const LIST_DEFAULT_COUNT = 5;
+
+/** 列表是否展开全部 */
+const listExpanded = ref(false);
+
+/** 列表实际渲染的行（未展开只取前 5） */
+const displayRows = computed(() =>
+  listExpanded.value ? sortedRows.value : sortedRows.value.slice(0, LIST_DEFAULT_COUNT),
+);
+
+/** 被折叠隐藏的席位数 */
+const collapsedCount = computed(() =>
+  Math.max(0, sortedRows.value.length - LIST_DEFAULT_COUNT),
+);
+
+// 品种 / 排序切换后重置为折叠态（新列表重新从 5 条看起）
+watch([product, sortKey], () => {
+  listExpanded.value = false;
+});
+
 /** 行为统计（做多/做空/对冲/不判定 席位数） */
 const tagCount = computed(() => {
   let long = 0;
@@ -397,10 +444,10 @@ onMounted(() => {
         </div>
         <div v-else-if="sortedRows.length === 0" class="m-state">暂无披露数据</div>
 
-        <!-- 席位行为列表（核心）：行为标签 + 多空持仓；点击行选中席位（联动画像/时序） -->
+        <!-- 席位行为列表（核心）：默认前 5，查看更多展开全部 / 收起；点击行选中席位（联动画像/时序） -->
         <div v-else class="m-card m-fi-list">
           <div
-            v-for="row in sortedRows"
+            v-for="row in displayRows"
             :key="row.memberName"
             class="m-fi-row"
             :class="{ 'm-fi-row--active': row.memberName === selectedMember }"
@@ -423,6 +470,15 @@ onMounted(() => {
               <span>净增减<b class="m-num" :class="dirClass(row.totalNetChg)">{{ signed(row.totalNetChg) }}</b></span>
             </div>
           </div>
+          <button
+            v-if="sortedRows.length > LIST_DEFAULT_COUNT"
+            type="button"
+            class="m-fi-list__more"
+            @click="listExpanded = !listExpanded"
+          >
+            {{ listExpanded ? '收起' : `查看更多（其余 ${collapsedCount} 家）` }}
+            <van-icon :name="listExpanded ? 'arrow-up' : 'arrow-down'" />
+          </button>
         </div>
 
         <!-- 席位画像卡（点击列表行联动；全股指口径带净持仓增减大数字，短视频核验口径） -->
@@ -463,6 +519,34 @@ onMounted(() => {
             <div class="m-fi-profile__reason">{{ profileRow.tagReason }}</div>
             <div class="m-fi-profile__rule">
               判定规则：|净持仓| ÷ max(多单, 空单) &lt; 20% 且多空同向增仓 → 对冲；占比 ≥ 20% → 单边多 / 空。
+            </div>
+            <!-- 其他机构汇总（除选中席位外逐字段求和，口径对齐 PC 画像卡底部） -->
+            <div v-if="othersAggregate" class="m-fi-others">
+              <div class="m-fi-others__title">
+                其他机构汇总（其余 {{ othersAggregate.count }} 家上榜会员）
+              </div>
+              <div class="m-fi-profile__grid">
+                <div class="cell">
+                  <i>合并多单</i>
+                  <b class="m-num m-up">{{ othersAggregate.totalBuy.toLocaleString('en-US') }}</b>
+                </div>
+                <div class="cell">
+                  <i>合并空单</i>
+                  <b class="m-num m-down">{{ othersAggregate.totalSell.toLocaleString('en-US') }}</b>
+                </div>
+                <div class="cell">
+                  <i>合并净持仓</i>
+                  <b class="m-num" :class="dirClass(othersAggregate.totalNet)">
+                    {{ signed(othersAggregate.totalNet) }}
+                  </b>
+                </div>
+                <div class="cell">
+                  <i>净增减</i>
+                  <b class="m-num" :class="dirClass(othersAggregate.totalNetChg)">
+                    {{ signed(othersAggregate.totalNetChg) }}
+                  </b>
+                </div>
+              </div>
             </div>
           </template>
           <div v-else class="m-fi-profile__empty">点击上方席位行查看画像</div>
@@ -664,6 +748,34 @@ onMounted(() => {
 .m-fi-row__detail {
   margin-top: 3px;
   color: var(--color-text-3);
+}
+
+/* 席位列表「查看更多 / 收起」 */
+.m-fi-list__more {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 10px 0;
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  background: none;
+  font-size: 12px;
+  color: var(--color-primary);
+}
+
+/* 画像卡底部「其他机构汇总」 */
+.m-fi-others {
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px dashed var(--color-border);
+}
+.m-fi-others__title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-3);
+  margin-bottom: 6px;
 }
 
 /* 选中席位行高亮（联动画像/时序） */
