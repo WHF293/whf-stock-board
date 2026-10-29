@@ -11,6 +11,8 @@ import { usePageHeaderSlot, PAGE_HEADER_ACTIONS_TARGET } from '../../common/comp
 import FuturesCapitalFlowChart from '../components/business/futures/FuturesCapitalFlowChart.vue';
 import FuturesPositionRateChart from '../components/business/futures/FuturesPositionRateChart.vue';
 import FuturesRankBoards from '../components/business/futures/FuturesRankBoards.vue';
+import FuturesVarietyFundamentals from '../components/business/futures/FuturesVarietyFundamentals.vue';
+import { useDockPanelStore } from '../../common/stores/dock-panel';
 import {
   fetchFuturesCapitalFlows,
   fetchFuturesLastDate,
@@ -31,6 +33,8 @@ import type {
  * 三模块：主力流况状况（主力合约涨跌家数）/ 品种资金流向（净流入，元）/
  * 主力持仓多空比（前 20 会员多单占比）。数据全部自上游接口拉取后本地渲染
  * （非 iframe 嵌页），页面常驻标注数据来源；「查看更多」弹窗展示全量列表。
+ * 另含品种基本面功能区（2026-10-24 新增）：四大分类品种 chips，点击经
+ * dockPanel.openFuturesChain 展开右侧产业链 F10 iframe 面板。
  */
 const HOME_CHART_PREVIEW_COUNT = 4;
 const POSITION_CHART_PREVIEW_COUNT = 3;
@@ -54,6 +58,9 @@ const rankFailed = ref(false);
 
 const loading = ref(false);
 const errorText = ref('');
+
+/** 右侧停靠面板（品种基本面 → 产业链 iframe 面板） */
+const dockPanel = useDockPanelStore();
 
 /** 资金流向弹窗开关 */
 const capitalModalOpen = ref(false);
@@ -166,9 +173,11 @@ const sourceNoticeText = computed(() =>
     </BaseCard>
 
     <template v-else>
-      <div class="grid grid-cols-1 gap-3 xl:grid-cols-3">
+      <!-- 三指标卡：容器放得下 3×480 才并排（王总 2026-10-24 指定最小宽度 480px），
+           产业链抽屉挤窄主区时自动换行（2+1 / 竖排），不再按视口断点硬塞三列挤爆图表 -->
+      <div class="flex flex-wrap gap-3">
         <!-- ① 主力流况状况（涨跌家数） -->
-        <BaseCard title="主力流况状况" fill>
+        <BaseCard title="主力流况状况" fill class="min-w-[480px] flex-1">
           <template #extra>
             <span class="text-xs text-text-tertiary">单位：合约个数（主力合约）</span>
           </template>
@@ -193,7 +202,7 @@ const sourceNoticeText = computed(() =>
         </BaseCard>
 
         <!-- ② 品种资金流向 -->
-        <BaseCard title="品种资金流向" fill>
+        <BaseCard title="品种资金流向" fill class="min-w-[480px] flex-1">
           <template #extra>
             <button
               type="button"
@@ -210,7 +219,7 @@ const sourceNoticeText = computed(() =>
         </BaseCard>
 
         <!-- ③ 主力持仓多空比 -->
-        <BaseCard title="主力持仓多空比" fill>
+        <BaseCard title="主力持仓多空比" fill class="min-w-[480px] flex-1">
           <template #extra>
             <button
               type="button"
@@ -249,8 +258,11 @@ const sourceNoticeText = computed(() =>
         <BaseEmpty v-else text="暂无榜单数据" />
       </BaseCard>
 
+      <!-- ⑤ 品种基本面（四大分类 × 品种 chips，点击展开右侧产业链 iframe 面板） -->
+      <FuturesVarietyFundamentals @select="(code, name) => dockPanel.openFuturesChain(code, name)" />
+
       <div class="rounded-card bg-flat-weak px-4 py-2.5 text-xs leading-relaxed text-text-secondary">
-        <span class="font-semibold text-text">数据说明：</span>本页数据由本地拉取渲染，非官方页面；主力流况 / 资金净流向 / 多空比来自同花顺期货通行情网关（futgwapi），主力合约四榜的合约清单来自同花顺期货通、行情快照来自东方财富（盘中实时口径），仅供观测参考，不构成投资建议。
+        <span class="font-semibold text-text">数据说明：</span>本页数据由本地拉取渲染，非官方页面；主力流况 / 资金净流向 / 多空比来自同花顺期货通行情网关（futgwapi），主力合约四榜的合约清单来自同花顺期货通、行情快照来自东方财富（盘中实时口径），品种基本面点击后为同花顺产业链 F10 页面嵌入（暗色模式经 CSS 滤镜反色近似，仅作参考），仅供观测参考，不构成投资建议。
       </div>
 
       <!-- 品种资金流向全量弹窗 -->

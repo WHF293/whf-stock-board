@@ -17,6 +17,12 @@ defineProps<{
   stats?: CcpmMemberStats | null;
   /** 聚合口径画像数据 */
   aggregate?: CcpmAggregateRow | null;
+  /** 其他机构汇总（单合约口径，除选中席位外） */
+  othersStats?: CcpmMemberStats | null;
+  /** 其他机构汇总（聚合口径，除选中席位外） */
+  othersAggregate?: CcpmAggregateRow | null;
+  /** 其他机构家数 */
+  othersCount?: number;
 }>();
 
 /**
@@ -140,6 +146,61 @@ const signClass = (value: number | null | undefined): string => {
       <span class="text-xs text-text-tertiary">{{ (stats ?? aggregate)?.tagReason }}</span>
     </div>
     <p class="mt-2 text-xs leading-relaxed text-text-tertiary">{{ FUTURES_PAGE_TEXT.tagRule }}</p>
+
+    <!-- 其他机构汇总（除选中席位外，多空两侧对照看主力 vs 其余的博弈） -->
+    <div v-if="(stats || aggregate) && (othersStats || othersAggregate)" class="mt-3 border-t border-flat-weak pt-3">
+      <div class="mb-2 flex items-center justify-between gap-2">
+        <h3 class="text-xs font-semibold text-text">其他机构汇总</h3>
+        <span class="text-xs text-text-tertiary">除选中席位外 · {{ othersCount ?? 0 }} 家</span>
+      </div>
+      <div class="grid grid-cols-2 gap-2">
+        <template v-if="othersStats">
+          <div class="rounded-lg bg-bg p-2.5">
+            <div class="text-xs font-semibold text-text-tertiary">多头持仓</div>
+            <div class="mt-0.5 text-base font-bold tabular-nums text-up">{{ othersStats.buyPos ?? '--' }}</div>
+            <div class="text-xs tabular-nums" :class="signClass(othersStats.buyChg)">{{ signed(othersStats.buyChg) }}</div>
+          </div>
+          <div class="rounded-lg bg-bg p-2.5">
+            <div class="text-xs font-semibold text-text-tertiary">空头持仓</div>
+            <div class="mt-0.5 text-base font-bold tabular-nums text-down">{{ othersStats.sellPos ?? '--' }}</div>
+            <div class="text-xs tabular-nums" :class="signClass(othersStats.sellChg)">{{ signed(othersStats.sellChg) }}</div>
+          </div>
+          <div class="rounded-lg bg-bg p-2.5">
+            <div class="text-xs font-semibold text-text-tertiary">净持仓</div>
+            <div class="mt-0.5 text-base font-bold tabular-nums" :class="signClass(othersStats.netPos)">{{ signed(othersStats.netPos) }}</div>
+            <div class="text-xs text-text-tertiary">多 − 空</div>
+          </div>
+          <div class="rounded-lg bg-bg p-2.5">
+            <div class="text-xs font-semibold text-text-tertiary">净持仓增减</div>
+            <div class="mt-0.5 text-base font-bold tabular-nums" :class="signClass(othersStats.netChg)">{{ signed(othersStats.netChg) }}</div>
+            <div class="text-xs text-text-tertiary">多增减 − 空增减</div>
+          </div>
+        </template>
+        <template v-else-if="othersAggregate">
+          <div class="rounded-lg bg-bg p-2.5">
+            <div class="text-xs font-semibold text-text-tertiary">合并多单</div>
+            <div class="mt-0.5 text-base font-bold tabular-nums text-up">{{ othersAggregate.totalBuy.toLocaleString('en-US') }}</div>
+            <div class="text-xs tabular-nums" :class="signClass(othersAggregate.totalBuyChg)">{{ signed(othersAggregate.totalBuyChg) }}</div>
+          </div>
+          <div class="rounded-lg bg-bg p-2.5">
+            <div class="text-xs font-semibold text-text-tertiary">合并空单</div>
+            <div class="mt-0.5 text-base font-bold tabular-nums text-down">{{ othersAggregate.totalSell.toLocaleString('en-US') }}</div>
+            <div class="text-xs tabular-nums" :class="signClass(othersAggregate.totalSellChg)">{{ signed(othersAggregate.totalSellChg) }}</div>
+          </div>
+          <div class="rounded-lg bg-bg p-2.5">
+            <div class="text-xs font-semibold text-text-tertiary">合并净持仓</div>
+            <div class="mt-0.5 text-base font-bold tabular-nums" :class="signClass(othersAggregate.totalNet)">{{ signed(othersAggregate.totalNet) }}</div>
+            <div class="text-xs text-text-tertiary">多 − 空</div>
+          </div>
+          <div class="rounded-lg bg-bg p-2.5">
+            <div class="text-xs font-semibold text-text-tertiary">净持仓增减</div>
+            <div class="mt-0.5 text-base font-bold tabular-nums" :class="signClass(othersAggregate.totalNetChg)">{{ signed(othersAggregate.totalNetChg) }}</div>
+            <div class="text-xs text-text-tertiary">多增减 − 空增减</div>
+          </div>
+        </template>
+      </div>
+    </div>
+
     <div v-if="!stats && !aggregate" class="grid place-items-center py-8 text-center text-xs text-text-tertiary">
       点击总表中的席位行查看画像
     </div>

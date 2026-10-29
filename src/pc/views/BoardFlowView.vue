@@ -92,7 +92,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex h-[calc(100dvh-6.5rem)] min-h-0 flex-col gap-4 overflow-y-auto">
+  <div class="flex h-full min-h-0 flex-col gap-4 overflow-y-auto">
     <!-- 行 1：实时成交额（compact 隐藏均值行）｜主力净流入（2026-10-22 王总指定新增） -->
     <div class="flex shrink-0 flex-wrap gap-4">
       <BaseCard title="实时成交额" class="min-w-[360px] flex-1">

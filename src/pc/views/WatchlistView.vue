@@ -1,22 +1,20 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, ref } from "vue";
 import BaseButton from "../components/ui/BaseButton.vue";
-import BaseCard from "../components/ui/BaseCard.vue";
 import BaseConfirmModal from "../components/ui/BaseConfirmModal.vue";
-import BaseEmpty from "../components/ui/BaseEmpty.vue";
 import BaseInput from "../components/ui/BaseInput.vue";
 import BaseModal from "../components/ui/BaseModal.vue";
-import BaseTabs from "../components/ui/BaseTabs.vue";
 import MenuIcon from "../components/ui/MenuIcon.vue";
 import StockSearchModal from "../components/business/StockSearchModal.vue";
 import WatchlistBatchAddModal from "../components/business/WatchlistBatchAddModal.vue";
 import WatchlistGroupEditModal from "../components/business/WatchlistGroupEditModal.vue";
-import WatchlistTable from "../components/business/WatchlistTable.vue";
-import WatchlistComparePanel from "../components/business/WatchlistComparePanel.vue";
+import WatchlistGroupSettingsModal from "../components/business/WatchlistGroupSettingsModal.vue";
+import WatchlistTiledBoard from "../components/business/WatchlistTiledBoard.vue";
 import { fetchFullQuotes } from "../../common/api/quotes.api.ts";
 import { usePolling } from "../../common/composables/use-polling";
 import { POLLING_INTERVAL } from "../../common/constants/polling.constants.ts";
 import { NOTIFY_SOURCE_WATCHLIST, NOTIFY_TONE } from "../../common/constants/notify.constants.ts";
+import { usePageHeaderSlot, PAGE_HEADER_ACTIONS_TARGET } from "../../common/composables/use-page-header-slot";
 import {
   BATCH_ADD_EXISTS_TEMPLATE,
   BATCH_ADD_MISSING_DETAIL_MAX,
@@ -26,6 +24,8 @@ import {
   BATCH_ADD_SUCCESS_TEMPLATE,
   DEFAULT_GROUP_ID,
 } from "../../common/constants/watchlist.constants.ts";
+import { STORAGE_NS_WATCHLIST_GROUP_HIDDEN } from "../../common/constants/storage-key.constants.ts";
+import { appStorage } from "../../common/utils/app-local-storage";
 import { useWatchlistStore } from "../../common/stores/watchlist";
 import { useNotificationsStore } from "../../common/stores/notifications";
 import { useDataCacheStore } from "../../common/stores/data-cache";
@@ -36,71 +36,33 @@ import type { FullQuote } from "../../common/types/stock-quote.types.ts";
 import type { BatchAddResolveResult, WatchlistStock } from "../../common/types/watchlist.types.ts";
 
 /**
- * 自选股：分组 tab + 搜索添加 + 分组表格，轮询仅拉当前分组标的；
- * 报价映射有内存快照：切回本页先展示上次报价，接口返回后刷新
+ * 自选股（2026-10-27 王总指定：Tab 模式已删除，页面主体 = 分组平铺看板）：
+ * 一个分组一列（参考热点新闻卡片流），卡片拖拽跨列即改分组，轮询拉全量自选行情；
+ * 报价映射有内存快照：切回本页先展示上次报价，接口返回后刷新；
+ * 分组列的顺序与显隐经「分组设置」弹窗调整（热点新闻源设置同款交互），持久化
  */
 const watchlistStore = useWatchlistStore();
 const dataCache = useDataCacheStore();
 const notifyStore = useNotificationsStore();
 
-/** 当前激活分组 id */
-const activeGroupId = ref<string>(DEFAULT_GROUP_ID);
+/** 页头挂载守卫（「分组设置」按钮 Teleport 到页头，KeepAlive 页面防残留） */
+const { active: headerSlotActive } = usePageHeaderSlot();
 
-/** 激活分组（容错回退到首个分组） */
-const activeGroup = computed(
-  () =>
-    watchlistStore.groups.find((group) => group.id === activeGroupId.value) ??
-    watchlistStore.groups[0],
-);
+// ---------- 行情（全量自选，轮询；快照播种） ----------
 
-/** 分组 tab 选项（数量移到卡片标题展示） */
-const groupTabOptions = computed(() =>
-  watchlistStore.groups.map((group) => ({
-    label: group.name,
-    value: group.id,
-  })),
-);
-
-/** 卡片内容视图：table = 分组表格（默认）/ compare = 归一化叠加对比 */
-const cardView = ref<"table" | "compare">("table");
-
-/** 当前分组报价映射（key 为 FullQuote.code 原始形态；快照播种） */
+/** 全量报价映射（key 为 FullQuote.code 原始形态；快照播种） */
 const quotesMap = ref<Record<string, FullQuote>>(
   dataCache.get<Record<string, FullQuote>>(
     DATA_CACHE_KEY.WATCHLIST_QUOTES_MAP,
   ) ?? {},
 );
 
-/**
- * 行情首载中：表格以骨架屏代替 `--` 闪现（有快照则直接展示快照，不进骨架）
- *
- * **只在「当前分组一条报价都还没有」时置 true**。这个标记一旦翻 true，
- * 模板就会整表卸载换成骨架屏、数据回来再重建 —— 表现为「整个列表闪一下」，
- * 顺带丢掉滚动位置与悬停态。常规轮询刷新只覆盖 `quotesMap`（行 key 不变，
- * DOM 原地复用），绝不翻这个标记。
- */
-const isQuotesLoading = ref(Object.keys(quotesMap.value).length === 0);
-
-/**
- * 当前分组是否已经有任意一条报价（用来区分「首载」与「常规刷新」）
- * @param symbols 当前分组标的符号
- * @returns 是否已有报价
- */
-const hasAnyQuote = (symbols: string[]): boolean =>
-  symbols.some((symbol) => findQuoteBySymbol(quotesMap.value, symbol) !== undefined);
-
-/** 拉取当前分组全部标的行情（成功后写快照） */
-const fetchActiveGroupQuotes = async (): Promise<void> => {
-  const symbols = activeGroup.value?.stocks.map((stock) => stock.symbol) ?? [];
+/** 拉取全量自选股行情（成功后写快照） */
+const fetchQuotes = async (): Promise<void> => {
+  const symbols = watchlistStore.allSymbols;
   if (symbols.length === 0) {
     quotesMap.value = {};
-    isQuotesLoading.value = false;
     return;
-  }
-  // 首次进页 / 切到新分组才会一条报价都没有 → 此时才值得走骨架屏；
-  // 同分组的周期性刷新静默覆盖数据即可
-  if (!hasAnyQuote(symbols)) {
-    isQuotesLoading.value = true;
   }
   try {
     const quotes = await fetchFullQuotes(symbols);
@@ -108,48 +70,59 @@ const fetchActiveGroupQuotes = async (): Promise<void> => {
       quotes.map((quote) => [quote.code, quote]),
     );
     dataCache.set(DATA_CACHE_KEY.WATCHLIST_QUOTES_MAP, quotesMap.value);
-  } finally {
-    // 已经是 false 时赋值不触发更新（ref 做同值比较），因此不产生多余渲染
-    isQuotesLoading.value = false;
+  } catch (error) {
+    console.error('[watchlist] quotes', error);
   }
 };
 
 usePolling({
-  task: fetchActiveGroupQuotes,
+  task: fetchQuotes,
   intervalMs: POLLING_INTERVAL.QUOTES_INTRADAY,
   tradingAware: true,
 });
 
-// 切换分组后立即补拉一次
-watch(activeGroupId, () => {
-  void fetchActiveGroupQuotes();
-});
+// ---------- 分组列顺序与显隐（分组设置弹窗，热点新闻源设置同款交互） ----------
 
-/** 新建分组弹窗开关（2026-10-22 王总指定：页内输入框移除，改弹窗创建） */
-const createGroupOpen = ref(false);
+/** 隐藏的分组 id 列表（appStorage 持久化；分组删除时顺手清理） */
+const hiddenGroupIds = ref<string[]>(
+  JSON.parse(appStorage.getItem(STORAGE_NS_WATCHLIST_GROUP_HIDDEN) ?? '[]') as string[],
+);
 
-/** 新分组名称输入（弹窗内；最多 8 个字） */
-const newGroupName = ref("");
+/** 展示的分组（已过滤隐藏；顺序 = store 分组顺序 = 设置弹窗确认后的顺序） */
+const visibleGroups = computed(() =>
+  watchlistStore.groups.filter((group) => !hiddenGroupIds.value.includes(group.id)),
+);
 
-/** 打开新建分组弹窗（顺手清掉上次的输入） */
-const onCreateGroupOpen = (): void => {
-  newGroupName.value = "";
-  createGroupOpen.value = true;
+/** 分组设置弹窗条目（勾选 + 拖拽草稿的数据源；默认组不可删） */
+const groupSettingsItems = computed(() =>
+  watchlistStore.groups.map((group) => ({
+    value: group.id,
+    label: group.name,
+    enabled: !hiddenGroupIds.value.includes(group.id),
+    deletable: group.id !== DEFAULT_GROUP_ID,
+  })),
+);
+
+/** 分组设置弹窗开关 */
+const groupSettingsOpen = ref(false);
+
+/**
+ * 分组设置确认：按拖拽结果重排分组（store），勾选结果落隐藏列表（appStorage）
+ * @param items 弹窗回传的分组设置（顺序即展示顺序）
+ */
+const onGroupSettingsConfirm = (items: { value: string; enabled: boolean }[]): void => {
+  watchlistStore.reorderGroups(items.map((item) => item.value));
+  hiddenGroupIds.value = items.filter((item) => !item.enabled).map((item) => item.value);
+  appStorage.setItem(
+    STORAGE_NS_WATCHLIST_GROUP_HIDDEN,
+    JSON.stringify(hiddenGroupIds.value),
+  );
 };
 
-/** 新建分组并切换过去（弹窗「创建分组」；空名由确认按钮禁用兜底） */
-const onAddGroup = (): void => {
-  const name = newGroupName.value.trim();
-  if (!name) {
-    return;
-  }
-  const group = watchlistStore.addGroup(name);
-  activeGroupId.value = group.id;
-  createGroupOpen.value = false;
-};
+// ---------- 删除分组（分组设置弹窗行内按钮触发，二次确认后生效） ----------
 
 /** 删除分组确认弹窗开关 */
-const showRemoveConfirm = ref(false);
+const showRemoveGroupConfirm = ref(false);
 
 /** 待删除的分组 id（在弹窗回调里消费） */
 const pendingRemoveGroupId = ref<string | null>(null);
@@ -163,178 +136,115 @@ const onRemoveGroup = (groupId: string): void => {
     return;
   }
   pendingRemoveGroupId.value = groupId;
-  showRemoveConfirm.value = true;
+  showRemoveGroupConfirm.value = true;
 };
 
-/** 弹窗确认后的实际删除（删除后回退到默认组） */
-const onConfirmRemove = (): void => {
+/** 弹窗确认后的实际删除（从隐藏列表顺手清理，避免残留脏 id） */
+const onConfirmRemoveGroup = (): void => {
   const groupId = pendingRemoveGroupId.value;
   if (!groupId) {
     return;
   }
   watchlistStore.removeGroup(groupId);
-  if (activeGroupId.value === groupId) {
-    activeGroupId.value = DEFAULT_GROUP_ID;
-  }
+  hiddenGroupIds.value = hiddenGroupIds.value.filter((id) => id !== groupId);
+  appStorage.setItem(
+    STORAGE_NS_WATCHLIST_GROUP_HIDDEN,
+    JSON.stringify(hiddenGroupIds.value),
+  );
   pendingRemoveGroupId.value = null;
 };
+
+// ---------- 新建分组（弹窗创建；名称最多 8 个字） ----------
+
+/** 新建分组弹窗开关 */
+const createGroupOpen = ref(false);
+
+/** 新分组名称输入（弹窗内；最多 8 个字） */
+const newGroupName = ref("");
+
+/** 打开新建分组弹窗（顺手清掉上次的输入） */
+const onCreateGroupOpen = (): void => {
+  newGroupName.value = "";
+  createGroupOpen.value = true;
+};
+
+/** 新建分组（空名由确认按钮禁用兜底） */
+const onAddGroup = (): void => {
+  const name = newGroupName.value.trim();
+  if (!name) {
+    return;
+  }
+  watchlistStore.addGroup(name);
+  createGroupOpen.value = false;
+};
+
+// ---------- 添加 / 批量添加（2026-10-28 王总指定：入口移到各分组列头，落点 = 点的分组） ----------
+
+/**
+ * 分组名（通知 / 批量弹窗提示用；未知 id 回落「默认分组」）
+ * @param groupId 分组 id
+ * @returns 分组名
+ */
+const groupNameOf = (groupId: string): string =>
+  watchlistStore.groups.find((group) => group.id === groupId)?.name ?? '默认分组';
 
 /** 添加股票弹窗开关 */
 const searchModalOpen = ref(false);
 
+/** 添加股票的落点分组（列头 icon 点击时写入） */
+const searchTargetGroupId = ref<string>(DEFAULT_GROUP_ID);
+
 /**
- * 搜索结果加入当前分组自选
+ * 从分组列头打开添加弹窗（落点 = 该分组）
+ * @param groupId 分组 id
+ */
+const onColumnAdd = (groupId: string): void => {
+  searchTargetGroupId.value = groupId;
+  searchModalOpen.value = true;
+};
+
+/**
+ * 搜索结果加入目标分组自选
  * @param result 搜索结果
  */
 const onAddStock = (result: SearchResult): void => {
   watchlistStore.addStock(
     { symbol: result.code, name: result.name, addedAt: Date.now() },
-    activeGroup.value?.id ?? DEFAULT_GROUP_ID,
+    searchTargetGroupId.value,
   );
 };
-
-// ---------- 从当前分组移除（操作列删除按钮，二次确认后生效） ----------
-
-/** 移除自选股确认弹窗开关 */
-const showRemoveStockConfirm = ref(false);
-
-/** 待移除的自选股符号（在弹窗回调里消费） */
-const pendingRemoveSymbol = ref<string | null>(null);
-
-/** 待移除的条目（取当前分组内的行数据，用于弹窗文案） */
-const pendingRemoveStock = computed(
-  () =>
-    activeGroup.value?.stocks.find((stock) => stock.symbol === pendingRemoveSymbol.value) ?? null,
-);
-
-/**
- * 该票除当前分组外还归属几个分组
- *
- * 用来决定确认文案：还有别的归属时强调「其余分组不受影响」，
- * 否则说明这是最后一次移除（这票会从自选里彻底消失）。
- * @returns 其余分组数量
- */
-const pendingRemoveOtherGroupCount = computed(() => {
-  const symbol = pendingRemoveSymbol.value;
-  if (!symbol) {
-    return 0;
-  }
-  const currentGroupId = activeGroup.value?.id;
-  return watchlistStore
-    .groupIdsOfSymbol(symbol)
-    .filter((groupId) => groupId !== currentGroupId).length;
-});
-
-/** 确认弹窗正文 */
-const removeStockConfirmContent = computed(() => {
-  const stock = pendingRemoveStock.value;
-  if (!stock) {
-    return '';
-  }
-  const otherCount = pendingRemoveOtherGroupCount.value;
-  const tail =
-    otherCount > 0
-      ? `该股仍保留在其余 ${otherCount} 个分组中，不受影响。`
-      : '该股将不再出现在任何分组，之后可用「添加股票」重新加入。';
-  return `确认将「${stock.name}」从「${activeGroup.value?.name ?? ''}」分组移除？${tail}`;
-});
-
-/**
- * 请求把某只自选股从**当前分组**移除（先弹二次确认，确认后才落库）
- * @param symbol 股票符号
- */
-const onRemoveStock = (symbol: string): void => {
-  if (!activeGroup.value) {
-    return;
-  }
-  pendingRemoveSymbol.value = symbol;
-  showRemoveStockConfirm.value = true;
-};
-
-/** 确认移除（仅当前分组；其他分组的归属不动，跨分组调整走操作列的编辑弹窗） */
-const onConfirmRemoveStock = (): void => {
-  const symbol = pendingRemoveSymbol.value;
-  const groupId = activeGroup.value?.id;
-  if (symbol && groupId) {
-    watchlistStore.removeStock(groupId, symbol);
-  }
-  pendingRemoveSymbol.value = null;
-};
-
-/**
- * 拖拽重排当前分组自选顺序
- * @param fromIndex 拖起条目下标
- * @param toIndex 放置目标下标
- */
-const onReorderStock = (fromIndex: number, toIndex: number): void => {
-  if (activeGroup.value) {
-    watchlistStore.reorderStock(activeGroup.value.id, fromIndex, toIndex);
-  }
-};
-
-// ---------- 分组归属编辑弹窗（操作列的编辑按钮触发） ----------
-
-/** 分组归属弹窗开关 */
-const editGroupsOpen = ref(false);
-
-/** 待编辑归属的自选股（关闭时保留上一次的值，避免关闭动画期间内容跳空） */
-const editingStock = ref<WatchlistStock | null>(null);
-
-/**
- * 打开分组归属弹窗
- * @param stock 表格行对应的自选股条目
- */
-const onEditStockGroups = (stock: WatchlistStock): void => {
-  editingStock.value = stock;
-  editGroupsOpen.value = true;
-};
-
-/**
- * 确认分组归属：按勾选结果同步（勾上=加入该组，取消=从该组移除）
- *
- * 名称优先取最新报价（上游可能改名），条目原有的加入时间保持不变
- * @param groupIds 弹窗回传的勾选分组 id 列表
- */
-const onConfirmStockGroups = (groupIds: string[]): void => {
-  const stock = editingStock.value;
-  if (!stock) {
-    return;
-  }
-  watchlistStore.syncStockGroups(
-    {
-      symbol: stock.symbol,
-      name: findQuoteBySymbol(quotesMap.value, stock.symbol)?.name ?? stock.name,
-      addedAt: stock.addedAt,
-    },
-    groupIds,
-  );
-};
-
-// ---------- 批量添加（弹窗内解析 + 校验，这里落库并弹浮窗） ----------
 
 /** 批量添加弹窗开关 */
 const batchAddOpen = ref(false);
 
+/** 批量添加的落点分组（列头 icon 点击时写入） */
+const batchTargetGroupId = ref<string>(DEFAULT_GROUP_ID);
+
+/** 批量弹窗提示用落点分组名 */
+const batchTargetGroupName = computed(() => groupNameOf(batchTargetGroupId.value));
+
 /**
- * 批量添加确认：把校验通过的标的逐个加入当前分组，并提示查不到的代码
- *
- * 弹窗已经用行情接口确认过代码存在，这里只处理「加得进 / 已在分组里」，
- * 再按用户能看懂的方式反馈：成功一条、查不到的逐条（多于 3 条合并成一条防刷屏）。
+ * 从分组列头打开批量添加弹窗（落点 = 该分组）
+ * @param groupId 分组 id
+ */
+const onColumnBatchAdd = (groupId: string): void => {
+  batchTargetGroupId.value = groupId;
+  batchAddOpen.value = true;
+};
+
+/**
+ * 批量添加确认：把校验通过的标的逐个加入目标分组，并提示查不到的代码
  * @param payload 弹窗回传的校验结果
  */
 const onConfirmBatchAdd = (payload: BatchAddResolveResult): void => {
-  const group = activeGroup.value;
-  if (!group) {
-    return;
-  }
-  // addedAt 递增，保持用户输入的先后顺序（同毫秒入库时列表顺序才稳定）
+  const groupId = batchTargetGroupId.value;
   const base = Date.now();
   let added = 0;
   let skipped = 0;
   payload.items.forEach((item, index) => {
     const ok = watchlistStore.addStock(
       { symbol: item.symbol, name: item.name, addedAt: base + index },
-      group.id,
+      groupId,
     );
     if (ok) {
       added += 1;
@@ -347,7 +257,7 @@ const onConfirmBatchAdd = (payload: BatchAddResolveResult): void => {
     notifyStore.push({
       title: BATCH_ADD_SUCCESS_TEMPLATE.replace('{count}', String(added)).replace(
         '{group}',
-        group.name,
+        batchTargetGroupName.value,
       ),
       body: skipped > 0 ? BATCH_ADD_SKIPPED_TEMPLATE.replace('{skipped}', String(skipped)) : '',
       tone: NOTIFY_TONE.PRIMARY,
@@ -357,7 +267,7 @@ const onConfirmBatchAdd = (payload: BatchAddResolveResult): void => {
     notifyStore.push({
       title: BATCH_ADD_EXISTS_TEMPLATE.replace('{count}', String(skipped)).replace(
         '{group}',
-        group.name,
+        batchTargetGroupName.value,
       ),
       tone: NOTIFY_TONE.FLAT,
       source: NOTIFY_SOURCE_WATCHLIST,
@@ -389,114 +299,148 @@ const onConfirmBatchAdd = (payload: BatchAddResolveResult): void => {
     source: NOTIFY_SOURCE_WATCHLIST,
   });
 };
+
+// ---------- 从分组移除（卡片 hover 操作按钮，二次确认后只清该分组） ----------
+
+/** 移除自选股确认弹窗开关 */
+const showRemoveStockConfirm = ref(false);
+
+/** 待移除条目（分组 id + 符号） */
+const pendingRemove = ref<{ groupId: string; symbol: string } | null>(null);
+
+/** 待移除条目信息（弹窗文案用：股票名 + 分组名） */
+const pendingRemoveInfo = computed(() => {
+  const payload = pendingRemove.value;
+  if (!payload) {
+    return null;
+  }
+  const group = watchlistStore.groups.find((item) => item.id === payload.groupId);
+  const stock = group?.stocks.find((item) => item.symbol === payload.symbol) ?? null;
+  return { groupName: group?.name ?? '', stock };
+});
+
+/** 该票除待移除分组外还归属几个分组（决定确认文案尾部） */
+const pendingRemoveOtherGroupCount = computed(() => {
+  const payload = pendingRemove.value;
+  if (!payload) {
+    return 0;
+  }
+  return watchlistStore
+    .groupIdsOfSymbol(payload.symbol)
+    .filter((groupId) => groupId !== payload.groupId).length;
+});
+
+/** 确认弹窗正文 */
+const removeStockConfirmContent = computed(() => {
+  const info = pendingRemoveInfo.value;
+  if (!info?.stock) {
+    return '';
+  }
+  const otherCount = pendingRemoveOtherGroupCount.value;
+  const tail =
+    otherCount > 0
+      ? `该股仍保留在其余 ${otherCount} 个分组中，不受影响。`
+      : '该股将不再出现在任何分组，之后可用「添加股票」重新加入。';
+  return `确认将「${info.stock.name}」从「${info.groupName}」分组移除？${tail}`;
+});
+
+/**
+ * 请求把某只自选股从指定分组移除（先弹二次确认，确认后才落库）
+ * @param payload 分组 id + 股票符号
+ * @param payload.groupId 分组 id
+ * @param payload.symbol 股票符号
+ */
+const onRemoveStock = (payload: { groupId: string; symbol: string }): void => {
+  pendingRemove.value = payload;
+  showRemoveStockConfirm.value = true;
+};
+
+/** 确认移除（仅该分组；其他分组的归属不动，跨分组调整走卡片拖拽 / 编辑弹窗） */
+const onConfirmRemoveStock = (): void => {
+  const payload = pendingRemove.value;
+  if (payload) {
+    watchlistStore.removeStock(payload.groupId, payload.symbol);
+  }
+  pendingRemove.value = null;
+};
+
+// ---------- 分组归属编辑弹窗（卡片 hover 编辑按钮触发，可多选分组） ----------
+
+/** 分组归属弹窗开关 */
+const editGroupsOpen = ref(false);
+
+/** 待编辑归属的自选股（关闭时保留上一次的值，避免关闭动画期间内容跳空） */
+const editingStock = ref<WatchlistStock | null>(null);
+
+/**
+ * 打开分组归属弹窗
+ * @param stock 看板卡片对应的自选股条目
+ */
+const onEditStockGroups = (stock: WatchlistStock): void => {
+  editingStock.value = stock;
+  editGroupsOpen.value = true;
+};
+
+/**
+ * 确认分组归属：按勾选结果同步（勾上=加入该组，取消=从该组移除）
+ *
+ * 名称优先取最新报价（上游可能改名），条目原有的加入时间保持不变
+ * @param groupIds 弹窗回传的勾选分组 id 列表
+ */
+const onConfirmStockGroups = (groupIds: string[]): void => {
+  const stock = editingStock.value;
+  if (!stock) {
+    return;
+  }
+  watchlistStore.syncStockGroups(
+    {
+      symbol: stock.symbol,
+      name: findQuoteBySymbol(quotesMap.value, stock.symbol)?.name ?? stock.name,
+      addedAt: stock.addedAt,
+    },
+    groupIds,
+  );
+};
 </script>
 
 <template>
-  <div class="flex h-[calc(100dvh-6.5rem)] min-h-0 flex-col gap-4">
-    <!-- 分组 tab -->
-    <div class="flex shrink-0 items-center gap-2">
-      <div class="min-w-0 flex-1 overflow-x-auto overflow-y-hidden">
-        <BaseTabs
-          v-model="activeGroupId"
-          :options="groupTabOptions"
-          variant="underline"
-        />
+  <div class="flex h-full min-h-0 flex-col gap-4">
+    <!-- 页头：分组设置 + 新建分组（2026-10-28 王总指定：新建分组从内容区移到页头，与分组设置同处） -->
+    <Teleport v-if="headerSlotActive" :to="PAGE_HEADER_ACTIONS_TARGET">
+      <div class="flex items-center gap-2">
+        <BaseButton variant="ghost" data-track="WATCHLIST_GROUP_CREATE_OPEN" @click="onCreateGroupOpen">
+          <MenuIcon name="plus" :size="14" />
+          新建分组
+        </BaseButton>
+        <BaseButton variant="ghost" data-track="WATCHLIST_GROUP_SETTINGS" @click="groupSettingsOpen = true">
+          <MenuIcon name="settings" :size="14" />
+          分组设置
+        </BaseButton>
       </div>
-    </div>
+    </Teleport>
 
-    <!-- 添加股票 / 批量添加 / 新建分组（2026-10-22 王总指定：原右侧「输入框 + 新建」
-         移除，新建分组改为左侧按钮 + 弹窗创建） -->
-    <div class="flex shrink-0 flex-wrap items-center gap-2">
-      <BaseButton variant="ghost" @click="searchModalOpen = true">
-        <MenuIcon name="plus" :size="14" />
-        添加股票
-      </BaseButton>
-      <BaseButton
-        variant="ghost"
-        data-track="WATCHLIST_BATCH_ADD"
-        @click="batchAddOpen = true"
-      >
-        <MenuIcon name="tradeImport" :size="14" />
-        批量添加
-      </BaseButton>
-      <BaseButton
-        variant="ghost"
-        data-track="WATCHLIST_GROUP_CREATE_OPEN"
-        @click="onCreateGroupOpen"
-      >
-        <MenuIcon name="plus" :size="14" />
-        新建分组
-      </BaseButton>
-    </div>
-
-    <!-- 分组表格（撑满卡片剩余高度；表格容器必须是卡片的直接 flex 子项，
-         所以这里不留普通 block 包裹层，滚动容器类直接透传给 BaseTable） -->
-    <BaseCard
-      fill
+    <!-- 分组平铺看板：一个分组一列（列顺序/显隐 = 分组设置），卡片 = 名称/现价/涨跌幅，
+         hover 展开全部字段并浮现操作按钮；卡片拖到别的分组列即修改归属；
+         列头 icon 打开添加/批量添加弹窗（落点 = 该分组，2026-10-28） -->
+    <WatchlistTiledBoard
       class="min-h-0 flex-1"
-      :title="`当前分组-${activeGroup?.name ?? ''}（${activeGroup?.stocks.length ?? 0}只股票）`"
-    >
-      <template #extra>
-        <!-- 视图切换：表格 / 叠加对比 -->
-        <div class="flex shrink-0 items-center gap-1">
-          <button
-            type="button"
-            class="pressable rounded-md p-1.5 active:scale-90"
-            :class="cardView === 'table' ? 'bg-primary-weak text-primary' : 'text-text-tertiary hover:bg-flat-weak hover:text-text'"
-            aria-label="切换到分组表格视图"
-            @click="cardView = 'table'"
-          >
-            <MenuIcon name="menu" :size="14" />
-          </button>
-          <button
-            type="button"
-            class="pressable rounded-md p-1.5 active:scale-90"
-            :class="cardView === 'compare' ? 'bg-primary-weak text-primary' : 'text-text-tertiary hover:bg-flat-weak hover:text-text'"
-            aria-label="切换到叠加对比视图"
-            @click="cardView = 'compare'"
-          >
-            <MenuIcon name="filter" :size="14" />
-          </button>
-          <button
-            v-if="activeGroup?.id !== DEFAULT_GROUP_ID"
-            type="button"
-            class="pressable shrink-0 rounded-md p-1.5 text-text-tertiary hover:bg-up-weak hover:text-down active:scale-90"
-            :aria-label="`删除分组 ${activeGroup?.name}`"
-            @click="onRemoveGroup(activeGroup.id)"
-          >
-            <MenuIcon name="trash" :size="14" />
-          </button>
-        </div>
-      </template>
-      <!-- 对比视图：归一化叠加曲线 + 统计 -->
-      <WatchlistComparePanel
-        v-if="cardView === 'compare'"
-        :stocks="activeGroup?.stocks ?? []"
-      />
-      <template v-else-if="(activeGroup?.stocks.length ?? 0) > 0">
-        <WatchlistTable
-          v-if="!isQuotesLoading"
-          scroll-class="table-scroll-fill"
-          :stocks="activeGroup!.stocks"
-          :quotes-map="quotesMap"
-          @remove="onRemoveStock"
-          @reorder="onReorderStock"
-          @edit="onEditStockGroups"
-        />
-        <div v-else class="space-y-3" aria-hidden="true">
-          <div
-            v-for="i in Math.min(activeGroup!.stocks.length, 5)"
-            :key="i"
-            class="animate-pulse"
-          >
-            <div class="h-9 rounded-lg bg-flat-weak" />
-          </div>
-        </div>
-      </template>
-      <BaseEmpty v-else text="还没有自选股，搜索代码或名称添加吧" />
-    </BaseCard>
+      :groups="visibleGroups"
+      :quotes-map="quotesMap"
+      @edit="onEditStockGroups"
+      @remove="onRemoveStock"
+      @add="onColumnAdd"
+      @batch-add="onColumnBatchAdd"
+    />
 
-    <!-- 新建分组弹窗（2026-10-22 王总指定：名称最多 8 个字，创建后切到新分组） -->
+    <!-- 页头「分组设置」弹窗（拖拽排序 + 勾选显隐 + 删除入口） -->
+    <WatchlistGroupSettingsModal
+      v-model:open="groupSettingsOpen"
+      :items="groupSettingsItems"
+      @confirm="onGroupSettingsConfirm"
+      @remove="onRemoveGroup"
+    />
+
+    <!-- 新建分组弹窗（名称最多 8 个字，创建后默认显示、排末尾） -->
     <BaseModal v-model:open="createGroupOpen" title="新建分组" max-width-class="max-w-sm">
       <div class="space-y-2">
         <BaseInput
@@ -515,17 +459,17 @@ const onConfirmBatchAdd = (payload: BatchAddResolveResult): void => {
       </template>
     </BaseModal>
 
-    <!-- 删除分组二次确认弹窗（antd Modal 风格） -->
+    <!-- 删除分组二次确认弹窗（分组设置弹窗行内删除按钮触发） -->
     <BaseConfirmModal
-      v-model:open="showRemoveConfirm"
+      v-model:open="showRemoveGroupConfirm"
       title="删除分组"
       :content="`确认删除「${watchlistStore.groups.find((g) => g.id === pendingRemoveGroupId)?.name ?? ''}」分组？组内 ${watchlistStore.groups.find((g) => g.id === pendingRemoveGroupId)?.stocks.length ?? 0} 只自选股将一并移除。`"
       ok-text="删除"
       ok-variant="danger"
-      @ok="onConfirmRemove"
+      @ok="onConfirmRemoveGroup"
     />
 
-    <!-- 移除自选股二次确认弹窗（确认后只清当前分组） -->
+    <!-- 移除自选股二次确认弹窗（确认后只清该分组） -->
     <BaseConfirmModal
       v-model:open="showRemoveStockConfirm"
       title="移除自选股"
@@ -547,14 +491,14 @@ const onConfirmBatchAdd = (payload: BatchAddResolveResult): void => {
       "
     />
 
-    <!-- 批量添加弹窗（粘贴代码 → 校验存在性 → 回传后落库并提示） -->
+    <!-- 批量添加弹窗（粘贴代码 → 校验存在性 → 回传后落库并提示；落点 = 触发列的分组） -->
     <WatchlistBatchAddModal
       v-model:open="batchAddOpen"
-      :group-name="activeGroup?.name ?? ''"
+      :group-name="batchTargetGroupName"
       @confirm="onConfirmBatchAdd"
     />
 
-    <!-- 分组归属编辑弹窗（操作列编辑按钮触发；勾选后确认才生效） -->
+    <!-- 分组归属编辑弹窗（卡片 hover 编辑按钮触发；勾选后确认才生效） -->
     <WatchlistGroupEditModal
       v-model:open="editGroupsOpen"
       :stock="editingStock"

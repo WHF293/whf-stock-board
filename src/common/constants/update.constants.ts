@@ -1,17 +1,35 @@
 /**
  * 应用自动更新（GitHub Releases）常量
  *
- * 链路：启动延迟检测 latest release → 发现有新版（titlebar 徽标）→ 点击流式下载
- * NSIS 安装包到 $APPDATA/updates/ → 下载完变「立即更新」→ 点击后 Rust 侧以
- * /S（静默）+ /R（装完自动重启）启动安装包并退出当前应用。
+ * 链路：启动延迟检测 latest release → 发现有新版（titlebar 版本号标签亮「新版本」）
+ * → 点击流式下载 NSIS 安装包到 $APPDATA/updates/（进度实时显示）→ 下载完立即
+ * Rust 侧以 /S（静默）+ /R（装完自动重启）启动安装包并退出当前应用，一站完成。
  *
  * 网络口径（用户指定）：检测请求失败 / 无网 / 限流 一律静默按「无新版本」处理，
  * 不弹任何报错；仅设置页手动检查时在按钮文案上给轻提示。
  */
 
-/** GitHub Releases 最新版 API（复用 app-info.constants 的仓库地址口径） */
+/** GitHub Releases 最新版 API（兜底通道：匿名请求按出口 IP 限流 60 次/时，易 403） */
 export const UPDATE_LATEST_API =
   'https://api.github.com/repos/WHF293/whf-stock-board/releases/latest';
+
+/**
+ * GitHub Releases 最新版网页地址（检测主通道，2026-10-27 实测切换）：
+ * `/releases/latest` 302 → `/tag/vX.Y.Z`，跟随重定向后从 response.url 解析版本号。
+ * 不走 api.github.com 的按 IP 匿名配额（王总网络出口 IP 配额常态耗尽，直连与
+ * 走代理都 403，是「更新一直失败」的根因），且直连可用、无需代理。
+ */
+export const UPDATE_RELEASE_PAGE_URL =
+  'https://github.com/WHF293/whf-stock-board/releases/latest';
+
+/**
+ * NSIS 安装包下载地址模板（`{version}` 替换为版本号，如 4.21.0）
+ *
+ * 与 CI release 产物命名规则一致：productName_version_x64-setup.exe
+ * （tauri.conf.json productName=stock-board）。改 productName / 发版产物命名时同步此模板
+ */
+export const UPDATE_ASSET_URL_TEMPLATE =
+  'https://github.com/WHF293/whf-stock-board/releases/download/v{version}/stock-board_{version}_x64-setup.exe';
 
 /** GitHub Accept 头（REST 惯例，稳定返回 JSON） */
 export const UPDATE_API_ACCEPT = 'application/vnd.github+json';
@@ -39,3 +57,6 @@ export const UPDATE_AUTO_CHECK_DELAY_MS = 6_000;
 
 /** 下载进度精确到整数百分比即可 */
 export const UPDATE_PROGRESS_PRECISION = 100;
+
+/** 顶栏版本号标签的瞬态反馈展示时长（毫秒）：「已是最新」/ 失败原因展示后复位回版本号 */
+export const UPDATE_FEEDBACK_RESET_MS = 2_500;

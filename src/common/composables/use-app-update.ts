@@ -60,14 +60,11 @@ const check = async (silent: boolean): Promise<void> => {
   lastMessage.value = '';
   try {
     const currentVersion = await getCurrentAppVersion();
+    // 检测失败抛错带具体原因（2026-10-27 起，原先静默吞掉导致「更新一直失败」无从排查）
     const info = await fetchLatestRelease();
-    if (!info) {
-      // 网络不通 / 未开源 / 限流：按「无新版本」处理（用户指定口径），仅手动检测给轻提示
-      status.value = 'idle';
-      if (!silent) lastMessage.value = '暂时无法获取版本信息（网络不可用或仓库未发布），稍后再试';
-      return;
-    }
-    if (compareVersion(currentVersion, info.version) >= 0) {
+    // compareVersion 约定「远端（第二参）更新返回 1」：远端 <= 本地才算已是最新。
+    // 此前写成 >= 0 把条件整个反了——有新版时恒判「已是最新」，v4.23.3 检测不到即此因
+    if (compareVersion(currentVersion, info.version) <= 0) {
       status.value = 'up-to-date';
       return;
     }
@@ -77,6 +74,7 @@ const check = async (silent: boolean): Promise<void> => {
   } catch (error) {
     // 兜底：版本读取等意外异常不得把状态卡死在 checking（徽标永不出现、设置页按钮永久禁用）
     status.value = 'idle';
+    // 自动检测保持静默（不打扰），手动检测展示具体原因
     if (!silent) {
       lastMessage.value = `检查更新失败：${error instanceof Error ? error.message : String(error)}`;
     }

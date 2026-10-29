@@ -302,8 +302,8 @@ const alertValueText = ref('');
 const openAlertEditor = (row: WatchWidgetRow): void => {
   editingAlertSymbol.value = row.symbol;
   alertKind.value = row.alertKind === 'change' ? 'change' : 'price';
-  alertAbove.value = row.alertAbove;
-  alertValueText.value = row.alertValue === null ? '' : String(row.alertValue);
+  alertAbove.value = row.alertAbove !== false;
+  alertValueText.value = row.alertValue == null ? '' : String(row.alertValue);
 };
 
 /** 编辑中的阈值是否为价格型 */
@@ -321,9 +321,19 @@ const alertValuePlaceholder = computed(() =>
   isPriceKind.value ? '如 1700.00' : '如 5.00',
 );
 
+/**
+ * 全角数字 / 全角小数点归一为半角（中文输入法下打出来的「１０」也能识别）
+ * @param text 输入框原文
+ * @returns 归一后的半角文本
+ */
+const normalizeHalfWidth = (text: string): string =>
+  text.replace(/[０-９．]/g, (ch) =>
+    ch === '．' ? '.' : String.fromCharCode(ch.charCodeAt(0) - 0xfee0),
+  );
+
 /** 输入解析出的数值（必须为正数；非法为 null，主窗口侧还会再校验一次） */
 const alertParsedValue = computed<number | null>(() => {
-  const trimmed = alertValueText.value.trim();
+  const trimmed = normalizeHalfWidth(alertValueText.value).trim();
   if (!trimmed) return null;
   const parsed = Number(trimmed);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
@@ -530,10 +540,9 @@ const heatTiles = computed<HeatTile[]>(() => {
               <div class="mt-1.5 flex items-center gap-1.5">
                 <input
                   v-model="alertValueText"
-                  type="number"
+                  type="text"
                   inputmode="decimal"
-                  min="0"
-                  step="any"
+                  autocomplete="off"
                   class="h-6 min-w-0 flex-1 rounded-md border border-flat-weak bg-flat-weak/60 px-1.5 text-[11px] tabular-nums text-text outline-none"
                   :placeholder="alertValuePlaceholder"
                   aria-label="阈值数值"

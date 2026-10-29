@@ -4,7 +4,8 @@ import { onBeforeUnmount, ref } from 'vue';
 /**
  * Dock 面板通用拖拽手柄（仿 Ant Design Splitter）：
  *
- * - 视觉：双竖线 grip icon + 浅色背景卡片，骑在挂载元素左缘、垂直居中
+ * - 视觉：白底圆角胶囊 + 双竖线 grip（参考同花顺投资账本右栏分隔条，
+ *   2026-10-24 王总指定），骑在挂载元素左缘、垂直居中
  * - 交互：长按 ≥ LONG_PRESS_MS 出现贯穿全屏竖线 + 锁定 body 选择；
  *   移动改写宽度（鼠标 X 即面板右缘），松手 commit
  * - 通用：父级通过 setWidth 回调把鼠标位置换算成宽度并经 store 持久化；
@@ -120,15 +121,19 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <!-- 手柄：长按出现贯穿竖线，垂直居中骑在父容器左缘 -->
+  <!-- 手柄：白底圆角胶囊 + 竖向 grip 线（参考同花顺投资账本右栏分隔条样式，
+       王总 2026-10-24 指定——原双细线太不明显），长按出现贯穿竖线，垂直居中骑在父容器左缘 -->
   <button
     type="button"
-    class="pressable absolute left-0 top-1/2 z-30 flex"
-    aria-label="长按拖动调整面板宽度"
+    class="pressable absolute left-0 top-1/2 z-30 flex h-10 w-4 -translate-y-1/2 cursor-col-resize items-center justify-center rounded-full border border-flat-weak bg-surface text-text-tertiary shadow-sm hover:border-primary/50 hover:text-primary"
+    aria-label="拖动调整面板宽度"
+    title="拖动调整面板宽度"
     @pointerdown="onPointerDown"
   >
-    <span class="block h-3 w-px rounded-full bg-current" />
-    <span class="block h-3 w-px rounded-full bg-current" />
+    <span class="flex items-center gap-[3px]">
+      <span class="block h-4 w-px rounded-full bg-current" />
+      <span class="block h-4 w-px rounded-full bg-current" />
+    </span>
   </button>
 
   <!-- 拖拽中贯穿竖线（Teleport 到 body 避免被父级 overflow 裁剪） -->

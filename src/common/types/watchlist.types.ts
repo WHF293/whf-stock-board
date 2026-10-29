@@ -23,6 +23,11 @@ export interface WatchlistGroup {
 }
 
 /**
+ * 看板分组内排序模式（2026-10-28 王总指定）：custom = 自定义拖拽顺序，asc / desc = 按涨跌幅
+ */
+export type WatchlistSortMode = 'custom' | 'asc' | 'desc';
+
+/**
  * 批量添加：一条从用户输入解析出来的代码候选
  */
 export interface BatchSymbolCandidate {

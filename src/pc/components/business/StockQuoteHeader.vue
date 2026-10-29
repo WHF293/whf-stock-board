@@ -17,20 +17,19 @@ import type { FullQuote } from '../../../common/types/stock-quote.types.ts';
 /**
  * 个股报价头（参考投资账本侧栏排版）：
  *
- * - 名称居中大字 + 代码居中小字；右上角自选按钮（两态统一文案「自选」，未加 = 主色、已加 = 红色）
+ * - 2026-10-24 王总指定改版：名称/代码左对齐（原居中），右上角为高光按钮
+ *   「查看更多」（点击进个股详情整页；自选增删由详情页顶栏承接，侧栏不再放）
  * - 下方：左侧现价大字 + 涨跌额/幅；右侧 3x3 紧凑指标网格
  *   （高 / 低 / 开 / 市值 / 流通 / 量 / 换 / 额 / 市盈——label 灰 + 值紧跟）
  * - stacked 模式（窄栏场景，如详情页右栏）：现价块与指标网格上下堆叠，
  *   指标网格占满整行宽度，避免格内长数值溢出重叠
- * - metricsOnly 模式（名称/代码/现价/涨跌/自选按钮由页面顶栏承载时用）：只渲染指标网格
- * - compact 模式（详情页右栏收起态，配合 metricsOnly）：只渲染 高/低/开/收 四字段，
- *   两列排布（其余市值/流通等 5 项指标收起时不展示，为 K 线让宽度）
+ * - metricsOnly 模式（名称/代码/现价/涨跌由页面顶栏承载时用）：只渲染指标网格
+ * - compact 模式（详情页右栏收起态，配合 metricsOnly，2026-10-24 王总指定改版）：
+ *   全部 9 项指标**一行一条**单列展示（原高/低/开/收两列），label 左、值右
  */
 const props = defineProps<{
   /** 完整报价；为 null 时展示骨架屏 */
   quote: FullQuote | null;
-  /** 当前股票是否已加入自选（任一分组） */
-  isInWatchlist?: boolean;
   /** 上下堆叠布局（窄栏用；默认横排，同侧栏面板） */
   stacked?: boolean;
   /** 仅指标模式：只渲染 3x3 指标网格 */
@@ -40,10 +39,8 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  /** 点击「自选」按钮（未加自选态）：弹窗选择分组 */
-  'add-to-watchlist': [];
-  /** 点击「自选」按钮（已加自选态）：弹窗选择删除范围 */
-  'remove-from-watchlist': [];
+  /** 点击「查看更多」按钮：打开个股详情整页 */
+  'open-detail': [];
 }>();
 
 const trend = computed(() => getTrendByChangePercent(props.quote?.changePercent ?? 0));
@@ -79,33 +76,24 @@ const metrics = computed<CompactMetric[]>(() => {
 });
 
 /**
- * 收起态紧凑指标（高 / 低 / 开 / 收）：收 = 现价；
- * 高 / 低沿用完整态的趋势色口径（相对昨收）
+ * 收起态紧凑指标：2026-10-24 起收起态展示全部 9 项指标（一行一条），
+ * 与完整态同用 metrics，不再裁剪为 高/低/开/收
  */
-const ohlcMetrics = computed<CompactMetric[]>(() => {
-  const quote = props.quote;
-  if (!quote) return [];
-  return [
-    { label: '高', value: formatPrice(quote.high), tone: getTrendByChangePercent((quote.high ?? 0) - quote.prevClose) },
-    { label: '低', value: formatPrice(quote.low), tone: getTrendByChangePercent((quote.low ?? 0) - quote.prevClose) },
-    { label: '开', value: formatPrice(quote.open) },
-    { label: '收', value: formatPrice(quote.price) },
-  ];
-});
 </script>
 
 <template>
   <BaseSkeleton v-if="!quote" />
-  <!-- 仅指标模式：完整态 3 列指标网格 / 收起态（compact）高/低/开/收 两列 -->
+  <!-- 仅指标模式：完整态 3 列指标网格 / 收起态（compact）全部指标单列一行一条 -->
   <dl
     v-else-if="metricsOnly"
     class="grid w-full gap-x-2 gap-y-1 text-[10px]"
-    :class="compact ? 'grid-cols-2' : 'grid-cols-3'"
+    :class="compact ? 'grid-cols-1 gap-y-0.5' : 'grid-cols-3'"
   >
     <div
-      v-for="metric in compact ? ohlcMetrics : metrics"
+      v-for="metric in metrics"
       :key="metric.label"
-      class="flex min-w-0 items-center justify-end gap-1 tabular-nums"
+      class="flex min-w-0 items-center gap-1 tabular-nums"
+      :class="compact ? 'justify-between' : 'justify-end'"
     >
       <span class="shrink-0 text-text-tertiary">{{ metric.label }}</span>
       <span
@@ -118,36 +106,17 @@ const ohlcMetrics = computed<CompactMetric[]>(() => {
     </div>
   </dl>
   <div v-else class="relative flex flex-col items-center gap-1">
-    <!-- 名称 + 自选按钮（右上角） -->
-    <div class="flex w-full items-center justify-center">
-      <p class="truncate text-sm font-semibold text-text">{{ quote.name }}</p>
-      <div class="absolute right-0 top-0">
-        <!-- 两个状态统一文案「自选」（点击都弹自选编辑弹窗，王总 2026-10-13）；
-             2026-10-17 起用 BaseButton 玻璃按钮（与页头「AI 分析 / 插件设置」同款形状字号），
-             王总 2026-10-17：红色去除——未加 = primary 绿、已加 = ghost 无语义色 -->
-        <BaseButton
-          v-if="!isInWatchlist"
-          variant="primary"
-          @click="emit('add-to-watchlist')"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            class="h-3 w-3"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2.5"
-            stroke-linecap="round"
-          >
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-          自选
-        </BaseButton>
-        <BaseButton v-else variant="ghost" @click="emit('remove-from-watchlist')">
-          自选
-        </BaseButton>
+    <!-- 名称（左对齐）+ 「查看更多」高光按钮（右上角，2026-10-24 王总指定：
+         原自选按钮迁详情页顶栏，此处改为进详情整页的入口） -->
+    <div class="flex w-full items-start justify-between gap-2">
+      <div class="min-w-0">
+        <p class="truncate text-sm font-semibold text-text">{{ quote.name }}</p>
+        <p class="mt-0.5 text-xs text-text-tertiary">{{ quote.code }}</p>
       </div>
+      <BaseButton variant="primary" class="shrink-0" @click="emit('open-detail')">
+        查看更多
+      </BaseButton>
     </div>
-    <p class="text-xs text-text-tertiary">{{ quote.code }}</p>
 
     <!-- 现价 + 涨跌 / 指标网格（stacked 时上下堆叠） -->
     <div

@@ -50,3 +50,20 @@ export const TIMELINE_PCT_AXIS_HEADROOM = 1.1;
  * 请求配置与「补尾部缺口估算」共用本值，避免两处各自写一个上限而漂移。
  */
 export const KLINE_MAX_BARS_PER_REQUEST = 1900;
+
+/**
+ * 新浪 K 线成交量 → 行情报价（手）的换算除数（股/手）
+ *
+ * 实测新浪 K 线 volume 单位为股，与行情快照的「手」差 100 倍
+ * （如湘佳股份 2026-10-23 一字板 volume=3404120 股 = 3.40 万手）；
+ * K 线悬停数据联动到行情头时按本值换算
+ */
+export const KLINE_VOLUME_SHARES_PER_LOT = 100;
+
+/**
+ * 新浪 K 线成交额 → 行情报价（万）的换算除数（元/万）
+ *
+ * 新浪 K 线 amount 单位为元，且仅分钟级周期返回（日 / 周 / 月 K 无此字段，
+ * bar.turnover 恒为 0）；K 线悬停数据联动到行情头时按本值换算
+ */
+export const KLINE_TURNOVER_YUAN_PER_WAN = 10_000;

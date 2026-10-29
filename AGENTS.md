@@ -95,7 +95,7 @@ server/           # vite 中间件：/stock-proxy（仅浏览器 dev 使用）
 宿主不硬编码任何具体插件，新增能力应当写成插件而不是改宿主（`MainLayout.vue` 里只保留面板承载与命令转发）。
 
 > **API 文档在根目录 [`PLUGIN_API.md`](./PLUGIN_API.md)**（九个贡献点字段与默认值、ctx 数据层、
-> 十七个宿主服务、六个内置事件、配额与红线的完整清单）。本节只留架构约定；
+> 二十一个宿主服务、六个内置事件、配额与红线的完整清单）。本节只留架构约定；
 > 写插件前先看那份文档，改本节涉及的能力时同步它。
 >
 > **面向第三方（应用内安装）插件作者的独立 wiki 在 [`PLUGIN_WIKI.md`](./PLUGIN_WIKI.md)**（能力边界、
@@ -155,9 +155,9 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
 ### 宿主接线（别绕开）
 
 - `main.ts` 在 `app.use(router)` **之前**调 `installPlugins(pinia)`（`plugin/setup.ts`）：
-  先 provide 十七个宿主服务（`app:version` / `kernel:runtime` / `app:navigate` / `panel:open` / `panel:close` /
+  先 provide 二十一个宿主服务（`app:version` / `kernel:runtime` / `app:navigate` / `panel:open` / `panel:close` /
   `app:notify` / `app:stock-search` / `app:stock-picker` / `app:stock-open` / `app:watchlist` / `app:polling` /
-  `app:ui` / `app:http` / `app:quotes` / `app:market` / `app:format`，清单以
+  `app:ui` / `app:http` / `app:quotes` / `app:market` / `app:format` / `app:agent-ask`，清单以
   `types/plugin.types.ts` 的 `AppServiceMap` 为准），再挂插件，
   再 `attachPluginRoutes(router, { onVanishedRoute })`（订阅路由注册表版本号，把插件注册 / 卸载翻译成 `addRoute` / 摘除；
   **用户正停留的插件页随插件被撤销时**回调 `onVanishedRoute`，宿主在 `recoverVanishedRoute` 里按
@@ -289,6 +289,26 @@ zip 包模式支持**多选 / 拖拽批量上传**，选中即自动解析，无
   前一个装完后被释放的同 id 包只转正不本轮装，要用户显式再点一次（顶着「升级」提示），绝不静默覆盖。
   安装途中关窗 = 作废剩余安装（`cancelPendingInstalls()`），已经发出去的那次收不回来，跑完即止
 - **信任级别**：插件代码与应用同权限执行（无沙箱），安装弹窗有固定风险提示；写操作类插件需自行确认来源
+
+### 插件市场（多源在线安装，2026-10-27 起）
+
+插件工坊页的两个获取插件入口分工：「插件市场」（在线，多源）与「安装自定义插件」（本地 zip / 粘贴代码）。
+市场实现是 common 层六件套：`types/plugin-market.types.ts` / `constants/plugin-market.constants.ts` /
+`api/plugin-market.api.ts` / `stores/plugin-market.ts` / `composables/use-plugin-market.ts` /
+`pc/components/plugin/PluginMarketModal.vue`。改这块前先读 `.ai/开发方案/2026-10-27-客户端-插件市场与安装入口改名开发方案.md`，要点：
+
+- **主数据统一走 Releases API 解析**（`api.github.com/repos/<repo>/releases`，zip 资产按
+  `<插件id>-<版本>.zip` 文件名口径解析聚合出「最新版 + 历史版本」）——**任何源都不要求提供 `index.json`**，
+  第三方仓库才能即填即用；官方源的 `index.json` 只是 sha256 / changelog 的**增强通道**（失败静默跳过）。
+  内置官方源与在线更新链路同仓库（`PLUGIN_UPDATE_REPO`，即分发仓库而非源码仓库）
+- **多源模型**：源列表（内置官方源 + 用户自定义源，上限 10）持久化在 `plugin.market` 命名空间，
+  已登记数据迁移；目录缓存 per-repo 一小时（`plugin.market.catalog`，缓存不参与迁移）；
+  未缓存的自定义源懒加载（选中它的筛选 chip 才拉），控 api.github.com 匿名 60 次/h/IP
+- **安装语义**：默认装最新版，历史版本选装 = 覆盖降级（同一条 `useUserPlugins().install()` 链路，
+  `source: USER_PLUGIN_SOURCE.MARKET`）；每次安装先弹确认；**全局串行**（持久化单 key 全量回写，并行互踩）；
+  多源合并展示时同 id 插件官方源优先，避免同 id 双卡
+- 网络实现与更新链路同规：Tauri 走 plugin-http、浏览器原生 fetch，**禁用 `proxyFetch`**，
+  支持设置页配置的更新代理（`buildUpdateProxyInit`）
 
 ### 「两种安装」的分工（先分清，再谈卸载）
 
@@ -511,6 +531,12 @@ tauri fetch 绕 webview CORS）。
    `src/docs/**` / 官网配置 / 白皮书单源文件等路径时自动部署到
    <https://whf293.github.io/whf-stock-board/>（首次需在仓库 Settings → Pages 把 Source 设为
    「GitHub Actions」）；官网不发版、不打 tag，下载中心运行时直连 GitHub Releases API
+7. **发版成功后清理本地构建缓存（硬性，王总 2026-10-27 指定）**：确认 GitHub Release 构建
+   完成、产物上传成功后，清理 `src-tauri/target/` 构建缓存——`cd src-tauri && cargo clean`
+   （或直接删除 `target/` 下 debug / release 及 aarch64 / armv7 / i686 / x86_64-linux-android
+   等交叉编译目标目录）。`target/` 是 Cargo 构建产物缓存（debug 含完整符号 `.pdb` +
+   增量编译缓存 + 依赖升级残留），只增不减，曾积累 20GB+；删除仅导致下次编译全量重来
+   （首次 5–15 分钟），不影响任何源码与用户数据。CI 产物在 GitHub Release 远端，本地无需保留
 
 注意：tag 必须打在**已推送的最新 commit** 上（先 push 后打 tag）；若 push 后有他人新提交，先用 `git pull --rebase` 再走流程。`pnpm lint` 与 `pnpm build` 必须在 commit 前全绿（改了官网再跑 `pnpm build:site`）。
 

@@ -1,12 +1,12 @@
 # PLUGIN_API.md — 插件开放接口清单
 
-> 本文件盘点**宿主开放给插件的全部能力**（`ctx.*` 九个贡献点、数据持久化、十七个宿主服务、事件、配额与红线）。
+> 本文件盘点**宿主开放给插件的全部能力**（`ctx.*` 九个贡献点、数据持久化、二十一个宿主服务、事件、配额与红线）。
 > **第三方（应用内安装）插件作者请优先看 [PLUGIN_WIKI.md](./PLUGIN_WIKI.md)** —— 那份是面向你的独立 wiki；
 > 本文件面向宿主仓库贡献者（含第三层「宿主内部模块」清单）。
 > 类型契约的唯一事实源是 `src/types/plugin.types.ts`，宿主侧接线（注册顺序、 `recoverVanishedRoute`）见 `src/plugin/setup.ts`；
 > 两者冲突时以代码为准，并回来修本文档。
 >
-> 适用版本：v2.6.2（含「官方插件改为 zip 产物包分发」与十七个宿主服务的改动）。
+> 适用版本：v2.6.2（含「官方插件改为 zip 产物包分发」与二十一个宿主服务的改动）。
 
 ## 0. 稳定性分层（先读这一节，它决定你能依赖什么）
 
@@ -14,7 +14,7 @@
 
 | 层 | 内容 | 谁能用 | 兼容承诺 |
 | --- | --- | --- | --- |
-| **① 契约层** | `ctx.*` 全部成员、`AppServiceMap` 十七个宿主服务、`AppEventMap` 六个内置事件、`types/plugin.types.ts` 全部导出类型 | 源码级插件 + 应用内安装的用户插件 | **主版本号内保证向后兼容**；要改形态须同步本文档 |
+| **① 契约层** | `ctx.*` 全部成员、`AppServiceMap` 二十一个宿主服务、`AppEventMap` 六个内置事件、`types/plugin.types.ts` 全部导出类型 | 源码级插件 + 应用内安装的用户插件 | **主版本号内保证向后兼容**；要改形态须同步本文档 |
 | **② 服务扩展层** | 插件之间经 `ctx.provide` / `ctx.consume` 互相暴露的自定义服务与事件（如 `note:repo` / `note:saved`） | 任何插件 | 由「提供方插件」负责；消费方必须允许 `consume` 返回 `undefined` 并降级 |
 | **③ 宿主内部模块** | `@/api/*`、`@/utils/*`、`@/composables/*`、`@/components/ui/*`、`@/stores/*` 等源码模块 | **仅源码级插件**（跟宿主一起构建） | 无承诺；改名 / 搬文件不另行通知 |
 
@@ -38,7 +38,7 @@
 > Tailwind 类不拦（能装），只在预览区给出「可能没有样式」的提醒。
 
 ✅ **好消息**：不 import 任何东西的插件完全可以挂载——实测注册侧栏面板并渲染成功，
-且 `ctx` 全套、十七个宿主服务、`ctx.storage` / `ctx.db`（`ensureTable`→`insert`→`select`→`remove`→`count`）、`ctx.on` 全部可用。
+且 `ctx` 全套、二十一个宿主服务、`ctx.storage` / `ctx.db`（`ensureTable`→`insert`→`select`→`remove`→`count`）、`ctx.on` 全部可用。
 **第三方插件请把自己限制在第 ① 层。**
 
 第一条红线的替代方案已经补齐了，写第三方插件不再需要 import：
@@ -361,12 +361,13 @@ ctx.settings.reset();                 // 回到声明默认值
 | `app:stock-open` | `StockOpenService` | **全站统一的个股打开交互**：`openSidebar` 开右侧详情侧栏 / `openPage` 进详情整页（§5.7） |
 | `app:watchlist` | `WatchlistService` | **自选股只读视图**：`symbols()` / `groups()` / `nameOf()`（§5.8） |
 | `app:polling` | `PollingService` | **轮询调度器工厂**：`create()` 与宿主同一份交易窗口 / 退避 / 可见性策略（§5.9） |
-| `app:ui` | `UiKitService` | **UI Kit**：宿主的 Button / Input / Switch / Tag / Card / Empty / Tabs / Table / Modal / Drawer / Skeleton / Icon 十二个组件句柄 + `confirm()` 确认弹窗（§5.4） |
+| `app:ui` | `UiKitService` | **UI Kit**：宿主的 Button / Input / Switch / Tag / Card / Empty / Tabs / Table / Modal / Drawer / Skeleton / Icon 十二个组件句柄 + TabConfigButton / useTabConfig 页签配置 + `confirm()` 确认弹窗（§5.4） |
 | `app:http` | `HttpService` | **受控网络请求**：走宿主上游通道，仅允许白名单域名（§5.5） |
 | `app:quotes` | `QuotesService` | **行情报价**：按代码批量取实时快照（§5.6） |
 | `app:market` | `MarketService` | **市场剖面**：沪深逐日成交额 / 指定交易日涨停池（重接口，只能点击触发）+ 行业板块列表（轻接口，可低频轮询，§5.10） |
 | `app:market-data` | `MarketDataService` | **市场资讯**：实时成交额快照 / 热点新闻标题（六源切换）/ 热股榜单（五平台切换），小组件内容视图的取数出口（§5.13） |
 | `app:format` | `FormatService` | **格式化与涨跌语义**：红涨绿跌、百分比 / 价格 / 相对时间、符号三形态互转、`delay` / `debounce`、按符号查报价（§5.11） |
+| `app:agent-ask` | `AgentAskService` | **唤起 Agent 分析窗口**：把一条自包含 prompt 送到 Agent（新开会话直接发送），窗口创建 / 握手 / 未配模型引导由宿主代办（§5.14） |
 
 ### 5.1 `app:notify`
 
@@ -450,6 +451,8 @@ ctx.sidebar.add({
 | `ui.Drawer` | `BaseDrawer` | `title`、`open`（`onUpdate:open`）、`width`（默认 `66vw`） |
 | `ui.Skeleton` | `BaseSkeleton` | 无 props，默认三行文本形状，默认插槽可自定形状。**只在一条数据都没有时用** —— 列表刷新不许翻 loading（会整表卸载重建闪屏），见 §10 |
 | `ui.Icon` | `MenuIcon` | `name`（key 清单见 `PLUGIN_WIKI.md` §10）、`size` |
+| `ui.TabConfigButton` | `TabConfigButton` | `pageId`（配置存储分桶）+ `options: TabOption[]`（全集，声明顺序即默认顺序）。点击弹「页签配置」弹窗（勾选显隐 + 拖拽排序，草稿模式确认落盘） |
+| `ui.useTabConfig` | `useTabConfig()` | 同名 composable 原样引用：`(pageId, defaultOptions) => { visibleOptions, activeValue }`。**须在组件 setup 内同步调用**（内部走 pinia）；渲染列表照 `visibleOptions` 遍历，与 `TabConfigButton` 用同一 `pageId` 即可读回用户配置 |
 
 三个「重」组件的用法要点：
 
@@ -683,6 +686,22 @@ const rows = await marketData.fetchHotBoard('ths');
 气泡的三个内容视图（成交额 / 热点新闻 / 今天炒什么）：仅在气泡展开且对应视图激活期间
 以 30s 拉取，气泡收起即停——新闻 / 热榜页面另有自己的缓存与限速策略，这里不做缓存，
 **不要把它做成常驻轮询**。任一上游失败直接抛错，由调用方决定保留旧快照还是展示空态。
+
+### 5.14 `app:agent-ask` — 唤起 Agent 分析窗口
+
+```ts
+const agentAsk = ctx.consume('app:agent-ask');
+const ok = await agentAsk?.ask(
+  '请分析以下自选清单的风险集中度：……（自包含提示词）',
+  { pluginId: ctx.pluginId, pluginName: '我的盯盘助手' },  // 来源标识，建议传
+);
+// ok === true 表示请求已送达 Agent 窗口（送达 ≠ 模型已回答）
+```
+
+- prompt 必须**自包含**：Agent 侧每次新开一个会话直接发送，不会带上用户当前正在聊的上下文；
+- 传 `source` 后 Agent 侧浮窗会注明「来自插件 xxx」——发 prompt 等于替用户消耗模型额度，应当可追溯；
+- 未配置模型时宿主会引导用户去 Model 管理，分析不会静默丢失（但也不会自动重发，需用户回到插件再触发）；
+- Agent 仅桌面端（Tauri）可用，浏览器降级路径走同窗路由跳转。
 
 ---
 
@@ -960,8 +979,8 @@ export default {
    （若将来真要在运行时支持模板：把 `vue` 换到含编译器的 esm-bundler，代价是 +约 100KB 主包体积，
    收益与 `app:ui` 重叠，**当前不划算**。）
 2. **无类型提示**：第三方只能用 JS 硬写。要 TS 提示，只能自行维护一份 `AppServiceMap` / `PluginContext` 的 d.ts 副本。
-3. **`app:ui` 覆盖面有限**：目前十二个组件（Button / Input / Switch / Tag / Card / Empty / Tabs /
-   Table / Modal / Drawer / Skeleton / Icon）。Select / DatePicker / 图表这类还没开放 ——
+3. **`app:ui` 覆盖面有限**：目前十二个组件 + 一组页签配置能力（Button / Input / Switch / Tag / Card / Empty / Tabs /
+   Table / Modal / Drawer / Skeleton / Icon + TabConfigButton / useTabConfig）。Select / DatePicker / 图表这类还没开放 ——
    真有插件需要时再补（补的是复用，不是凭想象先造）。
 
 如果第三条里的某一项正好卡住你的插件，宿主侧补它的成本很低（一个组件句柄 + 一行 provide），欢迎提需求。

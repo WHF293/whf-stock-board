@@ -4,11 +4,12 @@ import { mergeSymbolTradeRecords } from '../utils/merge-symbol-trade-records';
 import type { AccountTradeRecord, ImportKind } from '../types/account.types.ts';
 
 /**
- * 账户成交流水落库出口（stock-board.db，表见 src-tauri/src/lib.rs v4 迁移）
+ * 账户成交流水只读出口（stock-board.db，表见 src-tauri/src/lib.rs v4 迁移）
  *
  * 交割单 / 对账单两表同构（account_trade_record / account_statement_record），
- * 由 kind 映射表名；dedupe_key 唯一约束保证重复导入同一文件不产生重复行；
- * 浏览器端降级：非 Tauri 环境写入 no-op / 读取返回空
+ * 由 kind 映射表名。手工文件导入已下线，本模块仅保留读取与级联删除：
+ * 现存数据为历史导入存量，后续由投资账本官方 MCP 同步接管写路径。
+ * 浏览器端降级：非 Tauri 环境读取返回空
  */
 
 /** 连接单例 */
@@ -28,71 +29,6 @@ const getDb = (): Promise<Database> | null => {
 const TABLE_BY_KIND: Record<ImportKind, string> = {
   trade: 'account_trade_record',
   statement: 'account_statement_record',
-};
-
-/**
- * 去重键：账户 + 类型 + 日期时间 + 代码 + 成交编号
- * （同一文件重复导入、或交割单与对账单重叠期间，均不会产生重复行）
- * @param record 流水记录
- * @param kind 导入类型
- * @returns 去重键
- */
-const buildDedupeKey = (record: AccountTradeRecord, kind: ImportKind): string =>
-  [record.accountId, kind, record.tradeDate, record.tradeTime, record.symbol, record.dealNo].join(
-    '|',
-  );
-
-/**
- * 批量写入成交流水（INSERT OR IGNORE，返回实际新增行数）
- * @param records 解析后的记录
- * @param kind 导入类型（决定目标表）
- * @returns 新增行数
- */
-export const insertTradeRecords = async (
-  records: AccountTradeRecord[],
-  kind: ImportKind,
-): Promise<number> => {
-  const db = getDb();
-  if (!db || records.length === 0) return 0;
-  const table = TABLE_BY_KIND[kind];
-  const conn = await db;
-  let inserted = 0;
-  for (const r of records) {
-    const result = await conn.execute(
-      `INSERT OR IGNORE INTO ${table} ` +
-        '(id, account_id, trade_date, trade_time, symbol, stock_name, action, quantity, price, ' +
-        'amount, balance, net_amount, after_amount, stamp_tax, commission, transfer_fee, ' +
-        'entrust_fee, service_fee, contract_no, deal_no, market, dedupe_key, imported_at) ' +
-        'VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)',
-      [
-        r.id,
-        r.accountId,
-        r.tradeDate,
-        r.tradeTime,
-        r.symbol,
-        r.stockName,
-        r.action,
-        r.quantity,
-        r.price,
-        r.amount,
-        r.balance,
-        r.netAmount,
-        r.afterAmount,
-        r.stampTax,
-        r.commission,
-        r.transferFee,
-        r.entrustFee,
-        r.serviceFee,
-        r.contractNo,
-        r.dealNo,
-        r.market,
-        buildDedupeKey(r, kind),
-        r.importedAt,
-      ],
-    );
-    inserted += result.rowsAffected ?? 0;
-  }
-  return inserted;
 };
 
 /**

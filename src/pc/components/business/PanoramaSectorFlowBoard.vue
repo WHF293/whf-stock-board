@@ -6,8 +6,6 @@ import BaseCard from '../ui/BaseCard.vue';
 import BaseEmpty from '../ui/BaseEmpty.vue';
 import BaseModal from '../ui/BaseModal.vue';
 import BaseSkeleton from '../ui/BaseSkeleton.vue';
-import BaseTable from '../ui/BaseTable.vue';
-import BaseTabs from '../ui/BaseTabs.vue';
 import MenuIcon from '../ui/MenuIcon.vue';
 import SectorFlowCurveChart from '../charts/SectorFlowCurveChart.vue';
 import { useDataCacheStore } from '../../../common/stores/data-cache';
@@ -21,23 +19,11 @@ import { DATA_CACHE_KEY } from '../../../common/constants/data-cache.constants.t
 import { HOST_HEADER_ITEM } from '../../../common/constants/header.constants.ts';
 import { NOTIFY_TONE } from '../../../common/constants/notify.constants.ts';
 import { ROUTE_PATH } from '../../../common/constants/router-meta.constants.ts';
-import { SECTOR_CURVE_MAX_COUNT } from '../../../common/constants/sector-flow-curve.constants.ts';
-import {
-  STORAGE_NS_MARKET_RANK_CURVE,
-  STORAGE_NS_MARKET_RANK_SECTOR_VIEW,
-} from '../../../common/constants/storage-key.constants.ts';
-import { fetchSectorFundFlowRank } from '../../../common/api/flow.api.ts';
-import {
-  fetchSectorFlowCurves,
-  pickDefaultCurveCodes,
-} from '../../../common/api/sector-flow-curve.api.ts';
+import { STORAGE_NS_MARKET_RANK_CURVE } from '../../../common/constants/storage-key.constants.ts';
+import { fetchCalendarBoardFundFlow } from '../../../common/api/board-calendar.api.ts';
+import { CALENDAR_BOARDS } from '../../../common/constants/board-calendar.constants.ts';
+import { fetchSectorFlowCurves } from '../../../common/api/sector-flow-curve.api.ts';
 import { ensureSectorFlowHistories } from '../../../common/api/sector-flow-history.api.ts';
-import { fetchIndustryConstituents } from '../../../common/api/board.api.ts';
-import { getTrendByChangePercent } from '../../../common/constants/trend.constants.ts';
-import { TREND_PILL_CLASS, TREND_TEXT_CLASS } from '../../../common/constants/stock-colors.constants.ts';
-import { formatAmount } from '../../../common/utils/format-amount';
-import { formatPercent } from '../../../common/utils/format-percent';
-import { formatPrice } from '../../../common/utils/format-price';
 import { formatYuanWithSign } from '../../../common/utils/format-yuan';
 import { appStorage } from '../../../common/utils/app-local-storage';
 import type { SectorFundFlowItem } from '../../../common/types/flow.types.ts';
@@ -45,73 +31,25 @@ import type {
   SectorFlowCurve,
   SectorFlowCurveView,
 } from '../../../common/types/sector-flow-curve.types.ts';
-import type { IndustryBoardConstituent } from '../../../common/types/board.types.ts';
-import type { TableColumn } from '../../../common/types/table.types.ts';
-import { useStockOpen } from '../../../common/composables/use-stock-open';
 import { usePageHeaderSlot, PAGE_HEADER_ACTIONS_TARGET } from '../../../common/composables/use-page-header-slot';
-import {
-  BOARD_CATEGORIES,
-  BOARD_CATEGORY_ALL,
-  BOARD_CATEGORY_FILTER_OPTIONS,
-  BOARD_CATEGORY_UNKNOWN_LABEL,
-  getBoardCategoryKey,
-  type BoardCategoryFilterValue,
-} from '../../../common/constants/board-taxonomy.constants.ts';
 
 /**
  * 行情全景 · 板块资金（原「市场榜单-板块净流入」模块迁入）：
- * 行业主力净流入榜单 + 多行业当日累计主力净流入分时叠加曲线（自管数据）。
+ * 板块主力净流入榜单 + 多板块当日累计主力净流入分时叠加曲线（自管数据）。
  *
- * - 列表视图：板块净流入排名，行可展开成分股（点击行内个股开侧栏、双击进详情页）；
- * - 曲线视图：已选行业（≤26 个）的分时资金曲线叠加，进视图触发一次不轮询，
- *   曲线本体进 dataCache 内存快照，已选行业经 appStorage 跨会话持久化；
+ * - 榜单口径（2026-10-29 王总指定）：36 板块统一池（板块日历 CALENDAR_BOARDS），
+ *   与题材轮动 / 板块日历 / A股全景同源，不再用 496 全量行业；
+ * - 恒为曲线视图（2026-10-29 王总指定删除「曲线 / 列表」切换）：已选板块的当日
+ *   累计主力净流入分时曲线同屏叠加，进模块触发一次不轮询，
+ *   曲线本体进 dataCache 内存快照，已选板块经 appStorage 跨会话持久化；
+ *   「选择板块」弹窗的候选 = 写死的 36 板块清单（不依赖榜单请求）；
  * - 「查看历史净流入」跳独立子页（逐日历史渐进累积落本地，见 sector-flow-history.api）；
  * - 页级动作（AI 分析 / 导出 Excel，榜单数据自包含）上移所在页面的页头，经 Teleport 投射
  */
 
-const { openSidebar, openPage, toContextList } = useStockOpen();
 const router = useRouter();
 const dataCache = useDataCacheStore();
 const marketStatus = useMarketStatusStore();
-
-/** 表格展示条数 */
-const RANK_DISPLAY_COUNT = 15;
-
-// ---------- 视图切换（曲线 / 列表，跨会话持久化；存储键沿用迁移前的值） ----------
-
-/** 模块内视图选项（segmented 按钮组） */
-const SECTOR_VIEW_OPTIONS = [
-  { label: '曲线', value: 'curve' },
-  { label: '列表', value: 'list' },
-] as const;
-
-/** 视图模式 */
-type SectorViewMode = (typeof SECTOR_VIEW_OPTIONS)[number]['value'];
-
-/**
- * 读取持久化的视图模式（未设置 / 坏数据一律回退曲线——曲线是本模块主视图）
- * @returns 视图模式
- */
-const readSectorViewMode = (): SectorViewMode => {
-  try {
-    const raw = appStorage.getItem(STORAGE_NS_MARKET_RANK_SECTOR_VIEW);
-    const parsed = raw ? (JSON.parse(raw) as { view?: string }) : null;
-    return parsed?.view === 'list' ? 'list' : 'curve';
-  } catch {
-    return 'curve';
-  }
-};
-
-/** 当前视图（跨会话持久化） */
-const sectorViewMode = ref<SectorViewMode>(readSectorViewMode());
-
-// 视图模式变化时持久化（JSON 比对避免无效写入）
-watch(sectorViewMode, (view) => {
-  const serialized = JSON.stringify({ view });
-  if (appStorage.getItem(STORAGE_NS_MARKET_RANK_SECTOR_VIEW) !== serialized) {
-    appStorage.setItem(STORAGE_NS_MARKET_RANK_SECTOR_VIEW, serialized);
-  }
-});
 
 // ---------- 板块净流入排名（自管数据，进模块拉一次） ----------
 
@@ -135,7 +73,7 @@ const loadSectorRank = (): Promise<void> => {
       isFlowLoading.value = true;
       flowError.value = false;
       try {
-        sectorRank.value = await fetchSectorFundFlowRank();
+        sectorRank.value = await fetchCalendarBoardFundFlow();
         dataCache.set(DATA_CACHE_KEY.FUNDS_SECTOR_RANK, sectorRank.value);
       } catch (error) {
         flowError.value = sectorRank.value.length === 0;
@@ -160,74 +98,7 @@ onMounted(() => {
   })();
 });
 
-// ---------- 扩展行：成分股 ----------
-
-/** 已展开的板块 code 列表（BK 编号） */
-const expandedSectorCodes = ref<string[]>([]);
-/** 各板块成分股（BK 编号 -> 列表） */
-const sectorConstituentsMap = ref<Record<string, IndustryBoardConstituent[]>>({});
-/** 正在拉取成分股的板块 code */
-const loadingSectorCode = ref<string | null>(null);
-
-/**
- * 板块行 / 展开图标点击：切换扩展行，并按需拉取成分股
- * @param board 板块净流入行
- */
-const onSectorToggle = (board: SectorFundFlowItem): void => {
-  expandedSectorCodes.value = expandedSectorCodes.value.includes(board.code)
-    ? expandedSectorCodes.value.filter((code) => code !== board.code)
-    : [...expandedSectorCodes.value, board.code];
-  if (expandedSectorCodes.value.includes(board.code) && !sectorConstituentsMap.value[board.code]) {
-    void loadSectorConstituents(board.code);
-  }
-};
-
-const loadSectorConstituents = async (code: string): Promise<void> => {
-  loadingSectorCode.value = code;
-  try {
-    const list = await fetchIndustryConstituents(code);
-    sectorConstituentsMap.value = { ...sectorConstituentsMap.value, [code]: list };
-  } catch (error) {
-    console.error('[panorama-sector-flow] sector constituents', error);
-  } finally {
-    loadingSectorCode.value = null;
-  }
-};
-
-/** 成分股列配置 */
-const sectorConstituentColumns: TableColumn<IndustryBoardConstituent>[] = [
-  { key: 'name', label: '名称' },
-  { key: 'price', label: '现价', align: 'right' },
-  {
-    key: 'changePercent',
-    label: '涨跌幅',
-    align: 'right',
-    sortable: true,
-    sortValue: (stock) => stock.changePercent,
-  },
-  { key: 'amount', label: '成交额', align: 'right' },
-];
-
-/**
- * 扩展行成分股的上下文列表（双击进详情页时整批带入）
- * @param code 板块 BK 编号
- * @returns 成分股上下文列表
- */
-const constituentContext = (code: string) =>
-  toContextList(sectorConstituentsMap.value[code] ?? [], (item) => item.code);
-
-/** 板块净流入排名列配置 */
-const sectorColumns: TableColumn<SectorFundFlowItem>[] = [
-  { key: 'name', label: '板块' },
-  {
-    key: 'changePercent',
-    label: '涨跌幅',
-    align: 'right',
-    sortable: true,
-    sortValue: (sector) => sector.changePercent,
-  },
-  { key: 'mainNetInflow', label: '主力净流入' },
-];
+// ---------- 扩展行：成分股（随列表视图移除，2026-10-29 王总指定恒为曲线视图） ----------
 
 // ---------- 曲线视图 = 行业资金曲线（进视图触发一次，不轮询） ----------
 /**
@@ -251,17 +122,22 @@ interface CurveSelectionStorage {
 }
 
 /**
- * 读取持久化的已选行业（坏数据一律回退空，进入曲线视图时会按排名补默认勾选；
- * 按当前上限裁剪——上限从 26 收紧到 8 后，旧存档可能超过新上限）
+ * 读取持久化的已选行业（坏数据一律回退空；2026-10-29 起默认一个不选、
+ * 勾选数量不设上限——榜单已收敛为 36 板块池，全选也不过量；
+ * 并按 36 池白名单过滤——旧存档里 496 时代勾过的细分行业代码一律剔除）
  * @returns 已选板块代码列表
  */
 const readCurveSelection = (): string[] => {
   try {
     const raw = appStorage.getItem(STORAGE_NS_MARKET_RANK_CURVE);
     const parsed = raw ? (JSON.parse(raw) as CurveSelectionStorage) : null;
-    return Array.isArray(parsed?.codes)
-      ? parsed.codes.filter((code) => typeof code === 'string').slice(0, SECTOR_CURVE_MAX_COUNT)
-      : [];
+    if (!Array.isArray(parsed?.codes)) {
+      return [];
+    }
+    const poolCodes = new Set(CALENDAR_BOARDS.map((board) => board.code));
+    return parsed.codes.filter(
+      (code) => typeof code === 'string' && poolCodes.has(code),
+    );
   } catch {
     return [];
   }
@@ -277,51 +153,12 @@ const isCurveLoading = ref(false);
 const curveError = ref(false);
 /** 本轮加载进度（已完成 / 总数；含失败条目，仅作进度展示） */
 const curveProgress = ref({ done: 0, total: 0 });
-/** 选择行业弹窗显隐 */
+/** 选择板块弹窗显隐 */
 const isCurvePickerOpen = ref(false);
 /** 弹窗内暂存勾选（确认时才生效） */
 const pendingCurveCodes = ref<string[]>([]);
-/**
- * 选择行业弹窗的风格大类筛选（对齐行情全景-A股全景；王总 2026-10-13）：
- * 「全部」= 按大类分区展示，具体大类 = 单组平铺，方便定位行业
- */
-const curveCategoryFilter = ref<BoardCategoryFilterValue>(BOARD_CATEGORY_ALL);
 
-/**
- * 行业榜单按风格大类分区（顺序 = BOARD_CATEGORIES；未归类沉末尾；空组剔除）
- * @returns 分组列表（key / 展示名 / 组内榜单条目）
- */
-const groupedSectorRank = computed(() => {
-  // key 含「未归类」兜底组，故用 string 而非 BoardCategoryKey
-  const groups: { key: string; label: string; items: SectorFundFlowItem[] }[] =
-    BOARD_CATEGORIES.map((category) => ({
-      key: category.key,
-      label: category.label,
-      items: sectorRank.value.filter((item) => getBoardCategoryKey(item.code) === category.key),
-    }));
-  const unknown = sectorRank.value.filter((item) => getBoardCategoryKey(item.code) === null);
-  if (unknown.length > 0) {
-    groups.push({ key: 'unknown', label: BOARD_CATEGORY_UNKNOWN_LABEL, items: unknown });
-  }
-  return groups.filter((group) => group.items.length > 0);
-});
-
-/**
- * 当前大类筛选下的行业榜单（非「全部」时为单一大类的平铺列表）
- * @returns 榜单条目列表
- */
-const filteredSectorRank = computed(() =>
-  curveCategoryFilter.value === BOARD_CATEGORY_ALL
-    ? sectorRank.value
-    : sectorRank.value.filter(
-        (item) => getBoardCategoryKey(item.code) === curveCategoryFilter.value,
-      ),
-);
-
-/** 曲线视图是否激活 */
-const isCurveMode = computed(() => sectorViewMode.value === 'curve');
-
-/** 板块排名索引（BK 编号 -> 排名行），合并曲线的名称 / 涨跌幅用 */
+/** 板块排名索引（BK 编号 -> 排名行），合并曲线的名称 / 涨跌幅与弹窗数值用 */
 const sectorRankByCode = computed(
   () => new Map(sectorRank.value.map((item) => [item.code, item])),
 );
@@ -418,29 +255,15 @@ const loadSectorCurves = async (codes: readonly string[]): Promise<void> => {
   }
 };
 
-/** 进曲线视图：备齐排名 → 补默认勾选 → 按需拉曲线（快照已有则跳过）。
- *  组件挂载即处于曲线视图时同样触发（watch immediate 覆盖） */
-watch(
-  isCurveMode,
-  (active) => {
-    if (!active || isCurveLoading.value) {
-      return;
-    }
-    void (async () => {
-      // 曲线的行业名单 / 名称 / 涨跌幅都来自板块排名，未就绪先拉
-      if (sectorRank.value.length === 0) {
-        await loadSectorRank();
-      }
-      if (selectedCurveCodes.value.length === 0 && sectorRank.value.length > 0) {
-        selectedCurveCodes.value = pickDefaultCurveCodes(sectorRank.value);
-      }
-      if (curveViews.value.length === 0 && selectedCurveCodes.value.length > 0) {
-        await loadSectorCurves(selectedCurveCodes.value);
-      }
-    })();
-  },
-  { immediate: true },
-);
+// 挂载即备齐排名（曲线名称 / 弹窗数值依赖它）→ 有勾选则按需拉曲线（2026-10-29 起恒为曲线视图）
+void (async () => {
+  if (sectorRank.value.length === 0) {
+    await loadSectorRank();
+  }
+  if (curveViews.value.length === 0 && selectedCurveCodes.value.length > 0) {
+    await loadSectorCurves(selectedCurveCodes.value);
+  }
+})();
 
 // 已选行业变化时整包持久化（JSON 比对避免无效写入）
 watch(selectedCurveCodes, (codes) => {
@@ -450,7 +273,7 @@ watch(selectedCurveCodes, (codes) => {
   }
 });
 
-/** 打开选择行业弹窗：以当前已选初始化暂存勾选（榜单缺席时顺带补拉，弹窗内展示加载 / 重试态） */
+/** 打开选择板块弹窗：以当前已选初始化暂存勾选（板块清单写死不依赖榜单；数值缺席时顺带补拉榜单） */
 const openCurvePicker = (): void => {
   pendingCurveCodes.value = [...selectedCurveCodes.value];
   isCurvePickerOpen.value = true;
@@ -460,7 +283,7 @@ const openCurvePicker = (): void => {
 };
 
 /**
- * 弹窗内切换某个行业的勾选（达上限后禁止继续勾选）
+ * 弹窗内切换某个板块的勾选（不设上限：36 板块池全选也不过量）
  * @param code 板块代码
  */
 const togglePendingCurve = (code: string): void => {
@@ -468,9 +291,7 @@ const togglePendingCurve = (code: string): void => {
     pendingCurveCodes.value = pendingCurveCodes.value.filter((item) => item !== code);
     return;
   }
-  if (pendingCurveCodes.value.length < SECTOR_CURVE_MAX_COUNT) {
-    pendingCurveCodes.value = [...pendingCurveCodes.value, code];
-  }
+  pendingCurveCodes.value = [...pendingCurveCodes.value, code];
 };
 
 /** 确认选择：移除未勾选的曲线 + 增量拉取新勾选 */
@@ -494,7 +315,7 @@ const refreshCurves = (): void => {
 };
 
 // KeepAlive 缓存页面：切走再切回不重新挂载（首次 onActivated 紧跟 onMounted 触发，跳过）——
-// 列表视图重拉排名；曲线视图整场刷新（与新交易日 / 盘中进度对齐，同手动「刷新」按钮）
+// 重拉排名（名称 / 弹窗数值），再整场刷新曲线（与新交易日 / 盘中进度对齐，同手动「刷新」按钮）
 let sectorFlowActivatedOnce = false;
 onActivated(() => {
   if (!sectorFlowActivatedOnce) {
@@ -502,16 +323,11 @@ onActivated(() => {
     return;
   }
   if (isCurveLoading.value) return;
-  if (!isCurveMode.value) {
-    void loadSectorRank();
-    return;
-  }
-  // 曲线视图：先就绪榜单（曲线名称依赖它），再整场刷新
   void (async () => {
     if (sectorRank.value.length === 0) {
       await loadSectorRank();
     }
-    if (isCurveMode.value && !isCurveLoading.value) {
+    if (!isCurveLoading.value) {
       refreshCurves();
     }
   })();
@@ -682,139 +498,48 @@ const onRankExport = async (): Promise<void> => {
       </div>
     </Teleport>
 
-    <!-- 模块工具条：曲线 / 列表切换 + 曲线专属操作（截至时间 / 进度说明在左侧） -->
+    <!-- 模块工具条：曲线操作（截至时间 / 进度说明在左侧）；2026-10-29 起恒为曲线视图，切换已删 -->
     <div class="mb-2 flex shrink-0 flex-wrap items-center justify-between gap-2">
       <div class="text-xs text-text-tertiary">
-        <template v-if="sectorViewMode === 'curve'">
-          <template v-if="curveAsOfText">截至 {{ curveAsOfText }}</template>
-          <template v-if="isCurveLoading">
-            · 加载曲线 {{ curveProgress.done }}/{{ curveProgress.total }}
-          </template>
+        <template v-if="curveAsOfText">截至 {{ curveAsOfText }}</template>
+        <template v-if="isCurveLoading">
+          · 加载曲线 {{ curveProgress.done }}/{{ curveProgress.total }}
         </template>
       </div>
       <div class="flex items-center gap-2">
-        <BaseTabs v-model="sectorViewMode" :options="SECTOR_VIEW_OPTIONS" aria-label="板块资金视图" />
         <BaseButton variant="ghost" @click="goSectorFlowHistory">查看历史净流入</BaseButton>
-        <template v-if="sectorViewMode === 'curve'">
-          <BaseButton variant="ghost" @click="openCurvePicker">
-            选择行业 {{ selectedCurveCodes.length }}/{{ SECTOR_CURVE_MAX_COUNT }}
-          </BaseButton>
-          <BaseButton variant="ghost" :disabled="isCurveLoading" @click="refreshCurves">
-            刷新
-          </BaseButton>
-        </template>
+        <BaseButton variant="ghost" @click="openCurvePicker">
+          选择板块 {{ selectedCurveCodes.length }}
+        </BaseButton>
+        <BaseButton variant="ghost" :disabled="isCurveLoading" @click="refreshCurves">
+          刷新
+        </BaseButton>
       </div>
     </div>
 
-    <!-- 曲线视图：多行业当日累计主力净流入叠加（进视图拉一次，不轮询） -->
-    <template v-if="isCurveMode">
-      <div v-if="isCurveLoading && curveViews.length === 0" class="min-h-0 flex-1">
-        <BaseSkeleton />
-      </div>
-      <div v-else-if="curveError && curveViews.length === 0" class="min-h-0 flex-1 py-10">
-        <BaseEmpty text="行业资金曲线加载失败，请稍后重试" />
-      </div>
-      <div v-else-if="curveViews.length > 0" class="min-h-0 flex-1">
-        <SectorFlowCurveChart :curves="curveViews" />
-      </div>
-      <BaseEmpty v-else text="暂无曲线数据，请点击「选择行业」添加" />
-    </template>
+    <!-- 板块资金曲线：多板块当日累计主力净流入叠加（进模块拉一次，不轮询） -->
+    <div v-if="isCurveLoading && curveViews.length === 0" class="min-h-0 flex-1">
+      <BaseSkeleton />
+    </div>
+    <div v-else-if="curveError && curveViews.length === 0" class="min-h-0 flex-1 py-10">
+      <BaseEmpty text="板块资金曲线加载失败，请稍后重试" />
+    </div>
+    <div v-else-if="curveViews.length > 0" class="min-h-0 flex-1">
+      <SectorFlowCurveChart :curves="curveViews" />
+    </div>
+    <BaseEmpty v-else text="暂无曲线数据，请点击「选择板块」勾选要对比的板块" />
 
-    <!-- 列表视图：板块净流入排名（行展开成分股） -->
-    <template v-else>
-      <div v-if="isFlowLoading && sectorRank.length === 0"><BaseSkeleton /></div>
-      <div v-else-if="flowError && sectorRank.length === 0" class="py-10">
-        <BaseEmpty text="板块净流入榜单加载失败，请稍后重试" />
-      </div>
-      <BaseTable
-        v-else-if="sectorRank.length > 0"
-        :columns="sectorColumns"
-        :rows="sectorRank.slice(0, RANK_DISPLAY_COUNT)"
-        :row-key="(row: SectorFundFlowItem) => row.code"
-        min-width="720px"
-        scroll-class="table-scroll-fill"
-        expandable
-        :expanded-keys="expandedSectorCodes"
-        @toggle-expand="onSectorToggle"
-      >
-        <template #name="{ row }: { row: SectorFundFlowItem }">
-          <span class="font-medium text-text">{{ row.name }}</span>
-          <span v-if="row.topStockName" class="block text-[10px] text-text-tertiary">{{ row.topStockName }}</span>
-          <span v-else class="ml-1 text-xs text-text-tertiary">{{ row.code }}</span>
-        </template>
-        <template #changePercent="{ row }: { row: SectorFundFlowItem }">
-          <span
-            class="rounded-full px-2 py-0.5 font-semibold"
-            :class="TREND_PILL_CLASS[getTrendByChangePercent(row.changePercent ?? 0)]"
-          >
-            {{ formatPercent(row.changePercent) }}
-          </span>
-        </template>
-        <template #mainNetInflow="{ row }: { row: SectorFundFlowItem }">
-          <span
-            class="font-medium"
-            :class="(row.mainNetInflow ?? 0) >= 0 ? 'text-up' : 'text-down'"
-          >
-            {{ formatYuanWithSign(row.mainNetInflow) }}
-          </span>
-        </template>
-
-        <!-- 扩展行：成分股表格 -->
-        <template #expanded="{ row }: { row: SectorFundFlowItem }">
-          <div
-            v-if="loadingSectorCode === row.code && !sectorConstituentsMap[row.code]"
-            class="py-4"
-          >
-            <BaseSkeleton />
-          </div>
-          <BaseTable
-            v-else-if="sectorConstituentsMap[row.code]?.length"
-            :columns="sectorConstituentColumns"
-            :rows="sectorConstituentsMap[row.code]"
-            :row-key="(stock: IndustryBoardConstituent) => stock.code"
-            min-width="560px"
-            row-clickable
-            :enable-dblclick-nav="true"
-            @row-click="(stock: IndustryBoardConstituent) => openSidebar(stock.code)"
-            @row-dblclick="(stock: IndustryBoardConstituent) => openPage(stock.code, constituentContext(row.code))"
-          >
-            <template #name="{ row: stock }: { row: IndustryBoardConstituent }">
-              <span class="font-medium text-text">{{ stock.name }}</span>
-              <span class="ml-2 text-xs text-text-tertiary">{{ stock.code }}</span>
-            </template>
-            <template #price="{ row: stock }: { row: IndustryBoardConstituent }">
-              <span :class="TREND_TEXT_CLASS[getTrendByChangePercent(stock.changePercent ?? 0)]">
-                {{ formatPrice(stock.price) }}
-              </span>
-            </template>
-            <template #changePercent="{ row: stock }: { row: IndustryBoardConstituent }">
-              <span
-                class="rounded-full px-2 py-0.5 text-xs font-semibold"
-                :class="TREND_PILL_CLASS[getTrendByChangePercent(stock.changePercent ?? 0)]"
-              >
-                {{ formatPercent(stock.changePercent) }}
-              </span>
-            </template>
-            <template #amount="{ row: stock }: { row: IndustryBoardConstituent }">
-              <span class="text-text-secondary">{{ formatAmount(stock.amount) }}</span>
-            </template>
-          </BaseTable>
-          <p v-else class="py-2 text-xs text-text-tertiary">暂无成分股数据</p>
-        </template>
-      </BaseTable>
-      <BaseEmpty v-else text="暂无数据" />
-    </template>
-
-    <!-- 选择行业弹窗（按当日主力净流入降序全量列出，上限 SECTOR_CURVE_MAX_COUNT） -->
+    <!-- 选择板块弹窗（36 板块直接写死清单来源，与板块日历 / 题材轮动同池；
+         主力净流入数值为辅助参考，榜单未就绪显示 --，不阻塞勾选；不设勾选上限） -->
     <BaseModal
       v-model:open="isCurvePickerOpen"
-      title="选择行业"
+      title="选择板块"
       max-width-class="max-w-5xl"
       height-class="h-[70dvh]"
     >
       <template #filters>
         <div class="flex items-center justify-between gap-2 text-xs text-text-tertiary">
-          <span>按当日主力净流入排序，最多选择 {{ SECTOR_CURVE_MAX_COUNT }} 个行业</span>
+          <span>36 板块固定清单，勾几个画几条（全选也可；右侧数值为当日主力净流入）</span>
           <button
             type="button"
             class="pressable text-xs text-primary disabled:cursor-not-allowed disabled:opacity-50"
@@ -824,97 +549,26 @@ const onRankExport = async (): Promise<void> => {
             清空
           </button>
         </div>
-        <!-- 风格大类筛选（对齐行情全景-A股全景；「全部」按大类分区展示，王总 2026-10-13） -->
-        <BaseTabs
-          v-model="curveCategoryFilter"
-          :options="BOARD_CATEGORY_FILTER_OPTIONS"
-          class="mt-2"
-        />
       </template>
-      <!-- 榜单未就绪：加载中骨架 / 失败空态（附重试），避免弹窗静默空白 -->
-      <div v-if="isFlowLoading && sectorRank.length === 0" class="py-6">
-        <BaseSkeleton />
-      </div>
-      <div v-else-if="sectorRank.length === 0" class="py-10">
-        <BaseEmpty text="行业榜单加载失败，请稍后重试" />
-        <div class="flex justify-center">
-          <BaseButton variant="ghost" :disabled="isFlowLoading" @click="void loadSectorRank()">
-            重试
-          </BaseButton>
-        </div>
-      </div>
-      <div v-else class="max-h-[52dvh] overflow-y-auto">
-        <!-- 「全部」：按风格大类分区（顺序 = BOARD_CATEGORIES，未归类沉末尾） -->
-        <template v-if="curveCategoryFilter === BOARD_CATEGORY_ALL">
-          <section
-            v-for="group in groupedSectorRank"
-            :key="group.key"
-            class="mb-3 last:mb-0"
-          >
-            <p class="mb-1.5 flex items-baseline gap-2">
-              <span class="text-sm font-medium text-text">{{ group.label }}</span>
-              <span class="text-xs text-text-tertiary">{{ group.items.length }} 个</span>
-            </p>
-            <div class="grid grid-cols-4 gap-1">
-              <label
-                v-for="item in group.items"
-                :key="item.code"
-                class="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-flat-weak"
-                :class="{
-                  'opacity-50':
-                    !pendingCurveCodes.includes(item.code) &&
-                    pendingCurveCodes.length >= SECTOR_CURVE_MAX_COUNT,
-                }"
-              >
-                <input
-                  type="checkbox"
-                  class="accent-primary"
-                  :checked="pendingCurveCodes.includes(item.code)"
-                  :disabled="
-                    !pendingCurveCodes.includes(item.code) &&
-                      pendingCurveCodes.length >= SECTOR_CURVE_MAX_COUNT
-                  "
-                  @change="togglePendingCurve(item.code)"
-                />
-                <span class="min-w-0 flex-1 truncate text-sm text-text">{{ item.name }}</span>
-                <span
-                  class="shrink-0 text-xs tabular-nums"
-                  :class="(item.mainNetInflow ?? 0) >= 0 ? 'text-up' : 'text-down'"
-                >
-                  {{ formatYuanWithSign(item.mainNetInflow) }}
-                </span>
-              </label>
-            </div>
-          </section>
-        </template>
-        <!-- 指定大类：单组平铺 -->
-        <div v-else class="grid grid-cols-4 gap-1">
+      <div class="max-h-[52dvh] overflow-y-auto">
+        <div class="grid grid-cols-4 gap-1">
           <label
-            v-for="item in filteredSectorRank"
-            :key="item.code"
+            v-for="board in CALENDAR_BOARDS"
+            :key="board.code"
             class="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-flat-weak"
-            :class="{
-              'opacity-50':
-                !pendingCurveCodes.includes(item.code) &&
-                pendingCurveCodes.length >= SECTOR_CURVE_MAX_COUNT,
-            }"
           >
             <input
               type="checkbox"
               class="accent-primary"
-              :checked="pendingCurveCodes.includes(item.code)"
-              :disabled="
-                !pendingCurveCodes.includes(item.code) &&
-                  pendingCurveCodes.length >= SECTOR_CURVE_MAX_COUNT
-              "
-              @change="togglePendingCurve(item.code)"
+              :checked="pendingCurveCodes.includes(board.code)"
+              @change="togglePendingCurve(board.code)"
             />
-            <span class="min-w-0 flex-1 truncate text-sm text-text">{{ item.name }}</span>
+            <span class="min-w-0 flex-1 truncate text-sm text-text">{{ board.name }}</span>
             <span
               class="shrink-0 text-xs tabular-nums"
-              :class="(item.mainNetInflow ?? 0) >= 0 ? 'text-up' : 'text-down'"
+              :class="((sectorRankByCode.get(board.code)?.mainNetInflow ?? 0)) >= 0 ? 'text-up' : 'text-down'"
             >
-              {{ formatYuanWithSign(item.mainNetInflow) }}
+              {{ formatYuanWithSign(sectorRankByCode.get(board.code)?.mainNetInflow ?? null) }}
             </span>
           </label>
         </div>

@@ -136,6 +136,13 @@ const ICON_PATHS: Record<string, string> = {
   // 期货（机构行为页侧栏入口）：两根蜡烛（烛身 + 上下影线）
   futures:
     '<path d="M7.5 3v3M7.5 18v3M16.5 5v3M16.5 14v3"/><rect x="5" y="6" width="5" height="12" rx="1"/><rect x="14" y="8" width="5" height="6" rx="1"/>',
+  // 排序：自定义（双向箭头 = 拖拽顺序）
+  sortCustom:
+    '<path d="M8 5v14M8 5L5 8M8 5l3 3M16 19V5M16 19l-3-3M16 19l3-3"/>',
+  // 排序：升序（向上箭头）
+  sortAsc: '<path d="M12 19V5M12 5l-5 5M12 5l5 5"/>',
+  // 排序：降序（向下箭头）
+  sortDesc: '<path d="M12 5v14M12 19l-5-5M12 19l5-5"/>',
   // 帮助 / 图例说明：圆圈 + 问号
   help:
     '<circle cx="12" cy="12" r="9"/><path d="M9.4 9.3a2.7 2.7 0 1 1 3.7 2.5c-.8.3-1.1.9-1.1 1.8v.4"/><circle cx="12" cy="16.9" r="0.5"/>',

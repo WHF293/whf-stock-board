@@ -16,6 +16,7 @@ import {
   readMobilePollingMs,
   writeMobilePollingMs,
 } from '../composables/use-mobile-polling';
+import { useMobileUpdate } from '../composables/use-mobile-update';
 
 /**
  * 设置页（移动端 v1）：四组五项
@@ -25,55 +26,12 @@ import {
 
 const router = useRouter();
 
-// ---- 检查更新 ----
+// ---- 检查更新（直下 APK + 拉起安装，链路共用见 use-mobile-update） ----
 
-type UpdateState = 'idle' | 'checking' | 'latest' | 'available';
-
-const updateState = ref<UpdateState>('idle');
-const latestTag = ref('');
-
-/**
- * 比较语义化版本（x.y.z 逐段数值比较）
- * @param a 版本 a
- * @param b 版本 b
- * @returns a > b 返回正数
- */
-const compareVersions = (a: string, b: string): number => {
-  const pa = a.split('.').map(Number);
-  const pb = b.split('.').map(Number);
-  for (let i = 0; i < 3; i += 1) {
-    const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
-    if (diff !== 0) return diff;
-  }
-  return 0;
-};
-
-/** 检查更新：比对 GitHub Release 最新 tag 与内置 APP_VERSION */
-const checkUpdate = async (): Promise<void> => {
-  if (updateState.value === 'checking') return;
-  updateState.value = 'checking';
-  try {
-    const response = await fetch(
-      'https://api.github.com/repos/WHF293/whf-stock-board/releases/latest',
-      { headers: { Accept: 'application/vnd.github+json' } },
-    );
-    if (!response.ok) throw new Error(String(response.status));
-    const payload = (await response.json()) as { tag_name?: string };
-    latestTag.value = (payload.tag_name ?? '').replace(/^v/, '');
-    updateState.value =
-      latestTag.value !== '' && compareVersions(latestTag.value, APP_VERSION) > 0
-        ? 'available'
-        : 'latest';
-  } catch {
-    updateState.value = 'latest';
-    showToast('检查失败，请稍后重试');
-  }
-};
-
-/** 跳转 Release 页下载新版 APK（系统浏览器） */
-const downloadLatest = (): void => {
-  void openUrl(RELEASES_URL).catch(() => window.open(RELEASES_URL, '_blank'));
-};
+const { updateState, latestTag, progress, checkUpdate, downloadLatest } = useMobileUpdate(
+  (text) => showToast(text),
+  () => void openUrl(RELEASES_URL).catch(() => window.open(RELEASES_URL, '_blank')),
+);
 
 /** 打开官网（软件文档 / 下载中心 / 插件生态，系统浏览器） */
 const openSite = (): void => {
@@ -119,7 +77,8 @@ const toggleAbout = (key: 'disclaimer' | 'source'): void => {
 </script>
 
 <template>
-  <div>
+  <!-- m-sub-page：≥600px 大屏限宽居中（mobile.css 断点适配分档） -->
+  <div class="m-sub-page">
     <van-nav-bar title="设置" class="m-nav" fixed placeholder safe-area-inset-top left-arrow @click-left="router.back()" />
 
     <div class="m-set-label">通用</div>
@@ -148,7 +107,14 @@ const toggleAbout = (key: 'disclaimer' | 'source'): void => {
           发现新版本 v{{ latestTag }}
           <span class="d">前往 Release 页下载新 APK，手动安装即可升级</span>
         </div>
-        <button class="m-mini-btn" @click="downloadLatest">下载 APK</button>
+        <button class="m-mini-btn" @click="downloadLatest">更新</button>
+      </div>
+      <div v-else-if="updateState === 'downloading'" class="m-set-row" style="border-bottom: 0">
+        <div class="m-set-row__t">
+          正在下载新版本
+          <span class="d">下载完成后将自动打开系统安装界面，请留意系统弹窗</span>
+        </div>
+        <span class="m-set-row__extra">{{ progress }}%</span>
       </div>
       <div v-else-if="updateState === 'latest'" class="m-set-row" style="border-bottom: 0">
         <div class="m-set-row__t"><span class="d">当前已是最新版本</span></div>

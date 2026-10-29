@@ -73,7 +73,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="flex h-[calc(100dvh-6.5rem)] min-h-0 flex-col gap-2">
+  <div class="flex h-full min-h-0 flex-col gap-2">
     <!-- 来源提示条：声明第三方嵌入 + 原站跳转入口（NoticeBar 统一公告条样式） -->
     <NoticeBar
       text="本页为第三方站点「大盘云图」的嵌入展示（dapanyuntu.com），数据与交互均由原站提供"

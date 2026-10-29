@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onActivated, onMounted, ref } from 'vue';
+import { computed, ref } from 'vue';
 import BaseButton from '../components/ui/BaseButton.vue';
 import BaseCard from '../components/ui/BaseCard.vue';
 import BaseEmpty from '../components/ui/BaseEmpty.vue';
@@ -8,8 +8,6 @@ import BaseTable from '../components/ui/BaseTable.vue';
 import DistributionChart from '../components/charts/DistributionChart.vue';
 import HeatmapChart from '../components/charts/HeatmapChart.vue';
 import HeatmapBoardList from '../components/business/HeatmapBoardList.vue';
-import MarketFundFlowTrendChart from '../components/charts/MarketFundFlowTrendChart.vue';
-import TurnoverTrendChart from '../components/charts/TurnoverTrendChart.vue';
 import RealtimeTurnoverCard from '../components/business/RealtimeTurnoverCard.vue';
 import MarketBreadthCard from '../components/business/MarketBreadthCard.vue';
 import MarketRatingCard from '../components/business/MarketRatingCard.vue';
@@ -21,9 +19,8 @@ import {
   fetchFullQuotes,
 } from '../../common/api/quotes.api.ts';
 import { fetchGlobalIndexQuotes } from '../../common/api/panorama.api.ts';
-import { fetchIndustryBoards } from '../../common/api/board.api.ts';
+import { fetchCalendarBoardPanorama } from '../../common/api/board-calendar.api.ts';
 import { fetchMarketFundFlow } from '../../common/api/flow.api.ts';
-import { fetchMarketTurnover } from '../../common/api/turnover.api.ts';
 import { fetchZtPool } from '../../common/api/event.api.ts';
 import { usePolling } from '../../common/composables/use-polling';
 import {
@@ -31,19 +28,10 @@ import {
 } from '../../common/constants/index-symbols.constants.ts';
 import {
   HEATMAP_TOP_TAB_OPTIONS,
+  HEATMAP_TOP_VALID_VALUES,
   HEATMAP_VIEW_MODE,
   HEATMAP_VIEW_MODE_OPTIONS,
 } from '../../common/constants/heatmap.constants.ts';
-import { YUAN_PER_YI } from '../../common/constants/format.constants.ts';
-import {
-  TURNOVER_CHART_METRIC,
-  TURNOVER_CHART_METRIC_DEFAULT,
-  TURNOVER_CHART_METRIC_OPTIONS,
-  TURNOVER_RANGE_DEFAULT,
-  TURNOVER_RANGE_TAB_OPTIONS,
-  type TurnoverChartMetric,
-  type TurnoverRange,
-} from '../../common/constants/turnover.constants.ts';
 import { POLLING_INTERVAL } from '../../common/constants/polling.constants.ts';
 import { PANORAMA_GLOBAL_INDEX_SECIDS } from '../../common/constants/panorama.constants.ts';
 import { useHeatmapDrill } from '../../common/composables/use-heatmap-drill';
@@ -52,24 +40,19 @@ import { useRowClamp } from '../../common/composables/use-row-clamp';
 import { useStockOpen } from '../../common/composables/use-stock-open';
 import type { DistributionCount } from '../../common/types/distribution.types.ts';
 import type { GlobalIndexQuote } from '../../common/types/panorama.types.ts';
-import type {
-  HeatmapBoard,
-  IndustryBoard,
-} from '../../common/types/board.types.ts';
+import type { HeatmapBoard } from '../../common/types/board.types.ts';
+import type { CalendarBoardPanoramaItem } from '../../common/types/board-calendar.types.ts';
 import type { MarketFundFlow } from '../../common/types/flow.types.ts';
-import type { TurnoverDayItem } from '../../common/types/turnover.types.ts';
 import type { ZTPoolItem } from '../../common/types/event.types.ts';
 import type { MarketSentiment } from '../../common/types/market-sentiment.types.ts';
 import type { MarketBreadth } from '../../common/types/market-breadth.types.ts';
 import { ingestBreadthSnapshot } from '../../common/api/market-breadth-db.api.ts';
-import type { TurnoverTableRow } from '../../common/constants/turnover.constants.ts';
 import type { TableColumn } from '../../common/types/table.types.ts';
 import type { FullQuote } from '../../common/types/stock-quote.types.ts';
 import { formatPercent, formatPercentUnsigned } from '../../common/utils/format-percent';
 import { formatAmount } from '../../common/utils/format-amount';
 import { computeMarketSentiment } from '../../common/utils/compute-market-sentiment';
 import { formatYuanWithSign } from '../../common/utils/format-yuan';
-import { formatTurnoverChange } from '../../common/utils/format-turnover-change';
 import { countDistribution } from '../../common/utils/count-distribution';
 import { delay } from '../../common/utils/delay';
 import { useRouter } from 'vue-router';
@@ -81,13 +64,7 @@ import { ROUTE_PATH } from '../../common/constants/router-meta.constants.ts';
 /** 市场宽度各接口请求间隔（毫秒）：对同一上游串行错峰 */
 const BREADTH_REQUEST_GAP_MS = 500;
 
-/** 大盘资金流保留的交易日数（近 10 日） */
-const MARKET_FLOW_DAYS = 10;
-
-/** 大盘资金流视图高度（像素）：与涨跌分布图表等高（220 × 1.4），保证同排两卡视觉一致 */
-const MARKET_FLOW_VIEW_HEIGHT_PX = 308;
-
-/** 展示形式：图表（默认） / 列表（涨跌分布与大盘资金流共用同一组值） */
+/** 展示形式：图表（默认） / 列表（涨跌分布与成交额共用同一组值） */
 const VIEW_MODE = {
   CHART: 'chart',
   TABLE: 'table',
@@ -102,12 +79,9 @@ const VIEW_MODE_OPTIONS = [
 /** 涨跌分布当前展示形式（局部状态，不持久化） */
 const distributionViewMode = ref<typeof VIEW_MODE[keyof typeof VIEW_MODE]>(VIEW_MODE.CHART);
 
-/** 大盘资金流当前展示形式（局部状态，不持久化） */
-const marketViewMode = ref<typeof VIEW_MODE[keyof typeof VIEW_MODE]>(VIEW_MODE.CHART);
-
 /**
  * 市场总览：指数卡片（轮询，点击跳 K 线详情）+ 全部指数一次渲染、收起只看首行（见 useRowClamp）+
- * 涨跌分布 / 资金速览 + 市场情绪（涨停 / 跌停 / 炸板 / 连板梯队 / 打板溢价）+
+ * 涨跌分布 / 资金速览 + 市场情绪（涨停 / 跌停 / 炸板 / 连板梯队 / 打板溢价）+ 市场宽度 · ARMS +
  * 板块热力（轮询，支持热力图 / 列表两种展示形式，
  * 下钻状态两视图共享；点击下钻成分股 → 点击个股跳详情）
  *
@@ -129,7 +103,7 @@ const goMarketRank = (): void => {
   void router.push(ROUTE_PATH.MARKET_RANK);
 };
 
-/** 跳资金流向页（主力净流入卡标题落点，2026-10-13 起独立成页） */
+/** 跳资金流向页（成交额卡标题落点，2026-10-13 起独立成页） */
 const goBoardFlow = (): void => {
   void router.push(ROUTE_PATH.BOARD_FLOW);
 };
@@ -153,9 +127,15 @@ const goHeatmap = (): void => {
 const { drillView, drillTarget, isDrillLoading, drillError, drillInto, backToBoards } =
   useHeatmapDrill();
 
-/** Top 数量按钮组 v-model 适配：BaseTabs 要求字符串 value，设置项存 number */
+/** Top 数量按钮组 v-model 适配：BaseTabs 要求字符串 value，设置项存 number；
+ *  历史持久化的 30 / 50 不在新档位（Top10/Top20/全部36），读取时归一到全量 36 */
 const heatmapTopNModel = computed<string>({
-  get: () => String(settingsStore.heatmapTopN),
+  get: () =>
+    String(
+      HEATMAP_TOP_VALID_VALUES.includes(settingsStore.heatmapTopN)
+        ? settingsStore.heatmapTopN
+        : HEATMAP_TOP_VALID_VALUES.at(-1),
+    ),
   set: (value) => settingsStore.setHeatmapTopN(Number(value)),
 });
 
@@ -164,12 +144,10 @@ const indexQuotes = ref<FullQuote[]>([]);
 
 /** 涨跌分布分桶计数 */
 const distribution = ref<DistributionCount[]>([]);
-/** 行业板块列表 */
-const industryBoards = ref<IndustryBoard[]>([]);
-/** 当日大盘资金流（取最新一条） */
+/** 板块热力数据（36 板块统一口径，板块日历池；2026-10-29 起不再用 496 全量行业） */
+const heatBoards = ref<CalendarBoardPanoramaItem[]>([]);
+/** 当日大盘资金流（取最新一条；成交额卡资金速览「主力净流入」消费） */
 const marketFundFlow = ref<MarketFundFlow | null>(null);
-/** 大盘资金流历史（近 10 日，升序；供曲线 / 列表） */
-const marketFlowHistory = ref<MarketFundFlow[]>([]);
 /** 两市成交额合计（万） */
 const totalAmountWan = ref<number | null>(null);
 
@@ -180,9 +158,8 @@ const marketBreadth = ref<MarketBreadth | null>(null);
 interface BreadthSnapshot {
   distribution: DistributionCount[];
   totalAmountWan: number;
-  boards: IndustryBoard[];
+  boards: CalendarBoardPanoramaItem[];
   fundFlow: MarketFundFlow | null;
-  flowHistory: MarketFundFlow[];
 }
 
 // 快照播种：切换回本页先展示上次数据
@@ -190,13 +167,17 @@ const cachedIndex = dataCache.get<FullQuote[]>(DATA_CACHE_KEY.DASHBOARD_INDEX_QU
 if (cachedIndex) {
   indexQuotes.value = cachedIndex;
 }
+const cachedHeatBoards = dataCache.get<CalendarBoardPanoramaItem[]>(
+  DATA_CACHE_KEY.CALENDAR_BOARD_PANORAMA,
+);
+if (cachedHeatBoards) {
+  heatBoards.value = cachedHeatBoards;
+}
 const cachedBreadth = dataCache.get<BreadthSnapshot>(DATA_CACHE_KEY.DASHBOARD_BREADTH);
 if (cachedBreadth) {
   distribution.value = cachedBreadth.distribution;
   totalAmountWan.value = cachedBreadth.totalAmountWan;
-  industryBoards.value = cachedBreadth.boards;
   marketFundFlow.value = cachedBreadth.fundFlow;
-  marketFlowHistory.value = cachedBreadth.flowHistory ?? [];
 }
 
 /** 拉取指数行情（成功后写快照） */
@@ -248,38 +229,36 @@ const {
   toggle: toggleIndexExpanded,
 } = useRowClamp();
 
-/** 市场宽度首载是否失败（且无快照）——供资金流卡片空态展示 */
-const isBreadthError = ref(false);
-
-/** 拉取市场宽度数据（全市场快照 + 板块 + 资金流；成功后写快照） */
+/** 拉取市场宽度数据（全市场快照 + 资金流 + 36 板块热力；成功后写快照） */
 const fetchMarketBreadth = async (): Promise<void> => {
   try {
     // 对同一上游（东财系）串行错峰请求，避免并发齐射触发反爬封禁
     const quotes = await fetchAllMarketQuotes();
     await delay(BREADTH_REQUEST_GAP_MS);
-    const boards = await fetchIndustryBoards();
-    await delay(BREADTH_REQUEST_GAP_MS);
     const flows = await fetchMarketFundFlow();
-
-  distribution.value = countDistribution(quotes.map((quote) => quote.changePercent));
-  totalAmountWan.value = quotes.reduce((acc, quote) => acc + (quote.amount ?? 0), 0);
-  // 市场宽度 · ARMS：与涨跌分布同源快照，ingest 落分钟点 / 收盘定稿日 bar（零新增请求）
-  marketBreadth.value = ingestBreadthSnapshot(quotes);
-  industryBoards.value = boards;
-  marketFundFlow.value = flows.at(-1) ?? null;
-  marketFlowHistory.value = flows.slice(-MARKET_FLOW_DAYS);
+    distribution.value = countDistribution(quotes.map((quote) => quote.changePercent));
+    totalAmountWan.value = quotes.reduce((acc, quote) => acc + (quote.amount ?? 0), 0);
+    // 市场宽度 · ARMS：与涨跌分布同源快照，ingest 落分钟点 / 收盘定稿日 bar（零新增请求）
+    marketBreadth.value = ingestBreadthSnapshot(quotes);
+    marketFundFlow.value = flows.at(-1) ?? null;
 
     const snapshot: BreadthSnapshot = {
       distribution: distribution.value,
       totalAmountWan: totalAmountWan.value,
-      boards: industryBoards.value,
+      boards: heatBoards.value,
       fundFlow: marketFundFlow.value,
-      flowHistory: marketFlowHistory.value,
     };
     dataCache.set(DATA_CACHE_KEY.DASHBOARD_BREADTH, snapshot);
   } catch (error) {
-    isBreadthError.value = marketFlowHistory.value.length === 0;
     console.error('[dashboard] breadth', error);
+  }
+  // 板块热力单独取（36 板块单请求，失败不清空旧热力数据）
+  try {
+    await delay(BREADTH_REQUEST_GAP_MS);
+    heatBoards.value = await fetchCalendarBoardPanorama();
+    dataCache.set(DATA_CACHE_KEY.CALENDAR_BOARD_PANORAMA, heatBoards.value);
+  } catch (error) {
+    console.error('[dashboard] heatmap', error);
   }
 };
 
@@ -332,152 +311,24 @@ usePolling({
   tradingAware: true,
 });
 
-// ---------- 成交额变化（沪深两市总成交额，挂载拉取一次，不轮询） ----------
+// ---------- 成交额卡（2026-10-27 王总指定：只保留当日成交额曲线 RealtimeTurnoverCard；
+// 历史成交量 / 相对成交量两量纲移除 —— 资金流向页已有完整图表（fetchMarketTurnover 链路随之移除，
+// 该页数据快照键 DASHBOARD_TURNOVER 仍由资金流向页自己读写） ----------
 
-/** 两市总成交额历史（近一年日 K，升序；30/60/180 交易日窗口本地切片） */
-const turnoverHistory = ref<TurnoverDayItem[]>([]);
-
-/** 成交额首载是否失败（且无快照）——供卡片空态展示 */
-const isTurnoverError = ref(false);
-
-/** 成交额当前展示形式（局部状态，不持久化） */
-const turnoverViewMode = ref<typeof VIEW_MODE[keyof typeof VIEW_MODE]>(VIEW_MODE.CHART);
-
-/** 成交额当前交易日窗口 */
-const turnoverRange = ref<TurnoverRange>(TURNOVER_RANGE_DEFAULT);
-
-/** 成交额图表量纲口径（成交量 / 相对成交量；仅图表视图消费，切表格不重置） */
-const turnoverChartMetric = ref<TurnoverChartMetric>(TURNOVER_CHART_METRIC_DEFAULT);
-
-/** 交易日窗口按钮组 v-model 适配：BaseTabs 要求字符串 value，窗口存 number */
-const turnoverRangeModel = computed<string>({
-  get: () => String(turnoverRange.value),
-  set: (value) => {
-    turnoverRange.value = Number(value) as TurnoverRange;
-  },
-});
-
-// 快照播种：切换回本页先展示上次数据
-// 校验字段口径——历史版本快照用 totalVolume 等旧字段名，直接播种会让图表拿到
-// undefined 画出空白曲线、且掩盖后续请求失败（必须丢弃）
-const cachedTurnover = dataCache.get<TurnoverDayItem[]>(DATA_CACHE_KEY.DASHBOARD_TURNOVER);
-if (cachedTurnover?.length && typeof cachedTurnover[0].totalAmount === 'number') {
-  turnoverHistory.value = cachedTurnover;
-}
-
-/** 拉取两市总成交额历史（挂载一次；成功后写快照） */
-const fetchTurnoverHistory = async (): Promise<void> => {
-  try {
-    turnoverHistory.value = await fetchMarketTurnover();
-    dataCache.set(DATA_CACHE_KEY.DASHBOARD_TURNOVER, turnoverHistory.value);
-  } catch (error) {
-    isTurnoverError.value = turnoverHistory.value.length === 0;
-    console.error('[dashboard] turnover', error);
-  }
-};
-
-// KeepAlive 下仅首次挂载拉取；历史数据不变性强，无需轮询
-onMounted(() => {
-  void fetchTurnoverHistory();
-});
-
-// KeepAlive 缓存页面：切走再切回不重新挂载，重拉一次成交额历史（跨交易日 / 盘中更新兜底；
-// 首次 onActivated 紧跟 onMounted 触发，跳过避免与首屏重复请求）
-let dashboardActivatedOnce = false;
-onActivated(() => {
-  if (!dashboardActivatedOnce) {
-    dashboardActivatedOnce = true;
-    return;
-  }
-  void fetchTurnoverHistory();
-});
-
-/** 当前窗口内的成交额序列（升序，供折线图与表格） */
-const turnoverRows = computed(() =>
-  turnoverHistory.value.slice(-turnoverRange.value),
-);
-
-/**
- * 图表数据源：相对成交量口径在窗口前多取 1 天基准日，
- * 使首个可见交易日的「较上日差额」有前值可比；成交量口径即窗口切片
- */
-const turnoverChartDays = computed(() =>
-  turnoverChartMetric.value === TURNOVER_CHART_METRIC.RELATIVE
-    ? turnoverHistory.value.slice(-(turnoverRange.value + 1))
-    : turnoverRows.value,
-);
-
-/** 当前窗口内的成交额表格行（升序算较上日变化，再倒序展示 + 亿元换算） */
-const turnoverTableRows = computed<TurnoverTableRow[]>(() => {
-  const asc = turnoverRows.value;
-  const rows = asc.map((day, i) => {
-    const prev = i > 0 ? asc[i - 1].totalAmount : null;
-    let changeAmount: number | null = null;
-    let changePct: number | null = null;
-    if (prev !== null) {
-      changeAmount = day.totalAmount - prev;
-      changePct = prev !== 0 ? (changeAmount / prev) * 100 : null;
-    }
-    return {
-      ...day,
-      totalAmountYi: (day.totalAmount / YUAN_PER_YI).toFixed(2),
-      shanghaiAmountYi: (day.shanghaiAmount / YUAN_PER_YI).toFixed(2),
-      shenzhenAmountYi: (day.shenzhenAmount / YUAN_PER_YI).toFixed(2),
-      changePct,
-      changeText: formatTurnoverChange(changeAmount, changePct),
-    };
-  });
-  return rows.reverse();
-});
-
-/** 成交额列配置（排序用原始元值，展示用亿元字段；较上日按变化率排序、用同名插槽渲染放量/缩量文案） */
-const turnoverColumns: TableColumn<TurnoverTableRow>[] = [
-  { key: 'date', label: '日期' },
-  {
-    key: 'totalAmountYi',
-    label: '总成交额(亿)',
-    align: 'right',
-    sortable: true,
-    sortValue: (day) => day.totalAmount,
-  },
-  {
-    key: 'changePct',
-    label: '较上日',
-    align: 'right',
-    sortable: true,
-    sortValue: (day) => day.changePct ?? -Infinity,
-  },
-  {
-    key: 'shanghaiAmountYi',
-    label: '上证(亿)',
-    align: 'right',
-    sortable: true,
-    sortValue: (day) => day.shanghaiAmount,
-  },
-  {
-    key: 'shenzhenAmountYi',
-    label: '深证(亿)',
-    align: 'right',
-    sortable: true,
-    sortValue: (day) => day.shenzhenAmount,
-  },
-];
-
-/** 板块热力数据：按总市值排序取用户设置的 Top N（保留完整字段供列表视图消费） */
-const topBoards = computed<IndustryBoard[]>(() =>
-  [...industryBoards.value]
-    .filter((board) => board.changePercent !== null && board.totalMarketCap !== null)
-    .sort((a, b) => (b.totalMarketCap ?? 0) - (a.totalMarketCap ?? 0))
+/** 板块热力数据：按成交额排序取用户设置的 Top N（36 板块池，超出池大小取全量） */
+const topBoards = computed<CalendarBoardPanoramaItem[]>(() =>
+  [...heatBoards.value]
+    .sort((a, b) => b.amount - a.amount)
     .slice(0, settingsStore.heatmapTopN),
 );
 
-/** 热力图 cell 视图模型（由 topBoards 映射） */
+/** 热力图 cell 视图模型（由 topBoards 映射；面积权重 = 成交额） */
 const heatmapBoards = computed<HeatmapBoard[]>(() =>
   topBoards.value.map((board) => ({
     code: board.code,
     name: board.name,
-    changePercent: board.changePercent ?? 0,
-    weight: board.totalMarketCap ?? 0,
+    changePercent: board.changePercent,
+    weight: board.amount,
   })),
 );
 
@@ -549,28 +400,6 @@ const distributionColumns: TableColumn<DistributionCount>[] = [
 const distributionTotal = computed(() =>
   distribution.value.reduce((acc, bucket) => acc + bucket.count, 0),
 );
-
-/** 大盘资金流列配置 */
-const marketColumns: TableColumn<MarketFundFlow>[] = [
-  { key: 'date', label: '日期' },
-  {
-    key: 'mainNetInflow',
-    label: '主力净流入',
-    align: 'right',
-    sortable: true,
-    sortValue: (day) => day.mainNetInflow,
-  },
-  { key: 'mainNetInflowPercent', label: '主力占比', align: 'right' },
-  { key: 'superLargeNetInflow', label: '超大单', align: 'right' },
-  { key: 'largeNetInflow', label: '大单', align: 'right' },
-  { key: 'smallNetInflow', label: '小单', align: 'right' },
-];
-
-/** 大盘近 10 日数据（倒序展示） */
-const marketFlowRows = computed(() => [...marketFlowHistory.value].reverse());
-
-/** 大盘近 10 日数据（升序，供折线图） */
-const marketFlowAsc = computed(() => marketFlowHistory.value);
 
 /** 涨跌分布是否就绪（首次加载完成） */
 const isDistributionReady = computed(() => distribution.value.length > 0);
@@ -665,34 +494,36 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
         </div>
         <BaseSkeleton v-else-if="!sentiment" />
         <template v-else>
-          <!-- 速览六格：窄容器 3×2，宽容器 6×1（主区已开 @container） -->
-          <div class="grid grid-cols-3 gap-4 @2xl:grid-cols-6">
+          <!-- 速览六格：窄容器 3×2，宽容器（≥1024px）6×1（主区已开 @container；
+               2026-10-24 抽屉挤窄主区时六格单格仅 ~55px，标签逐字竖排，故收窄切六列的档位，
+               标签 nowrap 防一字一行） -->
+          <div class="grid grid-cols-3 gap-4 @5xl:grid-cols-6">
             <div>
-              <p class="text-xs text-text-tertiary">涨停</p>
+              <p class="whitespace-nowrap text-xs text-text-tertiary">涨停</p>
               <p class="mt-1 text-xl font-semibold tabular-nums text-up">
                 {{ sentiment.limitUpCount }}
               </p>
             </div>
             <div>
-              <p class="text-xs text-text-tertiary">跌停</p>
+              <p class="whitespace-nowrap text-xs text-text-tertiary">跌停</p>
               <p class="mt-1 text-xl font-semibold tabular-nums text-down">
                 {{ sentiment.limitDownCount }}
               </p>
             </div>
             <div>
-              <p class="text-xs text-text-tertiary">炸板</p>
+              <p class="whitespace-nowrap text-xs text-text-tertiary">炸板</p>
               <p class="mt-1 text-xl font-semibold tabular-nums text-text">
                 {{ sentiment.brokenCount }}
               </p>
             </div>
             <div>
-              <p class="text-xs text-text-tertiary">炸板率</p>
+              <p class="whitespace-nowrap text-xs text-text-tertiary">炸板率</p>
               <p class="mt-1 text-xl font-semibold tabular-nums text-text">
                 {{ sentiment.brokenRate === null ? '--' : formatPercentUnsigned(sentiment.brokenRate) }}
               </p>
             </div>
             <div>
-              <p class="text-xs text-text-tertiary">连板高度</p>
+              <p class="whitespace-nowrap text-xs text-text-tertiary">连板高度</p>
               <p
                 class="mt-1 text-xl font-semibold tabular-nums"
                 :class="sentiment.maxLadder >= 3 ? 'text-up' : 'text-text'"
@@ -701,7 +532,7 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
               </p>
             </div>
             <div>
-              <p class="text-xs text-text-tertiary">昨日涨停均涨</p>
+              <p class="whitespace-nowrap text-xs text-text-tertiary">昨日涨停均涨</p>
               <p
                 class="mt-1 text-xl font-semibold tabular-nums"
                 :class="
@@ -735,36 +566,13 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
       </BaseCard>
     </div>
 
-    <!-- 成交额（资金速览 + 成交额变化合并为一张卡：两者本质同属市场成交维度；标题跳盘面雷达）。
-         2026-10-13 实时成交额由独立卡并入本卡，成为图表视图第一个量纲子项（实时成交额/历史成交量/相对成交量） -->
+    <!-- 成交额（资金速览 + 当日成交额曲线合并为一张卡：两者本质同属市场成交维度；标题跳资金流向页，2026-10-24 王总指定）。
+         2026-10-27 王总指定：历史成交量 / 相对成交量两量纲移除（资金流向页已有完整图表），卡片只剩当日成交额曲线 -->
     <BaseCard
       title="成交额"
       clickable-title
-      @title-click="goMarketRank"
+      @title-click="goBoardFlow"
     >
-      <template #extra>
-        <div class="flex items-center gap-2">
-          <!-- 交易日窗口：仅历史口径（历史/相对成交量）有意义，实时成交额视图下隐藏 -->
-          <BaseTabs
-            v-if="turnoverViewMode === VIEW_MODE.CHART && turnoverChartMetric !== TURNOVER_CHART_METRIC.REALTIME"
-            v-model="turnoverRangeModel"
-            :options="TURNOVER_RANGE_TAB_OPTIONS"
-          />
-          <!-- 图表/列表切换：实时成交额只有图表形态，视图切换一并隐藏 -->
-          <BaseTabs
-            v-if="turnoverChartMetric !== TURNOVER_CHART_METRIC.REALTIME"
-            v-model="turnoverViewMode"
-            :options="VIEW_MODE_OPTIONS"
-          />
-          <!-- 量纲口径：仅图表视图展示（实时成交额 / 历史成交量 / 相对成交量，2026-10-13 并入实时成交额子功能） -->
-          <BaseTabs
-            v-if="turnoverViewMode === VIEW_MODE.CHART"
-            v-model="turnoverChartMetric"
-            :options="TURNOVER_CHART_METRIC_OPTIONS"
-          />
-        </div>
-      </template>
-
       <!-- 资金速览：当日汇总指标（两市成交额 + 主力净流入） -->
       <div
         v-if="totalAmountWan !== null"
@@ -788,34 +596,13 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
       </div>
       <BaseSkeleton v-else class="mb-4" />
 
-      <BaseEmpty v-if="isTurnoverError" text="成交额数据加载失败，请稍后重试" />
-      <div v-else-if="turnoverHistory.length === 0"><BaseSkeleton /></div>
-      <!-- 图表视图：实时成交额（分时累计双线） / 历史成交量 / 相对成交量 -->
-      <RealtimeTurnoverCard v-else-if="turnoverChartMetric === TURNOVER_CHART_METRIC.REALTIME" />
-      <TurnoverTrendChart
-        v-else-if="turnoverViewMode === VIEW_MODE.CHART"
-        :days="turnoverChartDays"
-        :metric="turnoverChartMetric"
-      />
-      <!-- 表格视图 -->
-      <BaseTable
-        v-else
-        :columns="turnoverColumns"
-        :rows="turnoverTableRows"
-        :row-key="(row) => row.date"
-        scroll-class="table-scroll-chart"
-      >
-        <template #changePct="{ row }">
-          <!-- 量能方向 + 变化额 + 变化率：文案整段不折行，颜色沿用涨红跌绿 -->
-          <span
-            class="whitespace-nowrap"
-            :class="row.changePct === null ? 'text-text-tertiary' : row.changePct >= 0 ? 'text-up' : 'text-down'"
-          >{{ row.changeText ?? '--' }}</span>
-        </template>
-      </BaseTable>
+      <!-- 当日成交额曲线（当日 vs 昨日同时刻分时累计，组件内自管数据） -->
+      <RealtimeTurnoverCard />
     </BaseCard>
 
-    <!-- 涨跌分布 + 大盘资金流：等宽 flex 左右分布（gap 20px，与上方新行同口径），窄窗 320px 以下换行 -->
+    <!-- 涨跌分布 + 市场宽度：等宽 flex 左右分布（gap 20px，与上方新行同口径），窄窗 320px 以下换行。
+         市场宽度 2026-10-24 起由独占整行改入本行右位、宽度减半（王总指定），
+         原右位「主力净流入（近10日）」卡同日删除（大盘资金流下钻走资金流向页） -->
     <div class="flex flex-wrap gap-5">
       <BaseCard
         title="涨跌分布"
@@ -854,75 +641,19 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
         </BaseTable>
       </BaseCard>
 
-      <!-- 大盘资金流（近10日）：曲线 / 列表；标题跳资金流向页（2026-10-13 起独立成页） -->
-      <BaseCard
-        title="主力净流入（近10日）"
-        clickable-title
+      <!-- 市场宽度 · ARMS（当日分时；近 30/60 日等长历史在右上角「市场宽度详情」入口页；数据随行情快照本地积累） -->
+      <MarketBreadthCard
+        :breadth="marketBreadth"
+        :sentiment="sentiment"
         class="min-w-[320px] flex-1"
-        @title-click="goBoardFlow"
-      >
-        <template #extra>
-          <BaseTabs v-model="marketViewMode" :options="VIEW_MODE_OPTIONS" />
-        </template>
-        <div v-if="isBreadthError" class="py-10">
-          <BaseEmpty text="资金数据加载失败，请稍后重试（上游可能限频或封禁）" />
-        </div>
-        <BaseSkeleton v-else-if="marketFlowHistory.length === 0" />
-        <template v-else>
-          <!-- 曲线视图 -->
-          <div v-if="marketViewMode === VIEW_MODE.CHART">
-            <MarketFundFlowTrendChart :days="marketFlowAsc" :height="MARKET_FLOW_VIEW_HEIGHT_PX" />
-          </div>
-          <!-- 列表视图 -->
-          <BaseTable
-            v-else
-            :columns="marketColumns"
-            :rows="marketFlowRows"
-            :row-key="(day) => day.date"
-            scroll-class="table-scroll-chart"
-          >
-            <template #date="{ row }">
-              <span class="text-text-secondary">{{ row.date.slice(5) }}</span>
-            </template>
-            <template #mainNetInflow="{ row }">
-              <span
-                class="font-medium"
-                :class="(row.mainNetInflow ?? 0) >= 0 ? 'text-up' : 'text-down'"
-              >
-                {{ formatYuanWithSign(row.mainNetInflow) }}
-              </span>
-            </template>
-            <template #mainNetInflowPercent="{ row }">
-              <span class="text-text-secondary">{{ formatPercent(row.mainNetInflowPercent) }}</span>
-            </template>
-            <template #superLargeNetInflow="{ row }">
-              <span :class="(row.superLargeNetInflow ?? 0) >= 0 ? 'text-up' : 'text-down'">
-                {{ formatYuanWithSign(row.superLargeNetInflow) }}
-              </span>
-            </template>
-            <template #largeNetInflow="{ row }">
-              <span :class="(row.largeNetInflow ?? 0) >= 0 ? 'text-up' : 'text-down'">
-                {{ formatYuanWithSign(row.largeNetInflow) }}
-              </span>
-            </template>
-            <template #smallNetInflow="{ row }">
-              <span :class="(row.smallNetInflow ?? 0) >= 0 ? 'text-up' : 'text-down'">
-                {{ formatYuanWithSign(row.smallNetInflow) }}
-              </span>
-            </template>
-          </BaseTable>
-        </template>
-      </BaseCard>
+      />
     </div>
 
-    <!-- 市场宽度 · ARMS（2026-10-21 新增：当日分时 + 近 30/60 日曲线；数据随行情快照本地积累） -->
-    <MarketBreadthCard :breadth="marketBreadth" :sentiment="sentiment" />
-
-    <!-- 板块热力（标题跳行情全景 A 股全景模块） -->
+    <!-- 板块热力（标题跳大盘云图，2026-10-24 王总指定） -->
     <BaseCard
-      title="板块热力（按总市值加权）"
+      title="板块热力（按成交额加权）"
       clickable-title
-      @title-click="goPanorama"
+      @title-click="goHeatmap"
     >
       <template #extra>
         <div class="flex flex-wrap items-center gap-2">

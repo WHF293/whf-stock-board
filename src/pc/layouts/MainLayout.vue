@@ -19,6 +19,7 @@ import DockPanel from "../components/dock/DockPanel.vue";
 import BaseTooltip from "../components/ui/BaseTooltip.vue";
 import MenuIcon from "../components/ui/MenuIcon.vue";
 import NotificationHost from "../components/ui/NotificationHost.vue";
+import TreasuryFab from "../components/business/TreasuryFab.vue";
 import PluginConfirmHost from "../components/plugin/PluginConfirmHost.vue";
 import PluginStockPickerHost from "../components/plugin/PluginStockPickerHost.vue";
 import SidebarPanelHost from "../components/plugin/SidebarPanelHost.vue";
@@ -116,6 +117,11 @@ const openAgentAnalysis = (): void => {
   void openAgentAnalysisWindow().then((opened) => {
     if (!opened) void router.push(ROUTE_PATH.AGENT_WINDOW);
   });
+};
+
+/** 打开插件工坊（站内路由；2026-10-29 侧栏入口移到顶栏 Agent 分析之后，王总指定） */
+const openPluginLab = (): void => {
+  void router.push(ROUTE_PATH.PLUGIN_LAB);
 };
 
 // 暗色 class / data-theme / data-trend 的落 <html> 已上提到 App.vue 的
@@ -441,16 +447,26 @@ const titleBarLeadingItems = computed<HeaderRenderItem[]>(() => {
 });
 
 /**
- * TitleBar 右侧工具条（明暗 / 搜索 / 软件文档 / Agent 分析，窗口控制按钮左侧）。
- * Agent 分析恒置末位（白皮书之后）：用户已持久化的编排顺序可能还是旧默认
- * （Agent 在白皮书之前），这里显式兜底，不随编排移动
+ * TitleBar 右侧工具条（明暗 / 搜索 / 软件文档 / Agent 分析 / 插件工坊，窗口控制按钮左侧）。
+ * Agent 分析 + 插件工坊恒置末位（前者王总 2026-10-13、后者 2026-10-29 指定排在
+ * Agent 之后）：用户已持久化的编排顺序可能还是旧默认，这里显式兜底，不随编排移动
  */
 const titleBarTrailingItems = computed<HeaderRenderItem[]>(() => {
   const rest = titleBarHeaderItems.value.filter(
-    (item) => !TITLE_BAR_LEADING_ORDER.includes(item.id),
+    (item) =>
+      !TITLE_BAR_LEADING_ORDER.includes(item.id)
+      && item.id !== HOST_HEADER_ITEM.AGENT
+      && item.id !== HOST_HEADER_ITEM.PLUGIN_LAB,
   );
-  const agent = rest.filter((item) => item.id === HOST_HEADER_ITEM.AGENT);
-  return [...rest.filter((item) => item.id !== HOST_HEADER_ITEM.AGENT), ...agent];
+  const tail = titleBarHeaderItems.value.filter(
+    (item) => item.id === HOST_HEADER_ITEM.AGENT || item.id === HOST_HEADER_ITEM.PLUGIN_LAB,
+  );
+  // 尾部按 [Agent, 插件工坊] 固定次序（与 HOST_HEADER_ITEMS 声明一致）
+  const tailRank = new Map<string, number>(
+    [HOST_HEADER_ITEM.AGENT, HOST_HEADER_ITEM.PLUGIN_LAB].map((id, index) => [id, index]),
+  );
+  tail.sort((a, b) => (tailRank.get(a.id) ?? 0) - (tailRank.get(b.id) ?? 0));
+  return [...rest, ...tail];
 });
 
 /**
@@ -658,6 +674,7 @@ void marketStatusStore.refresh();
           @toggle-theme="toggleDark()"
           @open-search="commandPaletteOpen = true"
           @open-agent="openAgentAnalysis"
+          @open-plugin-lab="openPluginLab"
           @open-site-docs-in-app="openSiteDocsInApp"
           @open-site-docs-in-browser="openSiteDocsInBrowser"
         />
@@ -669,6 +686,7 @@ void marketStatusStore.refresh();
           @toggle-theme="toggleDark()"
           @open-search="commandPaletteOpen = true"
           @open-agent="openAgentAnalysis"
+          @open-plugin-lab="openPluginLab"
           @open-site-docs-in-app="openSiteDocsInApp"
           @open-site-docs-in-browser="openSiteDocsInBrowser"
         />
@@ -797,26 +815,36 @@ void marketStatusStore.refresh();
             </div>
           </template>
 
-          <!-- 收起态（64px 图标栏）：不分组，纯扁平图标流 + tooltip；
-               顺序与展开态同源（按组序展开），不能用扁平 menuItems，否则两态顺序不一致 -->
+          <!-- 收起态（64px 图标栏）：按分组渲染 + 组间短横线分隔（用户指定，2026-10-23）；
+               顺序与展开态同源（按组序展开），不能用扁平 menuItems，否则两态顺序不一致。
+               分隔线不带 data-nav-item 锚点，DOM 序列仍与 collapsedFlatItems 一一对应，
+               滑动气泡按锚点序号取元素不受影响 -->
           <template v-else>
-            <RouterLink
-              v-for="item in collapsedFlatItems"
-              :key="item.path"
-              :to="item.path"
-              data-nav-item
-              data-track="NAV_MENU_CLICK"
-              :data-track-detail="item.title"
-              class="group relative pressable flex items-center justify-center gap-3 rounded-lg px-2 py-2 text-sm active:scale-[0.98]"
-              :class="
-                isActive(item.path)
-                  ? 'font-medium text-primary'
-                  : 'text-text-secondary hover:bg-flat-weak'
-              "
-            >
-              <MenuIcon :name="item.icon" :size="16" />
-              <BaseTooltip :text="item.title" />
-            </RouterLink>
+            <template v-for="(group, groupIndex) in menuGroups" :key="group.id">
+              <div
+                v-if="groupIndex > 0"
+                role="separator"
+                class="mx-auto my-1 h-px w-6 bg-flat-weak"
+              ></div>
+              <RouterLink
+                v-for="item in group.items"
+                :key="item.path"
+                :to="item.path"
+                data-nav-item
+                data-track="NAV_MENU_CLICK"
+                :data-track-detail="item.title"
+                class="group relative pressable flex items-center justify-center gap-3 rounded-lg px-2 py-2 text-sm active:scale-[0.98]"
+                :class="
+                  isActive(item.path)
+                    ? 'font-medium text-primary'
+                    : 'text-text-secondary hover:bg-flat-weak'
+                "
+              >
+                <MenuIcon :name="item.icon" :size="16" />
+                <!-- 收起态无组头可读，tooltip 带「分组名-页面名」标明归属（用户指定 2026-10-23） -->
+                <BaseTooltip :text="`${group.title}-${item.title}`" />
+              </RouterLink>
+            </template>
           </template>
 
           <!-- 插件贡献：导航区面板（inline 直接渲染 / drawer 只放入口） -->
@@ -845,15 +873,16 @@ void marketStatusStore.refresh();
             :panel="panel"
             :collapsed="effectiveCollapsed"
           />
+          <!-- 设置入口：点击/hover 热区与上方菜单条目完全同形（px-3 py-2 text-sm 圆角块，用户指定 2026-10-23） -->
           <button
             type="button"
-            class="group relative pressable flex items-center gap-2 rounded-lg py-1 text-xs active:scale-[0.98] text-text-secondary hover:text-text"
-            :class="effectiveCollapsed ? 'justify-center px-1' : 'px-1'"
+            class="group relative pressable flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm active:scale-[0.98] text-text-secondary hover:bg-flat-weak hover:text-text"
+            :class="effectiveCollapsed ? 'justify-center px-2' : ''"
             aria-label="打开设置"
             data-track="NAV_SETTINGS_OPEN"
             @click="settingsOpen = true"
           >
-            <MenuIcon name="settings" :size="14" />
+            <MenuIcon name="settings" :size="16" />
             <span v-if="!effectiveCollapsed">设置</span>
             <BaseTooltip v-if="effectiveCollapsed" text="设置" />
           </button>
@@ -914,17 +943,17 @@ void marketStatusStore.refresh();
             </BaseButton>
           </div>
         </header>
-        <main class="flex-1 overflow-y-auto">
-          <!-- 内容上限 1600px：报价卡片栅格（quote-card-grid）在上限内按列宽公式排布。
-               页面全屏（详情页铺满）时改为撑满视口高度的 flex 列 + 小留白，
-               详情页据此用 flex-1 拉伸主区（见 StockDetailView 的分模式高度） -->
-          <!-- 顶部留白 = 内容列 gap-2.5（2026-10-22 二次调整：曾按王总要求加 pt-3 加大，
-               后王总反馈所有页面页头岛与内容间隔太大，撤回 pt-3 回落 10px）；
+        <main class="flex-1 overflow-y-auto" :class="pageFullscreen ? '' : 'pb-6'">
+          <!-- pb-6 挂在滚动容器（main）而非内容容器（2026-10-24 双滚动条治理）：
+               内容容器 h-full 定高后，「页面根 h-full 正好填满主区（无双滚动条）」与
+               「长页面（市场总览等）滚动到底仍有底部留白」两者兼得——
+               滚动范围含滚动容器自身的 padding-bottom。页面全屏时不加，保持 p-3 口径。
+               内容上限 1600px：报价卡片栅格（quote-card-grid）在上限内按列宽公式排布；
                横向不留 padding，与页头岛共用 max-w-[1600px] 居中约束（对齐在页头岛类上），
                左右缘严格一致 -->
           <div
-            class="@container w-full"
-            :class="pageFullscreen ? 'pc-page-fs flex h-full min-h-0 flex-col p-3' : 'mx-auto max-w-[1600px] pb-6'"
+            class="@container h-full w-full"
+            :class="pageFullscreen ? 'pc-page-fs flex min-h-0 flex-col p-3' : 'mx-auto max-w-[1600px]'"
           >
             <!-- 页面切换：KeepAlive 缓存页面状态；进入动画由 pageAnim 类名驱动（无离场状态机） -->
             <RouterView v-slot="{ Component, route: routeRecord }">
@@ -977,6 +1006,9 @@ void marketStatusStore.refresh();
     <!-- 应用级浮窗（插件经 app:notify 服务发起，跨路由常驻） -->
     <NotificationHost />
 
+    <!-- 大A宝典固钉（右下角全局悬浮入口：icon 常驻、悬停展开字样，点击开口诀弹窗） -->
+    <TreasuryFab />
+
     <!-- 插件确认弹窗（经 app:ui 的 confirm 发起，宿主渲染、答复回到插件的 Promise） -->
     <PluginConfirmHost />
 
@@ -984,6 +1016,22 @@ void marketStatusStore.refresh();
     <PluginStockPickerHost />
   </div>
 </template>
+
+<style>
+/* 全局氛围背景（2026-10-24 王总指定「整个界面背景太素」）：整界面叠一层与市场总览
+   指数卡同方向的涨色渐变，但浓度降到 45%（color-mix 掺透明）——王总二次反馈
+   「太深了，红色浅点、和指数卡片区分开」。fixed 钉在视口不随内容滚动；
+   黑金主题的暖金雾按更高特异性在 theme.css 覆盖本条，互不影响。
+   只放 MainLayout：官网 / 移动端 / 小组件窗口不受影响 */
+body {
+  background-image: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--color-up-weak) 45%, transparent),
+    transparent 70%
+  );
+  background-attachment: fixed;
+}
+</style>
 
 <style scoped>
 /* 侧栏分组条目高度过渡：起止高度由 JS 钩子写内联（auto 不可动画），

@@ -10,6 +10,7 @@ import {
   listenAgentAsk,
   notifyAgentReady,
 } from '@/pc/agent/agent-bridge';
+import type { AgentAskSource } from '@/common/constants/agent-ask.constants';
 import type { AgentManagerKey } from '@/common/types/agent.types';
 import AgentSidebar from '@/pc/components/agent/AgentSidebar.vue';
 import ChatPanel from '@/pc/components/agent/ChatPanel.vue';
@@ -82,9 +83,18 @@ const onOpenSession = (sessionId: number): void => {
  * 已配置 → **新开一个会话**再经 ChatPanel.askAgent 直发 —— 分析请求是自包含的，
  * 每次独立开会话，不与之前选中的会话共享上下文（避免历史对话污染本次分析）
  * @param prompt 完整提示词
+ * @param source 来源标识（插件经 `app:agent-ask` 唤起时有值，浮窗注明来源；
+ * 宿主内部入口不传，行为不变）
  */
-const handleAgentAsk = (prompt: string): void => {
+const handleAgentAsk = (prompt: string, source?: AgentAskSource): void => {
   viewMode.value = 'chat';
+  if (source) {
+    notifications.push({
+      title: '收到插件分析请求',
+      body: `来自插件「${source.pluginName ?? source.pluginId}」的 AI 分析请求，已在新会话发送`,
+      tone: NOTIFY_TONE.FLAT,
+    });
+  }
   if (store.enabledModels.length === 0) {
     openManager.value = 'model';
     notifications.push({
@@ -114,7 +124,7 @@ onMounted(() => {
   }
   // 浏览器回退路径：同窗路由跳转后取走暂存请求（init 幂等，就绪后再消费）
   const pending = consumePendingAgentAsk();
-  if (pending !== null) void store.init().then(() => handleAgentAsk(pending));
+  if (pending !== null) void store.init().then(() => handleAgentAsk(pending.prompt, pending.source));
 });
 </script>
 
@@ -123,7 +133,7 @@ onMounted(() => {
   <div
     v-if="!tauriAvailable"
     class="flex items-center justify-center border border-flat-weak bg-surface"
-    :class="standalone ? 'h-dvh' : 'h-[calc(100dvh-6.5rem)] rounded-2xl'"
+    :class="standalone ? 'h-dvh' : 'h-full rounded-2xl'"
   >
     <div class="max-w-sm text-center">
       <p class="text-base font-medium text-text">Agent 分析仅 Tauri 桌面端可用</p>
@@ -137,7 +147,7 @@ onMounted(() => {
   <div
     v-else
     class="flex min-h-0 flex-col"
-    :class="standalone ? 'h-dvh' : 'h-[calc(100dvh-6.5rem)]'"
+    :class="standalone ? 'h-dvh' : 'h-full'"
   >
     <!-- 独立窗口标题栏（decorations:false，主窗口同款三键与拖拽；内嵌不渲染） -->
     <AgentWindowTitlebar v-if="standalone" />

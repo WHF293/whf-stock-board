@@ -46,7 +46,8 @@ const selectTrendTheme = (theme: TrendTheme): void => {
 </script>
 
 <template>
-  <div>
+  <!-- m-sub-page：≥600px 大屏限宽居中（mobile.css 断点适配分档） -->
+  <div class="m-sub-page">
     <van-nav-bar title="主题设置" class="m-nav" fixed placeholder safe-area-inset-top left-arrow @click-left="router.back()" />
 
     <div class="m-theme-block" style="margin-top: 12px">

@@ -17,12 +17,6 @@ export const NEWS_CONTENT_MAX_CHARS = 1_200;
 /** 正文解码乱码判定阈值：替换符（U+FFFD）占比超过它视为字符集误码，按失败处理 */
 export const NEWS_CONTENT_REPLACEMENT_MAX_RATIO = 0.05;
 
-/** 批量抓正文的并发上限（跨新闻站 HTML 页，与信号扫描同一红线口径） */
-export const NEWS_BODY_FETCH_CONCURRENCY = 3;
-
-/** 批量抓正文的相邻请求间隔（毫秒；错峰防新闻站封禁） */
-export const NEWS_BODY_FETCH_INTERVAL_MS = 300;
-
 /**
  * 不抓正文的 URL 前缀：这些链接不是原文页（合成链接，抓了也只有搜索页壳），
  * 直接按标题 + 摘要分析。东财快讯 2026-10-11 起已改拼正文页（/a/<code>.html），不再产生此类链接

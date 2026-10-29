@@ -1,3 +1,5 @@
+import type { WatchlistSortMode } from '../types/watchlist.types.ts';
+
 /**
  * 自选股常量
  */
@@ -8,8 +10,41 @@ export const DEFAULT_GROUP_ID = 'default';
 /** 默认自选分组名称 */
 export const DEFAULT_GROUP_NAME = '默认分组';
 
+/** 自选股表格「分组」列：多个分组名称间的分隔符 */
+export const WATCHLIST_GROUP_NAME_SEPARATOR = '，';
+
 /** 删除分组的确认文案 */
 export const REMOVE_GROUP_CONFIRM_TEXT = '确认删除该分组？组内自选股将一并移除';
+
+/** 看板卡片跨分组拖拽的 Sortable group 名（同名 group 之间可互相拖入 / 拖出） */
+export const WATCHLIST_GROUP_DRAG_GROUP = 'watchlist-groups';
+
+/** 看板卡片拖拽排序的动画时长（毫秒） */
+export const WATCHLIST_GROUP_DRAG_ANIMATION_MS = 150;
+
+/** 看板分组内排序模式（custom = 自定义拖拽顺序，asc / desc = 按涨跌幅） */
+export const WATCHLIST_SORT_MODES = ['custom', 'asc', 'desc'] as const;
+
+/** 看板分组内排序 icon 点击时的循环顺序（自定义 → 升序 → 降序 → 自定义） */
+export const WATCHLIST_SORT_MODE_CYCLE: readonly WatchlistSortMode[] = [
+  'custom',
+  'asc',
+  'desc',
+];
+
+/** 看板分组内排序 icon 的提示文案（key 与 WATCHLIST_SORT_MODES 一一对应） */
+export const WATCHLIST_SORT_MODE_TITLE: Record<WatchlistSortMode, string> = {
+  custom: '按涨跌幅升序排序',
+  asc: '按涨跌幅降序排序',
+  desc: '恢复自定义排序',
+};
+
+/** 看板分组内排序 icon（key 与 WATCHLIST_SORT_MODES 一一对应，MenuIcon 图标 key） */
+export const WATCHLIST_SORT_MODE_ICON: Record<WatchlistSortMode, string> = {
+  custom: 'sortCustom',
+  asc: 'sortAsc',
+  desc: 'sortDesc',
+};
 
 /**
  * 合法自选符号形态（sh600519 / sz000001 / bj430047 / hk00700 / usAAPL）

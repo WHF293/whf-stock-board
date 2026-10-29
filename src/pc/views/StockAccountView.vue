@@ -1,271 +1,102 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { ref } from 'vue';
+import dayjs from 'dayjs';
+import { openUrl } from '@tauri-apps/plugin-opener';
+import { PAGE_HEADER_ACTIONS_TARGET, usePageHeaderSlot } from '../../common/composables/use-page-header-slot';
+import tzzbFavicon from '../../common/assets/tzzb-favicon.ico';
+import { TZZB_OFFICIAL_SITE_URL } from '../../common/types/tzzb.types.ts';
+import { fetchAuthorizedAt, startTzzbMcpAuth, waitTzzbMcpAuthorized } from '../../common/api/tzzb.api.ts';
+import { NOTIFY_TONE } from '../../common/constants/notify.constants.ts';
+import { useNotificationsStore } from '../../common/stores/notifications';
 import BaseButton from '../components/ui/BaseButton.vue';
-import BaseCard from '../components/ui/BaseCard.vue';
-import BaseEmpty from '../components/ui/BaseEmpty.vue';
-import BaseTooltip from '../components/ui/BaseTooltip.vue';
 import MenuIcon from '../components/ui/MenuIcon.vue';
-import NoticeBar from '../components/ui/NoticeBar.vue';
-import CreateAccountModal from '../components/account/CreateAccountModal.vue';
-import ImportTradeModal from '../components/account/ImportTradeModal.vue';
-import ManageAccountModal from '../components/account/ManageAccountModal.vue';
-import AccountRecordsPanel from '../components/account/AccountRecordsPanel.vue';
-import BaseConfirmModal from '../components/ui/BaseConfirmModal.vue';
-import {
-  deleteTradeRecordsByAccount,
-  insertTradeRecords,
-} from '../../common/api/account-records-db.api.ts';
-import { parseThfTradeFile } from '../../common/utils/thf-import';
-import { useStockAccountStore } from '../../common/stores/stock-account';
-import type { TradeImportPayload } from '../../common/types/account.types.ts';
+import TzzbDashboard from '../components/account/tzzb/TzzbDashboard.vue';
 
 /**
- * 股票账户（交割单 / 对账单导入入口）
+ * 股票账户 · 投资账本数据中心
  *
- * 顶部账户 tab 条：active 主题色文字 + 下划线；不预置默认账户——
- * 用户不创建账户就没有账户（内容区展示引导空态）。
- * 右侧控制区：☰ 账户管理（显隐 + 排序）/ 对账单导入 / 交割单导入 / + 添加。
- * 页面顶部 NoticeBar 提示：仅支持同花顺导出的对账单与交割单。
+ * 数据由同花顺投资账本官方 MCP 同步（common/api/tzzb.api.ts，
+ * 方案见 .ai/项目资源/投资账本MCP同步-开发方案.md）。
+ * 六大模块：账户选择器 / 指标行 + 资产曲线 / 盈亏日历（三级下钻）/
+ * 建清仓记录 / 清仓分析 / 品种总盈亏 / 交易记录（股票 + 基金）。
+ * 旧的手工交割单 / 对账单导入已于 2026-10-23 下线。
  */
-const accountStore = useStockAccountStore();
 
-/** 当前激活账户 id（空 = 无账户或未选择） */
-const activeAccountId = ref<string>('');
+/** 页头挂载守卫（KeepAlive 缓存页：激活才投射，防按钮残留） */
+const { active: headerSlotActive } = usePageHeaderSlot();
 
-/** tab 条展示的账户（显隐 + 排序后） */
-const visibleAccounts = computed(() => accountStore.visibleAccounts);
+/** 浮窗（鉴权发起 / 完成 / 失败反馈） */
+const notifications = useNotificationsStore();
 
-/** 激活账户（容错回退到首个可见账户） */
-const activeAccount = computed(
-  () =>
-    accountStore.accounts.find((account) => account.id === activeAccountId.value) ??
-    visibleAccounts.value[0] ??
-    accountStore.accounts[0],
-);
-
-// 激活账户被删除 / 尚未选择时回退到首个可见账户
-watch(
-  [() => accountStore.accounts.length, visibleAccounts],
-  () => {
-    if (
-      activeAccountId.value &&
-      accountStore.accounts.some((account) => account.id === activeAccountId.value)
-    ) {
-      return;
-    }
-    activeAccountId.value = visibleAccounts.value[0]?.id ?? '';
-  },
-  { immediate: true },
-);
-
-/** 创建账户弹窗开关 */
-const createModalOpen = ref(false);
-
-/** 创建成功后激活新账户 tab
- * @param accountId 新账户 id
- */
-const onAccountCreated = (accountId: string): void => {
-  activeAccountId.value = accountId;
-};
-
-/** 导入弹窗开关 */
-const importModalOpen = ref(false);
-
-/** 导入类型：trade 交割单 / statement 对账单 */
-const importKind = ref<'trade' | 'statement'>('trade');
-
-/** 账户管理弹窗开关（☰） */
-const manageModalOpen = ref(false);
-
-/** 删除账户二次确认弹窗 */
-const deleteConfirmOpen = ref(false);
-
-/** 确认删除：清账户档案 + 级联清两类流水 */
-const onDeleteAccount = (): void => {
-  if (!activeAccount.value) return;
-  const accountId = activeAccount.value.id;
-  accountStore.removeAccount(accountId);
-  void deleteTradeRecordsByAccount(accountId);
-  deleteConfirmOpen.value = false;
-};
-
-/** 导入提示横幅文案（空 = 不展示，数秒后自动消失） */
-const importHint = ref('');
-
-/** 导入提示定时器句柄 */
-let importHintTimer: ReturnType<typeof setTimeout> | null = null;
+/** 鉴权进行中（防重入 + 按钮态） */
+const authRunning = ref(false);
 
 /**
- * 导入确认回调：对账单写入 account_statement 表（期间/原文解析待实现，暂存空）；
- * 交割单解析入库字段待定（TODO: 解析文件 → 生成成交记录 → 入库 SQLite）
- * @param payload 导入载荷（账户 + 文件信息）
+ * 系统默认浏览器打开投资账本官网（plugin-opener；纯浏览器 dev 环境兜底新标签页）
  */
-const onTradeImportConfirm = async (payload: TradeImportPayload): Promise<void> => {
+const openOfficialSite = (): void => {
+  void openUrl(TZZB_OFFICIAL_SITE_URL).catch(() =>
+    window.open(TZZB_OFFICIAL_SITE_URL, '_blank', 'noopener'),
+  );
+};
+
+/**
+ * 重新触发 MCP 浏览器鉴权：dev server 起回调监听 → 拉起系统浏览器到授权页 →
+ * 轮询授权时间直到落盘（浮窗反馈结果；页面顶栏同步状态的授权时间随之刷新）
+ */
+const runMcpAuth = async (): Promise<void> => {
+  if (authRunning.value) return;
+  authRunning.value = true;
   try {
-    // 解析同花顺 GBK TSV → 批量入库（dedupe_key 去重，重复导入不产生重复行）
-    const records = await parseThfTradeFile(payload.file, payload.accountId);
-    const inserted = await insertTradeRecords(records, payload.kind);
-    const skipped = records.length - inserted;
-    importHint.value =
-      skipped > 0
-        ? `${payload.kind === 'statement' ? '对账单' : '交割单'}「${payload.fileName}」解析 ${records.length} 条：新增 ${inserted} 条，跳过重复 ${skipped} 条`
-        : `${payload.kind === 'statement' ? '对账单' : '交割单'}「${payload.fileName}」已导入 ${inserted} 条记录`;
-  } catch (error) {
-    importHint.value =
-      error instanceof Error ? `导入失败：${error.message}` : '导入失败：文件解析异常';
+    const beforeAt = (await fetchAuthorizedAt()) ?? 0;
+    const authorizeUrl = await startTzzbMcpAuth();
+    await openUrl(authorizeUrl).catch(() => window.open(authorizeUrl, '_blank', 'noopener'));
+    notifications.push({
+      title: 'MCP 鉴权',
+      body: '已打开同花顺授权页，完成登录后自动检测',
+      tone: NOTIFY_TONE.PRIMARY,
+    });
+    const authorizedAt = await waitTzzbMcpAuthorized(beforeAt);
+    notifications.push({
+      title: 'MCP 鉴权完成',
+      body: `授权时间 ${dayjs(authorizedAt).format('YYYY-MM-DD HH:mm')}`,
+      tone: NOTIFY_TONE.UP,
+    });
+  } catch (err) {
+    notifications.push({
+      title: 'MCP 鉴权失败',
+      body: err instanceof Error ? err.message : String(err),
+      tone: NOTIFY_TONE.DOWN,
+    });
+  } finally {
+    authRunning.value = false;
   }
-  if (importHintTimer) {
-    clearTimeout(importHintTimer);
-  }
-  importHintTimer = setTimeout(() => {
-    importHint.value = '';
-  }, 6000);
 };
 </script>
 
 <template>
-  <!-- 定高 flex 列（与盘面雷达等整页单表页同款高度链）：
-       NoticeBar / tab 条保持内容高，卡片吃剩余高度，表格滚动不外溢到 main -->
-  <div class="flex h-[calc(100dvh-6.5rem)] min-h-0 flex-col gap-4">
-    <NoticeBar
-      class="shrink-0"
-      text="当前仅支持导入同花顺导出的「对账单」与「交割单」文件（CSV / XLSX / XLS）"
-    />
-
-    <!-- 账户 tab 条（tab + 右侧控制区） -->
-    <div class="flex shrink-0 items-end border-b border-flat-weak">
-      <!-- 左侧：账户 tab（active 主题色字 + 下划线，溢出横向滚动） -->
-      <div
-        class="min-w-0 flex-1 overflow-x-auto overflow-y-hidden [scrollbar-width:thin]"
-      >
-        <div class="flex" role="tablist" aria-label="账户管理">
-          <button
-            v-for="account in visibleAccounts"
-            :key="account.id"
-            type="button"
-            role="tab"
-            :aria-selected="activeAccountId === account.id"
-            class="-mb-px shrink-0 whitespace-nowrap border-b-2 px-4 py-2.5 text-sm transition-colors"
-            :class="
-              activeAccountId === account.id
-                ? 'border-primary font-medium text-primary'
-                : 'border-transparent text-text-secondary hover:text-text'
-            "
-            @click="activeAccountId = account.id"
-          >
-            {{ account.name }}
-          </button>
-        </div>
-      </div>
-
-      <!-- 右侧控制区 -->
-      <div class="flex shrink-0 items-center gap-1.5 px-2 pb-1.5">
-        <!-- ☰ 账户管理：勾选 tab 显隐 + 拖拽排序 -->
-        <span class="relative group">
-          <BaseTooltip text="账户管理（显示与排序）" />
-          <button
-            type="button"
-            class="pressable rounded-md p-1.5 text-text-tertiary hover:bg-flat-weak hover:text-text active:scale-90"
-            aria-label="账户管理"
-            @click="manageModalOpen = true"
-          >
-            <MenuIcon name="menu" :size="16" />
-          </button>
-        </span>
-
-        <!-- 对账单导入 -->
-        <BaseButton
-          variant="ghost"
-          @click="
-            importKind = 'statement';
-            importModalOpen = true;
-          "
-        >
-          <MenuIcon name="book" :size="14" />
-          对账单导入
-        </BaseButton>
-
-        <!-- 交割单导入 -->
-        <BaseButton
-          variant="ghost"
-          @click="
-            importKind = 'trade';
-            importModalOpen = true;
-          "
-        >
-          <MenuIcon name="tradeImport" :size="14" />
-          交割单导入
-        </BaseButton>
-
-        <!-- + 添加（创建手工账户，主色跟随系统主题） -->
-        <BaseButton variant="primary" @click="createModalOpen = true">
-          <MenuIcon name="plus" :size="14" />
-          添加
-        </BaseButton>
-      </div>
-    </div>
-
-    <!-- 导入提示横幅（解析入库待实现期间的占位反馈） -->
-    <p
-      v-if="importHint"
-      class="shrink-0 rounded-lg bg-primary-weak px-3 py-2 text-sm text-primary"
-      role="status"
+  <!-- 官网入口上移 MainLayout 页头：高光玻璃按钮（BaseButton ghost，与「插件设置」
+       同款玻璃底），官网 favicon + 常驻文案（王总 2026-10-23 指定）；
+       MCP鉴权 = 重新触发浏览器授权（王总 2026-10-27 指定，位于官网按钮右侧） -->
+  <Teleport v-if="headerSlotActive" :to="PAGE_HEADER_ACTIONS_TARGET">
+    <BaseButton
+      variant="ghost"
+      title="在系统浏览器打开投资账本官网"
+      @click="openOfficialSite"
     >
-      {{ importHint }}
-    </p>
-
-    <!-- 内容区：无账户时展示引导空态（不预置默认账户） -->
-    <BaseCard v-if="!activeAccount">
-      <BaseEmpty
-        text="还没有账户：点击右上角「+ 添加」创建账户，或导入同花顺对账单 / 交割单开始使用"
-      />
-    </BaseCard>
-
-    <!-- 内容区：成交流水（对账单/交割单切换 + 分组展示 + 导出） -->
-    <BaseCard v-else fill class="min-h-0 flex-1" :title="`账户-${activeAccount.name}`">
-      <template #extra>
-        <button
-          type="button"
-          class="pressable shrink-0 rounded-md p-1.5 text-text-tertiary hover:bg-up-weak hover:text-up active:scale-90"
-          :aria-label="`删除账户 ${activeAccount.name}`"
-          @click="deleteConfirmOpen = true"
-        >
-          <MenuIcon name="trash" :size="14" />
-        </button>
-      </template>
-      <AccountRecordsPanel :account-id="activeAccount.id" />
-    </BaseCard>
-
-    <!-- 删除账户二次确认 -->
-    <BaseConfirmModal
-      :open="deleteConfirmOpen"
-      title="删除账户"
-      ok-text="确认删除"
-      cancel-text="取消"
-      ok-variant="danger"
-      @ok="onDeleteAccount"
-      @cancel="deleteConfirmOpen = false"
+      <img :src="tzzbFavicon" alt="投资账本" class="h-4 w-4 shrink-0" />
+      <span class="text-text-secondary">投资账本官网</span>
+    </BaseButton>
+    <BaseButton
+      variant="ghost"
+      :disabled="authRunning"
+      :title="authRunning ? '鉴权进行中，请在浏览器完成登录' : '重新触发投资账本 MCP 浏览器授权'"
+      @click="void runMcpAuth()"
     >
-      <p class="text-sm text-text">
-        确认删除账户「{{ activeAccount?.name }}」？该账户下已导入的对账单 / 交割单流水将一并删除，且不可恢复。
-      </p>
-    </BaseConfirmModal>
+      <MenuIcon name="plug" :size="14" />
+      <span class="text-text-secondary">{{ authRunning ? '鉴权中…' : 'MCP鉴权' }}</span>
+    </BaseButton>
+  </Teleport>
 
-    <!-- 创建手工账户弹窗 -->
-    <CreateAccountModal
-      v-model:open="createModalOpen"
-      @created="onAccountCreated"
-    />
-
-    <!-- 交割单 / 对账单导入弹窗 -->
-    <ImportTradeModal
-      v-model:open="importModalOpen"
-      :kind="importKind"
-      :default-account-id="activeAccountId"
-      @confirm="onTradeImportConfirm"
-    />
-
-    <!-- 账户管理弹窗（显隐 + 排序） -->
-    <ManageAccountModal v-model:open="manageModalOpen" />
-  </div>
+  <TzzbDashboard />
 </template>

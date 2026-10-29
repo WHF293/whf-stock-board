@@ -457,3 +457,24 @@ export interface BoardManualFetchResult {
   /** 致命错误（连第一步都没走通）；单日失败不在这里，在 days[].message */
   error: string | null;
 }
+
+/**
+ * 36 板块统一全景条目（2026-10-29 王总指定口径统一）
+ *
+ * 板块日历池（CALENDAR_BOARDS）的实时快照展示视图，供 A股全景平铺 /
+ * 市场总览板块热力 / 移动端热力卡与题材轮动、板块日历同源消费
+ */
+export interface CalendarBoardPanoramaItem {
+  /** 板块代码（BK 形态，下钻成分股用） */
+  code: string;
+  /** 板块名称 */
+  name: string;
+  /** 涨跌幅（%） */
+  changePercent: number;
+  /** 成交额（元；热力图面积权重） */
+  amount: number;
+  /** 上涨家数 */
+  upCount: number;
+  /** 下跌家数 */
+  downCount: number;
+}

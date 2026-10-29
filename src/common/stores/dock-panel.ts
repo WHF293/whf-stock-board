@@ -21,6 +21,14 @@ interface DockPanelState {
   symbol: string;
   /** 插件停靠面板的全局键（`<pluginId>#<panelId>`；content = plugin 时生效） */
   pluginPanelKey: string;
+  /** 产业链面板的主力合约代码（如 au2612；content = chain 时生效） */
+  chainContractCode: string;
+  /** 产业链面板的品种名（标题展示用；content = chain 时生效） */
+  chainVarietyName: string;
+  /** F10 抽屉的标的符号（sh600519 形态；content = f10 时生效） */
+  f10Symbol: string;
+  /** F10 抽屉的标的名称（标题展示用；content = f10 时生效） */
+  f10Name: string;
   /** 面板宽度（像素，localStorage 持久化） */
   width: number;
   /** 面板内右侧栏（五档 / 筹码）是否显示（默认不显示，localStorage 持久化） */
@@ -39,6 +47,10 @@ export const useDockPanelStore = defineStore('dock-panel', {
     content: null,
     symbol: '',
     pluginPanelKey: '',
+    chainContractCode: '',
+    chainVarietyName: '',
+    f10Symbol: '',
+    f10Name: '',
     width: DOCK_PANEL_WIDTH_DEFAULT,
     showSidePanel: false,
   }),
@@ -61,6 +73,31 @@ export const useDockPanelStore = defineStore('dock-panel', {
     openPluginPanel(panelKey: string): void {
       this.content = DOCK_PANEL_CONTENT.PLUGIN;
       this.pluginPanelKey = panelKey;
+      this.open = true;
+    },
+
+    /**
+     * 打开期货品种产业链基本面面板（同花顺产业链 F10 页面 iframe 嵌入）
+     * @param contractCode 主力合约代码（如 au2612，产业链页面的 code 参数）
+     * @param varietyName 品种名（面板标题展示用）
+     */
+    openFuturesChain(contractCode: string, varietyName: string): void {
+      this.content = DOCK_PANEL_CONTENT.CHAIN;
+      this.chainContractCode = contractCode;
+      this.chainVarietyName = varietyName;
+      this.open = true;
+    },
+
+    /**
+     * 打开个股「更多信息」资料抽屉（交易记录 / 成分股 / 财务 / 资讯 / 基本资料 /
+     * 发行相关 / 高管简介 / 参股控股）
+     * @param symbol 标的符号（sh600519 / 600519 形态均可，内部归一化）
+     * @param name 标的名称（面板标题展示用）
+     */
+    openF10(symbol: string, name: string): void {
+      this.content = DOCK_PANEL_CONTENT.F10;
+      this.f10Symbol = symbol;
+      this.f10Name = name;
       this.open = true;
     },
 

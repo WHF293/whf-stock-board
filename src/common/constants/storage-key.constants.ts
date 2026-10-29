@@ -51,8 +51,17 @@ export const STORAGE_NS_PLUGIN = 'plugin';
 /** 行情全景 · 历史复盘命名空间（指数月K快照 + 同步水位；约百余 KB 量级） */
 export const STORAGE_NS_PANORAMA_REVIEW = 'panorama.review';
 
+/** 行情全景 · 行业龙头分组自定义排序（JSON：{ board: string[], segment: string[] }，存分组名顺序） */
+export const STORAGE_NS_PANORAMA_LEADERS_ORDER = 'panorama.leaders.order';
+
 /** 用户安装插件命名空间（应用内安装的插件代码持久化） */
 export const STORAGE_NS_USER_PLUGINS = 'plugin.user';
+
+/** 插件市场源列表命名空间（内置官方源 + 用户添加的第三方源） */
+export const STORAGE_NS_PLUGIN_MARKET = 'plugin.market';
+
+/** 插件市场目录缓存命名空间（per-repo 的 Releases 解析结果；缓存不参与数据迁移） */
+export const STORAGE_NS_PLUGIN_MARKET_CATALOG = 'plugin.market.catalog';
 
 /** 盘面雷达页（原市场榜单）- 板块历史净流入独立存储 key（不走 whf:app 整包：历史数据量随使用增长，避免整包写放大） */
 export const STORAGE_KEY_SECTOR_FLOW_HISTORY = 'whf:sector-flow-history';
@@ -110,6 +119,12 @@ export const STORAGE_NS_COMMAND_PALETTE_RECENT = 'pc.commandPaletteRecent';
 
 /** 自选 · 叠加对比组合（勾选符号 + 区间交易日数，JSON：{ symbols, rangeDays }） */
 export const STORAGE_NS_WATCHLIST_COMPARE = 'pc.watchlistCompare';
+
+/** 自选 · 隐藏的分组 id 列表（分组设置弹窗勾选显隐，JSON：string[]） */
+export const STORAGE_NS_WATCHLIST_GROUP_HIDDEN = 'pc.watchlistGroupHidden';
+
+/** 盘面雷达 · 页签列设置（顺序 + 显隐，JSON：{ order: string[]; hidden: string[] }） */
+export const STORAGE_NS_MARKET_RANK_TABS = 'pc.marketRankTabs';
 
 /** 市场宽度 · 分钟点序列（按本地日积累；值 = { [date]: BreadthPoint[] }，滚存最近 3 日） */
 export const STORAGE_NS_MARKET_BREADTH_DAYS = 'marketBreadth.days';

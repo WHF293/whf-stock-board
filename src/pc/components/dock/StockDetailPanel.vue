@@ -1,14 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import BaseButton from '../ui/BaseButton.vue';
+import { useRouter } from 'vue-router';
 import BaseCard from '../ui/BaseCard.vue';
-import BaseConfirmModal from '../ui/BaseConfirmModal.vue';
 import BaseEmpty from '../ui/BaseEmpty.vue';
 import BaseSkeleton from '../ui/BaseSkeleton.vue';
 import BaseTabs from '../ui/BaseTabs.vue';
 import KlineChart from '../../../common/components/charts/KlineChart.vue';
 import StockQuoteHeader from '../business/StockQuoteHeader.vue';
-import StockOrderBook from '../business/StockOrderBook.vue';
 import DockResizer from '../business/DockResizer.vue';
 import { fetchFullQuotes } from '../../../common/api/quotes.api.ts';
 import { fetchKlineCached } from '../../../common/api/kline-cache.api.ts';
@@ -20,23 +18,26 @@ import {
   type TradeMark,
 } from '../../../common/utils/trade-marks';
 import { CHART_PERIOD_OPTIONS } from '../../../common/constants/stock-detail.constants.ts';
-import { DOCK_LAYOUT_CANVAS_PADDING } from '../../../common/constants/dock-panel.constants.ts';
+import {
+  DOCK_LAYOUT_CANVAS_PADDING,
+} from '../../../common/constants/dock-panel.constants.ts';
+import { ROUTE_PATH } from '../../../common/constants/router-meta.constants.ts';
 import { usePolling } from '../../../common/composables/use-polling';
 import { useChartPeriod } from '../../../common/composables/use-chart-period';
+import { useCrosshairQuote } from '../../../common/composables/use-crosshair-quote';
 import { POLLING_INTERVAL } from '../../../common/constants/polling.constants.ts';
 import type { KLineData } from 'klinecharts';
 import type { FullQuote } from '../../../common/types/stock-quote.types.ts';
 import { toFullSymbol } from '../../../common/utils/to-full-symbol';
 import { useDataCacheStore } from '../../../common/stores/data-cache';
-import { useWatchlistStore } from '../../../common/stores/watchlist';
-import { DEFAULT_GROUP_ID } from '../../../common/constants/watchlist.constants.ts';
 import { useDockPanelStore } from '../../../common/stores/dock-panel';
 import { DATA_CACHE_KEY } from '../../../common/constants/data-cache.constants.ts';
 import { pluginKernel } from '../../plugin/index';
 
 /**
  * 个股详情面板（右侧停靠面板内容，布局参考同花顺移动端）：
- * 报价头 + 分时/五日/5分/日K/周K/月K 按钮组切换 + 侧栏（分时/五日 -> 五档盘口）
+ * 报价头 + 分时/五日/5分/日K/周K/月K 按钮组切换（五档盘口 2026-10-24 王总指定移除，
+ * 盘口在详情整页右栏查看）
  *
  * K 线走新浪源（不复权），为重接口，仅在打开面板或切换周期时拉取一次，不参与轮询；
  * 全部数据有内存快照：同标的重复打开先展示快照，接口返回后刷新；
@@ -51,95 +52,20 @@ const props = defineProps<{
 const dataCache = useDataCacheStore();
 const dockPanel = useDockPanelStore();
 
-/** 侧栏最小可视宽度阈值（像素），低于此宽度隐藏五档盘口避免挤占主图 */
-const SIDEBAR_MIN_WIDTH_PX = 500;
-
-/**
- * 五档盘口展示条件：仅分时/五日下展示，且面板宽 ≥ 阈值（与原 showSidebar 同步）
- * - 蜡烛周期不展示（产品语义是分时关注短期盘口变化）
- */
-const showOrderBook = computed(() => dockPanel.width >= SIDEBAR_MIN_WIDTH_PX);
-
 /**
  * 归一化符号：600519 / SH600519 / sh600519 等形态统一为 sh600519
  */
 const symbol = computed<string>(() => toFullSymbol(String(props.symbol ?? '')));
 
-// ---------- 加自选 / 删自选弹窗 ----------
-/** 弹窗类型：null 关闭 / add 加自选 / remove 删自选 */
-type WatchDialogType = null | 'add' | 'remove';
-const watchDialog = ref<WatchDialogType>(null);
-/** 加自选：勾选的目标分组 id（可多选，一支股票可入多组） */
-const addGroupIds = ref<string[]>([]);
-/** 删自选：勾选的待删分组 id（空数组 = 全部删除） */
-const removeGroupIds = ref<string[]>([]);
-/** 新建分组名（加自选弹窗内直接建组） */
-const newGroupName = ref('');
+// ---------- 「查看更多」：跳转个股详情整页（2026-10-24 王总指定，
+//             报价头右上角高光按钮；自选增删由详情页顶栏承接，侧栏不再放） ----------
+const router = useRouter();
 
-const watchlistStore = useWatchlistStore();
-
-/** 当前股票是否已加入自选（任一分组） */
-const isInWatchlist = computed(() =>
-  watchlistStore.allSymbols.includes(symbol.value),
-);
-
-/** 该股票当前所在的分组列表（删自选弹窗选项） */
-const containingGroups = computed(() =>
-  watchlistStore.groups.filter((group) =>
-    group.stocks.some((stock) => stock.symbol === symbol.value),
-  ),
-);
-
-/** 打开加自选弹窗：默认勾选默认分组 */
-const openAddDialog = (): void => {
-  addGroupIds.value = [DEFAULT_GROUP_ID];
-  newGroupName.value = '';
-  watchDialog.value = 'add';
-};
-
-/** 打开删自选弹窗：默认勾选该股所在的全部分组 */
-const openRemoveDialog = (): void => {
-  removeGroupIds.value = containingGroups.value.map((group) => group.id);
-  watchDialog.value = 'remove';
-};
-
-/** 弹窗内新建分组（立即入列表并勾选） */
-const createGroupInDialog = (): void => {
-  const name = newGroupName.value.trim();
-  if (!name) return;
-  const group = watchlistStore.addGroup(name);
-  if (watchDialog.value === 'add') {
-    addGroupIds.value = [...addGroupIds.value, group.id];
-  }
-  newGroupName.value = '';
-};
-
-/** 确认加自选：把当前股票加入所有勾选分组 */
-const confirmAdd = (): void => {
-  if (!quoteRef.value) return;
-  watchlistStore.addStockToGroups(
-    {
-      symbol: symbol.value,
-      name: quoteRef.value.name,
-      addedAt: Date.now(),
-    },
-    addGroupIds.value,
-  );
-  watchDialog.value = null;
-};
-
-/**
- * 确认删自选：勾选了分组则只删这些分组；一个都没勾 = 从全部分组删除
- */
-const confirmRemove = (): void => {
-  if (removeGroupIds.value.length === 0) {
-    watchlistStore.removeStockFromAllGroups(symbol.value);
-  } else {
-    for (const groupId of removeGroupIds.value) {
-      watchlistStore.removeStock(groupId, symbol.value);
-    }
-  }
-  watchDialog.value = null;
+/** 关闭面板后路由跳转（与 DockPanel 头部展开按钮同款行为） */
+const openDetailPage = (): void => {
+  const target = symbol.value;
+  dockPanel.close();
+  void router.push(`${ROUTE_PATH.STOCK_DETAIL}/${target}`);
 };
 
 // ---------- 报价头（4s 轮询；快照播种） ----------
@@ -160,38 +86,6 @@ usePolling({
   intervalMs: POLLING_INTERVAL.QUOTES_INTRADAY,
   tradingAware: true,
 });
-
-// ---------- 十字光标联动（K 线悬停 bar -> 行情头临时展示该根 OHLCV） ----------
-/** 十字光标悬停的 K 线（null = 未悬停，展示最新报价） */
-const hoveredBar = ref<KLineData | null>(null);
-const onCrosshairBar = (bar: KLineData | null): void => {
-  hoveredBar.value = bar;
-};
-
-/**
- * 行情头展示数据：悬停时把该根 K 线的开高低收/量/额覆盖到最新报价上
- * （价格与涨跌幅按该根 close 相对昨收重算；其余字段保留实时报价）
- */
-const displayQuote = computed<FullQuote | null>(() => {
-  const quote = quoteRef.value;
-  const bar = hoveredBar.value;
-  if (!quote || !bar) return quote;
-  const prevClose = quote.prevClose;
-  const price = bar.close;
-  const change = prevClose ? price - prevClose : 0;
-  return {
-    ...quote,
-    price,
-    open: bar.open,
-    high: bar.high,
-    low: bar.low,
-    volume: bar.volume ?? quote.volume,
-    amount: (bar.turnover as number | undefined) ?? quote.amount,
-    change,
-    changePercent: prevClose ? (change / prevClose) * 100 : 0,
-  };
-});
-
 
 // ---------- 图表周期（按钮组切换：分时 / 五日 / 5分 / 日K / 周K / 月K，均走新浪源） ----------
 // 周期选项与详情页共用（constants/stock-detail.constants.ts），避免两处漂移；
@@ -234,6 +128,15 @@ const loadKline = async (): Promise<void> => {
     isKlineLoading.value = false;
   }
 };
+
+// ---------- 十字光标联动（K 线悬停 bar -> 行情头临时展示该根 OHLCV） ----------
+// 与个股详情整页（StockDetailView）共用同一组合式函数；悬停时价格 / 涨跌幅
+// 按该根 close 相对自身昨收重算（量纲换算见 use-crosshair-quote），离开图表回落实时报价
+const { onCrosshairBar, displayQuote } = useCrosshairQuote({
+  quote: quoteRef,
+  bars: klines,
+  mode: chartMode,
+});
 
 // ---------- 交易记录 BS/T 标注（本地交割单库，按股票；与详情整页同口径） ----------
 /** 该股成交记录（跨账户；浏览器 dev 无本地库，恒为空列表） */
@@ -294,14 +197,9 @@ const detailSections = computed(() => pluginKernel.contributions.stockDetail.sec
 
 <template>
   <div class="space-y-3">
-    <!-- 报价头 -->
+    <!-- 报价头：名称左对齐 + 「查看更多」高光按钮（2026-10-24 王总指定改版） -->
     <BaseCard>
-      <StockQuoteHeader
-        :quote="displayQuote"
-        :is-in-watchlist="isInWatchlist"
-        @add-to-watchlist="openAddDialog"
-        @remove-from-watchlist="openRemoveDialog"
-      />
+      <StockQuoteHeader :quote="displayQuote" @open-detail="openDetailPage" />
     </BaseCard>
 
     <!-- 主图区（relative 供拖拽手柄定位）：K 线卡片 + 五档盘口卡片 -->
@@ -340,81 +238,11 @@ const detailSections = computed(() => pluginKernel.contributions.stockDetail.sec
         />
         <BaseSkeleton v-else />
       </BaseCard>
-
-      <!-- 五档盘口：分时/五日模式下展示在 K 线下方，宽度 100%，左右分栏 -->
-      <BaseCard v-if="showOrderBook" title="五档盘口">
-        <StockOrderBook :quote="quoteRef" />
-      </BaseCard>
     </div>
 
     <!-- 插件扩展区：内容完全由插件决定，宿主只传入当前股票符号 -->
     <BaseCard v-for="section in detailSections" :key="section.key" :title="section.title">
       <component :is="section.component" v-bind="section.props" :symbol="symbol" />
     </BaseCard>
-    <!-- 加自选弹窗：分组多选 + 新建分组 -->
-    <BaseConfirmModal
-      :open="watchDialog === 'add'"
-      title="加入自选"
-      ok-text="确认添加"
-      cancel-text="取消"
-      @ok="confirmAdd"
-      @cancel="watchDialog = null"
-    >
-      <div class="space-y-2">
-        <label
-          v-for="group in watchlistStore.groups"
-          :key="group.id"
-          class="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-flat-weak"
-        >
-          <input
-            v-model="addGroupIds"
-            type="checkbox"
-            :value="group.id"
-            class="accent-primary"
-          />
-          <span class="text-sm text-text">{{ group.name }}</span>
-          <span class="text-xs text-text-tertiary">{{ group.stocks.length }} 只</span>
-        </label>
-        <div class="flex items-center gap-2 border-t border-flat-weak pt-2">
-          <input
-            v-model="newGroupName"
-            placeholder="新建分组名称"
-            class="flex-1 rounded-lg border border-flat-weak bg-surface px-2 py-1 text-sm text-text outline-none focus:border-primary"
-            @keydown.enter="createGroupInDialog"
-          />
-          <BaseButton variant="ghost" @click="createGroupInDialog">新建</BaseButton>
-        </div>
-      </div>
-    </BaseConfirmModal>
-
-    <!-- 删自选弹窗：选择删除范围（不勾 = 全部删除） -->
-    <BaseConfirmModal
-      :open="watchDialog === 'remove'"
-      title="从自选移除"
-      ok-text="确认删除"
-      cancel-text="取消"
-      :ok-variant="'danger'"
-      @ok="confirmRemove"
-      @cancel="watchDialog = null"
-    >
-      <p class="mb-2 text-xs text-text-tertiary">
-        勾选要移除的分组；全部不勾则从所有分组移除
-      </p>
-      <div class="space-y-2">
-        <label
-          v-for="group in containingGroups"
-          :key="group.id"
-          class="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-flat-weak"
-        >
-          <input
-            v-model="removeGroupIds"
-            type="checkbox"
-            :value="group.id"
-            class="accent-primary"
-          />
-          <span class="text-sm text-text">{{ group.name }}</span>
-        </label>
-      </div>
-    </BaseConfirmModal>
   </div>
 </template>

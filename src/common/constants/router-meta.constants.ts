@@ -20,10 +20,9 @@ export const ROUTE_PATH = {
   STOCK_MARKET: "/stock-market", // 个股行情（已并入行情全景「全部个股」子 tab，2026-10-22；旧路径由 404 兜底页承接）
   BOARD_FLOW: "/board-flow", // 板块资金流向（原「行情全景-最新板块资金」独立成页，2026-10-13）
   HEATMAP: "/heatmap", // 大盘云图（原「行情全景-大盘云图」tab 独立成页，dapanyuntu.com iframe 直嵌，2026-10-13）
-  MARKET_BREADTH: "/market-breadth", // 市场广度指标（ADL/ADR/OBOS/ARMS/MCO 五指标副图，2026-10-21）
+  MARKET_BREADTH: "/market-breadth", // 市场宽度（2026-10-29 起转插件分发：dsh-market-breadth 注册本路径；总览宽度卡的深化页入口仍指向这里）
   SECTOR_FLOW_HISTORY: "/sector-flow-history", // 板块历史净流入（行情全景-板块资金 → 「查看历史净流入」，不入菜单）
   FUTURES_OVERVIEW: "/futures/overview", // 期货·总览（期货市场总览：主力流况 / 资金流向 / 多空比，同花顺期货通数据）
-  FUTURES_INSTITUTIONAL: "/futures/institutional", // 期货·机构行为（中金所 CCPM 席位持仓行为分析，期货分组首页）
   STOCK_ACCOUNT: "/stock-account",
   PLUGIN_LAB: "/plugin-lab", // 插件工坊（宿主自带功能：插件体系的自省与管理页）
   AGENT_WINDOW: "/agent-window", // Agent 分析独立 WebviewWindow（standalone 布局，不入菜单）
@@ -31,6 +30,7 @@ export const ROUTE_PATH = {
   SETTINGS: "/settings",
   STOCK_DETAIL: "/stock-detail", // 股票详情整页（+/:symbol，不入菜单）
   WIDE_BASE_ETF: "/wide-base-etf", // 宽基ETF（国家队/汇金系核心操作宽基监控，市场总览页头按钮进入，不入菜单）
+  INDUSTRY_LEADER_DETAIL: "/industry-leader", // 行业龙头详情（+?kind=&group=，行情全景-行业龙头点卡片标题进入，不入菜单）
 } as const;
 
 /**
@@ -43,9 +43,7 @@ export const MENU_ICON = {
   CALENDAR: "calendar",
   FUNDS: "funds",
   FLAME: "flame",
-  FUTURES: "futures",
   HEATMAP: "cloud",
-  BREADTH: "breadth",
   TROPHY: "trophy",
   FILTER: "filter",
   NEWS: "news",
@@ -80,27 +78,26 @@ export const NOT_FOUND_ROUTE_NAME = 'not-found';
  */
 export const MENU_ITEMS: readonly SidebarMenuEntry[] = [
   { path: ROUTE_PATH.DASHBOARD, title: "市场总览", icon: MENU_ICON.DASHBOARD, group: SIDEBAR_MENU_GROUP.MARKET },
-  { path: ROUTE_PATH.MARKET_RANK, title: "盘面雷达", icon: MENU_ICON.RANK, group: SIDEBAR_MENU_GROUP.RANK },
-  // 个股行情已并入行情全景的「全部个股」子 tab（2026-10-22 王总指定，侧栏入口移除）
   { path: ROUTE_PATH.PANORAMA, title: "行情全景", icon: MENU_ICON.PANORAMA, group: SIDEBAR_MENU_GROUP.MARKET },
+  // 盘面雷达 / 资金流向：原「榜单与资金」组撤销，并入市场行情组（2026-10-27 王总指定）
+  { path: ROUTE_PATH.MARKET_RANK, title: "盘面雷达", icon: MENU_ICON.RANK, group: SIDEBAR_MENU_GROUP.MARKET },
+  // 资金流向（原「板块资金流向」，2026-10-22 王总更名）：原「行情全景-最新板块资金」模块独立成页（2026-10-13）
+  { path: ROUTE_PATH.BOARD_FLOW, title: "资金流向", icon: MENU_ICON.FUNDS, group: SIDEBAR_MENU_GROUP.MARKET },
   // 大盘云图侧栏入口已移除（2026-10-22 王总指定），改为市场总览页头「大盘云图」按钮进入（同宽基ETF入口位）
   // 板块日历紧跟行情全景：同为「板块维度的行情视角」
   { path: ROUTE_PATH.BOARD_CALENDAR, title: "题材轮动", icon: MENU_ICON.CALENDAR, group: SIDEBAR_MENU_GROUP.MARKET },
   // 市场广度指标：五大广度副图（ADL/ADR/OBOS/ARMS/MCO），市场总览宽度卡的深化页
-  { path: ROUTE_PATH.MARKET_BREADTH, title: "市场宽度", icon: MENU_ICON.BREADTH, group: SIDEBAR_MENU_GROUP.MARKET },
+  // 市场宽度（2026-10-29 起转插件分发：菜单与 /market-breadth 路由由 dsh-market-breadth 注册）
+  { path: ROUTE_PATH.FUTURES_OVERVIEW, title: "期货总览", icon: MENU_ICON.DASHBOARD, group: SIDEBAR_MENU_GROUP.MARKET },
+  // 期货·总览：原「期货」分组撤销后并入市场行情组（2026-10-29 王总指定）
   { path: ROUTE_PATH.WATCHLIST, title: "自选股", icon: MENU_ICON.STAR, group: SIDEBAR_MENU_GROUP.ACCOUNT },
   // 选股器已改为插件分发（dsh-stock-screener），由插件注册菜单与 /screener 路由
   { path: ROUTE_PATH.HOT_NEWS, title: "热点新闻", icon: MENU_ICON.NEWS, group: SIDEBAR_MENU_GROUP.NEWS },
   // 今天炒什么紧跟热点新闻：同为「盘前 / 盘中扫一眼市场在炒什么」的日常视角
   { path: ROUTE_PATH.WHAT_TO_TRADE, title: "今天炒什么", icon: MENU_ICON.FLAME, group: SIDEBAR_MENU_GROUP.NEWS },
-  // 资金流向（原「板块资金流向」，2026-10-22 王总更名）：原「行情全景-最新板块资金」模块独立成页（2026-10-13），默认排在账户管理前
-  { path: ROUTE_PATH.BOARD_FLOW, title: "资金流向", icon: MENU_ICON.FUNDS, group: SIDEBAR_MENU_GROUP.RANK },
-  // 期货·总览：「期货」分组首页（期货市场总览，2026-10-20 新增）；机构行为紧随其后
-  { path: ROUTE_PATH.FUTURES_OVERVIEW, title: "期货总览", icon: MENU_ICON.DASHBOARD, group: SIDEBAR_MENU_GROUP.FUTURES },
-  { path: ROUTE_PATH.FUTURES_INSTITUTIONAL, title: "机构行为", icon: MENU_ICON.FUTURES, group: SIDEBAR_MENU_GROUP.FUTURES },
-  { path: ROUTE_PATH.STOCK_ACCOUNT, title: "账户管理", icon: MENU_ICON.ACCOUNT, group: SIDEBAR_MENU_GROUP.ACCOUNT },
-  // 插件工坊：宿主自带的插件自省与管理页，同时是「插件页随插件撤销」的兜底落点
-  { path: ROUTE_PATH.PLUGIN_LAB, title: "插件工坊", icon: MENU_ICON.PLUG, fallbackLanding: true, group: SIDEBAR_MENU_GROUP.PLUGIN },
+  { path: ROUTE_PATH.STOCK_ACCOUNT, title: "账户分析", icon: MENU_ICON.ACCOUNT, group: SIDEBAR_MENU_GROUP.ACCOUNT },
+  // 插件工坊侧栏入口已移除（2026-10-29 王总指定），改为顶栏 Agent 分析之后的插头图标进入；
+  // /plugin-lab 路由与「插件页撤销兜底落点」语义保留（落点声明见 pc/plugin/setup.ts）
 ];
 
 /**

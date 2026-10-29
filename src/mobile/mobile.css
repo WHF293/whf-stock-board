@@ -17,6 +17,11 @@
   --van-border-color: var(--color-border);
   --van-nav-bar-height: 48px;
   --van-cell-background: var(--color-surface);
+  /* 系统栏让位（edge-to-edge）：Android WebView 的 env(safe-area-inset-*) 恒为 0，
+     真值由 MainActivity 经 OnApplyWindowInsetsListener 量出后以内联样式写进
+     documentElement（scripts/patch-android.mjs），覆盖这里的 env() 回退值 */
+  --m-inset-top: env(safe-area-inset-top, 0px);
+  --m-inset-bottom: env(safe-area-inset-bottom, 0px);
   --van-toast-background: rgba(31, 39, 51, 0.9);
 
   --font-num: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
@@ -133,11 +138,11 @@ body {
   touch-action: pan-y;
   box-sizing: border-box;
   /* 底部悬浮玻璃 TabBar + 全面屏手势区让位 */
-  padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(88px + var(--m-inset-bottom));
 }
 
 /* 主 Tab 页内无 Tabs 的页面（我的）同样留出悬浮 TabBar 高度 */
-.m-tab-safe { padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px)); }
+.m-tab-safe { padding-bottom: calc(88px + var(--m-inset-bottom)); }
 
 /* 底部 TabBar：iOS 柔光玻璃风格——悬浮胶囊 + 磨砂 blur + 边缘高光，
    激活项独立亮胶囊（参考 iOS 26 液态玻璃 tab bar）。
@@ -146,7 +151,7 @@ body {
   position: fixed;
   left: 14px;
   right: 14px;
-  bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(10px + var(--m-inset-bottom));
   z-index: 100;
   display: grid;
   /* 5 等分 = 五主 Tab（2026-10-20，与 constants.ts MOBILE_TAB_ITEMS.length 同步；
@@ -278,6 +283,10 @@ body {
 }
 
 /* 顶部导航（van-nav-bar 之上补来源标注位） */
+/* Vant safe-area 修饰类的让位改走 --m-inset-*（env() 在 Android WebView 恒为 0，
+   见 :root 注释）；选择器提一级特异性压过 Vant 自带声明 */
+.van-nav-bar.van-safe-area-top { padding-top: var(--m-inset-top); }
+.van-nav-bar.van-safe-area-bottom { padding-bottom: var(--m-inset-bottom); }
 .m-nav {
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
@@ -1044,7 +1053,7 @@ body {
 
 /* 首页滚动宿主：面板内部原生滚动 + 底部让位（无 Tabs 结构的简化版 m-page-flex） */
 .m-home-scroll { flex: 1; overflow-y: auto; overscroll-behavior: contain; }
-.m-home-tail { height: calc(88px + env(safe-area-inset-bottom, 0px)); }
+.m-home-tail { height: calc(88px + var(--m-inset-bottom)); }
 
 /* ============================================================
    v2 二期二级页通用（v3 起卡片化，见 DESIGN-MOBILE.md §2.3）
@@ -1063,7 +1072,7 @@ body {
 .m-sub-scroll .van-pull-refresh__track > * { flex-shrink: 0; width: auto; }
 /* loading 骨架撑满内容区（避免半屏空白的观感）；track 不再拉伸后用 min-height 兜底 */
 .m-skel-fill { flex: 1; min-height: 62vh; }
-.m-sub-tail { height: calc(16px + env(safe-area-inset-bottom, 0px)); }
+.m-sub-tail { height: calc(16px + var(--m-inset-bottom)); }
 
 /* 区块标题行（左右 12px 与卡片边对齐） */
 .m-sec { display: flex; align-items: baseline; justify-content: space-between; padding: 12px 12px 8px; }
@@ -1251,7 +1260,7 @@ body {
 }
 
 /* 长按个股弹层：分组归属点选 + 删除自选 */
-.m-wl-sheet { padding: 6px 16px calc(10px + env(safe-area-inset-bottom, 0px)); }
+.m-wl-sheet { padding: 6px 16px calc(10px + var(--m-inset-bottom)); }
 .m-wl-sheet__head { display: flex; align-items: baseline; gap: 8px; padding: 8px 2px 2px; }
 .m-wl-sheet__head .nm { font-size: 15px; font-weight: 700; }
 .m-wl-sheet__head .sub { font-family: var(--font-num); font-size: 11px; color: var(--color-text-3); }
@@ -1275,7 +1284,7 @@ body {
 }
 .dark .m-wl-sheet__del { background: rgba(210, 60, 60, 0.16); }
 /* 搜索弹层 */
-.m-wl-search { padding-bottom: env(safe-area-inset-bottom, 0px); }
+.m-wl-search { padding-bottom: var(--m-inset-bottom); }
 .m-wl-search__list { max-height: 46vh; overflow-y: auto; padding-bottom: 12px; }
 
 /* ============================================================
@@ -1472,4 +1481,289 @@ a.m-row--link {
   width: 100%;
   color: inherit;
   text-decoration: none;
+}
+
+/* ============================================================
+   小米自由窗口 / 大屏断点适配（2026-10-28，方案见 .ai/开发方案/ 同日文档）
+   三档：Compact <600（现状单列 + 底部 TabBar）/ Medium 600-840（左侧 Rail + 2 列）/
+   Expanded ≥840（Rail + 3 列 + 个股详情双栏）。
+   阈值与 src/mobile/constants.ts 的 MOBILE_BREAKPOINT_MD_PX / MOBILE_BREAKPOINT_LG_PX
+   保持一致（CSS 侧无法引用 TS 常量，两侧以注释互指，改一处必须同步另一处）
+   ============================================================ */
+
+/* 左侧导航栏（≥600px 替代底部 TabBar）：2026-10-28 重构为通栏贴边侧栏
+   （YouTube Desktop 式，全高、顶部 app 标 + 竖排五主 Tab），
+   样式已 scoped 进 MobileNavigationRail.vue，此处仅保留让位宽度约定：
+   --m-rail-w = 侧栏宽 72（左缘贴 0，无外距） */
+
+/* 个股详情双栏骨架（仅 ≥840 生效双栏；窄档保持单列纵排，占位零样式） */
+.m-stk-duo {
+  display: flex;
+  flex-direction: column;
+}
+.m-stk-duo__l,
+.m-stk-duo__r {
+  min-width: 0;
+}
+
+/* 热点新闻主从布局壳（≥840 左4右6，2026-10-28）：
+   窄档为纯纵向壳（对 .m-tabs 的高度链透明——.m-page-flex .m-tabs 的 flex:1
+   依赖父级 flex column，这里保持 column 让高度链原样成立） */
+.m-news-duo {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.m-news-duo__l {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 个股详情右栏（资料页签区）：页签对齐 PC 更多信息口径后最多 7 个，
+   横向滚动不便 → 允许换行（窄/宽档同理，2026-10-28） */
+.m-stk-duo__r .m-chips {
+  flex-wrap: wrap;
+  overflow-x: visible;
+}
+
+/* 个股详情滚动区顶距：m-card 无 top margin（margin: 0 12px 10px），
+   报价头会贴死 navbar——补 12px 与 m-sec 顶部节奏统一（2026-10-28 王总） */
+.m-stk-scroll {
+  padding-top: 12px;
+}
+
+/* === 自选 ≥840px 大屏：PC 分组卡片列流（2026-10-28 王总指定） ===
+   全部分组并排一列一卡（横向滚动），间距与顶部统一 12px（对齐 m-sec 节奏）；
+   列头 = 分组名 + 数量 + 添加号，列体各自纵向滚动，行样式复用 .m-row */
+.m-wl-board {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  padding: 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.m-wl-col {
+  width: 300px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  box-shadow: var(--m-card-shadow);
+  overflow: hidden;
+}
+.m-wl-col--active {
+  border-color: var(--color-primary);
+}
+.m-wl-col__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 12px 11px 14px;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+.m-wl-col__head .nm {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.m-wl-col__head .n {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--color-text-3);
+}
+.m-wl-col__add {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  color: var(--color-text-2);
+  background: transparent;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+.m-wl-col__add:active {
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+.m-wl-col__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+}
+.m-wl-col__body .m-row {
+  /* 列内行：比通栏行收紧（padding 16→10），圆角 + 相邻行 2px 间距（PC 列同节奏） */
+  margin: 0;
+  padding: 9px 10px;
+  border-radius: 8px;
+}
+.m-wl-col__body .van-swipe-cell + .van-swipe-cell .m-row {
+  margin-top: 2px;
+}
+.m-wl-col__empty {
+  margin: 8px 4px;
+  padding: 22px 8px;
+  border: 1px dashed var(--color-border);
+  border-radius: 10px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--color-text-3);
+}
+.m-wl-col-new {
+  flex-shrink: 0;
+  width: 132px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px dashed var(--color-border);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--color-text-2);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.m-wl-col-new:active {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+@media (min-width: 600px) {
+  /* 底部 TabBar 退役换左导航栏：主内容整体让位（fixed 元素不受父级 padding 影响，
+     侧栏自行 fixed 定位；--m-rail-w = 侧栏宽 72，左缘贴 0 无外距） */
+  :root {
+    --m-rail-w: 72px;
+  }
+  .m-tabbar {
+    display: none;
+  }
+  .m-root {
+    padding-left: var(--m-rail-w);
+  }
+  /* TabBar 让位高度全部收回：面板底距 / 尾部占位改小间距 */
+  .m-page-flex .van-tab__panel {
+    padding-bottom: 20px;
+  }
+  .m-tab-safe {
+    padding-bottom: 20px;
+  }
+  .m-home-tail {
+    height: 20px;
+  }
+  .m-sub-tail {
+    height: 16px;
+  }
+  /* 底部弹层不再贴满整屏：从 Rail 右缘起铺到屏幕右缘（Vant slide-up 动画不受影响） */
+  .van-popup--bottom {
+    left: var(--m-rail-w);
+    right: 0;
+    width: auto;
+  }
+  /* fixed 导航栏（设置 / 主题等二级页）同理让位：fixed 元素不受父级 padding 影响，
+     不让位会整条压在 Rail 下面 */
+  .van-nav-bar--fixed {
+    left: var(--m-rail-w);
+    width: auto;
+  }
+  /* 内容限宽：滚动容器自身对称 padding-inline（百分比基于父级宽）实现居中限宽，
+     避免平板 / 折叠屏上单列被无限拉长（对齐小米 UX 指南的缩进策略）。
+     不用「子项 max-width + auto margin」：flex 列容器里 auto margin 会把
+     子块宽度收缩成 fit-content（卡片不再通栏）。普通块流容器（m-tab-safe /
+     m-sub-page）仍用子项方案，两者等效 */
+  .m-sub-scroll,
+  .m-home-scroll .van-pull-refresh__track,
+  .m-page-flex .m-tabs .van-pull-refresh__track {
+    padding-inline: max(0px, calc((100% - 720px) / 2));
+  }
+  .m-tab-safe > *,
+  .m-sub-page > * {
+    max-width: 720px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  /* 列表断点列数（自选 m-cols）：独立圆角卡两列（对齐 UI 稿 V2），容器卡壳退化为
+     透明网格底（投影/圆角移交每个子卡），行间 border-top 失效 */
+  .m-cols {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    background: transparent;
+    box-shadow: none;
+    border-radius: 0;
+    overflow: visible;
+  }
+  .m-cols > * {
+    background: var(--color-surface);
+    border-radius: 12px;
+    box-shadow: var(--m-card-shadow);
+    overflow: hidden;
+  }
+  .m-cols .m-row + .m-row {
+    border-top: 0;
+  }
+}
+
+@media (min-width: 840px) {
+  .m-cols {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .m-sub-scroll,
+  .m-home-scroll .van-pull-refresh__track,
+  .m-page-flex .m-tabs .van-pull-refresh__track {
+    padding-inline: max(0px, calc((100% - 1080px) / 2));
+  }
+  .m-tab-safe > *,
+  .m-sub-page > * {
+    max-width: 1080px;
+  }
+  .m-home-scroll .van-pull-refresh__track > *,
+  .m-page-flex .m-tabs .van-pull-refresh__track > * {
+    max-width: 1080px;
+  }
+  /* 个股详情双栏：左 报价头 + K 线（信息主轴），右 五档 + 底部页签区 */
+  .m-stk-duo {
+    flex-direction: row;
+    gap: 0 6px;
+    align-items: flex-start;
+  }
+  .m-stk-duo__l {
+    flex: 1.15;
+  }
+  .m-stk-duo__r {
+    flex: 1;
+  }
+  /* 热点新闻主从布局：左列表（4/10）右原文（6/10），中缝细线分隔 */
+  .m-news-duo {
+    flex-direction: row;
+  }
+  .m-news-duo__l {
+    flex: 4;
+  }
+  .m-news-duo__r {
+    flex: 6;
+    min-width: 0;
+    border-left: 1px solid var(--color-border);
+  }
 }

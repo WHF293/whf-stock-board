@@ -64,9 +64,10 @@ export const DATA_PORT_MANIFEST: readonly DataPortCategory[] = [
     label: '插件与用户插件',
     db: 'stock-board',
     storage: 'local-storage',
-    nsKeys: ['plugin', 'plugin.user'],
+    // plugin.market.catalog 是可重拉的网络缓存，不参与迁移（镜像类缓存不登记）
+    nsKeys: ['plugin', 'plugin.user', 'plugin.market'],
     defaultEnabled: true,
-    tip: '插件禁用黑名单 / 侧栏折叠态 / 应用内安装的插件代码',
+    tip: '插件禁用黑名单 / 侧栏折叠态 / 应用内安装的插件代码 / 插件市场的插件源列表',
   },
   {
     id: 'market-snapshots',
@@ -145,6 +146,30 @@ export const DATA_PORT_MANIFEST: readonly DataPortCategory[] = [
     tables: [{ table: 'plugin_storage', label: '插件存储', writeMode: 'replace' }],
     defaultEnabled: true,
     tip: '速记 / 盯盘到价等插件本地数据（真身，启动时反向覆盖 localStorage）',
+  },
+  {
+    id: 'plugin-market-breadth',
+    label: '插件·市场宽度历史',
+    db: 'stock-board',
+    storage: 'sqlite',
+    tables: [
+      { table: 'plugin_dsh_market_breadth_minute_point', label: '宽度分钟点（滚存 3 日）', writeMode: 'replace' },
+      { table: 'plugin_dsh_market_breadth_day_bar', label: '宽度日 bar（滚存 250 日）', writeMode: 'replace' },
+    ],
+    defaultEnabled: true,
+    tip: 'dsh-market-breadth 插件逐日积累的宽度序列，删了需重新积累',
+  },
+  {
+    id: 'plugin-futures-institutional',
+    label: '插件·机构行为缓存',
+    db: 'stock-board',
+    storage: 'sqlite',
+    tables: [
+      { table: 'plugin_dsh_futures_institutional_ccpm_day_cache', label: 'CCPM 席位日缓存', writeMode: 'replace' },
+      { table: 'plugin_dsh_futures_institutional_sync_meta', label: '同步元信息', writeMode: 'replace' },
+    ],
+    defaultEnabled: false,
+    tip: 'dsh-futures-institutional 插件的席位缓存，可由「同步历史」重新回填',
   },
   {
     id: 'kline-cache',
