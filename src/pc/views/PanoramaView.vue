@@ -7,6 +7,7 @@ import TabConfigButton from '../components/ui/TabConfigButton.vue';
 import { useTabConfig } from '../../common/composables/use-tab-config';
 import PanoramaCnBoard from '../components/business/PanoramaCnBoard.vue';
 import PanoramaIpoBoard from '../components/business/PanoramaIpoBoard.vue';
+import PanoramaLeadersBoard from '../components/business/PanoramaLeadersBoard.vue';
 import PanoramaReviewBoard from '../components/business/panorama-review/PanoramaReviewBoard.vue';
 import StockMarketView from './StockMarketView.vue';
 import {
@@ -26,8 +27,9 @@ import { usePolling } from '../../common/composables/use-polling';
 import { POLLING_INTERVAL } from '../../common/constants/polling.constants.ts';
 
 /**
- * 行情全景：A股全景（板块排行，含行业/概念/筛选/成分股）/ 全部个股（原侧栏「个股行情」页并入，
- * 2026-10-22 王总指定）/ 新股次新股 / 美股全景 / 全球宏观 / 历史复盘（牛熊模式库）
+ * 行情全景（2026-10-29 王总指定整合）：全景（A股 36 板块平铺 + 美股行业 ETF + 全球宏观
+ * 三组卡片竖向分布，原三个独立 tab 合并）/ 行业龙头（板块 / 细分赛道静态清单卡片流）/
+ * 全部个股（原侧栏「个股行情」页并入，2026-10-22 王总指定）/ 新股次新股 / 历史复盘（牛熊模式库）
  *
  * 注：原「最新板块资金」模块已于 2026-10-13 独立成页（/board-flow 资金流向）；
  * 原「大盘云图」tab 已于 2026-10-13 独立成页（/heatmap 大盘云图，侧栏入口 2026-10-22 移除，
@@ -40,11 +42,10 @@ import { POLLING_INTERVAL } from '../../common/constants/polling.constants.ts';
 
 /** 模块 tab 选项 */
 const MODULE_TABS = [
-  { label: 'A股全景', value: 'cn' },
+  { label: '全景', value: 'overview' },
+  { label: '行业龙头', value: 'leaders' },
   { label: '全部个股', value: 'stocks' },
   { label: '新股次新股', value: 'ipo' },
-  { label: '美股全景', value: 'us' },
-  { label: '全球宏观', value: 'macro' },
   { label: '历史牛熊复盘', value: 'review' },
 ] as const;
 
@@ -57,10 +58,10 @@ const { visibleOptions: moduleTabOptions, activeValue: activeModule } = useTabCo
   MODULE_TABS,
 );
 
-/** 是否处于组件自管数据的模块（A股 / 全部个股 / 新股次新股 / 历史复盘：宿主不拉数据，无骨架 / 空态逻辑） */
+/** 是否处于组件自管数据的模块（行业龙头 / 全部个股 / 新股次新股 / 历史复盘：宿主不拉数据，无骨架 / 空态逻辑） */
 const isSelfManagedModule = computed(
   () =>
-    activeModule.value === 'cn' ||
+    activeModule.value === 'leaders' ||
     activeModule.value === 'stocks' ||
     activeModule.value === 'ipo' ||
     activeModule.value === 'review',
@@ -78,11 +79,7 @@ const usBoards = ref<PanoramaItem[]>(cachedUs ?? []);
 const macroGroups = ref<PanoramaMacroGroup[]>(cachedMacro ?? []);
 /** 当前模块是否拉取中（有快照则不进骨架） */
 const isLoading = ref(
-  activeModule.value === 'us'
-    ? usBoards.value.length === 0
-    : activeModule.value === 'macro'
-      ? macroGroups.value.length === 0
-      : false,
+  activeModule.value === 'overview' && usBoards.value.length === 0 && macroGroups.value.length === 0,
 );
 /** 当前模块拉取是否失败（且无快照） */
 const isError = ref(false);
@@ -123,15 +120,20 @@ const fetchUsBoards = async (): Promise<void> => {
   dataCache.set(DATA_CACHE_KEY.PANORAMA_US_BOARDS, usBoards.value);
 };
 
-/** 拉取当前模块数据（成功后写快照；A股模块由 PanoramaCnBoard 自管；插件面板自管数据） */
+/** 拉取当前模块数据（成功后写快照；全景 tab = 美股 + 宏观串行错峰，其余由组件自管） */
 const loadActiveModule = async (): Promise<void> => {
   if (isSelfManagedModule.value) return;
   isLoading.value = true;
   isError.value = false;
   try {
-    if (activeModule.value === 'us') {
-      await fetchUsBoards();
-    } else if (activeModule.value === 'macro') {
+    if (activeModule.value === 'overview') {
+      // 美股 → 宏观串行错峰（同一 push2delay 上游），任一失败不清空已有快照
+      try {
+        await fetchUsBoards();
+      } catch (error) {
+        console.error('[panorama] us', error);
+      }
+      await delay(REQUEST_GAP_MS);
       macroGroups.value = await fetchMacro();
       dataCache.set(DATA_CACHE_KEY.PANORAMA_MACRO, macroGroups.value);
     }
@@ -143,8 +145,8 @@ const loadActiveModule = async (): Promise<void> => {
   }
 };
 
-// 首次进入非 A 股模块时拉取一次（重接口不轮询，避免触发上游反爬）
-if (activeModule.value !== 'cn') {
+// 首次进入全景 tab 时拉取一次（重接口不轮询，避免触发上游反爬；其余 tab 组件自管）
+if (activeModule.value === 'overview') {
   void loadActiveModule();
 }
 
@@ -162,10 +164,10 @@ onActivated(() => {
 });
 
 // 美股全景轮询：仅在美股轮询窗口（21:30-24:00 与 00:00-04:00）内按间隔刷新，
-// 窗口外与非 us tab 自动跳过
+// 窗口外与非全景 tab 自动跳过
 usePolling({
   task: async () => {
-    if (activeModule.value === 'us') {
+    if (activeModule.value === 'overview') {
       await fetchUsBoards();
     }
   },
@@ -176,7 +178,7 @@ usePolling({
 });
 
 /**
- * 切换模块：插件面板自管数据；有快照直接展示，无快照则拉取（A股模块由组件自管）
+ * 切换模块：自管组件面板直接展示；全景 tab 有快照直接展示，无快照则拉取
  */
 const onSelectModule = (): void => {
   isError.value = false;
@@ -184,26 +186,16 @@ const onSelectModule = (): void => {
     isLoading.value = false;
     return;
   }
-  const hasSnapshot =
-    activeModule.value === 'us'
-      ? usBoards.value.length > 0
-      : macroGroups.value.length > 0;
-  if (hasSnapshot) {
+  if (usBoards.value.length > 0 || macroGroups.value.length > 0) {
     isLoading.value = false;
     return;
   }
   void loadActiveModule();
 };
 
-/** 是否为全球宏观模块 */
-const isMacroModule = computed(() => activeModule.value === 'macro');
-
-/** 是否为美股模块 */
-const isUsModule = computed(() => activeModule.value === 'us');
-
-/** 当前模块是否无数据（失败 / 空集；仅美股 / 宏观使用） */
+/** 全景 tab 是否无数据（失败 / 空集且无快照） */
 const isEmpty = computed(
-  () => !isLoading.value && (isMacroModule.value ? macroGroups.value.length === 0 : usBoards.value.length === 0),
+  () => !isLoading.value && usBoards.value.length === 0 && macroGroups.value.length === 0,
 );
 </script>
 
@@ -224,13 +216,13 @@ const isEmpty = computed(
     </div>
 
     <!-- 模块内容统一滚动容器：页签行固定不动（2026-10-26 王总指定），
-         宏观卡片组等多内容模块在此滚动，不再把整页撑出去带动页签滚走 -->
+         全景三卡等多内容模块在此滚动，不再把整页撑出去带动页签滚走 -->
     <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
       <!-- 历史复盘：牛熊模式库面板（数据自管，快照落 appStorage；撑满剩余高度） -->
       <PanoramaReviewBoard v-if="activeModule === 'review'" class="min-h-0 flex-1" />
 
-      <!-- A股全景：板块排行组件（数据自管；撑满剩余高度，表格尽量高） -->
-      <PanoramaCnBoard v-else-if="activeModule === 'cn'" class="min-h-0 flex-1" />
+      <!-- 行业龙头：板块 / 细分赛道静态清单卡片流（数据自管） -->
+      <PanoramaLeadersBoard v-else-if="activeModule === 'leaders'" class="min-h-0 flex-1" />
 
       <!-- 全部个股：原侧栏「个股行情」页整卡并入（数据 / 轮询 / 翻页自管，v-if 挂载即启停轮询）；
            外层滚动容器兜底卡内容超高（.table-scroll 自带 560px 内滚） -->
@@ -240,24 +232,27 @@ const isEmpty = computed(
 
       <PanoramaIpoBoard v-else-if="activeModule === 'ipo'" class="min-h-0 flex-1" />
 
-      <!-- 加载骨架（美股 / 宏观） -->
+      <!-- 加载骨架（全景：美股 / 宏观首载） -->
       <BaseCard v-else-if="isLoading">
         <div class="grid grid-cols-4 gap-2" aria-hidden="true">
           <div v-for="i in 12" :key="i" class="h-11 animate-pulse rounded-lg bg-flat-weak" />
         </div>
       </BaseCard>
 
-      <!-- 失败 / 空态 -->
+      <!-- 失败 / 空态（全景） -->
       <BaseCard v-else-if="isEmpty">
         <BaseEmpty text="数据加载失败或暂无数据，请稍后重试（上游可能限频）" />
       </BaseCard>
 
-      <!-- 全球宏观：分组网格 -->
-      <template v-else-if="isMacroModule">
-        <BaseCard v-for="group in macroGroups" :key="group.label" :title="group.label">
+      <!-- 全景：三组卡片竖向分布（A股 36 板块平铺 / 美股行业 ETF / 全球宏观） -->
+      <template v-else-if="activeModule === 'overview'">
+        <PanoramaCnBoard class="shrink-0" />
+
+        <!-- 美股：扁平网格 -->
+        <BaseCard title="美股行业 ETF" class="shrink-0">
           <div class="grid grid-cols-4 gap-2">
             <div
-              v-for="item in group.items"
+              v-for="item in usBoards"
               :key="item.name"
               class="flex items-center justify-between gap-2 rounded-lg bg-flat-weak px-3 py-2.5"
             >
@@ -271,26 +266,34 @@ const isEmpty = computed(
             </div>
           </div>
         </BaseCard>
-      </template>
 
-      <!-- 美股：扁平网格 -->
-      <BaseCard v-else-if="isUsModule">
-        <div class="grid grid-cols-4 gap-2">
-          <div
-            v-for="item in usBoards"
-            :key="item.name"
-            class="flex items-center justify-between gap-2 rounded-lg bg-flat-weak px-3 py-2.5"
-          >
-            <span class="truncate text-sm text-text">{{ item.name }}</span>
-            <span
-              class="shrink-0 text-sm font-semibold tabular-nums"
-              :class="TREND_TEXT_CLASS[getTrendByChangePercent(item.changePercent ?? 0)]"
-            >
-              {{ formatPercent(item.changePercent) }}
-            </span>
+        <!-- 全球宏观：单卡内分组网格 -->
+        <BaseCard title="全球宏观" class="shrink-0">
+          <div class="flex flex-col gap-4">
+            <section v-for="group in macroGroups" :key="group.label">
+              <p class="mb-1.5 flex items-baseline gap-2">
+                <span class="text-sm font-medium text-text">{{ group.label }}</span>
+                <span class="text-xs text-text-tertiary">{{ group.items.length }} 项</span>
+              </p>
+              <div class="grid grid-cols-4 gap-2">
+                <div
+                  v-for="item in group.items"
+                  :key="item.name"
+                  class="flex items-center justify-between gap-2 rounded-lg bg-flat-weak px-3 py-2.5"
+                >
+                  <span class="truncate text-sm text-text">{{ item.name }}</span>
+                  <span
+                    class="shrink-0 text-sm font-semibold tabular-nums"
+                    :class="TREND_TEXT_CLASS[getTrendByChangePercent(item.changePercent ?? 0)]"
+                  >
+                    {{ formatPercent(item.changePercent) }}
+                  </span>
+                </div>
+              </div>
+            </section>
           </div>
-        </div>
-      </BaseCard>
+        </BaseCard>
+      </template>
     </div>
   </div>
 </template>

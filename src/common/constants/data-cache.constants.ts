@@ -32,6 +32,8 @@ export const DATA_CACHE_KEY = {
   /** 行情全景：美股 / 全球宏观（A股板块排行复用 BOARDS_LIST 键） */
   PANORAMA_US_BOARDS: 'panorama.usBoards',
   PANORAMA_MACRO: 'panorama.macro',
+  /** 36 板块统一全景快照（板块日历池；A股全景平铺 / 市场总览热力 / 移动端热力卡共用） */
+  CALENDAR_BOARD_PANORAMA: 'calendarBoard.panorama',
   /** 行情全景：新股次新股（同花顺清单快照，含 fetchedAt） */
   PANORAMA_IPO_BOARD: 'panorama.ipoBoard',
   /** 个股详情（前缀 + 符号 / 口径） */

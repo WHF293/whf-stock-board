@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import dayjs from 'dayjs';
 import type { EChartsCoreOption } from 'echarts/core';
 import {
   CHART_AXIS_LINE_COLOR,
   CHART_SPLIT_LINE_COLOR,
   CHART_TEXT_COLOR,
 } from '../../../common/constants/chart.constants.ts';
+import { MINUTE_AXIS_TICKS } from '../../../common/constants/kline.constants.ts';
 import { YUAN_PER_YI } from '../../../common/constants/format.constants.ts';
+import { buildMinuteAxis } from '../../../common/utils/build-minute-axis';
 import { useSettingsStore } from '../../../common/stores/settings';
 import { readTrendColors } from '../../../common/utils/trend-colors';
 import type { SectorFlowCurveView } from '../../../common/types/sector-flow-curve.types.ts';
@@ -15,7 +18,10 @@ import BaseChart from './BaseChart.vue';
 /**
  * 行业资金曲线图：多行业当日累计主力净流入分时曲线同屏叠加
  *
- * - 时间轴取各曲线中点数最多的一条为基准，个别行业缺分钟点时该曲线置空并 connectNulls 连线；
+ * - 时间轴与 K 线图 / 分时图同口径：按曲线归属交易日生成 238 格固定交易分钟轴
+ *   （09:31~11:30 + 13:01~14:57 + 15:00，午休压缩、刻度恒定），标签只在
+ *   MINUTE_AXIS_TICKS 指定的五个时刻展示；曲线按 `HH:mm` 对齐到固定轴，
+ *   缺失分钟为 null 并 connectNulls 连线，盘中未走到的时段曲线自然止步；
  * - 线色按收盘主力净流入正负分 up / down 色系，同侧按传入顺序在四档色阶内循环
  *   （调用方应按「流入值降序 / 流出值升序」传入，保证最强者拿最深的颜色）；
  * - 涨跌配色运行时读 CSS 变量（computed 依赖 trendTheme / themeColor，切主题即时跟随）
@@ -32,15 +38,17 @@ const settingsStore = useSettingsStore();
 /** 零线基准（累计主力净流入正负分界） */
 const ZERO_BASELINE = 0;
 
-/** 公共时间轴（点数最多的曲线；同日各板块交易分钟一致，此处仅防御个别缺失） */
+/** 固定刻度查找表（轴分钟 → 展示文案；非刻度分钟不展示标签） */
+const tickLabelByTime = new Map(MINUTE_AXIS_TICKS.map((tick) => [tick.time, tick.label]));
+
+/** 公共时间轴（曲线归属交易日的 238 格固定交易分钟轴，`HH:mm` 文案） */
 const timeline = computed<string[]>(() => {
-  let best: string[] = [];
-  for (const curve of curves) {
-    if (curve.points.length > best.length) {
-      best = curve.points.map((point) => point.time);
-    }
+  const tradeDate = curves[0]?.tradeDate;
+  if (!tradeDate) {
+    return [];
   }
-  return best;
+  const dayStart = dayjs(`${tradeDate}T00:00:00`).valueOf();
+  return buildMinuteAxis(dayStart).map((timestamp) => dayjs(timestamp).format('HH:mm'));
 });
 
 /** 线色列表（收盘正负定色系，侧内按传入顺序循环四档色阶） */
@@ -62,7 +70,7 @@ const colorList = computed<string[]>(() => {
   });
 });
 
-/** 每条曲线对齐到公共时间轴后的数值序列（缺失分钟为 null，ECharts 断点） */
+/** 每条曲线对齐到固定交易分钟轴后的数值序列（缺失分钟为 null，ECharts 断点） */
 const alignedSeries = computed<Array<number | null>[]>(() => {
   const axis = timeline.value;
   return curves.map((curve) => {
@@ -112,9 +120,18 @@ const option = computed<EChartsCoreOption>(() => {
       type: 'category',
       data: axis,
       boundaryGap: false,
-      axisLabel: { color: CHART_TEXT_COLOR },
+      // 分时图刻度口径：只在 MINUTE_AXIS_TICKS 的五个时刻出标签与纵向网格线
+      axisLabel: {
+        color: CHART_TEXT_COLOR,
+        formatter: (value: string) => tickLabelByTime.get(value) ?? '',
+      },
       axisLine: { lineStyle: { color: CHART_AXIS_LINE_COLOR } },
       axisTick: { show: false },
+      splitLine: {
+        show: true,
+        interval: (_index: number, value: string) => tickLabelByTime.has(value),
+        lineStyle: { color: CHART_SPLIT_LINE_COLOR },
+      },
     },
     yAxis: {
       type: 'value',

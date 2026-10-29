@@ -103,21 +103,24 @@ export const PANORAMA_US_SECIDS = [
 
 /**
  * 行情全景 · A股板块排行展示形式
+ *
+ * @deprecated 2026-10-29 起 A股全景改为 36 板块纯平铺（无列表形式），本组常量与
+ * `settings.panoramaCnViewMode` 仅保留以兼容旧持久化数据，不再有消费方
  */
 export const PANORAMA_CN_VIEW_MODE = {
-  /** 列表表格（默认：统计 + 筛选 + 列配置表格） */
+  /** 列表表格 */
   LIST: 'list',
-  /** 平铺网格（与美股全景一致：板块名 + 涨跌幅） */
+  /** 平铺网格 */
   TILE: 'tile',
 } as const satisfies Record<string, string>;
 
-/** A股板块排行展示形式 */
+/** A股板块排行展示形式 @deprecated 见 PANORAMA_CN_VIEW_MODE */
 export type PanoramaCnViewMode = (typeof PANORAMA_CN_VIEW_MODE)[keyof typeof PANORAMA_CN_VIEW_MODE];
 
-/** 默认展示形式：列表 */
+/** 默认展示形式 @deprecated 见 PANORAMA_CN_VIEW_MODE */
 export const PANORAMA_CN_VIEW_MODE_DEFAULT: PanoramaCnViewMode = PANORAMA_CN_VIEW_MODE.LIST;
 
-/** 展示形式切换选项 */
+/** 展示形式切换选项 @deprecated 见 PANORAMA_CN_VIEW_MODE */
 export const PANORAMA_CN_VIEW_MODE_OPTIONS: readonly { label: string; value: PanoramaCnViewMode }[] = [
   { label: '列表', value: PANORAMA_CN_VIEW_MODE.LIST },
   { label: '平铺', value: PANORAMA_CN_VIEW_MODE.TILE },

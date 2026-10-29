@@ -14,26 +14,24 @@ import {
   formatPercentUnsigned,
 } from "../../../common/utils/format-percent";
 import { formatPrice } from "../../../common/utils/format-price";
-import type {
-  IndustryBoard,
-  IndustryBoardConstituent,
-} from "../../../common/types/board.types.ts";
+import type { IndustryBoardConstituent } from "../../../common/types/board.types.ts";
+import type { CalendarBoardPanoramaItem } from "../../../common/types/board-calendar.types.ts";
 import type { HeatmapDrillView } from "../../../common/types/heatmap.types.ts";
 import type { TableColumn } from "../../../common/types/table.types.ts";
 
 /**
  * 板块热力列表视图：与 HeatmapChart 交互对称的表格形态
  *
- * 板块层展示 Top N 板块，开启行扩展（BaseTable expandable）：
- * 点击行首 chevron（或点击行）展开扩展行，扩展行内渲染该板块的成分股表格，
- * 成分股行点击 emit stock-click 跳个股详情；
+ * 板块层展示 Top N 板块（36 板块统一口径，2026-10-29 起），开启行扩展
+ * （BaseTable expandable）：点击行首 chevron（或点击行）展开扩展行，
+ * 扩展行内渲染该板块的成分股表格，成分股行点击 emit stock-click 跳个股详情；
  * 成分股数据由父级 useHeatmapDrill 拉取（board-click 事件触发），与热力图视图共享
  *
  * 注：板块名称为纯文本（不再点击打开右侧停靠面板查看成分股）
  */
 defineProps<{
-  /** 板块列表（Top N，完整行情字段） */
-  boards: IndustryBoard[];
+  /** 板块列表（Top N，36 板块统一口径快照） */
+  boards: CalendarBoardPanoramaItem[];
   /** 下钻视图状态（null 表示板块总览层），由父级 useHeatmapDrill 提供 */
   drillView: HeatmapDrillView | null;
   /** 成分股拉取中 */
@@ -48,15 +46,14 @@ const emit = defineEmits<{
   /** 双击成分股行（跳股票详情整页） */
   stockDblclick: [code: string];
   /** 点击板块行（请求父级下钻） */
-  boardClick: [board: IndustryBoard];
+  boardClick: [board: CalendarBoardPanoramaItem];
   /** 点击返回板块 */
   back: [];
 }>();
 
-/** 板块层列配置（涨跌幅 / 总市值默认可排序） */
-const boardColumns: TableColumn<IndustryBoard>[] = [
+/** 板块层列配置（涨跌幅 / 成交额默认可排序；2026-10-29 起 36 板块统一口径，无市值/换手/领涨股字段） */
+const boardColumns: TableColumn<CalendarBoardPanoramaItem>[] = [
   { key: "name", label: "板块" },
-  { key: "price", label: "最新价", align: "right" },
   {
     key: "changePercent",
     label: "涨跌幅",
@@ -65,15 +62,13 @@ const boardColumns: TableColumn<IndustryBoard>[] = [
     sortValue: (board) => board.changePercent,
   },
   {
-    key: "totalMarketCap",
-    label: "总市值",
+    key: "amount",
+    label: "成交额",
     align: "right",
     sortable: true,
-    sortValue: (board) => board.totalMarketCap,
+    sortValue: (board) => board.amount,
   },
-  { key: "turnoverRate", label: "换手率", align: "right" },
   { key: "riseFall", label: "涨/跌家数", align: "right" },
-  { key: "leadingStock", label: "领涨股" },
 ];
 
 /** 成分股层列配置（涨跌幅 / 成交额默认可排序） */
@@ -112,7 +107,7 @@ const trendTextClass = (changePercent: number | null): string =>
  * 板块行 / 展开图标点击：切换扩展行，并请求父级拉取该板块成分股
  * @param board 板块行数据
  */
-const onBoardToggle = (board: IndustryBoard): void => {
+const onBoardToggle = (board: CalendarBoardPanoramaItem): void => {
   emit("boardClick", board);
   expandedCodes.value = expandedCodes.value.includes(board.code)
     ? expandedCodes.value.filter((code) => code !== board.code)
@@ -151,35 +146,17 @@ const onStockRowDblclick = (stock: IndustryBoardConstituent): void => {
           {{ row.name }}
         </span>
       </template>
-      <template #price="{ row }">
-        {{ formatPrice(row.price) }}
-      </template>
       <template #changePercent="{ row }">
         <span :class="trendTextClass(row.changePercent)">
           {{ formatPercent(row.changePercent) }}
         </span>
       </template>
-      <template #totalMarketCap="{ row }">
-        {{ formatAmount((row.totalMarketCap ?? 0) / YUAN_PER_WAN) }}
-      </template>
-      <template #turnoverRate="{ row }">
-        {{ formatPercentUnsigned(row.turnoverRate) }}
+      <template #amount="{ row }">
+        {{ formatAmount((row.amount ?? 0) / YUAN_PER_WAN) }}
       </template>
       <template #riseFall="{ row }">
-        {{ row.riseCount ?? NUMBER_PLACEHOLDER }} /
-        {{ row.fallCount ?? NUMBER_PLACEHOLDER }}
-      </template>
-      <template #leadingStock="{ row }">
-        <template v-if="row.leadingStock">
-          {{ row.leadingStock }}
-          <span
-            class="ml-1 text-xs"
-            :class="trendTextClass(row.leadingStockChangePercent)"
-          >
-            {{ formatPercent(row.leadingStockChangePercent) }}
-          </span>
-        </template>
-        <template v-else>{{ NUMBER_PLACEHOLDER }}</template>
+        {{ row.upCount ?? NUMBER_PLACEHOLDER }} /
+        {{ row.downCount ?? NUMBER_PLACEHOLDER }}
       </template>
 
       <!-- 扩展行：该板块成分股表格（数据由父级 useHeatmapDrill 拉取） -->

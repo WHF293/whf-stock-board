@@ -20,13 +20,20 @@ export const HEATMAP_VIEW_MODE_OPTIONS = [
   { label: '列表', value: HEATMAP_VIEW_MODE.LIST },
 ] as const;
 
-/** Top 数量按钮组选项（与 BaseTabs 配套：value 为字符串，绑定时转 number） */
+/**
+ * Top 数量按钮组选项（与 BaseTabs 配套：value 为字符串，绑定时转 number）
+ *
+ * 2026-10-29 起板块热力换 36 板块统一池，原 Top30/Top50 档位收缩为「全部36」；
+ * 历史持久化的 30 / 50 由消费端归一到 36（见 DashboardView 的 heatmapTopNModel）
+ */
 export const HEATMAP_TOP_TAB_OPTIONS = [
   { label: 'Top10', value: '10' },
   { label: 'Top20', value: '20' },
-  { label: 'Top30', value: '30' },
-  { label: 'Top50', value: '50' },
+  { label: '全部36', value: '36' },
 ] as const;
+
+/** Top 数量有效档位（历史持久化值不在档位内时归一到全量） */
+export const HEATMAP_TOP_VALID_VALUES: readonly number[] = [10, 20, 36];
 
 /** 热力图 / 列表两种展示形式的统一高度（像素）：切换展示形式时避免卡片高度跳动 */
 export const HEATMAP_VIEW_HEIGHT_PX = 400;

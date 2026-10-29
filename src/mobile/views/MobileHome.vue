@@ -22,7 +22,8 @@ import { VueDraggable } from 'vue-draggable-plus';
 import { fetchAllMarketQuotes } from '../../common/api/quotes.api';
 import { fetchMarketTurnover } from '../../common/api/turnover.api';
 import { fetchZtPool } from '../../common/api/event.api';
-import { fetchIndustryBoards, fetchIndustryConstituents } from '../../common/api/board.api';
+import { fetchIndustryConstituents } from '../../common/api/board.api';
+import { fetchCalendarBoardPanorama } from '../../common/api/board-calendar.api';
 import { HEATMAP_DRILL_STOCK_COUNT } from '../../common/constants/heatmap.constants';
 import { toFullSymbol } from '../../common/utils/to-full-symbol';
 import {
@@ -560,11 +561,15 @@ const loadMarketPulse = async (): Promise<void> => {
 useMobilePolling(loadMarketPulse);
 
 /* === 板块热力图（自行情页迁回，2026-10-20 王总指定两模块互换；
-       移动端口径：总市值 Top 10，面积 = 市值，色 = 涨跌四档；30s TTL） === */
+       2026-10-29 起换 36 板块统一池（板块日历 CALENDAR_BOARDS）：成交额 Top 10，
+       面积 = 成交额，色 = 涨跌四档；30s TTL） === */
 const heatBoards = ref<HeatmapBoard[]>([]);
 const heatLoading = ref(false);
 const heatError = ref(false);
 const HEAT_CACHE_KEY = 'home.heatmap';
+
+/** 热力图展示格数（36 板块池内按成交额取前 10，手机屏 treemap 过多格可读性差） */
+const HOME_HEAT_BOARD_COUNT = 10;
 
 const loadHeat = async (force = false): Promise<void> => {
   if (heatLoading.value) return;
@@ -574,15 +579,14 @@ const loadHeat = async (force = false): Promise<void> => {
     if (cached) {
       heatBoards.value = cached.value.boards;
     } else {
-      const boards = (await fetchIndustryBoards())
-        .filter((board) => board.changePercent !== null && board.totalMarketCap !== null)
-        .sort((a, b) => (b.totalMarketCap ?? 0) - (a.totalMarketCap ?? 0))
-        .slice(0, 10)
+      const boards = (await fetchCalendarBoardPanorama())
+        .sort((a, b) => b.amount - a.amount)
+        .slice(0, HOME_HEAT_BOARD_COUNT)
         .map((board) => ({
           code: board.code,
           name: board.name,
-          changePercent: board.changePercent ?? 0,
-          weight: board.totalMarketCap ?? 0,
+          changePercent: board.changePercent,
+          weight: board.amount,
         }));
       heatBoards.value = boards;
       mobileCacheSet(HEAT_CACHE_KEY, { boards });
