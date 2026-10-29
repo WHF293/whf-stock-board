@@ -1,12 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { showToast } from 'vant';
-import { fetchMarketFundFlow, fetchSectorFundFlowRank } from '../../common/api/flow.api.ts';
-import {
-  fetchSectorFlowCurves,
-  pickDefaultCurveCodes,
-} from '../../common/api/sector-flow-curve.api.ts';
+import { fetchMarketFundFlow } from '../../common/api/flow.api.ts';
+import { fetchCalendarBoardFundFlow } from '../../common/api/board-calendar.api.ts';
+import { CALENDAR_BOARDS } from '../../common/constants/board-calendar.constants.ts';
+import { fetchSectorFlowCurves } from '../../common/api/sector-flow-curve.api.ts';
 import {
   ensureSectorFlowHistories,
   readSectorFlowHistory,
@@ -41,8 +39,6 @@ import {
   FUND_FLOW_HISTORY_CARD_HEIGHT,
   FUND_FLOW_HISTORY_DAYS,
   FUND_FLOW_MARKET_DAYS,
-  FUND_FLOW_SECTOR_DEFAULT_PER_SIDE,
-  FUND_FLOW_SECTOR_MAX,
 } from '../constants';
 
 /**
@@ -164,7 +160,7 @@ const marketOption = computed<EChartsCoreOption>(() => {
   };
 });
 
-// ---------- 板块排名 / 已选板块（板块池与 PC 一致，选中上限 8） ----------
+// ---------- 板块排名 / 已选板块（2026-10-29 起与 PC 同源：36 板块统一池，勾选不设上限） ----------
 
 const sectorRank = ref<SectorFundFlowItem[]>([]);
 const rankLoading = ref(false);
@@ -175,23 +171,30 @@ const rankErrorDetail = ref('');
 /** 已选板块代码（BK 编号，勾选顺序即历史卡展示顺序） */
 const selectedCodes = ref<string[]>([]);
 
+/** 36 板块池代码白名单（勾选清单与旧存档过滤共用） */
+const POOL_CODES = new Set(CALENDAR_BOARDS.map((board) => board.code));
+
 /**
- * 读取持久化的已选板块（坏数据回退空，榜单就绪后补默认勾选）
+ * 读取持久化的已选板块（坏数据回退空；按 36 板块池白名单过滤——
+ * 旧存档里 496 时代勾过的代码一律剔除）
  * @returns 已选板块代码列表
  */
 const readSelectedCodes = (): string[] => {
   try {
     const raw = appStorage.getItem(STORAGE_NS_MOBILE_FUND_FLOW_CURVE);
     const parsed = raw ? (JSON.parse(raw) as { codes?: unknown }) : null;
-    return Array.isArray(parsed?.codes)
-      ? parsed.codes.filter((code): code is string => typeof code === 'string')
-      : [];
+    if (!Array.isArray(parsed?.codes)) {
+      return [];
+    }
+    return parsed.codes.filter(
+      (code): code is string => typeof code === 'string' && POOL_CODES.has(code),
+    );
   } catch {
     return [];
   }
 };
 
-/** 拉取板块净流入排名（进行中共享同一任务防重入） */
+/** 拉取板块净流入排名（36 板块池；进行中共享同一任务防重入） */
 let rankTask: Promise<void> | null = null;
 const loadSectorRank = (): Promise<void> => {
   if (!rankTask) {
@@ -199,7 +202,7 @@ const loadSectorRank = (): Promise<void> => {
       rankLoading.value = true;
       rankError.value = false;
       try {
-        sectorRank.value = await fetchSectorFundFlowRank();
+        sectorRank.value = await fetchCalendarBoardFundFlow();
       } catch (error) {
         rankError.value = true;
         rankErrorDetail.value = error instanceof Error ? error.message : String(error);
@@ -435,18 +438,22 @@ const sectorOption = computed<EChartsCoreOption>(() => {
   };
 });
 
-// ---------- 板块选择弹窗（板块池与 PC 一致，单轮最多勾 8 个） ----------
+// ---------- 板块选择弹窗（36 板块固定清单，与板块日历 / PC 资金流向同池；勾选不设上限） ----------
 
 const pickerOpen = ref(false);
 /** 弹窗内暂存勾选（确认时才生效） */
 const pendingCodes = ref<string[]>([]);
 
-/** 弹窗列表：按当日主力净流入降序全量列出 */
-const rankSorted = computed(() =>
-  [...sectorRank.value].sort((a, b) => (b.mainNetInflow ?? 0) - (a.mainNetInflow ?? 0)),
+/** 弹窗列表：写死的 36 板块清单，按当日主力净流入降序（数值取榜单快照，未就绪排后、显示 --） */
+const pickerBoards = computed(() =>
+  CALENDAR_BOARDS.map((board) => ({
+    code: board.code,
+    name: board.name,
+    mainNetInflow: sectorRankByCode.value.get(board.code)?.mainNetInflow ?? null,
+  })).sort((a, b) => (b.mainNetInflow ?? 0) - (a.mainNetInflow ?? 0)),
 );
 
-/** 打开弹窗：以当前已选初始化暂存勾选（榜单缺席时顺带补拉） */
+/** 打开弹窗：以当前已选初始化暂存勾选（清单写死不依赖榜单；数值缺席时顺带补拉） */
 const openPicker = (): void => {
   pendingCodes.value = [...selectedCodes.value];
   pickerOpen.value = true;
@@ -456,7 +463,7 @@ const openPicker = (): void => {
 };
 
 /**
- * 切换某个板块的勾选（达上限后禁止继续勾选）
+ * 切换某个板块的勾选（不设上限：36 板块池全选也不过量）
  * @param code 板块代码
  */
 const togglePending = (code: string): void => {
@@ -464,9 +471,7 @@ const togglePending = (code: string): void => {
     pendingCodes.value = pendingCodes.value.filter((item) => item !== code);
     return;
   }
-  if (pendingCodes.value.length < FUND_FLOW_SECTOR_MAX) {
-    pendingCodes.value = [...pendingCodes.value, code];
-  }
+  pendingCodes.value = [...pendingCodes.value, code];
 };
 
 /** 确认选择：替换已选集合（未勾选的曲线随 watch 过滤移除，新勾选增量拉取） */
@@ -525,7 +530,11 @@ const displayBoards = computed(() =>
     const entry = historyMap.value[code];
     return {
       code,
-      name: entry?.name ?? sectorRankByCode.value.get(code)?.name ?? code,
+      name:
+        entry?.name ??
+        CALENDAR_BOARDS.find((board) => board.code === code)?.name ??
+        sectorRankByCode.value.get(code)?.name ??
+        code,
       points: entry?.points ?? [],
       missing: !entry,
     };
@@ -588,8 +597,10 @@ watch(
 
 const router = useRouter();
 
-/** 榜单展示：当日净流入降序前 30 */
-const rankTop30 = computed(() => rankSorted.value.slice(0, 30));
+/** 榜单展示：当日净流入降序前 30（36 板块池内） */
+const rankTop30 = computed(() =>
+  [...sectorRank.value].sort((a, b) => (b.mainNetInflow ?? 0) - (a.mainNetInflow ?? 0)).slice(0, 30),
+);
 
 /**
  * 榜单行尾勾选态（已在曲线与历史已选集内）
@@ -600,16 +611,12 @@ const isPicked = (code: string): boolean => selectedCodes.value.includes(code);
 
 /**
  * 行尾「＋/✓」：切换该板块在曲线与历史已选集的勾选
- * （复用 8 个上限与 appStorage 持久化，加入/移除由既有 watch 自动拉取/清理曲线与历史）
+ * （不设上限；加入/移除由既有 watch 自动拉取/清理曲线与历史）
  * @param code 板块代码
  */
 const toggleRankCode = (code: string): void => {
   if (selectedCodes.value.includes(code)) {
     selectedCodes.value = selectedCodes.value.filter((item) => item !== code);
-    return;
-  }
-  if (selectedCodes.value.length >= FUND_FLOW_SECTOR_MAX) {
-    showToast(`最多选择 ${FUND_FLOW_SECTOR_MAX} 个板块`);
     return;
   }
   selectedCodes.value = [...selectedCodes.value, code];
@@ -635,13 +642,7 @@ onMounted(() => {
   void marketStatus.refresh().catch(() => undefined);
   void (async () => {
     await loadSectorRank();
-    // 首次使用（无持久化勾选）：按当日净流入流入 / 流出各取前 N 补默认勾选
-    if (selectedCodes.value.length === 0 && sectorRank.value.length > 0) {
-      selectedCodes.value = pickDefaultCurveCodes(
-        sectorRank.value,
-        FUND_FLOW_SECTOR_DEFAULT_PER_SIDE,
-      );
-    }
+    // 2026-10-29 起默认一个不选（对齐 PC）：勾选交给用户，不再自动补默认勾选
     if (selectedCodes.value.length > 0) {
       void loadSectorCurves(selectedCodes.value);
       ensureFlowHistory();
@@ -695,7 +696,7 @@ onMounted(() => {
           </span>
           <button class="m-ff-head__btn" :disabled="curveLoading" @click="refreshCurves">↻</button>
           <button class="m-ff-head__btn m-ff-head__btn--pick" @click="openPicker">
-            选择板块 {{ selectedCodes.length }}/{{ FUND_FLOW_SECTOR_MAX }}
+            选择板块 {{ selectedCodes.length }}
           </button>
         </header>
         <div v-if="curveLoading && curveViews.length === 0" class="m-ff-skeleton">
@@ -848,13 +849,13 @@ onMounted(() => {
       </section>
     </div>
 
-    <!-- 选择板块弹层（按当日主力净流入降序全量列出，上限 8） -->
+    <!-- 选择板块弹层（36 板块固定清单，与板块日历 / PC 同池；勾选不设上限） -->
     <van-popup v-model:show="pickerOpen" position="bottom" round style="height: 75dvh">
       <div class="m-ff-picker">
         <div class="m-ff-picker__head">
           <div class="m-ff-picker__title">选择板块</div>
           <div class="m-ff-picker__meta">
-            按当日主力净流入排序 · 最多 {{ FUND_FLOW_SECTOR_MAX }} 个
+            36 板块固定清单 · 勾几个画几条（数值为当日主力净流入）
             <button
               class="m-ff-picker__clear"
               :disabled="pendingCodes.length === 0"
@@ -864,39 +865,24 @@ onMounted(() => {
             </button>
           </div>
         </div>
-        <div v-if="rankLoading && sectorRank.length === 0" class="m-ff-skeleton">加载中…</div>
-        <div v-else-if="sectorRank.length === 0" class="m-ff-error">
-          <span>行业榜单加载失败</span>
-          <span v-if="rankErrorDetail" class="m-ff-error__detail">{{ rankErrorDetail }}</span>
-          <button class="m-ff-error__retry" :disabled="rankLoading" @click="loadSectorRank">
-            ↻ 重试
-          </button>
-        </div>
-        <div v-else class="m-ff-picker__list">
+        <div class="m-ff-picker__list">
           <label
-            v-for="item in rankSorted"
-            :key="item.code"
+            v-for="board in pickerBoards"
+            :key="board.code"
             class="m-ff-picker__row"
-            :class="{
-              'm-ff-picker__row--off':
-                !pendingCodes.includes(item.code) && pendingCodes.length >= FUND_FLOW_SECTOR_MAX,
-            }"
           >
             <input
               type="checkbox"
               class="m-ff-picker__check"
-              :checked="pendingCodes.includes(item.code)"
-              :disabled="
-                !pendingCodes.includes(item.code) && pendingCodes.length >= FUND_FLOW_SECTOR_MAX
-              "
-              @change="togglePending(item.code)"
+              :checked="pendingCodes.includes(board.code)"
+              @change="togglePending(board.code)"
             />
-            <span class="m-ff-picker__name">{{ item.name }}</span>
+            <span class="m-ff-picker__name">{{ board.name }}</span>
             <span
               class="m-ff-picker__val"
-              :class="(item.mainNetInflow ?? 0) >= 0 ? 'is-up' : 'is-down'"
+              :class="(board.mainNetInflow ?? 0) >= 0 ? 'is-up' : 'is-down'"
             >
-              {{ formatYuanWithSign(item.mainNetInflow) }}
+              {{ formatYuanWithSign(board.mainNetInflow) }}
             </span>
           </label>
         </div>
