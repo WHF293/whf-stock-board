@@ -555,6 +555,10 @@ const send = async (): Promise<void> => {
     createdAt: Date.now(),
   };
   list.push(assistantMsg);
+  // ⚠️ 必须经代理数组取回消息引用：push 进 reactive 数组的是原始对象，
+  // 流式增量 / 工具卡若直接写原始对象不会触发响应式——表现为整个分析过程
+  // 界面静止、中断后才一次性冒出全部内容（2026-10-29 机构行为分析实测）
+  const liveMsg = list[list.length - 1]!;
   autoscroll();
 
   // 历史窗口（最近 30 条已完成消息，排除本次；附图只随最近 N 条用户消息携带，
@@ -574,12 +578,12 @@ const send = async (): Promise<void> => {
   const model = currentModel.value;
   const profile = currentProfile.value;
   const streamer = new SmoothStreamer((out) => {
-    assistantMsg.content += out;
+    liveMsg.content += out;
   });
 
   // 工具卡数据源：MCP 运行时事件（确定性）与流式提前信号（体验）共同写入消息 parts
-  const parts: ToolCallPart[] = [];
-  assistantMsg.parts = parts;
+  //（parts 即 liveMsg.parts 的代理引用，后续 upsert 的变更才会触发上屏）
+  const parts: ToolCallPart[] = liveMsg.parts as ToolCallPart[];
   const sink = {
     onStart: (event: {
       id: string;
