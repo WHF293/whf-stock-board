@@ -101,7 +101,9 @@ const buildReleaseFromVersion = (version: string): LatestReleaseInfo => ({
   asset: {
     assetId: 0,
     name: `stock-board_${version}_x64-setup.exe`,
-    downloadUrl: UPDATE_ASSET_URL_TEMPLATE.replace('{version}', version),
+    // 模板里路径与文件名各有一个 {version}，必须全量替换（String.replace 只换第一处，
+    // 文件名残留字面量 {version} 导致下载 404 —— 2026-10-29 实测）
+    downloadUrl: UPDATE_ASSET_URL_TEMPLATE.replaceAll('{version}', version),
     // 字节数未知：下载以响应 content-length 为准（0 = 跳过预校验）
     size: 0,
   },
