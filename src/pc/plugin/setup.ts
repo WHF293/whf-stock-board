@@ -32,6 +32,7 @@ import { STOCK_PROXY_ALLOWED_HOSTS } from '../../common/constants/proxy.constant
 import { requestAgentAnalysis } from '../agent/agent-bridge';
 import { APP_VERSION } from '../../common/constants/app-info.constants.ts';
 import { resolveRouteFallback } from '../../common/utils/resolve-route-fallback';
+import { openExternalUrl } from '../../common/utils/open-external-url';
 import { searchStocks } from '../../common/api/search.api.ts';
 import { fetchFullQuotes } from '../../common/api/quotes.api.ts';
 import { proxyFetch } from '../../common/api/proxy-fetch';
@@ -252,6 +253,8 @@ export const installPlugins = (pinia?: Pinia): void => {
   pluginKernel.services.provide('app:navigate', (path: string): void => {
     void router.push(path);
   });
+  // 外链打开：插件 import 不了 tauri plugin-opener，系统浏览器跳转统一由宿主代办
+  pluginKernel.services.provide('app:open-url', openExternalUrl);
   // 标的搜索：宿主封装 stock-sdk 的腾讯搜索，插件自建 UI 消费（调用方自行防抖）
   pluginKernel.services.provide('app:stock-search', { search: searchStocks });
   pluginKernel.services.provide('panel:open', openPanelByKey);

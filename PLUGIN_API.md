@@ -1,6 +1,6 @@
 # PLUGIN_API.md — 插件开放接口清单
 
-> 本文件盘点**宿主开放给插件的全部能力**（`ctx.*` 九个贡献点、数据持久化、二十一个宿主服务、事件、配额与红线）。
+> 本文件盘点**宿主开放给插件的全部能力**（`ctx.*` 九个贡献点、数据持久化、二十二个宿主服务、事件、配额与红线）。
 > **第三方（应用内安装）插件作者请优先看 [PLUGIN_WIKI.md](./PLUGIN_WIKI.md)** —— 那份是面向你的独立 wiki；
 > 本文件面向宿主仓库贡献者（含第三层「宿主内部模块」清单）。
 > 类型契约的唯一事实源是 `src/types/plugin.types.ts`，宿主侧接线（注册顺序、 `recoverVanishedRoute`）见 `src/plugin/setup.ts`；
@@ -14,7 +14,7 @@
 
 | 层 | 内容 | 谁能用 | 兼容承诺 |
 | --- | --- | --- | --- |
-| **① 契约层** | `ctx.*` 全部成员、`AppServiceMap` 二十一个宿主服务、`AppEventMap` 六个内置事件、`types/plugin.types.ts` 全部导出类型 | 源码级插件 + 应用内安装的用户插件 | **主版本号内保证向后兼容**；要改形态须同步本文档 |
+| **① 契约层** | `ctx.*` 全部成员、`AppServiceMap` 二十二个宿主服务、`AppEventMap` 六个内置事件、`types/plugin.types.ts` 全部导出类型 | 源码级插件 + 应用内安装的用户插件 | **主版本号内保证向后兼容**；要改形态须同步本文档 |
 | **② 服务扩展层** | 插件之间经 `ctx.provide` / `ctx.consume` 互相暴露的自定义服务与事件（如 `note:repo` / `note:saved`） | 任何插件 | 由「提供方插件」负责；消费方必须允许 `consume` 返回 `undefined` 并降级 |
 | **③ 宿主内部模块** | `@/api/*`、`@/utils/*`、`@/composables/*`、`@/components/ui/*`、`@/stores/*` 等源码模块 | **仅源码级插件**（跟宿主一起构建） | 无承诺；改名 / 搬文件不另行通知 |
 
@@ -38,7 +38,7 @@
 > Tailwind 类不拦（能装），只在预览区给出「可能没有样式」的提醒。
 
 ✅ **好消息**：不 import 任何东西的插件完全可以挂载——实测注册侧栏面板并渲染成功，
-且 `ctx` 全套、二十一个宿主服务、`ctx.storage` / `ctx.db`（`ensureTable`→`insert`→`select`→`remove`→`count`）、`ctx.on` 全部可用。
+且 `ctx` 全套、二十二个宿主服务、`ctx.storage` / `ctx.db`（`ensureTable`→`insert`→`select`→`remove`→`count`）、`ctx.on` 全部可用。
 **第三方插件请把自己限制在第 ① 层。**
 
 第一条红线的替代方案已经补齐了，写第三方插件不再需要 import：
@@ -352,6 +352,7 @@ ctx.settings.reset();                 // 回到声明默认值
 | --- | --- | --- |
 | `app:version` | `string` | 应用版本号（来源 `APP_VERSION`） |
 | `app:navigate` | `(path: string) => void` | 跳路由（`router.push`）；插件不直接依赖 router 实例 |
+| `app:open-url` | `(url: string) => void` | **系统默认浏览器打开外部链接**：Tauri 内走 plugin-opener，浏览器环境兜底新标签页。插件 import 不了 `@tauri-apps/plugin-opener`，「访问原站」这类外链跳转统一走这里（2026-10-29 起，大盘云图插件为首个消费方） |
 | `panel:open` | `(panelKey: string) => void` | 按全局键打开面板：drawer → 开右侧抽屉；inline → 取消折叠并滚动到可视区；顶栏条目 → 展开下拉。键不存在只 `console.warn` |
 | `app:notify` | `NotifyService` | 右下角应用级浮窗（宿主渲染，**跨路由常驻、与发起它的组件是否挂载无关**） |
 | `app:stock-search` | `StockSearchService` | 标的搜索（代码 / 名称 / 拼音，腾讯源） |

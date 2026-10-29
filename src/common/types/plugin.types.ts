@@ -1235,6 +1235,13 @@ export interface AppServiceMap {
   /** 宿主路由跳转（插件不直接依赖 router 实例，改走此服务） */
   'app:navigate': (path: string) => void;
   /**
+   * 系统默认浏览器打开外部链接
+   *
+   * zip 插件 import 不了 `@tauri-apps/plugin-opener`，外链跳转（如「访问原站」）
+   * 统一走此服务：Tauri 内 opener、浏览器环境兜底新标签页。提供方缺席时插件自行降级
+   */
+  'app:open-url': (url: string) => void;
+  /**
    * 打开一个插件面板
    *
    * inline 面板：展开并滚动到可视区；drawer 面板：打开右侧抽屉。

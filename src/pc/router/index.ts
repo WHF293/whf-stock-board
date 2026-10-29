@@ -4,7 +4,6 @@ import { LAYOUT_ROUTE_NAME, NOT_FOUND_ROUTE_NAME, ROUTE_PATH, MENU_ITEMS } from 
 import DashboardView from '../views/DashboardView.vue';
 import WatchlistView from '../views/WatchlistView.vue';
 import PanoramaView from '../views/PanoramaView.vue';
-import HeatmapView from '../views/HeatmapView.vue';
 import BoardFlowView from '../views/BoardFlowView.vue';
 import BoardCalendarView from '../views/BoardCalendarView.vue';
 import BoardCalendarDetailView from '../views/BoardCalendarDetailView.vue';
@@ -58,13 +57,8 @@ const routes = [
         component: PanoramaView,
         meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.PANORAMA] },
       },
-      // 大盘云图：原「行情全景-大盘云图」tab 独立成页（2026-10-13），dapanyuntu.com iframe 直嵌；
-      // 侧栏入口已移除（2026-10-22 王总指定），改由市场总览页头按钮进入，不入左侧导航
-      {
-        path: ROUTE_PATH.HEATMAP,
-        component: HeatmapView,
-        meta: { title: '大盘云图' },
-      },
+      // 大盘云图已改为插件分发（dsh-dapanyuntu，路径 /heatmap 由插件注册，2026-10-29）；
+      // 未安装插件时总览页头「大盘云图」按钮指向的旧路径由 404 兜底页承接（同 screener 先例）
       // 资金流向（原「板块资金流向」）：原「行情全景-最新板块资金」独立成页（2026-10-13）
       {
         path: ROUTE_PATH.BOARD_FLOW,
