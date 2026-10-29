@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import BoardCalendarGrid from '../components/business/BoardCalendarGrid.vue';
 import BoardCellDetailModal from '../components/business/BoardCellDetailModal.vue';
@@ -15,7 +15,6 @@ import BaseEmpty from '../components/ui/BaseEmpty.vue';
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue';
 import BaseTabs from '../components/ui/BaseTabs.vue';
 import MenuIcon from '../components/ui/MenuIcon.vue';
-import NoticeBar from '../components/ui/NoticeBar.vue';
 import {
   isBoardDbAvailable,
   listBoardDailyByDates,
@@ -78,6 +77,7 @@ import { buildBoardMainlineMatrix } from '../../common/utils/build-board-mainlin
 import { buildBoardRotation } from '../../common/utils/build-board-rotation';
 import { buildBoardRotationAnalysisPrompt } from '../../common/utils/build-board-rotation-analysis-prompt';
 import type { RankDataset } from '../../common/types/rank-dataset.types';
+import type { RotationDirection } from '../../common/types/board-rotation.types.ts';
 import { requestAgentAnalysis } from '../agent/agent-bridge';
 import { useNotificationsStore } from '../../common/stores/notifications';
 import {
@@ -143,6 +143,8 @@ const { active: headerSlotActive } = usePageHeaderSlot();
 const calendarView = ref<BoardCalendarViewMode>(BOARD_CALENDAR_VIEW_DEFAULT);
 /** 题材轮动展示范围（近 10/20/30 日，双向绑定给 BoardRotationPanel；同时驱动板块Top 子模块日期列） */
 const rotationRange = ref<string>(String(ROTATION_DEFAULT_RANGE));
+/** 题材轮动上榜方向（涌入 / 逃离，2026-10-29 王总指定；双向绑定给 BoardRotationPanel，AI 分析数据段同口径） */
+const rotationDirection = ref<RotationDirection>('inflow');
 /** 弹窗状态 */
 const modalOpen = ref(false);
 const activeRow = ref<BoardCalendarRow | null>(null);
@@ -304,7 +306,16 @@ const matrixDates = computed<string[]>(() =>
   }),
 );
 
-/** 矩阵：可见板块行 × 当前范围列（自定义顺序优先，否则按热门口径降序） */
+/** 矩阵：可见板块行 × 当前范围列（自定义顺序 / 列排序优先，否则按最新一列得分降序） */
+const columnSort = ref<{ date: string; dir: 'desc' | 'asc' } | null>(null);
+
+// 排序列被范围切换 / 数据剔除挤出可见列时自动失效，避免按不可见日期排序
+watch(matrixDates, (dates) => {
+  if (columnSort.value !== null && !dates.includes(columnSort.value.date)) {
+    columnSort.value = null;
+  }
+});
+
 const matrix = computed<BoardCalendarMatrix>(() => {
   const dates = matrixDates.value;
   const byKey = new Map<string, BoardDailyRow>();
@@ -327,18 +338,51 @@ const matrix = computed<BoardCalendarMatrix>(() => {
   });
 
   // 自定义顺序优先：用户拖拽保存过顺序就不再自动排序；
-  // 未自定义（或点了「恢复默认」）时按热门口径降序
+  // 未自定义（或点了「恢复热门排序」清除自定义）时按最新一列**真实得分**降序——
+  // 2026-10-30 王总指定：最新列得分最高的板块排第一行、最低的排最后一行；
+  // 最新交易日无数据的板块排末尾（同分按成交额降序）
   if (!hasCustomOrder.value) {
-    const basis = settingsStore.boardCalendarHeatBasis;
+    const latestDate = dates[0] ?? ''; // matrixDates 沿 selectedDates 降序，首列 = 最新交易日
+    const scoreOf = (row: BoardCalendarRow): number =>
+      byKey.get(`${latestDate}|${row.code}`)?.score ?? Number.NEGATIVE_INFINITY;
+    rows.sort((a, b) => scoreOf(b) - scoreOf(a) || b.latestAmount - a.latestAmount);
+  }
+
+  // 列排序覆盖（2026-10-30 王总指定：每列可点，升 / 降 / 默认循环）——
+  // 按指定交易日真实得分排序，该日无数据的板块恒排末尾
+  const sort = columnSort.value;
+  if (sort !== null && dates.includes(sort.date)) {
+    const scoreOrNull = (row: BoardCalendarRow): number | null =>
+      byKey.get(`${sort.date}|${row.code}`)?.score ?? null;
+    const factor = sort.dir === 'desc' ? -1 : 1;
     rows.sort((a, b) => {
-      if (basis === BOARD_CALENDAR_HEAT_BASIS.AMOUNT) {
-        return b.latestAmount - a.latestAmount;
-      }
-      return b.heatLimitUp - a.heatLimitUp || b.latestAmount - a.latestAmount;
+      const scoreA = scoreOrNull(a);
+      const scoreB = scoreOrNull(b);
+      if (scoreA === null && scoreB === null) return 0;
+      if (scoreA === null) return 1;
+      if (scoreB === null) return -1;
+      return factor * (scoreA - scoreB) || b.latestAmount - a.latestAmount;
     });
   }
   return { dates, rows };
 });
+
+/**
+ * 列头点击排序：未排序 → 降序（高分在上）→ 升序 → 回默认，循环切换
+ * @param date 被点击的交易日列
+ */
+const onColumnSortClick = (date: string): void => {
+  const current = columnSort.value;
+  if (current === null || current.date !== date) {
+    columnSort.value = { date, dir: 'desc' };
+    return;
+  }
+  if (current.dir === 'desc') {
+    columnSort.value = { date, dir: 'asc' };
+    return;
+  }
+  columnSort.value = null;
+};
 
 /** 空态文案（区分「全部隐藏」与「尚无数据」） */
 const emptyText = computed<string>(() =>
@@ -454,7 +498,8 @@ const onBubbleDateSelect = (event: Event): void => {
 
 /**
  * 板块Top 矩阵（题材轮动 Tab 子模块，2026-10-22 王总指定）：
- * - 排序口径固定为**当日成交额**降序取每日前 N 名（不再使用得分绝对值口径）；
+ * - 排序口径为**当日真实得分**（带符号）降序取每日前 N 名
+ *   （2026-10-29 王总指定：替代原「成交额」口径与更早的「得分绝对值」口径）；
  * - 日期列范围与题材轮动 bump 图的近 10/20/30 日切换**同步**
  *   （rotationRange 由 BoardRotationPanel 的范围 Tabs 双向绑定）；
  * - 板块过滤器不影响——分析看的是全市场在做什么，隐藏个别板块不改变市场结构。
@@ -464,7 +509,7 @@ const mainlineDates = computed<string[]>(() =>
 );
 
 const mainlineMatrix = computed(() =>
-  buildBoardMainlineMatrix(weightedDailyRows.value, mainlineDates.value, BOARD_MAINLINE_TOP_N, 'amount'),
+  buildBoardMainlineMatrix(weightedDailyRows.value, mainlineDates.value, BOARD_MAINLINE_TOP_N, 'score'),
 );
 
 /* ------------------------------ 页级 AI 分析 ------------------------------ */
@@ -488,6 +533,8 @@ const buildSegmentDataset = (): RankDataset => {
   const model = buildBoardRotation(weightedDailyRows.value, limitRows.value, metaRows.value, {
     topN: ROTATION_TOP_N,
     minScoreRate: settingsStore.rotationMinScoreRate,
+    escapeScoreRate: settingsStore.rotationEscapeScoreRate,
+    direction: rotationDirection.value,
   });
   const windowStart = model.days.length - Number(rotationRange.value);
   const windowDateSet = new Set(model.days.slice(windowStart).map((day) => day.tradeDate));
@@ -528,6 +575,8 @@ const buildOverviewDataset = (): RankDataset => {
   const model = buildBoardRotation(weightedDailyRows.value, limitRows.value, metaRows.value, {
     topN: ROTATION_TOP_N,
     minScoreRate: settingsStore.rotationMinScoreRate,
+    escapeScoreRate: settingsStore.rotationEscapeScoreRate,
+    direction: rotationDirection.value,
   });
   return {
     title: '每日市场概览',
@@ -555,11 +604,11 @@ const buildOverviewDataset = (): RankDataset => {
 };
 
 /**
- * 板块Top 数据段（AI 分析口径）：行 = 当日成交额名次、列 = 交易日
+ * 板块Top 数据段（AI 分析口径）：行 = 当日真实得文名次、列 = 交易日
  * @returns 数据段
  */
 const buildMainlineDataset = (): RankDataset => ({
-  title: '板块Top（每日成交额前 N 名矩阵）',
+  title: '板块Top（每日真实得分前 N 名矩阵）',
   columns: [
     { label: '名次', key: 'rank' },
     ...mainlineMatrix.value.dates.map((date) => ({ label: date.slice(5), key: date })),
@@ -938,19 +987,34 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
         v-if="hasCustomOrder"
         type="button"
         class="pressable rounded-lg px-1.5 py-1 text-xs text-primary hover:underline"
-        title="清除自定义行序，回到按热门口径自动排序"
+        title="清除自定义行序，回到默认排序（最新交易日得分降序）"
         @click="settingsStore.resetBoardCalendarColumns()"
       >
         恢复热门排序
       </button>
       <!-- 补数据入口（2026-10-28 王总指定：从板块日历卡片表头移到工具条右侧，高光玻璃按钮） -->
-      <div class="ml-auto">
+      <div class="ml-auto flex items-center gap-1">
+        <!-- 口径说明（2026-10-30 起：常驻提示条改为 info 图标 hover 气泡，矩阵卡顺势吃满省下的行高） -->
+        <div class="group relative">
+          <button
+            type="button"
+            class="pressable rounded p-1 text-text-tertiary hover:bg-flat-weak hover:text-text active:scale-90"
+            aria-label="口径说明"
+            title="口径说明"
+          >
+            <MenuIcon name="info" :size="14" />
+          </button>
+          <!-- hover 气泡：内容即原常驻提示条口径文案 -->
+          <div
+            class="pointer-events-none absolute right-0 top-full z-40 mt-1 hidden w-[560px] rounded-lg border border-flat-weak bg-surface p-3 text-xs leading-relaxed text-text-secondary shadow-xl group-hover:block"
+            role="tooltip"
+          >
+            {{ NOTICE_TEXT }}
+          </div>
+        </div>
         <BoardDataSyncMenu @applied="onSyncApplied" />
       </div>
     </div>
-
-    <!-- 规则提示条描述的是日历矩阵口径，题材轮动 / 赚钱效应视图不显示 -->
-    <NoticeBar v-if="calendarView === BOARD_CALENDAR_VIEW.LIST" :text="NOTICE_TEXT" />
 
     <!-- 浏览器端降级提示 -->
     <p v-if="!isDbAvailable" class="text-xs text-text-tertiary" role="note">
@@ -1024,9 +1088,12 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
       <BoardCalendarGrid
         v-else
         :matrix="matrix"
+        :sort-date="columnSort?.date ?? null"
+        :sort-dir="columnSort?.dir ?? 'desc'"
         scroll-class="board-calendar-fill"
         @cell-click="onCellClick"
         @board-click="onBoardClick"
+        @sort-click="onColumnSortClick"
       />
     </BaseCard>
 
@@ -1043,6 +1110,7 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
         <template v-else>
           <BoardRotationPanel
             v-model:range="rotationRange"
+            v-model:direction="rotationDirection"
             :dates="tradingDates"
             :daily-rows="weightedDailyRows"
             :limit-rows="limitRows"
@@ -1052,7 +1120,7 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
           />
 
           <!-- 板块Top 子模块（2026-10-22 王总指定）：不再作为独立 Tab，挂在题材轮动下方；
-               口径固定按当日成交额取每日 Top N，日期列范围随上方范围 Tabs 同步 -->
+               口径按当日真实得分取每日 Top N（2026-10-29 指定），日期列范围随上方范围 Tabs 同步 -->
           <BaseCard title="板块Top" class="shrink-0">
             <BoardMainlinePanel :matrix="mainlineMatrix" @cell-click="onMainlineCellClick" />
           </BaseCard>

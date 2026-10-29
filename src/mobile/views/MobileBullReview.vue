@@ -13,8 +13,8 @@
 import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { loadBullReview } from '../api/bull-review.api';
-import { BULL_PATTERNS, BULL_ROUNDS } from '../../pc/components/business/panorama-review/rounds';
-import { BEAR_PATTERNS, BEAR_ROUNDS } from '../../pc/components/business/panorama-review/bears';
+import { BULL_PATTERNS, BULL_ROUNDS } from '../../common/board-review/rounds';
+import { BEAR_PATTERNS, BEAR_ROUNDS } from '../../common/board-review/bears';
 import type {
   MonthlyBar,
   ReviewBearStats,
@@ -22,7 +22,7 @@ import type {
   ReviewRoundMeta,
   ReviewRoundStats,
   ReviewStageTone,
-} from '../../pc/components/business/panorama-review/types';
+} from '../../common/board-review/types';
 
 const router = useRouter();
 

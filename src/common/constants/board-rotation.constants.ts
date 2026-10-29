@@ -20,6 +20,14 @@ export const ROTATION_MIN_SCORE_RATE_DEFAULT = 5;
 export const ROTATION_MIN_SCORE_RATE_RANGE = { MIN: -10, MAX: 10 } as const;
 
 /**
+ * 逃离方向 · 上榜最高得分率默认值（2026-10-30 王总指定，题材轮动设置弹窗可调）
+ *
+ * 逃离方向取得分低的前 N 名：当日得分率**高于**该值的板块无逃离榜资格
+ * （与涌入门槛共用 [-10, 10] 边界；默认 -5 = 涌入默认门槛 5 的镜像）。
+ */
+export const ROTATION_ESCAPE_SCORE_RATE_DEFAULT = -5;
+
+/**
  * 主线宽度 TopN：每日取「涨停家数 ≥ 上榜阈值」板块的前 N 名作为主线候选
  *
  * 2026-10-21 王总指定默认 Top3（09:59 曾改 5、10:12 收回 3 定稿）；Top1 / Top3 / Top5 三档可切。
@@ -32,6 +40,17 @@ export const ROTATION_TOP_N = 3;
  * 2026-10-21 王总指定仅保留 3 / 5 两档（Top1 移除）。
  */
 export const ROTATION_TOP_N_OPTIONS = [3, 5] as const;
+
+/**
+ * bump 图上榜方向选项（2026-10-29 王总指定涌入 / 逃离按钮组）
+ *
+ * 涌入 = 得分高的前 N 名（原口径）；逃离 = 得分低的前 N 名（资金出逃方向），
+ * 逃离模式下上榜门槛自动取负（得分率阈值 × -1）。
+ */
+export const ROTATION_DIRECTION_OPTIONS = [
+  { label: '涌入', value: 'inflow' },
+  { label: '逃离', value: 'escape' },
+] as const;
 
 /**
  * 板块上榜阈值：当日涨停家数达到该值才有名次资格

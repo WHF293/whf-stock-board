@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import type { ComponentPublicInstance } from 'vue';
-import { useRouter } from 'vue-router';
 import { showFailToast, showSuccessToast } from 'vant';
 import { VueDraggable } from 'vue-draggable-plus';
 import { openUrl } from '@tauri-apps/plugin-opener';
@@ -281,8 +280,6 @@ const selectTheme = (themeId: string): void => {
   }
 };
 
-const router = useRouter();
-
 /* === 大屏（≥840px）主从布局 ===
  * 左列表右原文同屏（左4右6，2026-10-28 王总指定）：openArticle 在 lg 档不再跳
  * /article 路由，就地写入右侧窗格的阅读目标；窗格内部复用 webview 容器逻辑
@@ -291,6 +288,20 @@ const { lg } = useBreakpoint();
 
 /** 右侧窗格当前阅读目标（null = 占位态「点击左侧新闻」） */
 const paneArticle = ref<NewsArticlePaneTarget | null>(null);
+
+/* === 窄屏（<840px）原文弹窗（2026-10-30 王总指定）===
+ * 原 /article 整页路由已删除：窄屏改为 80% 屏高的底部弹窗加载同一 NewsArticlePane
+ * 节点，与大屏右栏只是承载容器不同、阅读节点完全一致，两条分支不再各养一套逻辑 */
+/** 原文弹窗当前阅读目标（null = 弹窗关闭） */
+const modalArticle = ref<NewsArticlePaneTarget | null>(null);
+
+/** 弹窗显隐（van-popup 的 v-model 需要 LHS，经 computed 桥接「有无阅读目标」） */
+const modalOpen = computed<boolean>({
+  get: () => modalArticle.value !== null,
+  set: (open) => {
+    if (!open) modalArticle.value = null;
+  },
+});
 
 /** 新闻源设置持久化形态（order 全量序 / hidden 隐藏集合），与今天炒什么平台设置同构 */
 interface MobileNewsSettings {
@@ -593,7 +604,7 @@ const retry = (channelKey: string): void => {
  *
  * ⚠️ 通达信详情页数据靠其 WebSocket 网关 + 会话 Cookie，应用内 iframe 是跨域
  * 第三方上下文、WebView 拦 Cookie → 白屏，故直接走系统浏览器（与 PC 新开标签页同为第一方上下文）
- * 大屏（≥840px）除 TDX 外一律写右侧窗格就地阅读，不再跳 /article（2026-10-28）
+ * 大屏（≥840px）写右侧窗格就地阅读；窄屏写 80% 屏高弹窗（2026-10-30 起，/article 路由已删）
  * @param item 新闻条目
  */
 const openArticle = (item: HotNewsItem): void => {
@@ -602,14 +613,12 @@ const openArticle = (item: HotNewsItem): void => {
     void openUrl(item.url).catch(() => window.open(item.url, '_blank'));
     return;
   }
+  const target = { url: item.url, title: item.title, media: item.media };
   if (lg.value) {
-    paneArticle.value = { url: item.url, title: item.title, media: item.media };
+    paneArticle.value = target;
     return;
   }
-  router.push({
-    path: '/article',
-    query: { url: item.url, title: item.title, media: item.media },
-  });
+  modalArticle.value = target;
 };
 
 /**
@@ -1020,6 +1029,22 @@ onUnmounted(() => {
           完成
         </van-button>
       </div>
+    </van-popup>
+
+    <!-- 窄屏原文弹窗（80% 屏高，2026-10-30 王总指定）：加载与大屏右栏同一 NewsArticlePane 节点，
+         :key 按 url 换稿重挂（进度条 / iframe 重新走加载链）；头部自带 ↗ 系统浏览器兜底与 ✕ 关闭 -->
+    <van-popup
+      v-model:show="modalOpen"
+      position="bottom"
+      round
+      :style="{ height: '80%' }"
+    >
+      <NewsArticlePane
+        v-if="modalArticle"
+        :key="modalArticle.url"
+        :article="modalArticle"
+        @close="modalArticle = null"
+      />
     </van-popup>
   </div>
 </template>
