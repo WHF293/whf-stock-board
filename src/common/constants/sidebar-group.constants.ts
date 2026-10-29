@@ -10,7 +10,6 @@
 /** 侧栏菜单分组 id（代替魔法字符串） */
 export const SIDEBAR_MENU_GROUP = {
   MARKET: 'market',
-  FUTURES: 'futures',
   NEWS: 'news',
   ACCOUNT: 'account',
   PLUGIN: 'plugin',
@@ -23,7 +22,7 @@ export type SidebarMenuGroupId = (typeof SIDEBAR_MENU_GROUP)[keyof typeof SIDEBA
  * 菜单项未声明 group 时的默认归组（插件页不声明就收进「插件」组）
  *
  * 用 string 而非 SidebarMenuGroupId：插件可声明任意自定义分组 id，
- * 归组逻辑按字符串处理，不把类型收窄到宿主内置的五个组。
+ * 归组逻辑按字符串处理，不把类型收窄到宿主内置的四个组。
  */
 export const SIDEBAR_MENU_GROUP_DEFAULT: string = SIDEBAR_MENU_GROUP.PLUGIN;
 
@@ -35,7 +34,6 @@ export const SIDEBAR_MENU_GROUP_DEFAULT: string = SIDEBAR_MENU_GROUP.PLUGIN;
  */
 export const SIDEBAR_MENU_GROUP_TITLES: Readonly<Record<string, string>> = {
   [SIDEBAR_MENU_GROUP.MARKET]: '市场行情',
-  [SIDEBAR_MENU_GROUP.FUTURES]: '期货',
   [SIDEBAR_MENU_GROUP.NEWS]: '热点资讯',
   [SIDEBAR_MENU_GROUP.ACCOUNT]: '自选与账户',
   [SIDEBAR_MENU_GROUP.PLUGIN]: '插件',
@@ -48,7 +46,6 @@ export const SIDEBAR_MENU_GROUP_TITLES: Readonly<Record<string, string>> = {
  */
 export const SIDEBAR_MENU_GROUP_DEFAULT_ORDER: readonly string[] = [
   SIDEBAR_MENU_GROUP.MARKET,
-  SIDEBAR_MENU_GROUP.FUTURES,
   SIDEBAR_MENU_GROUP.NEWS,
   SIDEBAR_MENU_GROUP.ACCOUNT,
   SIDEBAR_MENU_GROUP.PLUGIN,

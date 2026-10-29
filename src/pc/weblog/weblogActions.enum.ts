@@ -103,6 +103,8 @@ export const WEBLOG_ACTIONS = {
   PLUGIN_DB_DROP: { category: 'business', label: '删除插件数据表' },
   PLUGIN_UPDATE_CHECK: { category: 'business', label: '检查插件更新' },
   PLUGIN_UPDATE_INSTALL: { category: 'business', label: '安装插件更新' },
+  PLUGIN_LAB_MORE_OPEN: { category: 'business', label: '打开工坊详情抽屉' },
+  PLUGIN_LAB_INVENTORY_TAB: { category: 'business', label: '切换插件清单视图' },
   PLUGIN_MARKET_OPEN: { category: 'business', label: '打开插件市场' },
   PLUGIN_MARKET_REFRESH: { category: 'business', label: '刷新插件市场' },
   PLUGIN_MARKET_INSTALL: { category: 'business', label: '插件市场安装插件' },

@@ -338,7 +338,7 @@ ctx.settings.reset();
 
 ---
 
-## 5. 二十一个宿主服务（`ctx.consume` 取）
+## 5. 二十二个宿主服务（`ctx.consume` 取）
 
 宿主启动时就注册好了，`apply` 里必拿得到。**一律判空**：插件之间互相提供的服务在提供方被停用时会消失。
 
@@ -346,6 +346,7 @@ ctx.settings.reset();
 | --- | --- |
 | `app:version` | 应用版本号字符串 |
 | `app:navigate` | `(path) => void` 跳路由（插件不持有 router 实例） |
+| `app:open-url` | `(url) => void` 系统默认浏览器打开外部链接（Tauri opener，浏览器兜底新标签页）；插件 import 不了 opener，「访问原站」这类跳转走这里 |
 | `panel:open` | `(panelKey) => void` 按全局键 `<id>#<key>` 打开面板；键不存在只 `console.warn` |
 | `panel:close` | `(panelKey) => void` 关掉自己的面板（drawer 关抽屉 / 顶栏收起下拉 / inline 折叠） |
 | `app:notify` | 右下角应用级浮窗（宿主渲染，**跨路由常驻**） |
@@ -424,6 +425,8 @@ h(ui.Button, { variant: 'primary', onClick }, () => '查询');     // 第三参�
 | `ui.Drawer` | `title`、`open`（配 `'onUpdate:open'`）、`width`（默认 `66vw`） |
 | `ui.Skeleton` | 骨架占位，无 props（默认三行形状，默认插槽可自定）。**只在一条数据都没有时用** |
 | `ui.Icon` | `name`（icon key 见第 10 章）、`size` |
+| `ui.TabConfigButton` | 页签显隐与排序入口：`pageId` + `options: { label, value }[]`（全集）。点击弹配置弹窗（勾选 + 拖拽，确认落盘） |
+| `ui.useTabConfig` | 读回页签配置：`(pageId, defaultOptions) => { visibleOptions, activeValue }`，**须在 setup 内同步调用**；与 TabConfigButton 同 `pageId` 配对使用 |
 
 `ui.Table` 自定义单元格用**与列 key 同名**的作用域插槽：
 
@@ -1244,7 +1247,7 @@ export interface PluginContext {
 
 ## 14. 兼容承诺与反馈
 
-- **契约层（`ctx.*` 全部成员、二十一个宿主服务、六个内置事件）在主版本号内保证向后兼容**；
+- **契约层（`ctx.*` 全部成员、二十二个宿主服务、六个内置事件）在主版本号内保证向后兼容**；
   要改形态宿主会同步本文件与 `PLUGIN_API.md`；
 - 插件之间互相提供的服务（如 `note:repo`）由提供方插件负责，**消费方必须允许缺席**；
 - 宿主内部模块（`@/api/*`、`@/utils/*`、`@/components/ui/*`…）对第三方不可用，改名不另行通知；

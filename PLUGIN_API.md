@@ -1,6 +1,6 @@
 # PLUGIN_API.md — 插件开放接口清单
 
-> 本文件盘点**宿主开放给插件的全部能力**（`ctx.*` 九个贡献点、数据持久化、二十一个宿主服务、事件、配额与红线）。
+> 本文件盘点**宿主开放给插件的全部能力**（`ctx.*` 九个贡献点、数据持久化、二十二个宿主服务、事件、配额与红线）。
 > **第三方（应用内安装）插件作者请优先看 [PLUGIN_WIKI.md](./PLUGIN_WIKI.md)** —— 那份是面向你的独立 wiki；
 > 本文件面向宿主仓库贡献者（含第三层「宿主内部模块」清单）。
 > 类型契约的唯一事实源是 `src/types/plugin.types.ts`，宿主侧接线（注册顺序、 `recoverVanishedRoute`）见 `src/plugin/setup.ts`；
@@ -14,7 +14,7 @@
 
 | 层 | 内容 | 谁能用 | 兼容承诺 |
 | --- | --- | --- | --- |
-| **① 契约层** | `ctx.*` 全部成员、`AppServiceMap` 二十一个宿主服务、`AppEventMap` 六个内置事件、`types/plugin.types.ts` 全部导出类型 | 源码级插件 + 应用内安装的用户插件 | **主版本号内保证向后兼容**；要改形态须同步本文档 |
+| **① 契约层** | `ctx.*` 全部成员、`AppServiceMap` 二十二个宿主服务、`AppEventMap` 六个内置事件、`types/plugin.types.ts` 全部导出类型 | 源码级插件 + 应用内安装的用户插件 | **主版本号内保证向后兼容**；要改形态须同步本文档 |
 | **② 服务扩展层** | 插件之间经 `ctx.provide` / `ctx.consume` 互相暴露的自定义服务与事件（如 `note:repo` / `note:saved`） | 任何插件 | 由「提供方插件」负责；消费方必须允许 `consume` 返回 `undefined` 并降级 |
 | **③ 宿主内部模块** | `@/api/*`、`@/utils/*`、`@/composables/*`、`@/components/ui/*`、`@/stores/*` 等源码模块 | **仅源码级插件**（跟宿主一起构建） | 无承诺；改名 / 搬文件不另行通知 |
 
@@ -38,7 +38,7 @@
 > Tailwind 类不拦（能装），只在预览区给出「可能没有样式」的提醒。
 
 ✅ **好消息**：不 import 任何东西的插件完全可以挂载——实测注册侧栏面板并渲染成功，
-且 `ctx` 全套、二十一个宿主服务、`ctx.storage` / `ctx.db`（`ensureTable`→`insert`→`select`→`remove`→`count`）、`ctx.on` 全部可用。
+且 `ctx` 全套、二十二个宿主服务、`ctx.storage` / `ctx.db`（`ensureTable`→`insert`→`select`→`remove`→`count`）、`ctx.on` 全部可用。
 **第三方插件请把自己限制在第 ① 层。**
 
 第一条红线的替代方案已经补齐了，写第三方插件不再需要 import：
@@ -352,6 +352,7 @@ ctx.settings.reset();                 // 回到声明默认值
 | --- | --- | --- |
 | `app:version` | `string` | 应用版本号（来源 `APP_VERSION`） |
 | `app:navigate` | `(path: string) => void` | 跳路由（`router.push`）；插件不直接依赖 router 实例 |
+| `app:open-url` | `(url: string) => void` | **系统默认浏览器打开外部链接**：Tauri 内走 plugin-opener，浏览器环境兜底新标签页。插件 import 不了 `@tauri-apps/plugin-opener`，「访问原站」这类外链跳转统一走这里（2026-10-29 起，大盘云图插件为首个消费方） |
 | `panel:open` | `(panelKey: string) => void` | 按全局键打开面板：drawer → 开右侧抽屉；inline → 取消折叠并滚动到可视区；顶栏条目 → 展开下拉。键不存在只 `console.warn` |
 | `app:notify` | `NotifyService` | 右下角应用级浮窗（宿主渲染，**跨路由常驻、与发起它的组件是否挂载无关**） |
 | `app:stock-search` | `StockSearchService` | 标的搜索（代码 / 名称 / 拼音，腾讯源） |
@@ -361,7 +362,7 @@ ctx.settings.reset();                 // 回到声明默认值
 | `app:stock-open` | `StockOpenService` | **全站统一的个股打开交互**：`openSidebar` 开右侧详情侧栏 / `openPage` 进详情整页（§5.7） |
 | `app:watchlist` | `WatchlistService` | **自选股只读视图**：`symbols()` / `groups()` / `nameOf()`（§5.8） |
 | `app:polling` | `PollingService` | **轮询调度器工厂**：`create()` 与宿主同一份交易窗口 / 退避 / 可见性策略（§5.9） |
-| `app:ui` | `UiKitService` | **UI Kit**：宿主的 Button / Input / Switch / Tag / Card / Empty / Tabs / Table / Modal / Drawer / Skeleton / Icon 十二个组件句柄 + `confirm()` 确认弹窗（§5.4） |
+| `app:ui` | `UiKitService` | **UI Kit**：宿主的 Button / Input / Switch / Tag / Card / Empty / Tabs / Table / Modal / Drawer / Skeleton / Icon 十二个组件句柄 + TabConfigButton / useTabConfig 页签配置 + `confirm()` 确认弹窗（§5.4） |
 | `app:http` | `HttpService` | **受控网络请求**：走宿主上游通道，仅允许白名单域名（§5.5） |
 | `app:quotes` | `QuotesService` | **行情报价**：按代码批量取实时快照（§5.6） |
 | `app:market` | `MarketService` | **市场剖面**：沪深逐日成交额 / 指定交易日涨停池（重接口，只能点击触发）+ 行业板块列表（轻接口，可低频轮询，§5.10） |
@@ -451,6 +452,8 @@ ctx.sidebar.add({
 | `ui.Drawer` | `BaseDrawer` | `title`、`open`（`onUpdate:open`）、`width`（默认 `66vw`） |
 | `ui.Skeleton` | `BaseSkeleton` | 无 props，默认三行文本形状，默认插槽可自定形状。**只在一条数据都没有时用** —— 列表刷新不许翻 loading（会整表卸载重建闪屏），见 §10 |
 | `ui.Icon` | `MenuIcon` | `name`（key 清单见 `PLUGIN_WIKI.md` §10）、`size` |
+| `ui.TabConfigButton` | `TabConfigButton` | `pageId`（配置存储分桶）+ `options: TabOption[]`（全集，声明顺序即默认顺序）。点击弹「页签配置」弹窗（勾选显隐 + 拖拽排序，草稿模式确认落盘） |
+| `ui.useTabConfig` | `useTabConfig()` | 同名 composable 原样引用：`(pageId, defaultOptions) => { visibleOptions, activeValue }`。**须在组件 setup 内同步调用**（内部走 pinia）；渲染列表照 `visibleOptions` 遍历，与 `TabConfigButton` 用同一 `pageId` 即可读回用户配置 |
 
 三个「重」组件的用法要点：
 
@@ -977,8 +980,8 @@ export default {
    （若将来真要在运行时支持模板：把 `vue` 换到含编译器的 esm-bundler，代价是 +约 100KB 主包体积，
    收益与 `app:ui` 重叠，**当前不划算**。）
 2. **无类型提示**：第三方只能用 JS 硬写。要 TS 提示，只能自行维护一份 `AppServiceMap` / `PluginContext` 的 d.ts 副本。
-3. **`app:ui` 覆盖面有限**：目前十二个组件（Button / Input / Switch / Tag / Card / Empty / Tabs /
-   Table / Modal / Drawer / Skeleton / Icon）。Select / DatePicker / 图表这类还没开放 ——
+3. **`app:ui` 覆盖面有限**：目前十二个组件 + 一组页签配置能力（Button / Input / Switch / Tag / Card / Empty / Tabs /
+   Table / Modal / Drawer / Skeleton / Icon + TabConfigButton / useTabConfig）。Select / DatePicker / 图表这类还没开放 ——
    真有插件需要时再补（补的是复用，不是凭想象先造）。
 
 如果第三条里的某一项正好卡住你的插件，宿主侧补它的成本很低（一个组件句柄 + 一行 provide），欢迎提需求。

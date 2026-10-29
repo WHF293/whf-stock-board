@@ -13,6 +13,7 @@
  */
 import type * as Vue from 'vue';
 import type { Component, Ref } from 'vue';
+import type { TabOption } from '../composables/use-tab-config.ts';
 import type { Trend } from '../constants/trend.constants.ts';
 import type { ThemeColor } from '../constants/theme-color.constants.ts';
 import type { TrendTheme } from '../constants/trend-theme.constants.ts';
@@ -813,6 +814,23 @@ export interface UiKitService {
   Icon: Component;
   /** 骨架屏（首屏无数据时的占位；列表刷新不要翻 loading，见 PLUGIN_API.md §10） */
   Skeleton: Component;
+  /**
+   * 页签显隐与排序入口（点击弹出配置弹窗，草稿模式 + 拖拽排序 + 确认落盘）
+   *
+   * props：`pageId`（配置存储分桶）+ `options`（TabOption 全集，声明顺序即默认顺序）。
+   * 与 `useTabConfig` 用同一 pageId 即可读回用户配置。
+   */
+  TabConfigButton: Component;
+  /**
+   * 页面 tabs 配置读取（与 TabConfigButton / 设置页「页签配置」同一持久化 store）
+   *
+   * 必须在组件 setup 内同步调用（内部走 pinia）。`visibleOptions` 按「用户排序 +
+   * 显隐」归一化后的可见项（全部隐藏兜底全显），渲染列表照它遍历即可。
+   */
+  useTabConfig: <T extends string>(
+    pageId: string,
+    defaultOptions: readonly TabOption<T>[],
+  ) => { visibleOptions: Ref<TabOption<T>[]>; activeValue: Ref<T> };
   /** 弹一条应用级确认弹窗（宿主渲染，返回用户是否确认） */
   confirm: (options?: UiConfirmOptions) => Promise<boolean>;
 }
@@ -1216,6 +1234,13 @@ export interface AppServiceMap {
   'kernel:runtime': PluginRuntimeReader;
   /** 宿主路由跳转（插件不直接依赖 router 实例，改走此服务） */
   'app:navigate': (path: string) => void;
+  /**
+   * 系统默认浏览器打开外部链接
+   *
+   * zip 插件 import 不了 `@tauri-apps/plugin-opener`，外链跳转（如「访问原站」）
+   * 统一走此服务：Tauri 内 opener、浏览器环境兜底新标签页。提供方缺席时插件自行降级
+   */
+  'app:open-url': (url: string) => void;
   /**
    * 打开一个插件面板
    *

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onDeactivated, onMounted, ref } from 'vue';
 import BaseButton from '../ui/BaseButton.vue';
 import BaseConfirmModal from '../ui/BaseConfirmModal.vue';
 import BaseEmpty from '../ui/BaseEmpty.vue';
@@ -18,6 +18,7 @@ import {
   PLUGIN_MARKET_CONFIRM_SOURCE,
   PLUGIN_MARKET_CONFIRM_TITLE,
   PLUGIN_MARKET_CURRENT_VERSION_LABEL,
+  PLUGIN_MARKET_EMPTY_NOT_INSTALLED_TEXT,
   PLUGIN_MARKET_EMPTY_TEXT,
   PLUGIN_MARKET_FAIL_PREFIX,
   PLUGIN_MARKET_FILTER_ALL_LABEL,
@@ -29,7 +30,6 @@ import {
   PLUGIN_MARKET_INSTALLED_LABEL,
   PLUGIN_MARKET_NO_MATCH_TEXT,
   PLUGIN_MARKET_NO_PRODUCTS_TEXT,
-  PLUGIN_MARKET_OPEN_LABEL,
   PLUGIN_MARKET_REFRESH_LABEL,
   PLUGIN_MARKET_RETRY_LABEL,
   PLUGIN_MARKET_RISK_NOTICE,
@@ -51,17 +51,24 @@ import type {
 } from '../../../common/types/plugin-market.types.ts';
 
 /**
- * 插件市场弹窗（多源 GitHub Releases 在线安装）
+ * 插件市场面板（可内嵌的平铺视图，原「插件市场」弹窗的主体内容）
  *
- * 数据来自 `usePluginMarket`（模块级单例）：关弹窗不丢已加载目录与进行中的安装。
+ * 数据来自 `usePluginMarket`（模块级单例）：卸载不丢已加载目录与进行中的安装。
+ * 挂载即拉默认源集合（内置源 + 有缓存的自定义源，目录缓存一小时）。
  * 三层交互：
  * - **源筛选**：全部 / 官方 / 各自定义源 chip；未加载的自定义源选中即懒加载；
- * - **源管理**：内嵌面板列出全部源（官方源不可删），添加源走「归一化 → 风险确认」，
+ * - **源管理**：弹窗列出全部源（官方源不可删），添加源走「归一化 → 风险确认」，
  *   删除走两段确认（与卸载插件同范式）；
  * - **安装**：卡片默认装最新版，「历史版本」展开后可选任意旧版（覆盖降级），
  *   每次安装先弹确认（来源 / 版本 / 体积 / 降级与无校验提醒），全局串行执行。
  */
-const open = defineModel<boolean>('open', { required: true });
+const props = withDefaults(
+  defineProps<{
+    /** 只看未安装的插件（本地没有任何已装版本的市场条目才可见） */
+    notInstalledOnly?: boolean;
+  }>(),
+  { notInstalledOnly: false },
+);
 
 const {
   sources,
@@ -86,8 +93,8 @@ const search = ref('');
 /** 当前筛选的源（'all' 或仓库全名） */
 const activeRepo = ref<string>(FILTER_ALL);
 
-/** 源管理面板展开态 */
-const sourcePanelOpen = ref(false);
+/** 源管理弹窗显隐（插件源列表 + 添加源，弹窗承载不挤占页内空间） */
+const sourceModalOpen = ref(false);
 
 /** 历史版本展开中的插件 id 集合 */
 const expandedIds = ref(new Set<string>());
@@ -107,21 +114,14 @@ const pendingAddRepo = ref('');
 /** 处于「待确认删除」两段式的源（空串 = 无） */
 const confirmingRemoveRepo = ref('');
 
-/** 打开弹窗：拉默认源集合（内置源 + 有缓存的自定义源）；关闭：清本地 UI 态 */
-watch(open, (value) => {
-  if (value) {
-    void loadDefaultSources();
-    return;
-  }
-  search.value = '';
-  activeRepo.value = FILTER_ALL;
-  sourcePanelOpen.value = false;
-  expandedIds.value = new Set<string>();
-  pendingInstall.value = null;
-  pendingAddRepo.value = '';
-  confirmingRemoveRepo.value = '';
-  addInput.value = '';
-  addError.value = '';
+/** 挂载即拉默认源集合（已就绪的目录走一小时缓存，不重复打 API） */
+onMounted(() => {
+  void loadDefaultSources();
+});
+
+/** KeepAlive 切走页面时收起源管理弹窗：Teleport 到 body 的浮层不随页面失活自动撤离 */
+onDeactivated(() => {
+  sourceModalOpen.value = false;
 });
 
 /** 源筛选 chip 的选项（全部 + 各源） */
@@ -131,7 +131,7 @@ const filterOptions = computed(() => [
 ]);
 
 /**
- * 搜索 + 源筛选后的可见条目
+ * 搜索 + 源筛选（+ 可选的「只看未安装」）后的可见条目
  *
  * 筛到具体源时条目直接取该源目录（**不做 id 去重**）——去重是「全部」视图防止
  * 同 id 双卡的展示策略，单独看某个源时应看到它的全部产物。
@@ -142,8 +142,11 @@ const visibleEntries = computed<readonly PluginMarketEntry[]>(() => {
     activeRepo.value === FILTER_ALL
       ? entries.value
       : (entries.value.filter((entry) => entry.sourceRepo === activeRepo.value));
-  if (keyword.length === 0) return sourceEntries;
-  return sourceEntries.filter((entry) =>
+  const scopedEntries = props.notInstalledOnly
+    ? sourceEntries.filter((entry) => installedVersionOf(entry.id).length === 0)
+    : sourceEntries;
+  if (keyword.length === 0) return scopedEntries;
+  return scopedEntries.filter((entry) =>
     [entry.name, entry.id, entry.description].some((text) => text.toLowerCase().includes(keyword)),
   );
 });
@@ -166,9 +169,10 @@ const isLoading = computed<boolean>(() => {
   return state === 'idle' || state === 'loading';
 });
 
-/** 空态文案（区分「没装产物」「搜索无匹配」「还没加载出任何源」） */
+/** 空态文案（区分「没装产物」「搜索无匹配」「还没加载出任何源」「都已安装」） */
 const emptyText = computed<string>(() => {
   if (search.value.trim().length > 0) return PLUGIN_MARKET_NO_MATCH_TEXT;
+  if (props.notInstalledOnly) return PLUGIN_MARKET_EMPTY_NOT_INSTALLED_TEXT;
   if (activeRepo.value !== FILTER_ALL && stateOf(activeRepo.value) === 'ready') {
     return visibleEntries.value.length === 0 ? PLUGIN_MARKET_NO_PRODUCTS_TEXT : '';
   }
@@ -380,50 +384,46 @@ const publishedDateOf = (version: PluginMarketVersion): string =>
 </script>
 
 <template>
-  <BaseModal
-    v-model:open="open"
-    :title="PLUGIN_MARKET_OPEN_LABEL"
-    max-width-class="max-w-4xl"
-    height-class="h-[75dvh]"
-  >
-    <template #filters>
-      <div class="space-y-2">
-        <div class="flex items-center gap-2">
-          <BaseInput v-model="search" :placeholder="PLUGIN_MARKET_SEARCH_PLACEHOLDER" class="min-w-0 flex-1" />
-          <BaseButton variant="ghost" data-track="PLUGIN_MARKET_REFRESH" @click="onRefresh">
-            {{ PLUGIN_MARKET_REFRESH_LABEL }}
-          </BaseButton>
-          <BaseButton variant="ghost" @click="sourcePanelOpen = !sourcePanelOpen">
-            {{ PLUGIN_MARKET_SOURCE_PANEL_TITLE }}
-          </BaseButton>
-        </div>
-        <div class="flex flex-wrap items-center gap-1.5">
-          <button
-            v-for="option in filterOptions"
-            :key="option.repo"
-            type="button"
-            class="pressable rounded-full px-2.5 py-1 text-xs transition-colors"
-            :class="
-              activeRepo === option.repo
-                ? 'bg-primary-weak font-medium text-primary'
-                : 'bg-flat-weak text-text-secondary hover:text-text'
-            "
-            @click="onPickFilter(option.repo)"
-          >
-            {{ option.label }}
-          </button>
-        </div>
-        <p class="rounded-card bg-up-weak/60 px-3 py-2 text-xs text-text-secondary">
-          ⚠️ {{ PLUGIN_MARKET_RISK_NOTICE }}
-        </p>
-      </div>
-    </template>
+  <div class="space-y-2">
+    <!-- 工具行：搜索 / 刷新 / 源管理 -->
+    <div class="flex items-center gap-2">
+      <BaseInput v-model="search" :placeholder="PLUGIN_MARKET_SEARCH_PLACEHOLDER" class="min-w-0 flex-1" />
+      <BaseButton variant="ghost" data-track="PLUGIN_MARKET_REFRESH" @click="onRefresh">
+        {{ PLUGIN_MARKET_REFRESH_LABEL }}
+      </BaseButton>
+      <BaseButton variant="ghost" @click="sourceModalOpen = true">
+        {{ PLUGIN_MARKET_SOURCE_PANEL_TITLE }}
+      </BaseButton>
+    </div>
+    <div class="flex flex-wrap items-center gap-1.5">
+      <button
+        v-for="option in filterOptions"
+        :key="option.repo"
+        type="button"
+        class="pressable rounded-full px-2.5 py-1 text-xs transition-colors"
+        :class="
+          activeRepo === option.repo
+            ? 'bg-primary-weak font-medium text-primary'
+            : 'bg-flat-weak text-text-secondary hover:text-text'
+        "
+        @click="onPickFilter(option.repo)"
+      >
+        {{ option.label }}
+      </button>
+    </div>
+    <p class="rounded-card bg-up-weak/60 px-3 py-2 text-xs text-text-secondary">
+      ⚠️ {{ PLUGIN_MARKET_RISK_NOTICE }}
+    </p>
 
-    <div class="space-y-2">
-      <!-- 源管理面板 -->
-      <div v-if="sourcePanelOpen" class="rounded-card border border-flat-weak px-3 py-2.5">
+    <!-- 源管理弹窗：插件源列表（官方源不可删）+ 添加源（归一化 → 风险确认） -->
+    <BaseModal
+      v-model:open="sourceModalOpen"
+      :title="PLUGIN_MARKET_SOURCE_PANEL_TITLE"
+      max-width-class="max-w-xl"
+    >
+      <div class="space-y-2">
         <p class="text-xs text-text-tertiary">{{ PLUGIN_MARKET_SOURCE_PANEL_HINT }}</p>
-        <ul class="mt-2 space-y-1.5">
+        <ul class="space-y-1.5">
           <li
             v-for="source in sources"
             :key="source.repo"
@@ -449,7 +449,7 @@ const publishedDateOf = (version: PluginMarketVersion): string =>
             </BaseButton>
           </li>
         </ul>
-        <div class="mt-2 flex items-start gap-2 border-t border-flat-weak pt-2">
+        <div class="flex items-start gap-2 border-t border-flat-weak pt-2">
           <div class="min-w-0 flex-1">
             <BaseInput v-model="addInput" :placeholder="PLUGIN_MARKET_SOURCE_INPUT_PLACEHOLDER" />
             <p v-if="addError" class="mt-1 text-xs text-up">{{ addError }}</p>
@@ -459,95 +459,95 @@ const publishedDateOf = (version: PluginMarketVersion): string =>
           </BaseButton>
         </div>
       </div>
+    </BaseModal>
 
-      <!-- 「全部」视图下加载失败的源（集中提示 + 原因） -->
-      <div
-        v-for="source in activeRepo === FILTER_ALL ? failedSources : []"
-        :key="source.repo"
-        class="flex items-center justify-between gap-2 rounded-card border border-up-weak px-3 py-2"
+    <!-- 「全部」视图下加载失败的源（集中提示 + 原因） -->
+    <div
+      v-for="source in activeRepo === FILTER_ALL ? failedSources : []"
+      :key="source.repo"
+      class="flex items-center justify-between gap-2 rounded-card border border-up-weak px-3 py-2"
+    >
+      <p class="min-w-0 break-words text-xs text-up">
+        {{ source.label }}：{{ PLUGIN_MARKET_FAIL_PREFIX }}{{ errorOf(source.repo) }}
+      </p>
+      <BaseButton variant="ghost" class="shrink-0" @click="onRetrySource(source.repo)">
+        {{ PLUGIN_MARKET_RETRY_LABEL }}
+      </BaseButton>
+    </div>
+
+    <!-- 加载态 -->
+    <div v-if="isLoading" class="py-8 text-center text-sm text-text-tertiary">
+      正在加载插件列表…
+    </div>
+
+    <!-- 空态 -->
+    <BaseEmpty v-else-if="visibleEntries.length === 0 && emptyText" :text="emptyText" />
+
+    <!-- 插件卡瀑布流（CSS 多列：卡片按列填充无空隙；@container 容器断点驱动，宽度不足自动回退单列） -->
+    <div v-else class="gap-x-2 @4xl:columns-2">
+      <article
+        v-for="entry in visibleEntries"
+        :key="`${entry.sourceRepo}/${entry.id}`"
+        class="mb-2 break-inside-avoid rounded-card border border-flat-weak px-3 py-2.5"
       >
-        <p class="min-w-0 break-words text-xs text-up">
-          {{ source.label }}：{{ PLUGIN_MARKET_FAIL_PREFIX }}{{ errorOf(source.repo) }}
-        </p>
-        <BaseButton variant="ghost" class="shrink-0" @click="onRetrySource(source.repo)">
-          {{ PLUGIN_MARKET_RETRY_LABEL }}
-        </BaseButton>
-      </div>
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="text-sm font-medium text-text">{{ entry.name }}</span>
+              <BaseTag tone="primary">v{{ entry.latest.version }}</BaseTag>
+              <span class="text-[11px] text-text-tertiary">{{ sourceBadgeOf(entry.sourceRepo) }}</span>
+            </div>
+            <p v-if="entry.description" class="mt-1 text-xs text-text-secondary">{{ entry.description }}</p>
+            <p class="mt-1 flex flex-wrap items-center gap-2 font-mono text-[11px] text-text-tertiary">
+              <span>{{ entry.id }}</span>
+              <span v-if="entry.author">· {{ entry.author }}</span>
+              <span>· {{ formatBytes(entry.latest.zipSize) }}</span>
+            </p>
+          </div>
+          <div class="flex shrink-0 flex-col items-end gap-1">
+            <BaseButton
+              variant="primary"
+              :disabled="latestActionOf(entry).disabled"
+              @click="requestInstall(entry, entry.latest)"
+            >
+              {{ latestActionOf(entry).busy ? PLUGIN_MARKET_INSTALLING_LABEL : latestActionOf(entry).label }}
+            </BaseButton>
+            <button
+              type="button"
+              class="pressable text-xs text-text-tertiary hover:text-text"
+              @click="toggleHistory(entry.id)"
+            >
+              {{ expandedIds.has(entry.id) ? PLUGIN_MARKET_HISTORY_COLLAPSE_LABEL : PLUGIN_MARKET_HISTORY_TOGGLE_LABEL }} ▾
+            </button>
+          </div>
+        </div>
 
-      <!-- 加载态 -->
-      <div v-if="isLoading" class="py-8 text-center text-sm text-text-tertiary">
-        正在加载插件列表…
-      </div>
-
-      <!-- 空态 -->
-      <BaseEmpty v-else-if="visibleEntries.length === 0 && emptyText" :text="emptyText" />
-
-      <!-- 插件卡列表 -->
-      <template v-else>
-        <article
-          v-for="entry in visibleEntries"
-          :key="`${entry.sourceRepo}/${entry.id}`"
-          class="rounded-card border border-flat-weak px-3 py-2.5"
-        >
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <div class="flex flex-wrap items-center gap-2">
-                <span class="text-sm font-medium text-text">{{ entry.name }}</span>
-                <BaseTag tone="primary">v{{ entry.latest.version }}</BaseTag>
-                <span class="text-[11px] text-text-tertiary">{{ sourceBadgeOf(entry.sourceRepo) }}</span>
+        <!-- 历史版本区（展开时） -->
+        <div v-if="expandedIds.has(entry.id)" class="mt-2 border-t border-flat-weak pt-2">
+          <p class="mb-1.5 text-xs font-medium text-text-secondary">{{ PLUGIN_MARKET_HISTORY_TITLE }}</p>
+          <ul class="space-y-1">
+            <li
+              v-for="version in entry.history"
+              :key="version.zipName"
+              class="flex items-center justify-between gap-2 rounded bg-flat-weak/60 px-2.5 py-1.5"
+            >
+              <div class="flex min-w-0 flex-wrap items-center gap-2">
+                <span class="font-mono text-xs text-text">v{{ version.version }}</span>
+                <span class="text-[11px] text-text-tertiary">{{ publishedDateOf(version) }}</span>
+                <span class="font-mono text-[11px] text-text-tertiary">{{ formatBytes(version.zipSize) }}</span>
               </div>
-              <p v-if="entry.description" class="mt-1 text-xs text-text-secondary">{{ entry.description }}</p>
-              <p class="mt-1 flex flex-wrap items-center gap-2 font-mono text-[11px] text-text-tertiary">
-                <span>{{ entry.id }}</span>
-                <span v-if="entry.author">· {{ entry.author }}</span>
-                <span>· {{ formatBytes(entry.latest.zipSize) }}</span>
-              </p>
-            </div>
-            <div class="flex shrink-0 flex-col items-end gap-1">
               <BaseButton
-                variant="primary"
-                :disabled="latestActionOf(entry).disabled"
-                @click="requestInstall(entry, entry.latest)"
+                variant="ghost"
+                class="shrink-0"
+                :disabled="historyActionOf(entry, version).disabled"
+                @click="requestInstall(entry, version)"
               >
-                {{ latestActionOf(entry).busy ? PLUGIN_MARKET_INSTALLING_LABEL : latestActionOf(entry).label }}
+                {{ historyActionOf(entry, version).label }}
               </BaseButton>
-              <button
-                type="button"
-                class="pressable text-xs text-text-tertiary hover:text-text"
-                @click="toggleHistory(entry.id)"
-              >
-                {{ expandedIds.has(entry.id) ? PLUGIN_MARKET_HISTORY_COLLAPSE_LABEL : PLUGIN_MARKET_HISTORY_TOGGLE_LABEL }} ▾
-              </button>
-            </div>
-          </div>
-
-          <!-- 历史版本区（展开时） -->
-          <div v-if="expandedIds.has(entry.id)" class="mt-2 border-t border-flat-weak pt-2">
-            <p class="mb-1.5 text-xs font-medium text-text-secondary">{{ PLUGIN_MARKET_HISTORY_TITLE }}</p>
-            <ul class="space-y-1">
-              <li
-                v-for="version in entry.history"
-                :key="version.zipName"
-                class="flex items-center justify-between gap-2 rounded bg-flat-weak/60 px-2.5 py-1.5"
-              >
-                <div class="flex min-w-0 flex-wrap items-center gap-2">
-                  <span class="font-mono text-xs text-text">v{{ version.version }}</span>
-                  <span class="text-[11px] text-text-tertiary">{{ publishedDateOf(version) }}</span>
-                  <span class="font-mono text-[11px] text-text-tertiary">{{ formatBytes(version.zipSize) }}</span>
-                </div>
-                <BaseButton
-                  variant="ghost"
-                  class="shrink-0"
-                  :disabled="historyActionOf(entry, version).disabled"
-                  @click="requestInstall(entry, version)"
-                >
-                  {{ historyActionOf(entry, version).label }}
-                </BaseButton>
-              </li>
-            </ul>
-          </div>
-        </article>
-      </template>
+            </li>
+          </ul>
+        </div>
+      </article>
     </div>
 
     <!-- 安装确认弹窗：下载远程代码前必须过一道（来源 / 版本 / 体积 / 降级与无校验提醒） -->
@@ -593,5 +593,5 @@ const publishedDateOf = (version: PluginMarketVersion): string =>
     >
       <p class="text-sm text-text">{{ PLUGIN_MARKET_SOURCE_ADD_CONFIRM(pendingAddRepo) }}</p>
     </BaseConfirmModal>
-  </BaseModal>
+  </div>
 </template>

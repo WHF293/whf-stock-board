@@ -85,10 +85,7 @@ const KING_ITEMS: readonly KingItem[] = [
   { icon: 'bars', label: '个股行情', to: '/stock-market', color: '#14b8a6' },
   // 资金流向（2026-10-20 自 TabBar 移出改入金刚区）
   { icon: 'gold-coin-o', label: '资金流向', to: '/fund-flow', color: '#0e9488' },
-  // 机构行为（2026-10-20 新增；PC FuturesInstitutionalView 移动精简版，CCPM 席位做多/做空/对冲标注）
-  { icon: 'cluster-o', label: '机构行为', to: '/futures-institutional', color: '#6366f1' },
-  // 广度指标（2026-10-21 新增；PC MarketBreadthView 移动版，ADL/ADR/OBOS/ARMS/MCO 五副图）
-  { icon: 'bar-chart-o', label: '市场宽度', to: '/market-breadth', color: '#f97316' },
+  // 机构行为 / 市场宽度（2026-10-29 下线：PC 侧转插件分发，移动端无插件体系不再提供）
   // 行业龙头（2026-10-29 新增；PC 行情全景-行业龙头模块移动版：板块/细分赛道固定清单 + 报价）
   { icon: 'medal-o', label: '行业龙头', to: '/industry-leaders', color: '#ef4444' },
 ];

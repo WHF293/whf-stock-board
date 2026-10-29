@@ -32,6 +32,7 @@ import { STOCK_PROXY_ALLOWED_HOSTS } from '../../common/constants/proxy.constant
 import { requestAgentAnalysis } from '../agent/agent-bridge';
 import { APP_VERSION } from '../../common/constants/app-info.constants.ts';
 import { resolveRouteFallback } from '../../common/utils/resolve-route-fallback';
+import { openExternalUrl } from '../../common/utils/open-external-url';
 import { searchStocks } from '../../common/api/search.api.ts';
 import { fetchFullQuotes } from '../../common/api/quotes.api.ts';
 import { proxyFetch } from '../../common/api/proxy-fetch';
@@ -47,6 +48,8 @@ import BaseModal from '../components/ui/BaseModal.vue';
 import BaseDrawer from '../components/ui/BaseDrawer.vue';
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue';
 import MenuIcon from '../components/ui/MenuIcon.vue';
+import TabConfigButton from '../components/ui/TabConfigButton.vue';
+import { useTabConfig } from '../../common/composables/use-tab-config';
 import { BUILTIN_PLUGINS } from '../plugins/index';
 import { pluginKernel } from './index';
 import {
@@ -138,7 +141,10 @@ const recoverVanishedRoute = (info: VanishedRouteInfo): void => {
   );
   const target = resolveRouteFallback({
     landingPaths: [
-      // 宿主自带页面的声明优先（恒可用），再是插件声明的落点
+      // 宿主自带页面的声明优先（恒可用），再是插件声明的落点。
+      // 插件工坊 2026-10-29 起退出侧栏菜单（入口移顶栏），不再经 MENU_ITEMS
+      // 的 fallbackLanding 声明，这里显式保留其兜底落点地位
+      ROUTE_PATH.PLUGIN_LAB,
       ...MENU_ITEMS.filter((item) => item.fallbackLanding === true).map((item) => item.path),
       ...pluginKernel.contributions.menu.items
         .filter((item) => item.fallbackLanding)
@@ -247,6 +253,8 @@ export const installPlugins = (pinia?: Pinia): void => {
   pluginKernel.services.provide('app:navigate', (path: string): void => {
     void router.push(path);
   });
+  // 外链打开：插件 import 不了 tauri plugin-opener，系统浏览器跳转统一由宿主代办
+  pluginKernel.services.provide('app:open-url', openExternalUrl);
   // 标的搜索：宿主封装 stock-sdk 的腾讯搜索，插件自建 UI 消费（调用方自行防抖）
   pluginKernel.services.provide('app:stock-search', { search: searchStocks });
   pluginKernel.services.provide('panel:open', openPanelByKey);
@@ -329,6 +337,8 @@ export const installPlugins = (pinia?: Pinia): void => {
     Drawer: BaseDrawer,
     Skeleton: BaseSkeleton,
     Icon: MenuIcon,
+    TabConfigButton,
+    useTabConfig,
     confirm: (options) => pluginUiStore.requestConfirm(options ?? {}),
   });
 

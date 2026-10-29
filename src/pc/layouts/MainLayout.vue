@@ -119,6 +119,11 @@ const openAgentAnalysis = (): void => {
   });
 };
 
+/** 打开插件工坊（站内路由；2026-10-29 侧栏入口移到顶栏 Agent 分析之后，王总指定） */
+const openPluginLab = (): void => {
+  void router.push(ROUTE_PATH.PLUGIN_LAB);
+};
+
 // 暗色 class / data-theme / data-trend 的落 <html> 已上提到 App.vue 的
 // useDocumentThemeSync（独立 WebviewWindow 不经过本布局，须全局生效）；
 // 这里 useTheme 仅供顶栏明暗切换按钮使用
@@ -442,16 +447,26 @@ const titleBarLeadingItems = computed<HeaderRenderItem[]>(() => {
 });
 
 /**
- * TitleBar 右侧工具条（明暗 / 搜索 / 软件文档 / Agent 分析，窗口控制按钮左侧）。
- * Agent 分析恒置末位（白皮书之后）：用户已持久化的编排顺序可能还是旧默认
- * （Agent 在白皮书之前），这里显式兜底，不随编排移动
+ * TitleBar 右侧工具条（明暗 / 搜索 / 软件文档 / Agent 分析 / 插件工坊，窗口控制按钮左侧）。
+ * Agent 分析 + 插件工坊恒置末位（前者王总 2026-10-13、后者 2026-10-29 指定排在
+ * Agent 之后）：用户已持久化的编排顺序可能还是旧默认，这里显式兜底，不随编排移动
  */
 const titleBarTrailingItems = computed<HeaderRenderItem[]>(() => {
   const rest = titleBarHeaderItems.value.filter(
-    (item) => !TITLE_BAR_LEADING_ORDER.includes(item.id),
+    (item) =>
+      !TITLE_BAR_LEADING_ORDER.includes(item.id)
+      && item.id !== HOST_HEADER_ITEM.AGENT
+      && item.id !== HOST_HEADER_ITEM.PLUGIN_LAB,
   );
-  const agent = rest.filter((item) => item.id === HOST_HEADER_ITEM.AGENT);
-  return [...rest.filter((item) => item.id !== HOST_HEADER_ITEM.AGENT), ...agent];
+  const tail = titleBarHeaderItems.value.filter(
+    (item) => item.id === HOST_HEADER_ITEM.AGENT || item.id === HOST_HEADER_ITEM.PLUGIN_LAB,
+  );
+  // 尾部按 [Agent, 插件工坊] 固定次序（与 HOST_HEADER_ITEMS 声明一致）
+  const tailRank = new Map<string, number>(
+    [HOST_HEADER_ITEM.AGENT, HOST_HEADER_ITEM.PLUGIN_LAB].map((id, index) => [id, index]),
+  );
+  tail.sort((a, b) => (tailRank.get(a.id) ?? 0) - (tailRank.get(b.id) ?? 0));
+  return [...rest, ...tail];
 });
 
 /**
@@ -659,6 +674,7 @@ void marketStatusStore.refresh();
           @toggle-theme="toggleDark()"
           @open-search="commandPaletteOpen = true"
           @open-agent="openAgentAnalysis"
+          @open-plugin-lab="openPluginLab"
           @open-site-docs-in-app="openSiteDocsInApp"
           @open-site-docs-in-browser="openSiteDocsInBrowser"
         />
@@ -670,6 +686,7 @@ void marketStatusStore.refresh();
           @toggle-theme="toggleDark()"
           @open-search="commandPaletteOpen = true"
           @open-agent="openAgentAnalysis"
+          @open-plugin-lab="openPluginLab"
           @open-site-docs-in-app="openSiteDocsInApp"
           @open-site-docs-in-browser="openSiteDocsInBrowser"
         />

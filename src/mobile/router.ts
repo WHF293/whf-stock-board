@@ -2,11 +2,9 @@ import { createRouter, createWebHashHistory } from 'vue-router';
 import MobileArticle from './views/MobileArticle.vue';
 import MobileBoard from './views/MobileBoard.vue';
 import MobileBoardCalendar from './views/MobileBoardCalendar.vue';
-import MobileBreadth from './views/MobileBreadth.vue';
 import MobileIndustryLeaders from './views/MobileIndustryLeaders.vue';
 import MobileBullReview from './views/MobileBullReview.vue';
 import MobileFundFlow from './views/MobileFundFlow.vue';
-import MobileFuturesInstitutional from './views/MobileFuturesInstitutional.vue';
 import MobileHome from './views/MobileHome.vue';
 import MobileHotNews from './views/MobileHotNews.vue';
 import MobileIpoBoard from './views/MobileIpoBoard.vue';
@@ -72,12 +70,8 @@ export const mobileRouter = createRouter({
     { path: '/ipo', name: 'ipo', component: MobileIpoBoard },
     // 个股行情（2026-10-13 新增二级页，入口在首页金刚区；PC /stock-market 同源移动版）
     { path: '/stock-market', name: 'stock-market', component: MobileStockMarket },
-    // 机构行为（2026-10-20 新增二级页，入口在首页金刚区；PC FuturesInstitutionalView 的
-    //  移动精简版：中金所 CCPM 席位行为标注——做多/做空/对冲，数据同源同算法）
-    { path: '/futures-institutional', name: 'futures-institutional', component: MobileFuturesInstitutional },
-    // 市场广度指标（2026-10-21 新增二级页，入口在首页金刚区；PC MarketBreadthView 同内容移动版：
-    //  ADL/ADR/OBOS/ARMS/MCO 五副图，本地日 bar 离线计算，本页自带快照轮询负责 ingest）
-    { path: '/market-breadth', name: 'market-breadth', component: MobileBreadth },
+    // 机构行为 / 市场宽度（2026-10-29 起 PC 侧转插件分发，移动端入口与页面一并下线：
+    //  移动端不装配插件体系，两功能仅在 PC 客户端以插件形态提供）
     // 行业龙头（2026-10-29 新增二级页，入口在首页金刚区；PC 行情全景-行业龙头模块移动版：
     //  板块/细分赛道固定清单 + 批量报价，点击行进个股详情页）
     { path: '/industry-leaders', name: 'industry-leaders', component: MobileIndustryLeaders },

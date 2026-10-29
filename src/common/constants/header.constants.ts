@@ -22,6 +22,8 @@ export const HOST_HEADER_ITEM = {
   SEARCH: 'host-search',
   /** Agent 分析（Tauri 独立窗口 / 浏览器站内页） */
   AGENT: 'host-agent',
+  /** 插件工坊（宿主自带管理页；2026-10-29 侧栏入口移到顶栏 Agent 之后，王总指定） */
+  PLUGIN_LAB: 'host-plugin-lab',
   /** 软件文档（官网文档页外链；id 沿用白皮书时代的 host-whitepaper，保住用户已有编排配置） */
   WHITEPAPER: 'host-whitepaper',
 } as const satisfies Record<string, string>;
@@ -34,6 +36,8 @@ export const HOST_HEADER_ITEMS = [
   { id: HOST_HEADER_ITEM.WHITEPAPER, title: '软件文档', icon: 'whitepaper' },
   // Agent 分析默认排在软件文档之后（王总 2026-10-13；桌面端 TitleBar 另有恒置末位逻辑）
   { id: HOST_HEADER_ITEM.AGENT, title: 'Agent 分析', icon: 'agent' },
+  // 插件工坊紧跟 Agent 分析（王总 2026-10-29 指定；桌面端 TitleBar 与 Agent 一起恒置末位）
+  { id: HOST_HEADER_ITEM.PLUGIN_LAB, title: '插件工坊', icon: 'plug' },
 ] as const;
 
 /** 宿主自带顶栏条目的默认顺序（设置页编排弹窗的「恢复默认」与合并顺序用） */
