@@ -29,6 +29,8 @@ const emit = defineEmits<{
   (event: 'open-search'): void;
   /** 打开 Agent 分析（桌面开独立窗口 / 浏览器站内路由） */
   (event: 'open-agent'): void;
+  /** 打开插件工坊（宿主自带管理页，站内路由） */
+  (event: 'open-plugin-lab'): void;
   /** 应用内打开官网「软件文档」（WebviewWindow / 新标签页） */
   (event: 'open-site-docs-in-app'): void;
   /** 系统默认浏览器打开官网「软件文档」 */
@@ -90,6 +92,18 @@ const onPickDocsMode = (mode: 'app' | 'browser'): void => {
       >
         <MenuIcon name="agent" :size="16" />
         <BaseTooltip text="Agent 分析" placement="bottom" />
+      </button>
+      <!-- 插件工坊：站内路由（2026-10-29 侧栏入口移到顶栏，紧跟 Agent 分析） -->
+      <button
+        v-else-if="item.id === HOST_HEADER_ITEM.PLUGIN_LAB"
+        type="button"
+        class="group relative pressable rounded-lg p-2 text-text-secondary hover:bg-flat-weak active:scale-90"
+        aria-label="插件工坊"
+        data-track="NAV_PLUGIN_LAB_OPEN"
+        @click="$emit('open-plugin-lab')"
+      >
+        <MenuIcon name="plug" :size="16" />
+        <BaseTooltip text="插件工坊" placement="bottom" />
       </button>
       <!-- 软件文档：点击弹出打开方式气泡（应用内 / 浏览器），hover 提示用途 -->
       <div v-else-if="item.id === HOST_HEADER_ITEM.WHITEPAPER" class="relative">

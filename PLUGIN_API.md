@@ -361,7 +361,7 @@ ctx.settings.reset();                 // 回到声明默认值
 | `app:stock-open` | `StockOpenService` | **全站统一的个股打开交互**：`openSidebar` 开右侧详情侧栏 / `openPage` 进详情整页（§5.7） |
 | `app:watchlist` | `WatchlistService` | **自选股只读视图**：`symbols()` / `groups()` / `nameOf()`（§5.8） |
 | `app:polling` | `PollingService` | **轮询调度器工厂**：`create()` 与宿主同一份交易窗口 / 退避 / 可见性策略（§5.9） |
-| `app:ui` | `UiKitService` | **UI Kit**：宿主的 Button / Input / Switch / Tag / Card / Empty / Tabs / Table / Modal / Drawer / Skeleton / Icon 十二个组件句柄 + `confirm()` 确认弹窗（§5.4） |
+| `app:ui` | `UiKitService` | **UI Kit**：宿主的 Button / Input / Switch / Tag / Card / Empty / Tabs / Table / Modal / Drawer / Skeleton / Icon 十二个组件句柄 + TabConfigButton / useTabConfig 页签配置 + `confirm()` 确认弹窗（§5.4） |
 | `app:http` | `HttpService` | **受控网络请求**：走宿主上游通道，仅允许白名单域名（§5.5） |
 | `app:quotes` | `QuotesService` | **行情报价**：按代码批量取实时快照（§5.6） |
 | `app:market` | `MarketService` | **市场剖面**：沪深逐日成交额 / 指定交易日涨停池（重接口，只能点击触发）+ 行业板块列表（轻接口，可低频轮询，§5.10） |
@@ -451,6 +451,8 @@ ctx.sidebar.add({
 | `ui.Drawer` | `BaseDrawer` | `title`、`open`（`onUpdate:open`）、`width`（默认 `66vw`） |
 | `ui.Skeleton` | `BaseSkeleton` | 无 props，默认三行文本形状，默认插槽可自定形状。**只在一条数据都没有时用** —— 列表刷新不许翻 loading（会整表卸载重建闪屏），见 §10 |
 | `ui.Icon` | `MenuIcon` | `name`（key 清单见 `PLUGIN_WIKI.md` §10）、`size` |
+| `ui.TabConfigButton` | `TabConfigButton` | `pageId`（配置存储分桶）+ `options: TabOption[]`（全集，声明顺序即默认顺序）。点击弹「页签配置」弹窗（勾选显隐 + 拖拽排序，草稿模式确认落盘） |
+| `ui.useTabConfig` | `useTabConfig()` | 同名 composable 原样引用：`(pageId, defaultOptions) => { visibleOptions, activeValue }`。**须在组件 setup 内同步调用**（内部走 pinia）；渲染列表照 `visibleOptions` 遍历，与 `TabConfigButton` 用同一 `pageId` 即可读回用户配置 |
 
 三个「重」组件的用法要点：
 
@@ -977,8 +979,8 @@ export default {
    （若将来真要在运行时支持模板：把 `vue` 换到含编译器的 esm-bundler，代价是 +约 100KB 主包体积，
    收益与 `app:ui` 重叠，**当前不划算**。）
 2. **无类型提示**：第三方只能用 JS 硬写。要 TS 提示，只能自行维护一份 `AppServiceMap` / `PluginContext` 的 d.ts 副本。
-3. **`app:ui` 覆盖面有限**：目前十二个组件（Button / Input / Switch / Tag / Card / Empty / Tabs /
-   Table / Modal / Drawer / Skeleton / Icon）。Select / DatePicker / 图表这类还没开放 ——
+3. **`app:ui` 覆盖面有限**：目前十二个组件 + 一组页签配置能力（Button / Input / Switch / Tag / Card / Empty / Tabs /
+   Table / Modal / Drawer / Skeleton / Icon + TabConfigButton / useTabConfig）。Select / DatePicker / 图表这类还没开放 ——
    真有插件需要时再补（补的是复用，不是凭想象先造）。
 
 如果第三条里的某一项正好卡住你的插件，宿主侧补它的成本很低（一个组件句柄 + 一行 provide），欢迎提需求。

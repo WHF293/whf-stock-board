@@ -6,7 +6,6 @@ import WatchlistView from '../views/WatchlistView.vue';
 import PanoramaView from '../views/PanoramaView.vue';
 import HeatmapView from '../views/HeatmapView.vue';
 import BoardFlowView from '../views/BoardFlowView.vue';
-import MarketBreadthView from '../views/MarketBreadthView.vue';
 import BoardCalendarView from '../views/BoardCalendarView.vue';
 import BoardCalendarDetailView from '../views/BoardCalendarDetailView.vue';
 import HotNewsView from '../views/HotNewsView.vue';
@@ -15,7 +14,6 @@ import StockAccountView from '../views/StockAccountView.vue';
 import AgentAnalysisView from '../views/AgentAnalysisView.vue';
 import MarketRankView from '../views/MarketRankView.vue';
 import SectorFlowHistoryView from '../views/SectorFlowHistoryView.vue';
-import FuturesInstitutionalView from '../views/FuturesInstitutionalView.vue';
 import FuturesOverviewView from '../views/FuturesOverviewView.vue';
 import StockDetailView from '../views/StockDetailView.vue';
 import WideBaseEtfView from '../views/WideBaseEtfView.vue';
@@ -73,12 +71,6 @@ const routes = [
         component: BoardFlowView,
         meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.BOARD_FLOW] },
       },
-      // 市场广度指标：五大广度副图（ADL/ADR/OBOS/ARMS/MCO，2026-10-21）
-      {
-        path: ROUTE_PATH.MARKET_BREADTH,
-        component: MarketBreadthView,
-        meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.MARKET_BREADTH] },
-      },
       {
         path: ROUTE_PATH.BOARD_CALENDAR,
         component: BoardCalendarView,
@@ -123,18 +115,13 @@ const routes = [
         component: FuturesOverviewView,
         meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.FUTURES_OVERVIEW] },
       },
-      // 期货·机构行为：中金所 CCPM 席位持仓行为分析（2026-10-20 新增）
-      {
-        path: ROUTE_PATH.FUTURES_INSTITUTIONAL,
-        component: FuturesInstitutionalView,
-        meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.FUTURES_INSTITUTIONAL] },
-      },
       // 插件工坊：宿主自带的插件自省与管理页（原为一个内置插件，v2.6.2 起转正为正式功能，
-      // 因此不受插件启停影响，也不再出现在插件清单里）
+      // 因此不受插件启停影响，也不再出现在插件清单里）；
+      // 侧栏入口已移除（2026-10-29 王总指定），改由顶栏 Agent 分析后的插头图标进入，不入菜单
       {
         path: ROUTE_PATH.PLUGIN_LAB,
         component: PluginLabView,
-        meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.PLUGIN_LAB] },
+        meta: { title: '插件工坊' },
       },
       // 板块历史净流入：行情全景-板块资金「查看历史净流入」进入；不入左侧导航
       {

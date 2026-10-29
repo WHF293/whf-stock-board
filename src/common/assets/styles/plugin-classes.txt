@@ -2,6 +2,7 @@
 # 插件源码不在宿主的 src/ 下（独立仓库 + zip 产物包分发），Tailwind 扫不到它们；
 # 靠这份清单经 theme.css 的 @source 进入产物 CSS。详见宿主 AGENTS.md「第三方插件的样式边界」。
 
+@3xl:grid-cols-2
 absolute
 accent-primary
 active:cursor-grabbing
@@ -10,6 +11,7 @@ active:scale-95
 active:scale-[0.98]
 bg-current
 bg-down-weak
+bg-flat
 bg-flat-weak
 bg-flat-weak/40
 bg-flat-weak/60
@@ -19,6 +21,8 @@ bg-surface
 bg-up
 bg-up-weak
 border
+border-b
+border-border
 border-current
 border-dashed
 border-flat-weak
@@ -26,7 +30,11 @@ border-primary
 border-t
 break-words
 cursor-grab
+cursor-help
 cursor-pointer
+fill-current
+fill-down
+fill-up
 filter
 flex
 flex-1
@@ -36,7 +44,9 @@ focus:border-primary
 focus:outline-none
 focus:ring-1
 focus:ring-primary
+font-bold
 font-medium
+font-normal
 font-semibold
 gap-0.5
 gap-1
@@ -46,11 +56,14 @@ gap-2.5
 gap-3
 gap-4
 gap-x-2
+gap-x-3
 gap-x-4
 gap-x-6
 gap-y-1
 gap-y-1.5
+gap-y-2
 grid
+grid-cols-1
 grid-cols-2
 grid-cols-4
 grid-cols-5
@@ -72,14 +85,19 @@ hover:text-text
 hover:text-up
 inline-block
 inline-flex
+items-baseline
 items-center
 items-end
 items-start
+items-stretch
 justify-between
 justify-center
 leading-none
 leading-relaxed
 line-through
+list-decimal
+list-disc
+list-inside
 max-h-64
 max-h-[52vh]
 max-md:grid-cols-2
@@ -87,13 +105,21 @@ max-md:grid-cols-3
 max-w-52
 max-w-[140px]
 max-w-[180px]
+max-w-[420px]
+max-w-full
 max-w-md
 mb-1
 mb-2
 mb-3
 md:grid-cols-2
 md:grid-cols-4
+min-[900px]:grid-cols-3
+min-[900px]:grid-cols-5
+min-[900px]:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]
 min-w-0
+min-w-14
+min-w-[140px]
+min-w-[180px]
 ml-1
 ml-2
 ml-auto
@@ -102,6 +128,7 @@ mt-0.5
 mt-1
 mt-1.5
 mt-2
+mt-2.5
 mt-3
 mt-4
 opacity-0
@@ -112,8 +139,10 @@ overflow-y-auto
 p-0.5
 p-1
 p-3
+p-4
 pb-0.5
 pb-4
+pl-3
 placeholder:text-text-tertiary
 pressable
 pt-1
@@ -124,11 +153,15 @@ px-1.5
 px-2
 px-2.5
 px-3
+px-4
+px-6
 py-0.5
 py-1
 py-1.5
 py-10
 py-2
+py-2.5
+py-3
 py-8
 relative
 resize-y
@@ -141,6 +174,7 @@ rounded-full
 rounded-lg
 rounded-md
 select-none
+shadow-card
 shadow-lg
 shrink-0
 sm:grid-cols-3
@@ -151,6 +185,8 @@ space-y-1.5
 space-y-2
 space-y-3
 space-y-4
+stroke-up
+table-scroll
 tabular-nums
 text-[10px]
 text-[11px]
@@ -166,6 +202,7 @@ text-text
 text-text-secondary
 text-text-tertiary
 text-up
+text-up-strong
 text-xs
 top-0
 transition
@@ -175,11 +212,14 @@ truncate
 w-1
 w-1.5
 w-16
+w-36
 w-4
 w-40
 w-48
 w-5
+w-56
 w-64
+w-8
 w-[52px]
 w-full
 whitespace-nowrap

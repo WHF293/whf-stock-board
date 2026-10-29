@@ -47,6 +47,8 @@ import BaseModal from '../components/ui/BaseModal.vue';
 import BaseDrawer from '../components/ui/BaseDrawer.vue';
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue';
 import MenuIcon from '../components/ui/MenuIcon.vue';
+import TabConfigButton from '../components/ui/TabConfigButton.vue';
+import { useTabConfig } from '../../common/composables/use-tab-config';
 import { BUILTIN_PLUGINS } from '../plugins/index';
 import { pluginKernel } from './index';
 import {
@@ -138,7 +140,10 @@ const recoverVanishedRoute = (info: VanishedRouteInfo): void => {
   );
   const target = resolveRouteFallback({
     landingPaths: [
-      // 宿主自带页面的声明优先（恒可用），再是插件声明的落点
+      // 宿主自带页面的声明优先（恒可用），再是插件声明的落点。
+      // 插件工坊 2026-10-29 起退出侧栏菜单（入口移顶栏），不再经 MENU_ITEMS
+      // 的 fallbackLanding 声明，这里显式保留其兜底落点地位
+      ROUTE_PATH.PLUGIN_LAB,
       ...MENU_ITEMS.filter((item) => item.fallbackLanding === true).map((item) => item.path),
       ...pluginKernel.contributions.menu.items
         .filter((item) => item.fallbackLanding)
@@ -329,6 +334,8 @@ export const installPlugins = (pinia?: Pinia): void => {
     Drawer: BaseDrawer,
     Skeleton: BaseSkeleton,
     Icon: MenuIcon,
+    TabConfigButton,
+    useTabConfig,
     confirm: (options) => pluginUiStore.requestConfirm(options ?? {}),
   });
 

@@ -80,15 +80,6 @@ export const DATA_PORT_MANIFEST: readonly DataPortCategory[] = [
     tip: '历史牛市复盘指数月 K 快照 / 板块历史净流入数据',
   },
   {
-    id: 'market-breadth',
-    label: '市场宽度历史',
-    db: 'stock-board',
-    storage: 'local-storage',
-    nsKeys: ['marketBreadth.days', 'marketBreadth.bars'],
-    defaultEnabled: true,
-    tip: '市场宽度页按本地日积累的分钟点序列（滚存 3 日）与日 bar（滚存 250 日），删了需重新积累',
-  },
-  {
     id: 'etf-holdings',
     label: 'ETF 持仓股缓存',
     db: 'stock-board',
@@ -155,6 +146,30 @@ export const DATA_PORT_MANIFEST: readonly DataPortCategory[] = [
     tables: [{ table: 'plugin_storage', label: '插件存储', writeMode: 'replace' }],
     defaultEnabled: true,
     tip: '速记 / 盯盘到价等插件本地数据（真身，启动时反向覆盖 localStorage）',
+  },
+  {
+    id: 'plugin-market-breadth',
+    label: '插件·市场宽度历史',
+    db: 'stock-board',
+    storage: 'sqlite',
+    tables: [
+      { table: 'plugin_dsh_market_breadth_minute_point', label: '宽度分钟点（滚存 3 日）', writeMode: 'replace' },
+      { table: 'plugin_dsh_market_breadth_day_bar', label: '宽度日 bar（滚存 250 日）', writeMode: 'replace' },
+    ],
+    defaultEnabled: true,
+    tip: 'dsh-market-breadth 插件逐日积累的宽度序列，删了需重新积累',
+  },
+  {
+    id: 'plugin-futures-institutional',
+    label: '插件·机构行为缓存',
+    db: 'stock-board',
+    storage: 'sqlite',
+    tables: [
+      { table: 'plugin_dsh_futures_institutional_ccpm_day_cache', label: 'CCPM 席位日缓存', writeMode: 'replace' },
+      { table: 'plugin_dsh_futures_institutional_sync_meta', label: '同步元信息', writeMode: 'replace' },
+    ],
+    defaultEnabled: false,
+    tip: 'dsh-futures-institutional 插件的席位缓存，可由「同步历史」重新回填',
   },
   {
     id: 'kline-cache',

@@ -424,6 +424,8 @@ h(ui.Button, { variant: 'primary', onClick }, () => '查询');     // 第三参�
 | `ui.Drawer` | `title`、`open`（配 `'onUpdate:open'`）、`width`（默认 `66vw`） |
 | `ui.Skeleton` | 骨架占位，无 props（默认三行形状，默认插槽可自定）。**只在一条数据都没有时用** |
 | `ui.Icon` | `name`（icon key 见第 10 章）、`size` |
+| `ui.TabConfigButton` | 页签显隐与排序入口：`pageId` + `options: { label, value }[]`（全集）。点击弹配置弹窗（勾选 + 拖拽，确认落盘） |
+| `ui.useTabConfig` | 读回页签配置：`(pageId, defaultOptions) => { visibleOptions, activeValue }`，**须在 setup 内同步调用**；与 TabConfigButton 同 `pageId` 配对使用 |
 
 `ui.Table` 自定义单元格用**与列 key 同名**的作用域插槽：
 
