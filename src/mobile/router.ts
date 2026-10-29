@@ -3,6 +3,7 @@ import MobileArticle from './views/MobileArticle.vue';
 import MobileBoard from './views/MobileBoard.vue';
 import MobileBoardCalendar from './views/MobileBoardCalendar.vue';
 import MobileBreadth from './views/MobileBreadth.vue';
+import MobileIndustryLeaders from './views/MobileIndustryLeaders.vue';
 import MobileBullReview from './views/MobileBullReview.vue';
 import MobileFundFlow from './views/MobileFundFlow.vue';
 import MobileFuturesInstitutional from './views/MobileFuturesInstitutional.vue';
@@ -77,6 +78,9 @@ export const mobileRouter = createRouter({
     // 市场广度指标（2026-10-21 新增二级页，入口在首页金刚区；PC MarketBreadthView 同内容移动版：
     //  ADL/ADR/OBOS/ARMS/MCO 五副图，本地日 bar 离线计算，本页自带快照轮询负责 ingest）
     { path: '/market-breadth', name: 'market-breadth', component: MobileBreadth },
+    // 行业龙头（2026-10-29 新增二级页，入口在首页金刚区；PC 行情全景-行业龙头模块移动版：
+    //  板块/细分赛道固定清单 + 批量报价，点击行进个股详情页）
+    { path: '/industry-leaders', name: 'industry-leaders', component: MobileIndustryLeaders },
     // /board-calendar 列表矩阵；/board-calendar/:code 板块详情矩阵
     { path: '/board-calendar/:code?', name: 'board-calendar', component: MobileBoardCalendar },
     // 个股 K 线详情：全站股票行点击统一落点（code 为完整符号，如 sh600519）

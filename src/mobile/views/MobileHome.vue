@@ -89,6 +89,8 @@ const KING_ITEMS: readonly KingItem[] = [
   { icon: 'cluster-o', label: '机构行为', to: '/futures-institutional', color: '#6366f1' },
   // 广度指标（2026-10-21 新增；PC MarketBreadthView 移动版，ADL/ADR/OBOS/ARMS/MCO 五副图）
   { icon: 'bar-chart-o', label: '市场宽度', to: '/market-breadth', color: '#f97316' },
+  // 行业龙头（2026-10-29 新增；PC 行情全景-行业龙头模块移动版：板块/细分赛道固定清单 + 报价）
+  { icon: 'medal-o', label: '行业龙头', to: '/industry-leaders', color: '#ef4444' },
 ];
 /** to → 定义（设置弹窗行渲染 / 持久化序回填用） */
 const KING_BY_TO = new Map(KING_ITEMS.map((item) => [item.to, item]));
