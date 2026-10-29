@@ -19,6 +19,7 @@ import FuturesInstitutionalView from '../views/FuturesInstitutionalView.vue';
 import FuturesOverviewView from '../views/FuturesOverviewView.vue';
 import StockDetailView from '../views/StockDetailView.vue';
 import WideBaseEtfView from '../views/WideBaseEtfView.vue';
+import IndustryLeaderDetailView from '../views/IndustryLeaderDetailView.vue';
 import SystemLogView from '../views/SystemLogView.vue';
 import NotFoundView from '../views/NotFoundView.vue';
 import PluginLabView from '../views/PluginLabView.vue';
@@ -158,6 +159,12 @@ const routes = [
         path: ROUTE_PATH.WIDE_BASE_ETF,
         component: WideBaseEtfView,
         meta: { title: '宽基ETF' },
+      },
+      // 行业龙头详情：行情全景-行业龙头点分组卡片标题进入，不入左侧导航
+      {
+        path: ROUTE_PATH.INDUSTRY_LEADER_DETAIL,
+        component: IndustryLeaderDetailView,
+        meta: { title: '行业龙头详情' },
       },
     ],
   },

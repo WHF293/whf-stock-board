@@ -1,17 +1,18 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { computed, onActivated, onMounted, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import BaseButton from '../components/ui/BaseButton.vue';
 import BaseEmpty from '../components/ui/BaseEmpty.vue';
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue';
 import BoardFlowDailyCard from '../components/business/BoardFlowDailyCard.vue';
-import MenuIcon from '../components/ui/MenuIcon.vue';
 import {
   ensureSectorFlowHistories,
   readSectorFlowHistory,
 } from '../../common/api/sector-flow-history.api.ts';
 import type { SectorFlowHistoryEntry } from '../../common/api/sector-flow-history.api.ts';
-import { ROUTE_PATH } from '../../common/constants/router-meta.constants.ts';
+import { CALENDAR_BOARDS } from '../../common/constants/board-calendar.constants.ts';
+import { STORAGE_NS_MARKET_RANK_CURVE } from '../../common/constants/storage-key.constants.ts';
+import { appStorage } from '../../common/utils/app-local-storage';
 import { useMarketStatusStore } from '../../common/stores/market-status';
 
 /**
@@ -24,20 +25,43 @@ import { useMarketStatusStore } from '../../common/stores/market-status';
  * 布局为两行横向卡片流（同热点新闻页），每板块一张卡，卡内最新交易日排最上。
  */
 const route = useRoute();
-const router = useRouter();
 const marketStatus = useMarketStatusStore();
 
 /** 板块历史（BK 编号索引，读自本地库） */
 const historyMap = ref<Record<string, SectorFlowHistoryEntry>>({});
 /** 确保数据就绪中（拉新合并） */
 const isEnsuring = ref(false);
-/** 展示板块 = 曲线视图「选择行业」当前勾选（URL query codes） */
+/** 展示板块 = 资金流向「选择板块」当前勾选（appStorage 持久化勾选，两页实时同步） */
 const orderedCodes = ref<string[]>([]);
-/** 勾选板块的名称映射（URL query names；失败占位卡的标题来源） */
+/** 勾选板块的名称映射（36 板块池写死 + URL query 兼容兜底；失败占位卡的标题来源） */
 const queryNames = ref<Record<string, string>>({});
 
+/** 36 板块池代码 → 名称（勾选清单的名称来源，与资金流向同源） */
+const CALENDAR_NAME_BY_CODE = new Map(CALENDAR_BOARDS.map((board) => [board.code, board.name]));
+
 /**
- * 从 URL query 解析板块代码列表
+ * 读取资金流向页持久化的勾选清单（与 PanoramaSectorFlowBoard 同一存储键）；
+ * 坏数据 / 池外代码一律过滤（2026-10-29 起勾选已收敛为 36 板块池）
+ * @returns BK 编号列表（保持勾选顺序）
+ */
+const readCodesFromStorage = (): string[] => {
+  try {
+    const raw = appStorage.getItem(STORAGE_NS_MARKET_RANK_CURVE);
+    const parsed = raw ? (JSON.parse(raw) as { codes?: unknown }) : null;
+    if (!Array.isArray(parsed?.codes)) {
+      return [];
+    }
+    return parsed.codes.filter(
+      (code): code is string =>
+        typeof code === 'string' && /^BK\d{4,6}$/.test(code) && CALENDAR_NAME_BY_CODE.has(code),
+    );
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * 从 URL query 解析板块代码列表（直开 / 旧链接兼容兜底）
  * @returns BK 编号列表（非法值过滤）
  */
 const readCodesFromQuery = (): string[] => {
@@ -52,7 +76,7 @@ const readCodesFromQuery = (): string[] => {
 };
 
 /**
- * 从 URL query 解析板块名称映射（「BK 编号:名称」用 | 连接；MarketRankView 跳转时带上）
+ * 从 URL query 解析板块名称映射（「BK 编号:名称」用 | 连接；旧链接兼容兜底）
  * @returns BK 编号 → 名称（非法条目忽略）
  */
 const readNamesFromQuery = (): Record<string, string> => {
@@ -70,6 +94,13 @@ const readNamesFromQuery = (): Record<string, string> => {
     }
   }
   return names;
+};
+
+/** 解析当前应展示的勾选清单与名称映射（勾选优先取持久化存储 = 与资金流向实时同步） */
+const resolveSelection = (): void => {
+  const fromStorage = readCodesFromStorage();
+  orderedCodes.value = fromStorage.length > 0 ? fromStorage : readCodesFromQuery();
+  queryNames.value = readNamesFromQuery();
 };
 
 /** 库内全部板块（按最近数据日期降序，新的在前；直接打开本页无 query codes 时兜底展示） */
@@ -94,7 +125,7 @@ const displayBoards = computed(() =>
     const entry = historyMap.value[code];
     return {
       code,
-      name: entry?.name ?? queryNames.value[code] ?? code,
+      name: entry?.name ?? CALENDAR_NAME_BY_CODE.get(code) ?? queryNames.value[code] ?? code,
       points: entry?.points ?? [],
       missing: !entry,
     };
@@ -143,9 +174,14 @@ const ensureAndRender = async (force = false): Promise<void> => {
 };
 
 onMounted(() => {
-  orderedCodes.value = readCodesFromQuery();
-  queryNames.value = readNamesFromQuery();
+  resolveSelection();
   historyMap.value = readSectorFlowHistory();
+  void ensureAndRender();
+});
+
+// KeepAlive 缓存页面：切回时重读勾选（资金流向页可能改过「选择板块」，两页保持同步）
+onActivated(() => {
+  resolveSelection();
   void ensureAndRender();
 });
 
@@ -158,22 +194,13 @@ watch(
     }
   },
 );
-
-/** 返回行情全景（用 push 而非 back：直接打开本页 / 刷新后 back 会退出应用） */
-const goBack = (): void => {
-  void router.push(ROUTE_PATH.PANORAMA);
-};
 </script>
 
 <template>
   <div class="flex h-full min-h-0 flex-col gap-4">
-    <!-- 控制条：返回 / 标题与图例 / 统计 / 刷新 -->
+    <!-- 控制条：标题与图例 / 统计 / 刷新（返回按钮已删：侧栏可直接跳行情全景，2026-10-29 王总指定） -->
     <div class="flex shrink-0 flex-wrap items-center justify-between gap-2">
       <div class="flex flex-wrap items-center gap-2">
-        <BaseButton variant="ghost" title="返回行情全景" @click="goBack">
-          <MenuIcon name="arrowLeft" :size="14" />
-          行情全景
-        </BaseButton>
         <span class="text-sm font-semibold text-text">板块历史净流入</span>
         <span class="flex items-center gap-3 text-xs text-text-tertiary">
           <span class="flex items-center gap-1">

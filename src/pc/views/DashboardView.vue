@@ -19,7 +19,7 @@ import {
   fetchFullQuotes,
 } from '../../common/api/quotes.api.ts';
 import { fetchGlobalIndexQuotes } from '../../common/api/panorama.api.ts';
-import { fetchIndustryBoards } from '../../common/api/board.api.ts';
+import { fetchCalendarBoardPanorama } from '../../common/api/board-calendar.api.ts';
 import { fetchMarketFundFlow } from '../../common/api/flow.api.ts';
 import { fetchZtPool } from '../../common/api/event.api.ts';
 import { usePolling } from '../../common/composables/use-polling';
@@ -28,6 +28,7 @@ import {
 } from '../../common/constants/index-symbols.constants.ts';
 import {
   HEATMAP_TOP_TAB_OPTIONS,
+  HEATMAP_TOP_VALID_VALUES,
   HEATMAP_VIEW_MODE,
   HEATMAP_VIEW_MODE_OPTIONS,
 } from '../../common/constants/heatmap.constants.ts';
@@ -39,10 +40,8 @@ import { useRowClamp } from '../../common/composables/use-row-clamp';
 import { useStockOpen } from '../../common/composables/use-stock-open';
 import type { DistributionCount } from '../../common/types/distribution.types.ts';
 import type { GlobalIndexQuote } from '../../common/types/panorama.types.ts';
-import type {
-  HeatmapBoard,
-  IndustryBoard,
-} from '../../common/types/board.types.ts';
+import type { HeatmapBoard } from '../../common/types/board.types.ts';
+import type { CalendarBoardPanoramaItem } from '../../common/types/board-calendar.types.ts';
 import type { MarketFundFlow } from '../../common/types/flow.types.ts';
 import type { ZTPoolItem } from '../../common/types/event.types.ts';
 import type { MarketSentiment } from '../../common/types/market-sentiment.types.ts';
@@ -128,9 +127,15 @@ const goHeatmap = (): void => {
 const { drillView, drillTarget, isDrillLoading, drillError, drillInto, backToBoards } =
   useHeatmapDrill();
 
-/** Top 数量按钮组 v-model 适配：BaseTabs 要求字符串 value，设置项存 number */
+/** Top 数量按钮组 v-model 适配：BaseTabs 要求字符串 value，设置项存 number；
+ *  历史持久化的 30 / 50 不在新档位（Top10/Top20/全部36），读取时归一到全量 36 */
 const heatmapTopNModel = computed<string>({
-  get: () => String(settingsStore.heatmapTopN),
+  get: () =>
+    String(
+      HEATMAP_TOP_VALID_VALUES.includes(settingsStore.heatmapTopN)
+        ? settingsStore.heatmapTopN
+        : HEATMAP_TOP_VALID_VALUES.at(-1),
+    ),
   set: (value) => settingsStore.setHeatmapTopN(Number(value)),
 });
 
@@ -139,8 +144,8 @@ const indexQuotes = ref<FullQuote[]>([]);
 
 /** 涨跌分布分桶计数 */
 const distribution = ref<DistributionCount[]>([]);
-/** 行业板块列表 */
-const industryBoards = ref<IndustryBoard[]>([]);
+/** 板块热力数据（36 板块统一口径，板块日历池；2026-10-29 起不再用 496 全量行业） */
+const heatBoards = ref<CalendarBoardPanoramaItem[]>([]);
 /** 当日大盘资金流（取最新一条；成交额卡资金速览「主力净流入」消费） */
 const marketFundFlow = ref<MarketFundFlow | null>(null);
 /** 两市成交额合计（万） */
@@ -153,7 +158,7 @@ const marketBreadth = ref<MarketBreadth | null>(null);
 interface BreadthSnapshot {
   distribution: DistributionCount[];
   totalAmountWan: number;
-  boards: IndustryBoard[];
+  boards: CalendarBoardPanoramaItem[];
   fundFlow: MarketFundFlow | null;
 }
 
@@ -162,11 +167,16 @@ const cachedIndex = dataCache.get<FullQuote[]>(DATA_CACHE_KEY.DASHBOARD_INDEX_QU
 if (cachedIndex) {
   indexQuotes.value = cachedIndex;
 }
+const cachedHeatBoards = dataCache.get<CalendarBoardPanoramaItem[]>(
+  DATA_CACHE_KEY.CALENDAR_BOARD_PANORAMA,
+);
+if (cachedHeatBoards) {
+  heatBoards.value = cachedHeatBoards;
+}
 const cachedBreadth = dataCache.get<BreadthSnapshot>(DATA_CACHE_KEY.DASHBOARD_BREADTH);
 if (cachedBreadth) {
   distribution.value = cachedBreadth.distribution;
   totalAmountWan.value = cachedBreadth.totalAmountWan;
-  industryBoards.value = cachedBreadth.boards;
   marketFundFlow.value = cachedBreadth.fundFlow;
 }
 
@@ -219,31 +229,36 @@ const {
   toggle: toggleIndexExpanded,
 } = useRowClamp();
 
-/** 拉取市场宽度数据（全市场快照 + 板块 + 资金流；成功后写快照） */
+/** 拉取市场宽度数据（全市场快照 + 资金流 + 36 板块热力；成功后写快照） */
 const fetchMarketBreadth = async (): Promise<void> => {
   try {
     // 对同一上游（东财系）串行错峰请求，避免并发齐射触发反爬封禁
     const quotes = await fetchAllMarketQuotes();
-    await delay(BREADTH_REQUEST_GAP_MS);
-    const boards = await fetchIndustryBoards();
     await delay(BREADTH_REQUEST_GAP_MS);
     const flows = await fetchMarketFundFlow();
     distribution.value = countDistribution(quotes.map((quote) => quote.changePercent));
     totalAmountWan.value = quotes.reduce((acc, quote) => acc + (quote.amount ?? 0), 0);
     // 市场宽度 · ARMS：与涨跌分布同源快照，ingest 落分钟点 / 收盘定稿日 bar（零新增请求）
     marketBreadth.value = ingestBreadthSnapshot(quotes);
-    industryBoards.value = boards;
     marketFundFlow.value = flows.at(-1) ?? null;
 
     const snapshot: BreadthSnapshot = {
       distribution: distribution.value,
       totalAmountWan: totalAmountWan.value,
-      boards: industryBoards.value,
+      boards: heatBoards.value,
       fundFlow: marketFundFlow.value,
     };
     dataCache.set(DATA_CACHE_KEY.DASHBOARD_BREADTH, snapshot);
   } catch (error) {
     console.error('[dashboard] breadth', error);
+  }
+  // 板块热力单独取（36 板块单请求，失败不清空旧热力数据）
+  try {
+    await delay(BREADTH_REQUEST_GAP_MS);
+    heatBoards.value = await fetchCalendarBoardPanorama();
+    dataCache.set(DATA_CACHE_KEY.CALENDAR_BOARD_PANORAMA, heatBoards.value);
+  } catch (error) {
+    console.error('[dashboard] heatmap', error);
   }
 };
 
@@ -300,21 +315,20 @@ usePolling({
 // 历史成交量 / 相对成交量两量纲移除 —— 资金流向页已有完整图表（fetchMarketTurnover 链路随之移除，
 // 该页数据快照键 DASHBOARD_TURNOVER 仍由资金流向页自己读写） ----------
 
-/** 板块热力数据：按总市值排序取用户设置的 Top N（保留完整字段供列表视图消费） */
-const topBoards = computed<IndustryBoard[]>(() =>
-  [...industryBoards.value]
-    .filter((board) => board.changePercent !== null && board.totalMarketCap !== null)
-    .sort((a, b) => (b.totalMarketCap ?? 0) - (a.totalMarketCap ?? 0))
+/** 板块热力数据：按成交额排序取用户设置的 Top N（36 板块池，超出池大小取全量） */
+const topBoards = computed<CalendarBoardPanoramaItem[]>(() =>
+  [...heatBoards.value]
+    .sort((a, b) => b.amount - a.amount)
     .slice(0, settingsStore.heatmapTopN),
 );
 
-/** 热力图 cell 视图模型（由 topBoards 映射） */
+/** 热力图 cell 视图模型（由 topBoards 映射；面积权重 = 成交额） */
 const heatmapBoards = computed<HeatmapBoard[]>(() =>
   topBoards.value.map((board) => ({
     code: board.code,
     name: board.name,
-    changePercent: board.changePercent ?? 0,
-    weight: board.totalMarketCap ?? 0,
+    changePercent: board.changePercent,
+    weight: board.amount,
   })),
 );
 
@@ -637,7 +651,7 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
 
     <!-- 板块热力（标题跳大盘云图，2026-10-24 王总指定） -->
     <BaseCard
-      title="板块热力（按总市值加权）"
+      title="板块热力（按成交额加权）"
       clickable-title
       @title-click="goHeatmap"
     >

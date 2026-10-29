@@ -31,6 +31,7 @@ export const ROUTE_PATH = {
   SETTINGS: "/settings",
   STOCK_DETAIL: "/stock-detail", // 股票详情整页（+/:symbol，不入菜单）
   WIDE_BASE_ETF: "/wide-base-etf", // 宽基ETF（国家队/汇金系核心操作宽基监控，市场总览页头按钮进入，不入菜单）
+  INDUSTRY_LEADER_DETAIL: "/industry-leader", // 行业龙头详情（+?kind=&group=，行情全景-行业龙头点卡片标题进入，不入菜单）
 } as const;
 
 /**

@@ -60,6 +60,25 @@ export const BOARD_SECID_PREFIX = '90';
  */
 export const BOARD_SNAPSHOT_FIELDS = 'f12,f14,f3,f6,f104,f105,f106';
 
+/**
+ * 板块主力净流入批量查询字段
+ *
+ * 在快照字段基础上加 `f62`（主力净流入净额）与 `f184`（主力净流入净占比），
+ * 供资金流向页的 36 板块统一榜单消费（2026-10-29 王总指定口径统一）。
+ */
+export const BOARD_FUND_FLOW_FIELDS = 'f12,f14,f3,f62,f184';
+
+/**
+ * 板块资金流兜底通道（clist 排行翻页）的板块筛选表达式
+ *
+ * `m:90` = 东财「板块」市场全量（行业 t:2 + 概念 t:3），按 `fid=f62` 主力净流入降序翻页，
+ * 由取数层过滤出 36 板块池（2026-10-29 资金流向页统一口径的兜底通道）
+ */
+export const FUND_FLOW_FALLBACK_FS = 'm:90';
+
+/** 板块资金流兜底通道的翻页上限（板块总量约千级 / 单页 100 → 12 页足够，防止上游异常时空转） */
+export const FUND_FLOW_FALLBACK_MAX_PAGES = 12;
+
 /** 交易日轴读取的日 K 条数（≈1.5 年交易日，覆盖「180 天」档且留余量） */
 export const TRADING_KLINE_LIMIT = 400;
 

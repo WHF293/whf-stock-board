@@ -1,12 +1,15 @@
 import {
   BOARD_BUCKET_QUOTE_FIELDS,
   BOARD_CALENDAR_URL,
+  BOARD_FUND_FLOW_FIELDS,
   BOARD_LIST_PAGE_SIZE,
   BOARD_REQUEST_GAP_MS,
   BOARD_SECID_PREFIX,
   BOARD_SNAPSHOT_FIELDS,
   CALENDAR_BOARDS,
   EASTMONEY_USER_AGENT,
+  FUND_FLOW_FALLBACK_FS,
+  FUND_FLOW_FALLBACK_MAX_PAGES,
   LIMIT_DOWN_POOL_SORT,
   LIMIT_POOL_PAGE_SIZE,
   LIMIT_POOL_TOKEN,
@@ -17,9 +20,11 @@ import {
 import type {
   BoardConstituentQuote,
   BoardSnapshotItem,
+  CalendarBoardPanoramaItem,
   ConstituentItem,
   LimitPoolStock,
 } from '../types/board-calendar.types.ts';
+import type { SectorFundFlowItem } from '../types/flow.types.ts';
 import { delay } from '../utils/delay';
 import { proxyFetch } from './proxy-fetch';
 import { push2Fetch } from './push2-fetch';
@@ -429,3 +434,162 @@ export const toLocalDateString = (date: Date): string => {
  * @returns 本地日期字符串
  */
 export const getLocalDateString = (): string => toLocalDateString(new Date());
+
+/* ------------------------ 36 板块统一全景（2026-10-29 王总指定） ------------------------ */
+
+/**
+ * 拉取 36 板块统一全景（板块日历池，按涨跌幅降序）
+ *
+ * 消费 `fetchBoardSnapshot()`（单请求），供热力图与平铺网格类模块与题材轮动 / 板块日历同源：
+ * A股全景（PC + 移动端）、市场总览板块热力、移动端首页热力卡（2026-10-29 起统一口径）。
+ * 上游未返回的板块跳过（限频时由调用方的快照播种 / 失败兜底处理）。
+ * @returns 全景条目列表（涨跌幅降序；含 code / 成交额 / 涨跌家数）
+ * @throws Error 上游限频 / 异常时抛出（透传 fetchBoardSnapshot）
+ */
+export const fetchCalendarBoardPanorama = async (): Promise<CalendarBoardPanoramaItem[]> => {
+  const snapshot = await fetchBoardSnapshot();
+  const items = CALENDAR_BOARDS.flatMap((board): CalendarBoardPanoramaItem[] => {
+    const row = snapshot.get(board.code);
+    if (!row) return [];
+    return [
+      {
+        code: row.code,
+        name: row.name,
+        changePercent: row.changePercent,
+        amount: row.amount,
+        upCount: row.upCount,
+        downCount: row.downCount,
+      },
+    ];
+  });
+  return items.sort((a, b) => b.changePercent - a.changePercent);
+};
+
+/**
+ * 由上游原始行构造板块资金流条目（仅收 36 池内代码）
+ * @param row 上游原始行（f12/f14/f3/f62/f184）
+ * @param nameByCode 池内代码 → 名称映射
+ * @returns 条目（池外代码返回 null）
+ */
+const toFundFlowItem = (
+  row: Record<string, unknown>,
+  nameByCode: Map<string, string>,
+): SectorFundFlowItem | null => {
+  const code = toText(row.f12);
+  if (!nameByCode.has(code)) return null;
+  return {
+    code,
+    name: nameByCode.get(code) ?? toText(row.f14),
+    changePercent: toNumberOrNull(row.f3),
+    mainNetInflow: toNumberOrNull(row.f62),
+    mainNetInflowPercent: toNumberOrNull(row.f184),
+    superLargeNetInflow: null,
+    largeNetInflow: null,
+    mediumNetInflow: null,
+    smallNetInflow: null,
+  };
+};
+
+/**
+ * 板块池按主力净流入降序
+ * @param items 资金流条目列表
+ * @returns 原数组（已就地降序排序）
+ */
+const sortFundFlowDesc = (items: SectorFundFlowItem[]): SectorFundFlowItem[] =>
+  items.sort((a, b) => (b.mainNetInflow ?? 0) - (a.mainNetInflow ?? 0));
+
+/**
+ * 兜底通道：clist 按主力净流入排行翻页（fid=f62，fs=m:90 全板块），过滤出 36 池
+ *
+ * 与 SDK `fundFlow.sectorRank` 同款通道（应用内已验证可用），仅在 ulist 快照通道
+ * 返回空 / 报错时启用；页间按 `BOARD_REQUEST_GAP_MS` 错峰。板块总数约千级 → 全量翻页
+ * 最多 `FUND_FLOW_FALLBACK_MAX_PAGES` 页。
+ * @returns 板块资金流条目（主力净流入降序，可能少于 36 个——上游缺失即跳过）
+ */
+const fetchFundFlowViaClist = async (): Promise<SectorFundFlowItem[]> => {
+  const nameByCode = new Map(CALENDAR_BOARDS.map((board) => [board.code, board.name]));
+  const items: SectorFundFlowItem[] = [];
+  const hitCodes = new Set<string>();
+  for (let pn = 1; pn <= FUND_FLOW_FALLBACK_MAX_PAGES && hitCodes.size < CALENDAR_BOARDS.length; pn += 1) {
+    const params = new URLSearchParams({
+      pn: String(pn),
+      pz: String(BOARD_LIST_PAGE_SIZE),
+      po: '1',
+      np: '1',
+      fltt: '2',
+      invt: '2',
+      fid: 'f62',
+      fs: FUND_FLOW_FALLBACK_FS,
+      fields: BOARD_FUND_FLOW_FIELDS,
+    });
+    const response = await push2Fetch(`${BOARD_CALENDAR_URL.BOARD_LIST}?${params.toString()}`, {
+      headers: { 'User-Agent': EASTMONEY_USER_AGENT },
+    });
+    if (!response.ok) {
+      throw new Error(`东财板块资金流（clist 兜底）HTTP ${response.status}`);
+    }
+    const body = (await response.json()) as ClistResponse;
+    const diff = body.data?.diff;
+    // ⚠️ 上游限频 / 异常时返回 200 + data: null，必须显式判空
+    if (!Array.isArray(diff) || diff.length === 0) {
+      throw new Error('东财板块资金流返回空数据（上游限频或异常）');
+    }
+    for (const row of diff) {
+      const item = toFundFlowItem(row, nameByCode);
+      if (item && !hitCodes.has(item.code)) {
+        hitCodes.add(item.code);
+        items.push(item);
+      }
+    }
+    if (diff.length < BOARD_LIST_PAGE_SIZE) break;
+    await delay(BOARD_REQUEST_GAP_MS);
+  }
+  return sortFundFlowDesc(items);
+};
+
+/**
+ * 拉取 36 板块主力净流入榜单（板块日历池，按主力净流入降序）
+ *
+ * 主通道：与 `fetchBoardSnapshot` 同形态的 `ulist.np/get` 单请求，fields 扩为
+ * `f12,f14,f3,f62,f184`（f62 主力净额 / f184 净占比）+ `fid=f62`（资金字段需显式声明
+ * 排序基准才返回，东财自选板块资金流同款形态）；主通道空 / 报错时回落 clist 排行翻页兜底。
+ * 供资金流向页与 496 全量行业榜单解耦；SDK `SectorFundFlowItem` 中不消费的分解字段置 null。
+ * @returns 板块资金流条目（主力净流入降序）
+ * @throws Error 主通道与兜底通道均失败（限频 / 异常）时抛出
+ */
+export const fetchCalendarBoardFundFlow = async (): Promise<SectorFundFlowItem[]> => {
+  const secids = CALENDAR_BOARDS.map((board) => `${BOARD_SECID_PREFIX}.${board.code}`).join(',');
+  const params = new URLSearchParams({
+    fltt: '2',
+    invt: '2',
+    // 资金字段（f62/f184）需显式声明排序基准 fid=f62 才返回（东财自选板块资金流同款形态）
+    fid: 'f62',
+    fields: BOARD_FUND_FLOW_FIELDS,
+    secids,
+  });
+  const nameByCode = new Map(CALENDAR_BOARDS.map((board) => [board.code, board.name]));
+  try {
+    const response = await push2Fetch(`${BOARD_CALENDAR_URL.BOARD_QUOTE}?${params.toString()}`, {
+      headers: { 'User-Agent': EASTMONEY_USER_AGENT },
+    });
+    if (!response.ok) {
+      throw new Error(`东财板块资金流 HTTP ${response.status}`);
+    }
+    const body = (await response.json()) as ClistResponse;
+    const diff = body.data?.diff;
+    // ⚠️ 上游限频 / 异常时返回 200 + data: null，必须显式判空（快照接口同款坑）
+    if (!Array.isArray(diff) || diff.length === 0) {
+      throw new Error('东财板块资金流返回空数据（上游限频或异常）');
+    }
+    const items = diff
+      .map((row) => toFundFlowItem(row, nameByCode))
+      .filter((item): item is SectorFundFlowItem => item !== null);
+    if (items.length === 0) {
+      throw new Error('东财板块资金流未命中板块池（f62 字段缺失）');
+    }
+    return sortFundFlowDesc(items);
+  } catch (error) {
+    console.warn('[board-calendar] ulist 资金流通道失败，回落 clist 兜底', error);
+    return fetchFundFlowViaClist();
+  }
+};
