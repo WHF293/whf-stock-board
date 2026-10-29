@@ -73,8 +73,30 @@ export const DOCS_TABS = [
 /** 文档 Tab 值 */
 export type DocsTabValue = (typeof DOCS_TABS)[number]['value'];
 
-/** 归入「开发者指南」Tab 的章节 id（与客户端白皮书 DEV_CHAPTER_IDS 一致） */
-export const DOCS_DEV_CHAPTER_IDS: ReadonlySet<string> = new Set<string>(['dev']);
+/**
+ * 归入「开发者指南」Tab 的章节 id（与客户端白皮书 DEV_CHAPTER_IDS 一致）
+ */
+export const DOCS_DEV_CHAPTER_IDS: ReadonlySet<string> = new Set<string>([
+  'dev',
+  'dev-api',
+  'dev-data',
+  'dev-market',
+]);
+
+/**
+ * 文档目录分组顺序（镜像应用侧栏的分组惯例：市场行情 / 热点资讯 / 自选与账户 / 插件）
+ *
+ * 不在侧栏路由里的章节统一归「二级页」组；未收录进此数组的 tag 按出现顺序追加在后。
+ */
+export const DOCS_GROUP_ORDER: readonly string[] = [
+  '必读',
+  '市场行情',
+  '热点资讯',
+  '自选与账户',
+  '插件',
+  '二级页',
+  '开发者',
+];
 
 /** 平台展示名 */
 export const RELEASE_PLATFORM_LABELS = {

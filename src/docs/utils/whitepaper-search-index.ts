@@ -68,6 +68,8 @@ export function buildWhitepaperSearchDocs(chapters: readonly GuideChapter[]): Wh
         docs.push(doc(chapter, `提示 ${blockNo}`, block.text));
       } else if (block.type === 'code') {
         docs.push(doc(chapter, `代码 ${blockNo}`, block.text));
+      } else if (block.type === 'image') {
+        if (block.caption) docs.push(doc(chapter, `图 ${blockNo}`, block.caption));
       } else {
         block.rows.forEach((row) => docs.push(doc(chapter, row[0] ?? '表格', row.join(' · '))));
       }

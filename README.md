@@ -39,6 +39,16 @@ A 股看板 SPA（个人学习用）：市场总览 / 题材轮动 / 市场宽�
 
 ![插件工坊](./docs/screenshots/plugin-workshop.png)
 
+## 架构设计
+
+**主应用整体架构**：三端同一代码库（Windows / Android / 浏览器，构建期分流），界面层之下是横向贯穿的插件体系（一切皆插件），状态与业务逻辑统一经 `src/api/` 数据接口层以 stock-sdk 双通道代理取数，全部数据只落本机（SQLite + localStorage），无自建后端。
+
+![主应用整体架构](./src/docs/assets/app-architecture.svg)
+
+**插件体系架构**：插件内核只做加载 / 卸载 / 依赖收敛，九个贡献点 + 二十二个宿主服务开放给插件，卸载即全量撤销；官网[开发者指南](https://whf293.github.io/whf-stock-board/#/docs?tab=dev)有逐节展开的插件开发文档（接入规范 / API 手册 / 数据持久化 / 插件市场接入）。
+
+![插件体系架构](./src/docs/assets/plugin-architecture.svg)
+
 ## 技术栈
 
 Vue 3.5 + TypeScript + Vite + vue-router + Pinia + ECharts + Tailwind CSS 4，数据源 [stock-sdk](https://stock-sdk.linkdiary.cn/)（腾讯 / 东方财富）；PC 客户端壳为 Tauri 2。AI 编码代理请先阅读根目录 [AGENTS.md](./AGENTS.md)。

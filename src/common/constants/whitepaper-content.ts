@@ -6,6 +6,7 @@
  */
 
 import type { GuideChapter } from '../types/whitepaper.types';
+import pluginArchitectureImg from '../../docs/assets/plugin-architecture.svg';
 
 /**
  * 用户插件最小模板（与安装弹窗内置示例一致：预构建 ESM JS + 渲染函数组件）
@@ -63,14 +64,14 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
           '打开软件后默认进入「市场总览」，顶栏会显示当前交易状态（盘前 / 交易中 / 午间休市 / 已收盘 / 休市）。',
           '按个人习惯调一次偏好：顶栏的月亮/太阳按钮切换暗色与亮色；侧栏底部「设置」里调整行情刷新间隔、主题色与涨跌配色。',
           '按「大势 → 个股 → 板块 → 自选」的顺序看盘：市场总览看整体，盘面雷达看个股强弱，行情全景看板块结构，自选股盯持仓。',
-          '需要深挖某只标的时，在任意表格或卡片里单击行打开右侧详情面板，双击行进入个股详情整页。',
-          '需要 AI 帮忙读盘时，点顶栏机器人图标打开「Agent 分析」；首次使用需先在 Model 管理里添加模型并「设为默认」。',
+          '需要深挖某只标的时，在任意表格或卡片里单击行打开右侧详情面板，双击行进入[个股详情](#stock-detail)整页。',
+          '需要 AI 帮忙读盘时，点顶栏机器人图标打开[「Agent 分析」](#agent)；首次使用需先在 Model 管理里添加模型并「设为默认」。',
           '不熟悉界面时，点顶栏最右侧的书本图标回到本白皮书，随时查功能与口径。',
         ],
       },
       {
         type: 'tip',
-        text: '全站通用手势：表格行单击 = 右侧个股详情面板（不离开当前页）；双击 = 个股详情整页；Esc 关闭面板、搜索弹窗与对话框。',
+        text: '全站通用手势：表格行单击 = 右侧[个股详情](#stock-detail)面板（不离开当前页）；双击 = 个股详情整页；Esc 关闭面板、搜索弹窗与对话框。',
       },
     ],
   },
@@ -86,7 +87,7 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
         items: [
           {
             term: '左侧导航',
-            desc: '全站页面入口（市场总览、盘面雷达、行情全景、板块日历、自选股、热点新闻、账户分析）。底部是「设置」入口，点开为右侧抽屉。插件也会往这里加页面（「股票主线」「选股器」就是插件贡献的，「选股器」自 v3.3.0 起由内置页改为插件，需在插件工坊安装）。「插件工坊」不在侧栏：入口在顶栏 Agent 分析右侧的插头图标。要注意「装插件」分两个层面：随应用分发的**内置插件**（自选盯盘、速记、股息筛选）只能启停；以 zip 包**安装进来**的插件（如股票主线、选股器）则可在插件工坊里卸载 —— 详见「插件体系与开放接口」章节。',
+            desc: '全站页面入口（市场总览、盘面雷达、行情全景、板块日历、自选股、热点新闻、账户分析）。底部是「设置」入口，点开为右侧抽屉。插件也会往这里加页面（「股票主线」「选股器」就是插件贡献的，「选股器」自 v3.3.0 起由内置页改为插件，需在插件工坊安装）。[插件工坊](#plugins)不在侧栏：入口在顶栏 Agent 分析右侧的插头图标。要注意「装插件」分两个层面：随应用分发的**内置插件**（自选盯盘、速记、股息筛选）只能启停；以 zip 包**安装进来**的插件（如股票主线、选股器）则可在插件工坊里卸载 —— 详见[「插件体系与开放接口」](#plugins)章节。',
           },
           {
             term: '顶栏',
@@ -148,7 +149,7 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
   {
     id: 'dashboard',
     title: '市场总览：一屏看大势',
-    tag: '看盘',
+    tag: '市场行情',
     icon: 'dashboard',
     intro: '定位：把指数、量能、涨跌结构、资金方向与板块热度放在同一屏，用于判断「今天是什么市」。',
     blocks: [
@@ -210,7 +211,7 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
   {
     id: 'market-rank',
     title: '盘面雷达：资金、行情与市场异动',
-    tag: '看盘',
+    tag: '市场行情',
     icon: 'rank',
     intro: '定位：用排行榜快速找到当日最强、最活跃的个股，并一站式查看连板、盘口异动、板块异动、龙虎榜与大宗交易（原「市场异动」页已并入）。页面主体为平铺看板：一个榜单一列横向排开，只读不支持拖拽。板块维度的资金流向在「资金流向」页。',
     blocks: [
@@ -255,16 +256,16 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
       },
       {
         type: 'tip',
-        text: '报价类榜单（涨幅 / 跌幅 / 成交额 / 换手率）交易时段每 30 秒轮询；连板与盘口 / 板块异动列也随列 30 秒轮询（隐藏的列不发请求）；龙虎榜 / 大宗为重接口，进页拉一次不轮询（近 7 日快照）。点榜单行可直接打开对应个股的右侧详情面板。',
+        text: '报价类榜单（涨幅 / 跌幅 / 成交额 / 换手率）交易时段每 30 秒轮询；连板与盘口 / 板块异动列也随列 30 秒轮询（隐藏的列不发请求）；龙虎榜 / 大宗为重接口，进页拉一次不轮询（近 7 日快照）。点榜单行可直接打开对应个股的右侧[个股详情](#stock-detail)面板。',
       },
     ],
   },
   {
     id: 'panorama',
     title: '行情全景：跨市场视角',
-    tag: '看盘',
+    tag: '市场行情',
     icon: 'globe',
-    intro: '定位：从「板块」和「跨市场」两个角度补足个股视角，包含 全景、行业龙头、全部个股、新股次新股、历史复盘几个页签。',
+    intro: '定位：从「板块」和「跨市场」两个角度补足个股视角，包含 全景、行业龙头、全部个股、新股次新股、[历史复盘](#bull-review)几个页签。',
     blocks: [
       {
         type: 'defs',
@@ -320,7 +321,7 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
   {
     id: 'board-calendar',
     title: '题材轮动：主线追踪与赚钱效应',
-    tag: '看盘',
+    tag: '市场行情',
     icon: 'calendar',
     intro:
       '定位：主线追踪四视图——题材轮动 bump 图看名次连线、板块日历矩阵看热度扩散、赚钱效应气泡图量当日强弱、板块Top 看资金集中度，横向看持续性、纵向看扩散度，用于回溯和跟踪主线。',
@@ -393,7 +394,7 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
   {
     id: 'market-breadth',
     title: '市场宽度：五大广度指标 + 活跃占比看大盘',
-    tag: '看盘',
+    tag: '插件',
     icon: 'breadth',
     intro:
       '定位：用 ADL / ADR / OBOS / ARMS / MCO 五个市场广度指标 + 活跃占比（换手率 > 5% 家数占比）判断大盘强弱与拐点，是市场总览「市场情绪」速览卡的深化页——指数看价格，宽度看涨跌家数的结构。本页自 2026-10-29 起以插件（市场宽度，可在插件市场安装）分发：仅 PC 客户端提供，侧栏「插件」组进入；历史数据在插件本地逐日积累，卸载重装插件后需重新积累。',
@@ -460,10 +461,10 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
   {
     id: 'bull-review',
     title: '历史复盘：牛熊模式库（行情全景内）',
-    tag: '看盘',
+    tag: '市场行情',
     icon: 'trophy',
     intro:
-      '入口在「行情全景」页签栏的「历史复盘」子页签（随应用内置提供，显隐与顺序由全景页右上角「配置页签」统一控制）。定位：把 2000 年以来「机构抱团 → 瓦解」的七轮牛市与七轮大级别熊市做标准化拆解，沉淀历史模式用于对标当下——不预测下一轮行情，也不承诺预测崩盘或见底的时点。',
+      '入口在[「行情全景」](#panorama)页签栏的「历史复盘」子页签（随应用内置提供，显隐与顺序由全景页右上角「配置页签」统一控制）。定位：把 2000 年以来「机构抱团 → 瓦解」的七轮牛市与七轮大级别熊市做标准化拆解，沉淀历史模式用于对标当下——不预测下一轮行情，也不承诺预测崩盘或见底的时点。',
     blocks: [
       {
         type: 'defs',
@@ -516,7 +517,7 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
   {
     id: 'futures-institutional',
     title: '机构行为：中金所席位持仓分析',
-    tag: '期货',
+    tag: '插件',
     icon: 'futures',
     intro:
       '定位：把中金所每日披露的 CCPM 席位持仓排名翻译成「行为标签 + 席位画像」，看期货主力（尤其是股指期货）在加多、加空还是双面下注——A股与股指期货联动，机构空头增减常先于指数转向。本功能自 2026-10-29 起以插件（期货·机构行为，可在插件市场安装）分发：仅 PC 客户端提供，侧栏「插件」组进入；首次使用点「同步历史」回填近 60 个交易日的席位数据。',
@@ -567,7 +568,7 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
   {
     id: 'watchlist',
     title: '自选股：分组盯盘',
-    tag: '日常',
+    tag: '自选与账户',
     icon: 'star',
     intro: '定位：把长期跟踪的标的按分组管理，盘中集中盯价格、涨跌与量能。页面主体为分组平铺看板：一个分组一列横向排开。',
     blocks: [
@@ -604,7 +605,7 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
         type: 'list',
         items: [
           '盯盘时先看涨跌幅与成交额：价涨量增是有效上涨，价涨但成交额萎缩要留意乏力。',
-          '加入自选也可以从右侧详情面板完成：面板里的「自选」按钮可一次勾选多个分组，还能就地新建分组。',
+          '加入自选也可以从右侧[个股详情](#stock-detail)面板完成：面板里的「自选」按钮可一次勾选多个分组，还能就地新建分组。',
           '同一标的在多个分组中只保存一次，不会重复占用行情请求。',
         ],
       },
@@ -619,7 +620,7 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
   {
     id: 'hot-news',
     title: '热点新闻：多源消息面',
-    tag: '日常',
+    tag: '热点资讯',
     icon: 'news',
     intro: '定位：把多个财经资讯源并排放在一屏，用于快速掌握消息面与市场注意力。',
     blocks: [
@@ -636,7 +637,7 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
           },
           {
             term: 'AI 总结',
-            desc: '每张新闻卡片标题旁有一个「AI 分析」小图标（显隐跟随顶栏「Agent 分析」条目开关，设置 → 布局编排）：只分析该新闻源当前栏目的新闻，用于聚焦某个源。点击后把该栏目的**新闻标题 + 原文链接**清单交给 Agent，由 Agent 自行用「应用接口」里的 fetch_news_content 工具抓取对结论有决定性影响的条目正文后再判断——标题常与正文不符甚至观点相反，抓不到正文的条目（转载到第三方站点、页面为纯前端渲染等）按标题谨慎判断并标注「仅标题」。输出利好 / 利空哪些板块或个股（每条结论附新闻依据），泛化宏观新闻归入「其他影响」。未配置过模型时会打开 Agent 分析并弹出 Model 管理引导配置；已配置则**新开一个会话**发送分析请求（每次独立开会话，不与之前选中的会话共享上下文），Agent 也会调用行情与市场数据工具交叉验证。',
+            desc: '每张新闻卡片标题旁有一个「AI 分析」小图标（显隐跟随顶栏「Agent 分析」条目开关，设置 → 布局编排）：只分析该新闻源当前栏目的新闻，用于聚焦某个源。点击后把该栏目的**新闻标题 + 原文链接**清单交给 Agent，由 Agent 自行用「应用接口」里的 fetch_news_content 工具抓取对结论有决定性影响的条目正文后再判断——标题常与正文不符甚至观点相反，抓不到正文的条目（转载到第三方站点、页面为纯前端渲染等）按标题谨慎判断并标注「仅标题」。输出利好 / 利空哪些板块或个股（每条结论附新闻依据），泛化宏观新闻归入「其他影响」。未配置过模型时会打开[Agent 分析](#agent)并弹出 Model 管理引导配置；已配置则**新开一个会话**发送分析请求（每次独立开会话，不与之前选中的会话共享上下文），Agent 也会调用行情与市场数据工具交叉验证。',
           },
           {
             term: '卡片内子视图',
@@ -666,7 +667,7 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
   {
     id: 'hot-board',
     title: '今天炒什么：五平台热股榜',
-    tag: '日常',
+    tag: '热点资讯',
     icon: 'flame',
     intro: '定位：把同花顺、东方财富、财联社、通达信、雪球五个平台的热股榜单并排放在一屏，看市场注意力共识。',
     blocks: [
@@ -701,7 +702,7 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
           '盘前快速排序「今天市场在关注什么」：五个平台热度榜单交叉比对，同现越多共识越强。',
           '盯「飙升榜」捕捉盘中注意力突变；结合涨跌幅判断是启动初段还是情绪高潮。',
           '热度高但涨跌幅背离的标的往往存在分歧，可到热点新闻页回溯对应消息面。',
-          '榜单只是注意力快照，不构成买卖依据；买入前回到个股详情看资金面与分时走势。',
+          '榜单只是注意力快照，不构成买卖依据；买入前回到[个股详情](#stock-detail)看资金面与分时走势。',
         ],
       },
       {
@@ -713,9 +714,9 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
   {
     id: 'stock-account',
     title: '账户分析：投资账本数据中心',
-    tag: '工具',
+    tag: '自选与账户',
     icon: 'account',
-    intro: '定位：经同花顺投资账本官方 MCP 同步个人账户数据，集中查看资产曲线、盈亏日历、建清仓与流水，并可发起 AI 分析；数据只存在本机。',
+    intro: '定位：经同花顺投资账本官方 MCP 同步个人账户数据，集中查看资产曲线、盈亏日历、建清仓与流水，并可发起 [AI 分析](#agent)；数据只存在本机。',
     blocks: [
       {
         type: 'steps',
@@ -771,7 +772,7 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
   {
     id: 'stock-detail',
     title: '个股详情：面板与整页',
-    tag: '看盘',
+    tag: '二级页',
     icon: 'expand',
     intro: '定位：单只标的的完整视图，包含报价、分时/分时K 线、五档盘口、指标与「更多信息」资料抽屉。',
     blocks: [
@@ -847,7 +848,7 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
   {
     id: 'agent',
     title: 'AI Agent：让模型读你自己的数据',
-    tag: '进阶',
+    tag: '二级页',
     icon: 'agent',
     intro:
       '定位：内置 AI 分析师，可调用本软件的行情数据工具查数据、算指标、做归纳，输出可直接落到看盘流程里。该功能需要桌面客户端。',
@@ -911,7 +912,7 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
   {
     id: 'plugins',
     title: '插件体系与开放接口：能力从哪来',
-    tag: '进阶',
+    tag: '二级页',
     icon: 'plug',
     intro:
       '本应用的很多能力不是写死在主程序里的，而是由插件贡献 —— 官方插件（股票主线 / 股息筛选 / 速记 / 自选盯盘）已全部改为 zip 插件包分发，在「插件工坊」里安装、也能一键卸载；行情与数据能力又经 MCP 开放给 AI Agent。这一章说清能力从哪来、怎么管理，并记录插件与开放接口的迭代。',
@@ -1052,33 +1053,99 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
   },
   {
     id: 'dev',
-    title: '开发者指南：接入开放接口与第三方插件',
+    title: '开发者指南 · 接入规范与快速上手',
     tag: '开发者',
     icon: 'cpu',
     intro:
-      '本应用有两条不改主程序代码的扩展路径：把外部数据服务接入 AI Agent（远端 MCP，填个地址就能用），或开发插件（往应用里加界面与能力）。这一章面向开发者，说清接入方式与插件格式。',
+      '本应用支持不改一行主程序代码地扩展：写一个符合规范的 JS 插件装进去，就能往界面里加面板、页面、顶栏条目、命令与 Agent 工具，卸载即全部撤销。本章讲清接入规范与最快上手路径；后面三节分别是[宿主能力参考](#dev-api)（每个 API 的参数与返回）、[数据持久化与导出导入](#dev-data)、[插件市场与第三方仓库接入规则](#dev-market)。只看这四节、不读源码，就能写出并发布自己的插件。',
     blocks: [
       {
         type: 'defs',
         items: [
           {
-            term: '路径一：远端 MCP',
-            desc: '不动应用代码：把支持 MCP 协议的外部服务接入 AI Agent，其工具随会话合入模型可用集。适合接入自建数据服务、内部接口等。',
+            term: '插件是什么',
+            desc: '一个预构建的单文件 ESM JS 模块，形如 export default { id, name, version, apply(ctx) }。apply 里通过「贡献点」向宿主注册能力，插件以与应用相同的权限运行（无沙箱），只安装来源可信的插件。',
           },
           {
-            term: '路径二：插件',
-            desc: '一个符合插件规范的 JS 模块：通过「贡献点」往应用里注册面板、页面、顶栏条目、快捷键、Agent 工具等，卸载即自动撤销，应用主程序零改动。',
+            term: '一切能力从 ctx 拿（硬性红线）',
+            desc: '插件代码在运行时被包成 Blob URL 动态加载，解析它的那一刻没有打包器在场，因此不能写任何 import（写了会被安装前的静态预检按行号拦下）。渲染用 ctx.vue 的 h / ref，界面组件用 app:ui 服务，网络用 app:http，取行情用 app:quotes，存数据用 ctx.storage / ctx.db —— 宿主把能力以句柄形式发给你，清单见「宿主能力参考」章节。',
+          },
+          {
+            term: '路径一：远端 MCP（不改应用代码的另一种扩展）',
+            desc: '如果只想给 AI Agent 接外部数据服务，不必写插件：在「AI Agent → MCP 管理」里添加一个支持 MCP 协议的远端服务器地址即可，其工具随会话合入模型可用集。往应用里加界面与能力才需要写插件。',
+          },
+          {
+            term: '内核只做三件事',
+            desc: '插件内核（pluginKernel）只负责加载 / 卸载 / 依赖收敛，宿主不硬编码任何插件——侧栏面板、菜单、路由、停靠面板、命令、Agent 工具全部由插件贡献。插件之间用 ctx.provide / ctx.consume 按服务名协作、inject 声明依赖，依赖未就绪时停在 pending 而不报错，环形依赖不死循环。',
+          },
+          {
+            term: '可逆副作用',
+            desc: '所有贡献点的 add、所有事件订阅都由内核登记撤销句柄：卸载 / 停用 = 贡献全量撤销，不需要写反向清理逻辑；定时器与监听用 ctx.effect / ctx.onDispose 登记即可。插件里禁止直接改宿主状态（如往全局 store 塞数据），必须走贡献点或服务。',
+          },
+        ],
+      },
+      {
+        type: 'image',
+        src: pluginArchitectureImg,
+        alt: '插件体系架构图',
+        caption:
+          '插件体系全景：产物包分发 → 安装校验链 → 插件内核 → 贡献点 / 宿主服务 → 宿主载体渲染 → 命名空间隔离持久化',
+      },
+      {
+        type: 'text',
+        text: '能稳定依赖的是「契约层」。插件作者实际能碰到的东西分三层，只有第一层有兼容承诺：',
+      },
+      {
+        type: 'table',
+        head: ['层级', '内容', '兼容承诺'],
+        rows: [
+          ['契约层（第三方插件的全部可用面）', 'ctx 上所有成员、二十二个宿主服务（app:*）、六个内置事件、官方类型定义', '主版本号内保证向后兼容'],
+          ['服务扩展层', '插件之间经 ctx.provide / ctx.consume 互相暴露的自定义服务与事件（如速记插件的 note:repo）', '由提供方插件负责；消费方必须允许 consume 返回 undefined 并降级'],
+          ['宿主内部模块（第三方禁用）', '@/api、@/utils、@/components 等源码模块与 Tailwind 自定义类', '无兼容承诺；用户插件 import 不到，也不要尝试'],
+        ],
+      },
+      {
+        type: 'table',
+        head: ['三条不能碰的红线（安装前静态预检会拦下并报行号）', '为什么', '正确写法'],
+        rows: [
+          ['import / export … from / 动态 import()', '运行时动态加载没有依赖解析，浏览器只认 URL 不认包名', '能力全部从 ctx 与 app:* 服务上取'],
+          ["component: { template: '<div>…' }", '生产构建的 Vue 运行时不含模板编译器，写了渲染为空白', '渲染函数 render: () => h(…)，h 从 ctx.vue 取'],
+          ['自创 Tailwind 类调样式', 'Tailwind 只在构建期扫描宿主源码，插件独有的类没有 CSS（预检会给提醒，能装但没样式）', '用 app:ui 的宿主组件，或内联 style'],
+        ],
+      },
+      {
+        type: 'defs',
+        items: [
+          {
+            term: '接入规范 · id 与命名',
+            desc: 'id 全局唯一，形如 my-plugin（小写字母数字开头，可含 . - _）；重复 id 不报错：与已装插件同 id = 升级 / 覆盖重装（数据保留），与内置插件同 id = 接管内置版（卸载后内置实现立刻恢复）。自定义事件名走 namespace:action 约定。',
+          },
+          {
+            term: '接入规范 · 产物',
+            desc: '单文件 ESM（npx esbuild src/main.js --bundle --format=esm --outfile=main.js），不要把 vue 打进产物（h / ref 从 ctx.vue 取，与宿主共用同一实例响应式才互通）；入口产物 ≤512KB，zip 包 ≤8MB；zip 里放 manifest.json（id 必须与产物导出一致）+ 入口产物（默认 main.js）+ README.md（可选）。',
+          },
+          {
+            term: '接入规范 · 界面',
+            desc: '渲染函数写 UI（不能用 template 字符串，JSX 需本地预编译成 h() 产物）；样式首选 app:ui 组件——天然存在、自动跟随明暗与主题色；排布用宿主已有的通用类（flex / gap-2 / px-3 等），拿不准就内联 style。',
+          },
+          {
+            term: '接入规范 · 后台任务',
+            desc: '轮询 / 到价告警 / 定时任务写在插件层（apply 里），用 app:polling 创建调度器并用 ctx.effect(() => () => scheduler.stop()) 收尾。不要写在面板组件里——侧栏面板有两层折叠都会卸载组件，写在里面会随折叠停摆；也不要自己写 setInterval 退避逻辑（岔开一次的代价是顶到上游频率红线）。',
+          },
+          {
+            term: '接入规范 · 请求频率（踩过坑的红线）',
+            desc: '东财系接口高频会封 IP（全域名断连数十分钟）：并发 ≤3；对同一上游的连续请求用 app:format 的 delay(500) 错峰；全市场快照 / K 线 / 资金流这类重接口一律用户点击触发、不轮询；后台轮询间隔 ≥30 秒并走 app:polling。',
           },
         ],
       },
       {
         type: 'steps',
         items: [
-          '准备插件产物：源码用 esbuild 打成**单文件 ESM**（npx esbuild src/main.js --bundle --format=esm --outfile=main.js），连同 manifest.json（id / name / version / description / entry）与 README.md 压成 .zip 包；直接给一份 .js 也行。⚠️ 第三方插件是运行时动态加载的，**不能写 import**（拿不到 vue 等依赖），可用能力以宿主 ctx 为准，完整清单见仓库根目录的 PLUGIN_WIKI.md。',
-          '打开「插件工坊」页 →「安装自定义插件」。（装官方或插件市场里的插件不必手动下包：工坊页「插件清单」切到「未安装 / 全部」视图选好版本在线安装即可，见「插件市场」术语条。）',
-          '选 .zip 插件包（文件框**可多选**，一次批量装多个），或粘贴代码 / 选本地 .js 文件。弹窗底部主按钮按流程分步出现：未选文件时是「选择 .zip 文件」，选好后变为「解析预览」，解析通过后才变为「确认安装」。解析预览做结构校验（id / 命名 / 必填字段 / 无 import；zip 包还会校验 manifest 与产物是否一致），批量时逐包给出通过 / 失败与原因，同批重复 id 的包会被拦下。id 撞车**不报错**：与已装过的插件同 id 是「升级 / 覆盖重装」（数据保留），与内置插件同 id 是「接管内置版」（卸载后内置实现立刻恢复 —— 所以拿它给应用自带能力做替换是允许的）。',
-          '点「确认安装」（批量时显示「确认安装（N 个）」，逐个安装并在列表里标出每条的成功 / 失败）：代码持久化到本机，面板 / 菜单 / 路由即时生效，下次启动自动挂载；批量安装全部成功会自动收起弹窗，有失败则留下弹窗展示原因。',
-          '到「插件工坊」页面的「插件清单」里核对贡献点与生效服务（明细在页头「查看更多」抽屉的贡献点总览 / 跨插件服务里），并可随时停用 / 启用，失败可重试。',
+          '写插件 main.js：不写任何 import，UI 用 app:ui 组件 + ctx.vue 的 h 搭渲染函数（最小模板见下方代码）。',
+          '打包：npx esbuild src/main.js --bundle --format=esm --outfile=main.js，连同 manifest.json、README.md 压成 .zip；图省事直接交一份 .js 也行。',
+          '打开「插件工坊」→「安装自定义插件」：选 zip 包（文件框可多选 / 拖拽，选中即自动解析），或粘贴代码 / 选本地 .js 文件。',
+          '看解析预览：六步流水（解包 → 静态预检 → 加载产物 → 结构校验 → 清单一致性 → 包间冲突）卡在哪一步红哪一步，并写明第几行、为什么、该怎么改；通过后点「确认安装」。同一批两个包解析出相同 id 时按上传顺序先到先得。',
+          '到「插件清单」核对贡献点与生效服务；可随时停用 / 启用，失败可重试。卸载时若建过数据表，会弹窗问「保留数据 / 一并删除」。',
         ],
       },
       {
@@ -1087,70 +1154,513 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
       },
       {
         type: 'text',
-        text: '插件与应用同权限运行，只安装来源可信的插件；插件数据存放在插件自己的命名空间里，停用 / 卸载不影响其他插件与主程序数据。',
+        text: '挂载失败也不怕：apply 抛错时插件状态变 failed，已产生的贡献点全量回滚，不会留半成品；修好后点「重试」或重新启用即可。',
+      },
+      {
+        type: 'table',
+        head: ['配额与红线', '限制'],
+        rows: [
+          ['用户插件条目数', '50 条'],
+          ['单份插件代码 / zip 包体积', '512 KB / 8 MB（入口产物仍受 512 KB 约束）'],
+          ['同屏浮窗 / 默认存活', '4 条 / 8 秒（timeoutMs 传 0 = 常驻直到手动关闭）'],
+          ['顶栏轮播间隔', '默认 4000ms，下限 1500ms'],
+          ['网络请求', '必须经 app:http.fetch，域名限于 app:http.allowedHosts 白名单，越界直接不可达'],
+          ['上游频率', '并发 ≤3、同上游连续请求留 500ms、重接口点击触发不轮询'],
+          ['列表刷新', '不许翻 loading（整表卸载重建会闪屏）；只在一条数据都没有时进骨架屏'],
+        ],
+      },
+      {
+        type: 'table',
+        head: ['现象', '原因', '怎么办'],
+        rows: [
+          ['安装时报「第 N 行：不能写 import」', '静态预检拦下', '删掉 import，能力从 ctx / app:* 服务上取'],
+          ['安装报「不能用 template 字符串」', '生产构建没有模板编译器', '改成 render: () => h(...)'],
+          ['粘贴 JSX 报语法错误', 'JSX 也要编译，且默认产物带 import', '本地预编译成 h() 产物再装（esbuild --jsx=transform --jsx-factory=h）'],
+          ['选 zip 报「无法解压 / 没有可用文件」', '包里只有系统噪音文件（.DS_Store、__MACOSX）', '重新打包：只放 manifest / 产物 / README'],
+          ['报「包内没有 .js 产物 / 有多个 js」', '入口不叫 main.js 且清单没写 entry', 'manifest.json 里加 "entry": "dist/index.js"'],
+          ['报「清单 id / 版本与产物不一致」', '改了代码没同步 manifest.json', '两边对齐后重新打包（宿主不会静默取一边）'],
+          ['装上了但面板一片空白', 'render 返回 undefined 或抛错', '看控制台 [plugin] <id> 开头日志；先返回纯文本 h("div","hi") 二分定位'],
+          ['样式全没了 / 布局是散的', '自定义 Tailwind 类没有 CSS', '改用 app:ui 组件或内联 style'],
+          ['按钮点了没反应 / 输入框打字没反应', '事件写成 @click / 只传了 modelValue', '渲染函数里是 onClick；必须同时传 onUpdate:modelValue'],
+          ['面板折叠后定时任务停了', '任务写在面板组件里', '移到 apply 里，app:polling + ctx.effect 登记'],
+          ['重启后数据没了', '只存在组件内的 ref（内存）', '持久化走 ctx.storage / ctx.db（见「数据持久化」章节）'],
+          ['consume 返回 undefined', '提供方插件被停用', '判空降级，或用 inject 声明依赖'],
+          ['请求被拒 / 上游突然 403', '域名不在白名单 / 东财高频封 IP', '先 app:http.isAllowed(url) 自检；并发 ≤3、留 500ms、重接口点击触发'],
+        ],
+      },
+      {
+        type: 'tip',
+        text: '安全边界：插件与应用同权限运行（无沙箱），安装弹窗有固定风险提示；市场里第三方源的插件无官方校验，发布与安装都请确认来源可信。请求头中的密钥等敏感信息只存本机。',
+      },
+    ],
+  },
+  {
+    id: 'dev-api',
+    title: '开发者指南 · 宿主能力参考（API 手册）',
+    tag: '开发者',
+    icon: 'plug',
+    intro:
+      '插件能做的事 = 九个贡献点（往宿主注册什么）+ 二十二个宿主服务（从宿主拿到什么）+ 六个内置事件。全部通过 apply(ctx) 的 ctx 访问，契约层在主版本号内保证向后兼容。ctx.consume 一律可能返回 undefined（服务提供方可能被停用），拿到后先判空再降级。',
+    blocks: [
+      {
+        type: 'table',
+        head: ['ctx 成员', '用途'],
+        rows: [
+          ['ctx.pluginId', '本插件 id'],
+          ['ctx.config', '只读配置（定义里的 config 字段）'],
+          ['ctx.logger', '{ info, warn, error }，前缀固定 [plugin] <id>'],
+          ['ctx.vue', 'Vue 运行时句柄：h / ref / reactive / computed / watch / onMounted / onUnmounted / nextTick —— 写渲染函数全靠它'],
+          ['ctx.storage / ctx.db / ctx.settings', '三条持久化通道（见「数据持久化与导出导入」章节）'],
+          ['ctx.sidebar / header / menu / router / dock / command / stockRow / stockDetail / agent', '九个贡献点'],
+          ['ctx.effect(fn)', '立即执行一次 + 登记清理函数（卸载时自动执行）'],
+          ['ctx.onDispose(fn)', '只登记「卸载时回调」，不立即执行'],
+          ['ctx.provide(name, impl)', '给别的插件贡献服务（同名后注册覆盖，撤销时恢复前者）'],
+          ['ctx.consume(name)', '取服务，可能返回 undefined，必须判空'],
+          ['ctx.on(name, handler)', '订阅事件，卸载自动退订'],
+          ['ctx.emit(name, ...args)', '广播事件，自动带上来源插件 id'],
+        ],
+      },
+      {
+        type: 'list',
+        items: [
+          '贡献点通用规则：全局键统一是 <插件id>#<id>，<id> 只需插件内唯一；',
+          '同 key 后注册覆盖先注册（热替换友好），被覆盖者随本次挂载撤销而恢复；',
+          '带 order 的一律升序排列、同 order 保持注册先后；',
+          '所有 add 的返回值都被内核收进副作用袋，卸载自动撤销——不要写反向清理逻辑。',
+        ],
       },
       {
         type: 'defs',
         items: [
           {
-            term: '完整 API 清单',
-            desc: '上面的表格只是目录：九个贡献点的字段与默认值、ctx.storage / ctx.db / ctx.settings 的用法、宿主提供的二十一个服务（跳路由 / 打开与关闭面板 / 弹浮窗 / 唤起 Agent 分析 / 标的搜索与打开 / 自选只读 / 轮询调度 / 选股弹窗 / 市场数据 / 格式化 / 主题快照 / 应用版本 / 内核自省等）与六个内置事件、配额与频率红线，全部写在仓库根目录的 PLUGIN_API.md 里（第三方插件能用的就是其中「契约层」那一层，作者向文档见 PLUGIN_WIKI.md）。',
+            term: '① ctx.sidebar.add() —— 左侧栏面板',
+            desc: '字段：id、title、icon（MenuIcon key，未知渲染为空不报错）、mode（inline 默认直接内嵌侧栏 | drawer 只放入口内容走右侧抽屉）、position（nav 默认菜单区 | footer 侧栏底部）、order（默认 100，越小越靠上）、component（渲染函数组件）、props、visibleWhenCollapsed（侧栏收成 64px 图标栏时是否仍渲染，默认 false）。',
+          },
+          {
+            term: '② ctx.menu.add() —— 左侧导航菜单（带 component 自动注册路由）',
+            desc: '字段：path（须以 / 开头，不与宿主页冲突）、title、icon、component（传了就自动产出该路径的布局子路由，无需再 ctx.router.add）、order（默认 500，宿主页在前插件页在后）、group（默认 plugin 组；传宿主内置组 id 挂进对应组，传自定义 id 则侧栏新增一个分组）、fallbackLanding（声明本页为「插件页随插件撤销时的兜底落点」，主页面建议声明）。菜单顺序与显隐由用户在设置页编排。',
+          },
+          {
+            term: '③ ctx.router.add() —— 隐藏路由（不进菜单）',
+            desc: '字段：path（支持 :id 参数）、name（可选，供 router.push({ name }) 用）、component、meta.title（顶栏与浏览器标题）、underLayout（默认 true 挂主布局下；独立窗口页传 false）。',
+          },
+          {
+            term: '④ ctx.header.add() —— 顶栏条目（图标 + 收起态轮播，点开下拉面板）',
+            desc: '字段：id、title、icon、order（越小越靠左）、component（下拉面板内容）、marquee（收起态轮播数据源，在响应式作用域内求值）、marqueeIntervalMs（默认 4000，低于 1500 被夹到 1500）。marquee 返回行数组，每行给 text 整行文本，或成对给 label / price / percent（名称定宽可截断、数值定宽不截断）+ tone（default | up | down | flat | primary，涨跌色跟随主题，插件不碰色值）。返回空数组回落为条目名，单行常显不轮播。',
+          },
+          {
+            term: '⑤ ctx.dock.add() —— 右侧停靠面板',
+            desc: '字段：id、title、component、props。注意 panel:open 服务当前只覆盖侧栏与顶栏条目、不含 dock，第三方插件想提供独立面板优先用 sidebar / menu / header 这三个入口。',
+          },
+          {
+            term: '⑥ ctx.command.add() —— 命令（可挂全局快捷键）',
+            desc: '字段：id、title、keys（如 Ctrl+Alt+N，由宿主在 capture 阶段统一匹配，插件不要自己挂 keydown——会抢事件、卸载后泄漏）、run。修饰键 Ctrl / Shift / Alt / Meta；具名键 Tab Esc Enter Space Up Down Left Right；字母写 X、数字写 0。省略 keys 则只可编程调用。',
+          },
+          {
+            term: '⑦ ctx.stockRow.add() —— 自选股表格「操作」列注入按钮',
+            desc: '字段：id、title、activeTitle（激活态文案）、icon、order（宿主自带删除按钮恒在最后）、isActive(row)（激活态表达式，宿主据此高亮换文案）、run(row)。回调拿到的 row 只有 { symbol, name }——宿主不暴露行对象与表格实例，插件改不了宿主数据。',
+          },
+          {
+            term: '⑧ ctx.stockDetail.add() —— 个股详情面板底部扩展卡片',
+            desc: '字段：id、title、order、component、props。组件会收到 props.symbol（归一化完整符号）——「跟着个股走」的功能（速记 / 标签 / 备注）统一从这个口注入。',
+          },
+          {
+            term: '⑨ ctx.agent.addServer() —— 给 AI Agent 注册 MCP 工具',
+            desc: '字段：key、name、description、tools（与内置 MCP 工具同权，zod schema 为单一事实源）。注册后在「AI Agent → MCP 管理」里按归属插件展示，可随插件启停。',
+          },
+        ],
+      },
+      {
+        type: 'code',
+        text: `export default {
+  id: 'my-page-plugin',
+  name: '我的页面',
+  version: '1.0.0',
+  description: '菜单页 + 快捷键 + 顶栏轮播的组合示范',
+  apply(ctx) {
+    const ui = ctx.consume('app:ui');
+    const quotes = ctx.consume('app:quotes');
+    const { h, ref } = ctx.vue;
+
+    // 左侧导航加一页（带 component 自动注册路由）
+    ctx.menu.add({
+      path: '/my-page',
+      title: '我的页',
+      icon: 'star',
+      order: 520,
+      fallbackLanding: true,
+      component: {
+        render: () => h(ui.Card, { title: '我的页' }, { default: () => h('div', { class: 'p-3' }, '插件自己的页面') }),
+      },
+    });
+
+    // 全局快捷键唤起
+    ctx.command.add({
+      id: 'open',
+      title: '打开我的页',
+      keys: 'Ctrl+Alt+N',
+      run: () => ctx.consume('app:navigate')('/my-page'),
+    });
+
+    // 顶栏收起态轮播（数据在插件层刷新，面板收起照样在跑）
+    const lines = ref([]);
+    ctx.header.add({
+      id: 'marquee',
+      title: '我的页',
+      icon: 'star',
+      marquee: () => lines.value,
+    });
+    const timer = setInterval(async () => {
+      const list = await quotes.fetchFullQuotes(['sh600519', '300339']);
+      lines.value = list.map((q) => ({ label: q.name ?? q.code, price: String(q.price), percent: q.changePercent + '%' }));
+    }, 30_000);
+    ctx.effect(() => () => clearInterval(timer));
+  },
+};`,
+      },
+      {
+        type: 'table',
+        head: ['服务名', '功能', '关键签名 / 返回'],
+        rows: [
+          ['app:version', '应用版本号', 'string，如 4.26.0'],
+          ['kernel:runtime', '内核只读自省（排障好用）', 'list() → 全部插件运行时信息（status / contributions / error）；get(id)；listServices() → 当前生效服务名；recentEvents() → 最近 200 条事件（环形缓冲，非响应式）'],
+          ['app:navigate', '跳转路由', '(path)；插件不持有 router 实例'],
+          ['app:open-url', '系统默认浏览器打开外部链接', '(url)；Tauri 内走 opener，浏览器兜底新标签页。「访问原站」类外链统一走这里'],
+          ['panel:open', '按全局键打开自己的面板', '(panelKey)：inline 取消折叠并滚动到位 / drawer 开抽屉 / 顶栏展开下拉；键为 <插件id>#<面板id>'],
+          ['panel:close', '关闭自己的面板', "同键语义反向：「保存并关闭」这类动作不必依赖宿主内部上下文"],
+          ['app:stock-open', '打开个股（全站两条交互的唯一入口）', 'openSidebar(symbol, list?) 单击语义开右侧详情侧栏；openPage(symbol, list?) 双击语义进详情整页；裸码与完整符号都认；带 list 时详情页左侧可一键切换同批股票'],
+          ['app:watchlist', '自选股只读视图', 'symbols() → 全部完整符号（跨分组去重）；groups() → [{ id, name, stocks }]；nameOf(symbol) → 名称。三个都是 getter，在自己的 computed 里调用会跟随自选股变化。只读不写——增删自选归宿主页面'],
+          ['app:polling', '轮询调度器工厂', 'create({ task, intervalMs, tradingAware }) → scheduler：runNow() 立即补一轮（互斥）、stop()、isEligible()。自带交易窗口感知 / 失败指数退避 / 页面可见性 / 总开关四份策略，与宿主同一份实现'],
+          ['app:notify', '右下角应用级浮窗（跨路由常驻）', 'notify({ title, body, tone, timeoutMs, source, dedupeKey, onClick }) → id；dismiss(id)；dismissBySource(source)。tone: flat(默认) | up | down | primary；同屏 ≤4 条，默认 8s，0 = 常驻。长期生效的提醒（盯盘到价）必须走这里'],
+          ['app:stock-search', '标的搜索（代码 / 名称 / 拼音）', 'search(keyword) → Promise<SearchResult[]>，code 为 sh600519 完整形态；调用方自己防抖（建议 ≥2 字符）；结果含指数与港美股，自行过滤'],
+          ['app:stock-picker', '选股弹窗（宿主渲染）', 'pick() → Promise<SearchResult | null>（取消为 null）。别自己搭搜索框——宿主这份带搜索历史、样式统一、改版自动跟随，且发起组件被卸载也照样拿得到结果'],
+          ['app:ui', 'UI Kit：宿主十二个组件 + 确认弹窗', 'ui.Button / Input / Switch / Tag / Card / Empty / Tabs / Table / Modal / Drawer / Skeleton / Icon（在 h() 里当组件用，样式随主题）；ui.confirm({ title, content, okText, okVariant }) → Promise<boolean>，弹窗由宿主渲染，发起方卸载不丢答复'],
+          ['app:http', '受控网络请求', 'fetch(url) 与标准 fetch 同签名（Tauri 端 Rust 直连无 CORS，浏览器走代理）；allowedHosts 当前白名单；isAllowed(url) 发起前自检。白名单外一律不可达——需要新源在主仓库提 issue'],
+          ['app:quotes', '批量实时报价', "fetchFullQuotes(['300339', 'sh600519']) → Promise<FullQuote[]>；上游拿不到的代码不出结果，按 code 做映射查找；展示级接口别轮询，后台刷新 ≥30s"],
+          ['app:market', '市场剖面（重接口，点击触发）', 'fetchMarketTurnover() 沪深逐日成交额；fetchLimitUpPool(date?) 指定交易日涨停池；fetchIndustryBoards() 全部行业板块（轻接口，允许 30s 级短窗口低频轮询）；fetchIndexQuotes() 十指数快照'],
+          ['app:market-data', '市场资讯', 'fetchRealtimeTurnover() 实时成交额快照；fetchHotNews(source) 六源新闻标题（sina / eastmoney / ths / thepaper / cls / tdx）；fetchHotBoard(source) 五平台热股榜（ths / em / cls / tdx / xq）。只标题与原始数值，格式化自理'],
+          ['app:format', '格式化与涨跌语义（宿主口径，别各写一份）', 'percent(+2.35%) / percentUnsigned / price / relativeTime / trend(涨跌判定) / trendClass / trendPillClass / toFullSymbol / toBareCode / normalizeCode / findQuote(按符号查报价) / delay(ms) 错峰 / debounce(fn, wait) / placeholder（--）'],
+          ['app:market-status', 'A 股盘中判定', 'isIntraday: Ref<boolean>（交易日 09:30-15:00 含午休，随宿主分钟级时钟响应式重算）。插件自己算必然与全站分叉'],
+          ['app:watch-widget-settings', '任务栏小组件配置', 'settings: Ref（只读快照，宿主设置页改动即更新）；set(patch) 局部回写（电源 / 显示模式 / 隐藏延时 / 拖动位置）'],
+          ['app:theme', '主题实时快照', 'isDark / themeColor / trendTheme 三个 Ref——插件往独立窗口同步主题时用（跨窗口读 storage 不可达）'],
+          ['app:agent-ask', '唤起 Agent 分析窗口', "ask(prompt, { pluginId, pluginName }) → Promise<boolean>。prompt 必须自包含（Agent 新开会话直接发送）；返回 true 只表示送达 ≠ 模型已回答；传来源标识后 Agent 侧浮窗注明「来自插件 xxx」——发 prompt 等于替用户消耗模型额度，应当可追溯"],
+        ],
+      },
+      {
+        type: 'code',
+        text: `export default {
+  id: 'quote-table',
+  name: '报价小表',
+  version: '1.0.0',
+  description: '查一批代码，用宿主表格展示（app:ui + app:quotes 综合示范）',
+  apply(ctx) {
+    const ui = ctx.consume('app:ui');
+    const quotes = ctx.consume('app:quotes');
+    const { h, ref } = ctx.vue;
+    const keyword = ref('sh600519,300339');
+    const rows = ref([]);
+
+    const onQuery = async () => {
+      const codes = keyword.value.split(/[,，\\s]+/).filter(Boolean);
+      rows.value = await quotes.fetchFullQuotes(codes);
+    };
+
+    ctx.sidebar.add({
+      id: 'main',
+      title: '报价小表',
+      icon: 'search',
+      order: 330,
+      component: {
+        render: () => h('div', { class: 'flex flex-col gap-2' }, [
+          h(ui.Input, {
+            modelValue: keyword.value,
+            'onUpdate:modelValue': (v) => { keyword.value = v; },
+            placeholder: '逗号分隔的代码',
+          }),
+          h(ui.Button, { variant: 'primary', onClick: onQuery }, () => '查询'),
+          rows.value.length === 0
+            ? h(ui.Empty, { text: '还没有数据' })
+            : h(ui.Table, {
+                columns: [
+                  { key: 'name', label: '名称' },
+                  { key: 'price', label: '现价', align: 'right', sortable: true, sortValue: (row) => row.price },
+                ],
+                rows: rows.value,
+                rowKey: (row) => row.code,
+                minWidth: '260px',
+              }, {
+                // 自定义单元格 = 与列 key 同名的作用域插槽
+                price: ({ row }) => h('span', { class: 'tabular-nums' }, String(row.price)),
+              }),
+        ]),
+      },
+    });
+  },
+};`,
+      },
+      {
+        type: 'list',
+        items: [
+          'ui.Table：表头文案字段是 label（不是 title）；排序是点击表头的内置行为，作用于传入的 rows；',
+          "ui.Modal / ui.Drawer：open 由插件自己持有（'onUpdate:open' 回写），自带遮罩 / ESC 关闭与滚动锁；confirm() 是一次性确认，Modal / Drawer 是插件自己的常驻界面；",
+          "双向绑定写法：modelValue: x.value 配 'onUpdate:modelValue': (v) => { x.value = v; }（没有 v-model 语法糖）；",
+          'v-if 用三元、v-for 用 .map()、<slot name="x"> 写成插槽对象里的 x: () => 节点。',
+        ],
+      },
+      {
+        type: 'table',
+        head: ['内置事件（ctx.on 订阅，卸载自动退订）', '参数', '何时触发'],
+        rows: [
+          ['plugin:mounted', '[info]', '某插件挂载完成（贡献点已全部生效）'],
+          ['plugin:unmounted', '[info]', '某插件卸载完成（贡献点已全部撤销）'],
+          ['plugin:failed', '[info, error]', '某插件挂载失败'],
+          ['sidebar:changed', '[panels]', '侧栏面板注册表变化'],
+          ['header:changed', '[items]', '顶栏条目注册表变化'],
+          ['route:changed', '[to, from]', '路由切换（离开页面保存草稿之类）'],
+        ],
+      },
+      {
+        type: 'defs',
+        items: [
+          {
+            term: '插件之间怎么协作',
+            desc: '不要互相 import（也 import 不了）：提供方 ctx.provide("note:repo", impl) 贡献服务 + ctx.emit("note:saved", id) 广播事件；消费方 ctx.consume("note:repo")（判空降级）+ ctx.on("note:saved", ...) 订阅，并在定义里写 inject: ["提供方插件 id"]——依赖未就绪时停在 pending，就绪后自动挂载，依赖被停用时级联回 pending 且不死循环。',
+          },
+        ],
+      },
+      {
+        type: 'code',
+        text: `// 提供方：速记服务（对外暴露 note:repo 服务 + note:saved 事件）
+export default {
+  id: 'note-provider',
+  name: '速记服务',
+  version: '1.0.0',
+  async apply(ctx) {
+    await ctx.db.ensureTable('notes', [{ name: 'text', type: 'text' }]);
+    ctx.provide('note:repo', {
+      list: () => ctx.db.select('notes', { limit: 50 }),
+      add: async (text) => {
+        const id = await ctx.db.insert('notes', { text });
+        ctx.emit('note:saved', String(id));
+        return id;
+      },
+    });
+  },
+};
+
+// 消费方：声明依赖，并允许服务缺席（提供方被停用时降级）
+export default {
+  id: 'note-counter',
+  name: '速记计数',
+  version: '1.0.0',
+  inject: ['note-provider'],
+  apply(ctx) {
+    const { h, ref } = ctx.vue;
+    const count = ref(0);
+    const repo = ctx.consume('note:repo');
+    if (!repo) {
+      ctx.logger.warn('速记插件没启用，功能降级');
+      return;
+    }
+    ctx.on('note:saved', () => { count.value += 1; });
+    ctx.sidebar.add({
+      id: 'main',
+      title: '速记计数',
+      icon: 'book',
+      component: { render: () => h('div', '新增 ' + count.value + ' 条') },
+    });
+  },
+};`,
+      },
+    ],
+  },
+  {
+    id: 'dev-data',
+    title: '开发者指南 · 数据持久化与导出导入',
+    tag: '开发者',
+    icon: 'folder',
+    intro:
+      '插件数据一律走宿主 API：ctx.storage（KV 偏好）、ctx.db（结构化表）、ctx.settings（清单式设置）。按插件 id 天然隔离，插件侧不存在任何 SQL——桌面端（Tauri）落 SQLite，浏览器端自动降级为本地 JSON 表仿真，两端语义一致。',
+    blocks: [
+      {
+        type: 'table',
+        head: ['通道', '适合存', '桌面端真身', '卸载后'],
+        rows: [
+          ['ctx.storage', '小体量偏好、开关、上次输入', 'localStorage 的 plugin:<id> 命名空间，异步镜像进 SQLite plugin_storage 表', '保留（重装后数据还在）'],
+          ['ctx.db', '结构化记录、要查询 / 排序 / 分页的列表', 'SQLite 动态表 plugin_<插件id>_<表名>', '弹窗询问「保留数据 / 一并删除」'],
+          ['ctx.settings', '要暴露给用户改的配置项（宿主自动生成设置表单）', '存在插件 storage 的 settings 键下', '随 storage 保留'],
+        ],
+      },
+      {
+        type: 'code',
+        text: `// ctx.storage：KV，同步读写，JSON 序列化
+ctx.storage.get('draft', '');        // 键不存在返回 fallback
+ctx.storage.set('draft', text);      // 即时写入
+ctx.storage.remove('draft');`,
+      },
+      {
+        type: 'list',
+        items: [
+          '命名空间 plugin:<插件id>，插件之间天然隔离、互不可见；',
+          '桌面端额外异步镜像进 SQLite plugin_storage 表，下次启动以库覆盖水合（换机导入也认它）；',
+          '数据损坏时宿主重置为空对象并记一条 console.error，不会把异常抛给插件。',
+        ],
+      },
+      {
+        type: 'code',
+        text: `// ctx.db：声明式建表（幂等）+ 七个 CRUD 方法
+await ctx.db.ensureTable('watch_candidates', [
+  { name: 'symbol', type: 'text', indexed: true },
+  { name: 'note',   type: 'text' },
+  { name: 'score',  type: 'real' },
+  { name: 'meta',   type: 'json' },
+]);
+const id = await ctx.db.insert('watch_candidates', { symbol: 'sh600519', score: 1 });
+const rows = await ctx.db.select('watch_candidates', {
+  where: { symbol: 'sh600519' },                      // 等值过滤（参数化，防注入）
+  orderBy: { column: 'score', desc: true },
+  limit: 20,
+  offset: 0,
+});
+await ctx.db.update('watch_candidates', id, { score: 2 });
+await ctx.db.remove('watch_candidates', id);
+const total = await ctx.db.count('watch_candidates', { symbol: 'sh600519' });
+await ctx.db.clear('watch_candidates');`,
+      },
+      {
+        type: 'table',
+        head: ['ctx.db 约定', '内容'],
+        rows: [
+          ['物理表名', 'plugin_<插件id>_<表名>；标识符白名单由宿主校验，插件拼不进任何 SQL（防注入边界）'],
+          ['列类型', 'text / integer / real / json（json 写入自动 stringify、读出自动 parse）'],
+          ['保留列', 'id / createdAt / updatedAt 由宿主固定追加并自动维护，插件不得声明同名列（宿主明确报错）'],
+          ['建表幂等与加列', 'ensureTable 可重复调用；缺列自动 ALTER TABLE ADD COLUMN 补成可空列——加列只改声明，不用写迁移'],
+          ['不可变部分', '改列类型 / 删列宿主不感知（SQLite 限制）——要改类型就换一个新列名'],
+          ['读出形态', '每行额外带 id（number）与 createdAt / updatedAt（毫秒时间戳）'],
+          ['查询能力', 'where 等值过滤 + 单列排序 + limit / offset；复杂条件 select 出来在内存里过滤'],
+          ['卸载处置', '建过表的插件被卸载时，弹窗让用户选「保留数据 / 一并删除」'],
+        ],
+      },
+      {
+        type: 'code',
+        text: `// ctx.settings：清单里声明，宿主自动渲染设置表单（顶栏齿轮 → 插件设置）
+export default {
+  id: 'my-plugin',
+  name: '我的插件',
+  version: '1.0.0',
+  settings: {
+    title: '我的插件',
+    description: '一句话说明',
+    fields: [
+      { key: 'enabledPool', label: '启用', type: 'boolean', default: true },
+      { key: 'topN', label: '展示条数', type: 'number', default: 10, min: 1, max: 50, step: 1 },
+      { key: 'source', label: '数据源', type: 'select', default: 'ths',
+        options: [{ value: 'ths', label: '同花顺' }, { value: 'em', label: '东方财富' }] },
+      { key: 'note', label: '备注', type: 'text' },
+    ],
+  },
+  apply(ctx) {
+    // 运行时读写：响应式、即时持久化、即时生效
+    ctx.settings.values.topN;           // 已并入默认值的响应式对象，computed 可直接依赖
+    ctx.settings.get('topN', 10);
+    ctx.settings.set('topN', 20);
+    ctx.settings.reset();               // 回到声明默认值
+  },
+};`,
+      },
+      {
+        type: 'defs',
+        items: [
+          {
+            term: '数据跟着 id 走',
+            desc: 'ctx.db 表名与 ctx.storage 命名空间都由插件 id 派生，因此升级 / 覆盖重装 / 接管内置版 / 卸载后重装都不丢数据；要彻底清掉，卸载时选「一并删除」。',
+          },
+          {
+            term: '数据怎么随应用导出导入（跨机迁移）',
+            desc: '入口在 设置 → 数据迁移（导出 / 导入 JSON 文件）。迁移走「登记制」：宿主维护一张迁移清单，登记了的类别才会被打包带走。导入是覆盖式写入，写前自动做一次本机备份，完成后整页重载；清单里没有的类别跳过不报错。',
+          },
+          {
+            term: '插件数据哪些会被自动带走',
+            desc: '应用内安装的插件代码、启停状态与插件市场源列表（localStorage 的 plugin / plugin.user / plugin.market 三个命名空间）、以及 ctx.storage / ctx.settings 的真身表 plugin_storage——这些已由宿主预登记，装了什么插件、插件里存了什么偏好，换机导出导入即恢复。',
+          },
+          {
+            term: '插件自建的 ctx.db 表怎么参与迁移',
+            desc: '按插件逐个登记（官方插件如「市场宽度历史」「机构行为缓存」都已登记）。第三方插件如果积累了「删了不可再生」的数据（用户手工整理的清单、长周期序列），需要宿主把它登记进迁移清单——在主仓库提 issue 说明表名与数据性质即可。',
+          },
+        ],
+      },
+      {
+        type: 'tip',
+        text: '持久化取舍建议：可重新拉取的缓存不做持久化（或只做会话级内存缓存）；ctx.db 留给「删了不可再生」的用户数据。写插件前想清楚每一列是不是真的需要跨启动存活。',
+      },
+    ],
+  },
+  {
+    id: 'dev-market',
+    title: '开发者指南 · 插件市场与仓库接入规则',
+    tag: '开发者',
+    icon: 'globe',
+    intro:
+      '插件工坊内置「插件市场」：从 GitHub Releases 在线安装插件，也支持把任意第三方 GitHub 仓库添加为插件源。主数据统一走 Releases API 解析——任何源都不要求提供索引文件：把产物 zip 按规范命名发上 Release，别人填上你的 owner/repo 就能装。',
+    blocks: [
+      {
+        type: 'defs',
+        items: [
+          {
+            term: '多源模型',
+            desc: '内置官方源（不可删除）+ 用户自定义源（上限 10 个）。源列表持久化在本机；每个仓库的目录缓存 1 小时（GitHub 匿名 API 限额 60 次/h/IP，必须控频）；未缓存的自定义源在选中它的筛选chip 时才拉取。',
+          },
+          {
+            term: '主数据通道（唯一必需）',
+            desc: 'api.github.com/repos/<owner>/<repo>/releases——拉取 Release 资产清单，按 zip 资产文件名解析出「插件 id + 版本」，按 Release 时间聚合出「最新版 + 历史版本」。仓库不需要任何索引文件、不需要特定目录结构即可被解析。',
+          },
+          {
+            term: '增强通道（可选）',
+            desc: '随最新 Release 发布 index.json 可为各版本补充 sha256 与更新日志（官方源即如此）；解析失败静默跳过，完全不影响上架。第三方源没有它时，安装确认会提示「无官方 sha256 校验，请确认来源可信」。',
           },
         ],
       },
       {
         type: 'table',
-        head: ['贡献点', '注册的能力'],
+        head: ['第三方仓库接入规则', '说明'],
         rows: [
-          ['ctx.sidebar.add', '左侧栏面板（inline 内嵌 / drawer 抽屉两种形态）'],
-          ['ctx.menu.add', '左侧导航页面（带 component 自动注册路由）'],
-          ['ctx.router.add', '无菜单入口的隐藏页面'],
-          ['ctx.dock.add', '右侧停靠面板'],
-          ['ctx.header.add', '顶栏工具条目（可附轮播数据源）'],
-          ['ctx.command.add', '命令与全局快捷键（如 Ctrl + Alt + N）'],
-          ['ctx.stockRow.add', '自选股表格「操作」列按钮（如「盯盘」）'],
-          ['ctx.stockDetail.add', '个股详情底部的扩展卡片'],
-          ['ctx.agent.addServer', '给 AI Agent 注册 MCP 数据工具（与内置同权）'],
-          ['ctx.storage / ctx.db', '插件专属存储：KV 偏好数据 / 结构化记录，插件之间互相隔离'],
-          ['ctx.settings', '插件设置：清单里声明 settings 字段，宿主顶栏齿轮即渲染设置弹窗，值持久化在插件自己的 settings JSON 里'],
-        ],
-      },
-      {
-        type: 'defs',
-        items: [
-          {
-            term: '可逆副作用',
-            desc: '所有贡献点的 add 都由内核登记撤销句柄：插件卸载 / 停用 = 贡献全量撤销。插件里禁止直接改宿主状态（如往全局状态里塞数据），必须走贡献点或服务。',
-          },
-          {
-            term: '服务依赖',
-            desc: '插件之间用 ctx.provide / ctx.consume 按服务名协作（如速记插件提供 note:repo），不靠 import 顺序；依赖未就绪时插件挂起（pending）而不报错，就绪后自动挂载。',
-          },
-          {
-            term: '类型化事件',
-            desc: 'ctx.on / ctx.emit 订阅与广播事件，订阅随插件卸载自动退订；保存速记后的 note:saved 就是插件间事件协作的例子。',
-          },
+          ['1. 仓库公开', 'Releases 必须可匿名访问（应用不带 GitHub token 请求 api.github.com）'],
+          ['2. 产物命名口径', '插件 zip 作为 Release 资产上传，文件名必须是 <插件id>-<三段数字版本>.zip（如 my-plugin-1.2.0.zip）。不符合命名的资产会被忽略；仓库里一个符合口径的 zip 都没有时，市场会提示「没有符合命名口径的插件产物」'],
+          ['3. 包内格式', '与本地安装完全一致：manifest.json（id 必填，须与 zip 文件名里的 id、产物导出的 id 三者一致）+ 入口产物（默认 main.js，≤512KB）+ README.md 可选；整个 zip ≤8MB'],
+          ['4. 版本语义', '最近发布的 Release 解析为「最新版」；更早 Release 里的同名 zip 成为「历史版本」供覆盖降级选装。发布新版本 = 发一个新 Release（一个 Release 可同时挂多个不同插件的 zip，官方源即如此）'],
+          ['5. 展示元数据（可选）', '插件名与描述优先取包内清单；仓库若按 plugins/<id>/manifest.json + README.md 布局存放源码级元数据（官方源布局），可进一步补全中文名 / 描述 / 作者'],
+          ['6. 完整性校验（可选）', 'index.json 里为各版本提供 sha256 即启用强校验，下载内容不匹配直接中止安装；不提供则走提示确认'],
         ],
       },
       {
         type: 'steps',
         items: [
-          '打开「AI Agent」分析页 →「MCP 管理」。',
-          '点「添加 MCP 服务器」：手动填写名称、传输方式（Streamable HTTP 或 SSE）、URL、可选请求头（如鉴权头）；或直接粘贴 { "mcpServers": { … } } 格式的 JSON 一键导入。',
-          '启用后，下一次 Agent 运行即连接并合入其工具；连接失败只跳过该服务器，不影响其他工具。',
-          '内置 MCP（应用接口 / stock-sdk / 市场数据）可直接开关，或用右侧设置限定只给部分 Agent 使用。',
+          '本地出包：esbuild 打单文件产物 → 校对 manifest.json 与产物导出一致 → 压成 <插件id>-<版本>.zip。',
+          '在你的 GitHub 仓库发一个 Release，把 zip 拖进附件（可一次附多个插件的 zip）。',
+          '（可选）仓库里建 plugins/<id>/ 目录放 manifest.json 与 README.md，补全展示元数据。',
+          '（可选）随最新 Release 发布 index.json（各版本 sha256 与更新日志），启用下载校验。',
+          '把仓库地址（owner/repo）告诉用户：插件市场 → 管理插件源 → 添加源，之后选中你的源筛选即可在线安装你的插件。',
+        ],
+      },
+      {
+        type: 'list',
+        items: [
+          '市场安装语义：默认装最新版；在「历史版本」里选旧版 = 覆盖降级（数据表保留，之后「检查更新」会提示升回）；',
+          '每次安装先弹确认（写明来源仓库与版本），安装全局串行执行；',
+          '同一插件多个源都有时官方源优先展示，避免同 id 双卡；',
+          '市场安装与本地 zip 安装走同一条校验链（解包 → 静态预检 → 加载产物 → 结构校验 → 清单一致性 → 包间冲突），同样适用「升级 / 接管 / 首次安装」三种同 id 语义。',
         ],
       },
       {
         type: 'tip',
-        text: '安全边界：MCP 界面卡片在沙箱 iframe 中渲染，能反向调用的工具受「资源声明 ∧ 工具声明」双重白名单限制，写库类工具一律不允许由界面触发；哪些 Agent 能用哪些工具见「AI Agent」章节的资源授权。远端 MCP 只接入可信服务，请求头中的密钥仅存本机。',
+        text: '风险提示（市场页常驻文案）：插件代码会以与应用相同的权限运行，请只安装来源可信的插件；第三方源的插件无官方校验，添加前请自行确认仓库可信。作者侧同理：市场把你的仓库地址直接暴露给用户，请用 Release 与 tag 管理好版本，不要force push 已发布的版本。',
       },
     ],
   },
   {
     id: 'settings',
     title: '设置与全局开关',
-    tag: '配置',
+    tag: '二级页',
     icon: 'settings',
     intro: '设置入口在侧栏底部，以右侧抽屉形式打开，改动即时生效并自动记住。',
     blocks: [
@@ -1224,7 +1734,7 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
   {
     id: 'playbook',
     title: '看盘流程参考：从盘前到盘后',
-    tag: '流程',
+    tag: '二级页',
     icon: 'trophy',
     intro: '一份可直接照做的流程，把各页面串成一条线；按自己的持仓周期调整顺序即可。',
     blocks: [
@@ -1233,9 +1743,9 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
         items: [
           '盘前（09:15–09:25）：市场总览看全球指数与昨日资金方向；热点新闻扫快讯与热搜，确认隔夜消息；板块日历看最近 3~5 个交易日哪条线持续偏多。',
           '早盘（09:30–10:00）：盘面雷达的盘口异动看资金第一时间冲向哪里，再用涨幅榜与成交额榜确认题材强度；自选股盯持仓与关注池的开盘表现。',
-          '盘中（10:00–14:30）：行情全景 A 股全景筛「涨幅＞3%」看主升方向、筛「跌幅＞3%」看杀跌方向；板块日历当日列看板块内的涨停扩散；个股详情面板看分时与五档决定买卖点。',
+          '盘中（10:00–14:30）：行情全景 A 股全景筛「涨幅＞3%」看主升方向、筛「跌幅＞3%」看杀跌方向；板块日历当日列看板块内的涨停扩散；[个股详情](#stock-detail)面板看分时与五档决定买卖点。',
           '尾盘（14:30–15:00）：装了「选股器」插件的话，用尾盘选股按分时强度挑隔夜候选；盘面雷达的连板页看涨停池与连板梯队判断情绪能否延续到次日。',
-          '盘后：龙虎榜与大宗交易看资金去向；板块日历当日数据在 15:00 后定稿，用于复盘；账户分析复盘当日盈亏与建清仓操作，可发起 AI 分析。',
+          '盘后：龙虎榜与大宗交易看资金去向；板块日历当日数据在 15:00 后定稿，用于复盘；账户分析复盘当日盈亏与建清仓操作，可发起 [AI 分析](#agent)。',
         ],
       },
       {
@@ -1257,7 +1767,7 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
   {
     id: 'shortcuts',
     title: '快捷键与通用操作',
-    tag: '参考',
+    tag: '二级页',
     icon: 'sliders',
     blocks: [
       {
@@ -1288,7 +1798,7 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
   {
     id: 'faq',
     title: '常见问题与数据说明',
-    tag: '参考',
+    tag: '二级页',
     icon: 'info',
     blocks: [
       {
