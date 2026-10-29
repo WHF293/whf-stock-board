@@ -50,7 +50,7 @@ export interface RotationDay {
   isFullSnapshot: boolean;
   /** 是否已定稿（15:00 后；false → 详情区显示「盘中（实时刷新）」） */
   isFinal: boolean;
-  /** 主线判定：Top1 涨停 ≥ 阈值（全市场缩量时恒为 false） */
+  /** 主线判定：Top1 涨停 ≥ 阈值（全市场缩量或逃离方向恒为 false） */
   isMainline: boolean;
   /** 缩量日：全市场涨停 < 阈值 */
   isLowVolume: boolean;
@@ -96,14 +96,21 @@ export interface RotationModel {
   segments: RotationSegment[];
 }
 
+/** 上榜方向（2026-10-29 王总指定）：inflow = 涌入（得分高的前 N）/ escape = 逃离（得分低的前 N） */
+export type RotationDirection = 'inflow' | 'escape';
+
 /** buildBoardRotation 的可调口径（全部有默认值，取自 board-rotation.constants.ts） */
 export interface RotationOptions {
   /** 主线宽度 TopN（默认 3） */
   topN?: number;
   /** 板块上榜涨停家数下限（默认 2） */
   minLimitUp?: number;
-  /** 板块上榜最低得分率（默认 5，王总 2026-10-23 定稿；低于该值的板块无上榜资格） */
+  /** 涌入方向 · 板块上榜最低得分率（默认 5，王总 2026-10-23 定稿；低于该值的板块无上榜资格） */
   minScoreRate?: number;
+  /** 上榜方向（默认 inflow 涌入） */
+  direction?: RotationDirection;
+  /** 逃离方向 · 板块上榜最高得分率（默认 -5，2026-10-30 王总指定；高于该值的板块无逃离榜资格） */
+  escapeScoreRate?: number;
   /** 主线判定阈值（默认 5） */
   mainlineMin?: number;
   /** 全市场缩量阈值（默认 60） */

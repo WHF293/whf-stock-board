@@ -18,6 +18,13 @@ export default defineConfig({
   plugins: [tailwindcss(), vue()],
   // 官网不共享主应用 public/（图标集、榜单 logo 等都是客户端专属），favicon 由 src/docs 提供
   publicDir: false,
+  // dev 端口固定 5174：主应用 devUrl 是 localhost:5173（客户端 dev 服务器），
+  // 这里不锁端口的话 vite 默认也落 5173，先启动官网 dev 会抢占客户端 devUrl，
+  // 导致 `pnpm dev:pc`（tauri dev）窗口加载成官网（localhost 在 WebView2 里解析到 ::1）
+  server: {
+    port: 5174,
+    strictPort: true,
+  },
   build: {
     // root 改后 outDir 相对 root 解析，这里锚回项目根的 dist-site/
     outDir: fileURLToPath(new URL('./dist-site', import.meta.url)),

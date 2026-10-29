@@ -1,7 +1,7 @@
 /**
  * 历史牛熊（移动端）· 取数与回算
  *
- * 数据与判定逻辑复用 PC 单源模块（panorama-review 的 history-data / judge / rounds / bears，
+ * 数据与判定逻辑复用 common 单源模块（board-review 的 history-data / judge / rounds / bears，
  * 均为纯 TS，无桌面 UI 依赖——移动端只写渲染层，PC 端零改动）：
  * - 月K：新浪源 monthly 一次拉全历史（fetchIndexMonthlyBars，串行 500ms 错峰）；
  * - 缓存：appStorage 持久快照（syncedAt + 各指数月K），进入页面读缓存秒出、
@@ -10,12 +10,12 @@
  */
 import { appStorage } from '../../common/utils/app-local-storage';
 import { STORAGE_NS_MOBILE_BULL_REVIEW } from '../../common/constants/storage-key.constants';
-import { fetchAllIndexMonthlies } from '../../pc/components/business/panorama-review/history-data';
-import { buildBearStats, buildRoundStats } from '../../pc/components/business/panorama-review/judge';
-import { BULL_ROUNDS } from '../../pc/components/business/panorama-review/rounds';
-import { BEAR_ROUNDS } from '../../pc/components/business/panorama-review/bears';
-import type { MonthlyBar } from '../../pc/components/business/panorama-review/types';
-import type { ReviewBearStats, ReviewRoundStats } from '../../pc/components/business/panorama-review/types';
+import { fetchAllIndexMonthlies } from '../../common/board-review/history-data';
+import { buildBearStats, buildRoundStats } from '../../common/board-review/judge';
+import { BULL_ROUNDS } from '../../common/board-review/rounds';
+import { BEAR_ROUNDS } from '../../common/board-review/bears';
+import type { MonthlyBar } from '../../common/board-review/types';
+import type { ReviewBearStats, ReviewRoundStats } from '../../common/board-review/types';
 
 /** 月K快照的持久化形态 */
 interface BullReviewSnapshot {

@@ -32,6 +32,7 @@ import type {
 import type {
   RotationDay,
   RotationDayPoint,
+  RotationDirection,
   RotationModel,
   RotationSegment,
 } from '../../../common/types/board-rotation.types.ts';
@@ -79,6 +80,8 @@ const settingsStore = useSettingsStore();
  * 同时驱动页面下方「板块Top」子模块的日期列范围
  */
 const range = defineModel<string>('range', { default: String(ROTATION_DEFAULT_RANGE) });
+/** 上榜方向（涌入 / 逃离，2026-10-30 移入题材轮动设置弹窗；v-model 由页面持有，AI 分析数据段同口径） */
+const direction = defineModel<RotationDirection>('direction', { default: 'inflow' });
 /** 主线宽度 TopN（字符串档位，建模时转数字） */
 const topN = ref<string>(String(ROTATION_TOP_N));
 /** 选中的交易日（'' = 最新） */
@@ -103,6 +106,8 @@ const fullModel = computed<RotationModel>(() =>
   buildBoardRotation(props.dailyRows, props.limitRows, props.metaRows, {
     topN: Number(topN.value),
     minScoreRate: settingsStore.rotationMinScoreRate,
+    escapeScoreRate: settingsStore.rotationEscapeScoreRate,
+    direction: direction.value,
   }),
 );
 
@@ -453,7 +458,7 @@ const segmentStatus = (segment: RotationSegment): string => {
   <div class="flex flex-col gap-2">
     <NoticeBar
       class="shrink-0"
-      text="一条线一个题材的名次轨迹：线爬顶 = 主线强化，断线 = 掉榜退潮（隔日重现开新线新色）；悬停色点看当日龙头，点日期列看单日构成，点题材名看题材段生命周期。控制行「权重」按钮可自定义板块得分的分桶权重，「设置」按钮可调整上榜最低得分率（过滤弱板块上榜）。"
+      text="一条线一个题材的名次轨迹：线爬顶 = 主线强化，断线 = 掉榜退潮（隔日重现开新线新色）；悬停色点看当日龙头，点日期列看单日构成，点题材名看题材段生命周期。「权重」按钮可自定义板块得分的分桶权重，「设置」按钮可切换涌入 / 逃离方向并调整两条上榜得分率门槛（涌入 = 得分高的前 N，逃离 = 得分低的前 N）。"
     />
 
     <!-- 卡片一：控制行 + bump 图（默认撑满卡片宽度；窗口天数多到列宽不够时横向滚动） -->
@@ -473,7 +478,7 @@ const segmentStatus = (segment: RotationSegment): string => {
         <BaseButton
           variant="ghost"
           class="!px-2 !py-1 text-xs"
-          title="题材轮动设置：上榜最低得分率（过滤弱板块上榜）"
+          title="题材轮动设置：涌入 / 逃离方向与上榜得分率门槛"
           @click="settingsOpen = true"
         >
           <MenuIcon name="settings" :size="12" />
@@ -750,8 +755,8 @@ const segmentStatus = (segment: RotationSegment): string => {
 
     <!-- 板块得分权重管理器（保存需二次确认；权重持久化于 settings store，四路视图共用） -->
     <BoardScoreWeightModal v-model:open="weightOpen" />
-
-    <!-- 题材轮动设置（上榜最低得分率；保存需二次确认，持久化于 settings store） -->
-    <BoardRotationSettingsModal v-model:open="settingsOpen" />
+    <!-- 题材轮动设置（涌入 / 逃离方向 + 两条上榜得分率门槛；保存需二次确认，门槛持久化于 settings store，
+         方向经 confirm 事件回写 v-model:direction 由页面持有） -->
+    <BoardRotationSettingsModal v-model:open="settingsOpen" v-model:direction="direction" />
   </div>
 </template>

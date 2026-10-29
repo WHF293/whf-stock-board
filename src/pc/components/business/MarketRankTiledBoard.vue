@@ -14,6 +14,7 @@ import {
   fetchBlockTradeDetail,
   fetchDragonTigerDetail,
 } from '../../../common/api/dragon-tiger.api.ts';
+import { fetchIpoBoard } from '../../../common/api/ipo-board.api.ts';
 import { delay } from '../../../common/utils/delay';
 import { formatAmount } from '../../../common/utils/format-amount';
 import { formatBoardTime } from '../../../common/utils/format-board-time';
@@ -36,6 +37,11 @@ import {
   TILED_LIST_MAX_COUNT,
   TILED_QUOTE_RANK_COUNT,
 } from '../../../common/constants/market-rank.constants.ts';
+import {
+  IPO_BOARD_RANGE_DEFAULT,
+  IPO_BOARD_RANGE_OPTIONS,
+  IPO_BOARD_TTL_MS,
+} from '../../../common/constants/ipo-board.constants.ts';
 import type {
   BoardChangeItem,
   StockChangeItem,
@@ -46,6 +52,7 @@ import type {
   BlockTradeDetailItem,
   DragonTigerDetailItem,
 } from '../../../common/types/dragon-tiger.types.ts';
+import type { IpoBoardItem } from '../../../common/types/ipo-board.types.ts';
 import type { FullQuote } from '../../../common/types/stock-quote.types.ts';
 import type { RankDataset } from '../../../common/types/rank-dataset.types.ts';
 
@@ -53,12 +60,12 @@ import type { RankDataset } from '../../../common/types/rank-dataset.types.ts';
  * 盘面雷达平铺看板（2026-10-27 王总指定，布局 = 平铺时替代页签榜单；只读，不支持拖拽）：
  * 一个可见页签一列（375px 横向卡片流，参考热点新闻页样式），行只展示三项关键信息
  * （名称 / 现价 / 该榜关键指标），hover 原位展开其余字段；
- * 页签内带筛选项或子视图的（连板股池 / 龙虎榜涨跌 / 日期），
+ * 页签内带筛选项或子视图的（连板股池 / 龙虎榜涨跌 / 日期 / 新股申购范围），
  * 参考热点新闻卡片内部分组策略 —— 子切换器内嵌到列头下方。
  *
  * 数据口径：报价排序榜消费页面轮询的全 A 报价；其余页签自管数据 ——
  * 股池 / 盘口异动 / 板块异动进平铺时拉取（随列轮询 30s），
- * 龙虎榜 / 大宗为重接口只拉一次不轮询；全部与页签模式共用同一批 dataCache 快照键
+ * 龙虎榜 / 大宗 / 新股次新为重接口只拉一次不轮询（新股快照 30 分钟 TTL）；全部与页签模式共用同一批 dataCache 快照键
  */
 const props = defineProps<{
   /** 可见页签（沿用页签显隐配置结果，顺序即列顺序） */
@@ -323,6 +330,83 @@ const blockRowsFull = computed(() =>
 /** 大宗展示行（截断到 TILED_LIST_MAX_COUNT） */
 const blockRows = computed(() => blockRowsFull.value.slice(0, TILED_LIST_MAX_COUNT));
 
+// ---------- 新股次新（自行情全景页签并入，2026-10-29；重接口只拉一次不轮询，快照 30 分钟内复用） ----------
+
+/** 新股清单快照结构（与原行情全景模块共用同一 dataCache 键） */
+interface IpoBoardCache {
+  /** 全量清单（保持页面顺序：申购日期升序） */
+  items: IpoBoardItem[];
+  /** 快照抓取时间（毫秒） */
+  fetchedAt: number;
+}
+
+const cachedIpo = dataCache.get<IpoBoardCache>(DATA_CACHE_KEY.PANORAMA_IPO_BOARD);
+
+/** 新股全量清单（申购日期已补全年份） */
+const ipoItems = ref<IpoBoardItem[]>(cachedIpo?.items ?? []);
+/** 快照抓取时间（毫秒；0 = 从未加载） */
+const ipoFetchedAt = ref<number>(cachedIpo?.fetchedAt ?? 0);
+const isIpoLoading = ref(ipoItems.value.length === 0);
+const ipoError = ref(false);
+/** 申购日期范围（天；按 |今天 - 申购日期| 过滤，含未来待申购） */
+const ipoRangeDays = ref<number>(IPO_BOARD_RANGE_DEFAULT);
+
+/** 申购日期范围 BaseTabs 字符串 v-model 适配 */
+const ipoRangeModel = computed<string>({
+  get: () => String(ipoRangeDays.value),
+  set: (value) => {
+    ipoRangeDays.value = Number(value);
+  },
+});
+
+/**
+ * 新股快照是否在 30 分钟有效期内
+ * @returns 是否未过期
+ */
+const isIpoFresh = (): boolean =>
+  ipoFetchedAt.value > 0 && Date.now() - ipoFetchedAt.value < IPO_BOARD_TTL_MS;
+
+/** 拉取新股清单（成功写快照；进行中调用直接跳过防重入） */
+const loadIpo = async (): Promise<void> => {
+  if (isIpoLoading.value) return;
+  isIpoLoading.value = true;
+  try {
+    ipoItems.value = await fetchIpoBoard();
+    ipoFetchedAt.value = Date.now();
+    ipoError.value = false;
+    dataCache.set(DATA_CACHE_KEY.PANORAMA_IPO_BOARD, {
+      items: ipoItems.value,
+      fetchedAt: ipoFetchedAt.value,
+    } satisfies IpoBoardCache);
+  } catch (error) {
+    ipoError.value = ipoItems.value.length === 0;
+    console.error('[market-rank-tiled] ipo', error);
+  } finally {
+    isIpoLoading.value = false;
+  }
+};
+
+/**
+ * 申购日期距今天的日历日数（负数 = 未来待申购）
+ * @param item 新股条目
+ * @returns 天数；日期非法时为 null（过滤时排除）
+ */
+const daysFromApply = (item: IpoBoardItem): number | null => {
+  const apply = new Date(`${item.applyDate}T00:00:00`);
+  if (Number.isNaN(apply.getTime())) return null;
+  const today = new Date();
+  const todayMid = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  return Math.round((apply.getTime() - todayMid.getTime()) / 86_400_000);
+};
+
+/** 按申购日期范围过滤后的列数据（保持页面顺序：申购日期升序） */
+const ipoRows = computed(() =>
+  ipoItems.value.filter((item) => {
+    const days = daysFromApply(item);
+    return days !== null && Math.abs(days) <= ipoRangeDays.value;
+  }),
+);
+
 // ---------- 进平铺时按可见页签拉一次自管数据（错峰、快照已有则跳过） ----------
 
 void (async () => {
@@ -336,6 +420,10 @@ void (async () => {
   }
   if (hasTab('board-changes') && boardChanges.value.length === 0) {
     await fetchBoardChangesList();
+    await delay(REQUEST_GAP_MS);
+  }
+  if (hasTab('ipo') && !isIpoFresh()) {
+    await loadIpo();
     await delay(REQUEST_GAP_MS);
   }
   if (hasTab('dragon-tiger') && dragonItems.value.length === 0) {
@@ -363,6 +451,8 @@ const countOf = (value: string): number => {
       return Math.min(stockChanges.value.length, STOCK_CHANGE_MAX_ITEMS);
     case 'board-changes':
       return boardChanges.value.length;
+    case 'ipo':
+      return ipoRows.value.length;
     case 'dragon-tiger':
       return dragonRows.value.length;
     case 'block-trade':
@@ -450,6 +540,21 @@ const blockExportColumns: { label: string; key: string }[] = [
   { key: 'sellBranch', label: '卖方营业部' },
 ];
 
+/** 新股次新导出列（收益为原始元值） */
+const ipoExportColumns: { label: string; key: string }[] = [
+  { key: 'name', label: '股票' },
+  { key: 'code', label: '代码' },
+  { key: 'applyCode', label: '申购代码' },
+  { key: 'applyDate', label: '申购日期' },
+  { key: 'issuePrice', label: '发行价' },
+  { key: 'issuePe', label: '发行市盈率' },
+  { key: 'lotteryRate', label: '中签率(%)' },
+  { key: 'listDate', label: '上市日期' },
+  { key: 'firstDayMaxRise', label: '首日最高涨幅(%)' },
+  { key: 'limitUpDays', label: '连板天数' },
+  { key: 'earn', label: '打新收益(元)' },
+];
+
 /**
  * 汇总全部**可见页签**的榜单数据段（每页签一段，导出即多工作表）
  * @returns 数据段列表；数据未加载完成时对应段为空行
@@ -507,6 +612,13 @@ const getRankDatasets = (): RankDataset[] => {
           rows: blockRowsFull.value as unknown as Record<string, unknown>[],
         });
         break;
+      case 'ipo':
+        datasets.push({
+          title: `${tab.label}（近${ipoRangeDays.value}天）`,
+          columns: ipoExportColumns,
+          rows: ipoRows.value as unknown as Record<string, unknown>[],
+        });
+        break;
       default:
         break;
     }
@@ -537,7 +649,12 @@ defineExpose({ getRankDatasets });
 
       <!-- 列头子筛选（页签内有筛选项的，内嵌到列头下方 —— 热点新闻卡片同策略） -->
       <div
-        v-if="tab.value === 'event' || tab.value === 'dragon-tiger' || tab.value === 'block-trade'"
+        v-if="
+          tab.value === 'event' ||
+            tab.value === 'dragon-tiger' ||
+            tab.value === 'block-trade' ||
+            tab.value === 'ipo'
+        "
         class="shrink-0 border-b border-flat-weak px-3 py-2"
       >
         <BaseTabs
@@ -562,6 +679,12 @@ defineExpose({ getRankDatasets });
             aria-label="龙虎榜涨跌方向"
           />
         </div>
+        <BaseTabs
+          v-else-if="tab.value === 'ipo'"
+          v-model="ipoRangeModel"
+          :options="IPO_BOARD_RANGE_OPTIONS"
+          aria-label="申购日期范围"
+        />
         <select
           v-else
           v-model="blockDate"
@@ -909,6 +1032,78 @@ defineExpose({ getRankDatasets });
             class="px-2 py-6 text-center text-xs leading-5 text-text-tertiary"
           >
             {{ isBlockLoading ? '大宗交易加载中…' : blockError ? '加载失败，请稍后重试' : '暂无数据' }}
+          </p>
+        </template>
+
+        <!-- 新股次新：名称 / 申购日期 / 发行价 -->
+        <template v-else-if="tab.value === 'ipo'">
+          <div
+            v-for="item in ipoRows.slice(0, TILED_LIST_MAX_COUNT)"
+            :key="item.code"
+            class="group cursor-pointer rounded-xl border border-flat-weak bg-flat-weak/40 p-2 transition-colors hover:bg-flat-weak"
+            @click="openDetail(item.code)"
+          >
+            <div class="flex items-center gap-2">
+              <span class="min-w-0 flex-1 truncate text-sm font-medium text-text">
+                {{ item.name }}
+              </span>
+              <span class="shrink-0 text-xs tabular-nums text-text-tertiary">
+                {{ item.applyDate }}
+              </span>
+              <span class="shrink-0 text-sm font-medium tabular-nums text-text-secondary">
+                {{ item.issuePrice === null ? '--' : formatPrice(item.issuePrice) }}
+              </span>
+            </div>
+            <div class="hidden flex-col gap-0.5 border-t border-flat-weak pt-1.5 text-xs text-text-secondary group-hover:flex">
+              <div class="flex justify-between gap-2">
+                <span class="text-text-tertiary">代码 / 申购代码</span>
+                <span class="font-mono">{{ item.code }} / {{ item.applyCode }}</span>
+              </div>
+              <div class="flex justify-between gap-2">
+                <span class="text-text-tertiary">发行市盈率</span>
+                <span>{{ item.issuePe === null ? '--' : item.issuePe.toFixed(2) }}</span>
+              </div>
+              <div class="flex justify-between gap-2">
+                <span class="text-text-tertiary">中签率</span>
+                <span>{{ item.lotteryRate === null ? '--' : `${item.lotteryRate.toFixed(4)}%` }}</span>
+              </div>
+              <div class="flex justify-between gap-2">
+                <span class="text-text-tertiary">上市日期</span>
+                <span>{{ item.listDate || '--' }}</span>
+              </div>
+              <div class="flex justify-between gap-2">
+                <span class="text-text-tertiary">首日最高涨幅</span>
+                <span
+                  v-if="item.firstDayMaxRise !== null"
+                  class="font-medium"
+                  :class="TREND_TEXT_CLASS[getTrendByChangePercent(item.firstDayMaxRise)]"
+                >
+                  +{{ item.firstDayMaxRise.toFixed(2) }}%
+                </span>
+                <span v-else>--</span>
+              </div>
+              <div class="flex justify-between gap-2">
+                <span class="text-text-tertiary">连板天数</span>
+                <span>{{ item.limitUpDays ?? '--' }}</span>
+              </div>
+              <div class="flex justify-between gap-2">
+                <span class="text-text-tertiary">打新收益</span>
+                <span
+                  v-if="item.earn !== null"
+                  class="font-medium"
+                  :class="TREND_TEXT_CLASS[getTrendByChangePercent(item.earn)]"
+                >
+                  {{ item.earn > 0 ? '+' : '' }}{{ item.earn.toFixed(0) }} 元
+                </span>
+                <span v-else>--</span>
+              </div>
+            </div>
+          </div>
+          <p
+            v-if="ipoRows.length === 0"
+            class="px-2 py-6 text-center text-xs leading-5 text-text-tertiary"
+          >
+            {{ isIpoLoading ? '新股清单加载中…' : ipoError ? '加载失败，请稍后重试' : '该范围内暂无新股申购' }}
           </p>
         </template>
       </div>

@@ -1,5 +1,5 @@
 /**
- * 插件 dsh-bull-review（历史牛市复盘）· 取数层
+ * 历史牛熊复盘 · 取数层（common 单源：PC 历史复盘插件与移动端 /bull-review 共用）
  *
  * 复用已验证的新浪 K 线源（`api/sina-kline.api.ts`）：`monthly` 周期一次拿到上游全部
  * 月 K 历史（实测 `sh000001` 覆盖 1990-12 至今，datalen=1000 未触顶）。
@@ -7,8 +7,8 @@
  * 批量拉取串行 + `delay(500)` 错峰 —— 同一上游连续请求的频率红线。
  */
 import dayjs from 'dayjs';
-import { fetchSinaKline } from '../../../../common/api/sina-kline.api.ts';
-import { delay } from '../../../../common/utils/delay';
+import { fetchSinaKline } from '../api/sina-kline.api.ts';
+import { delay } from '../utils/delay';
 import { BULL_INDEX_LIST, BULL_SYNC_DELAY_MS } from './constants';
 import type { MonthlyBar } from './types';
 

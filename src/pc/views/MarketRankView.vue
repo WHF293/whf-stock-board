@@ -36,7 +36,8 @@ import { sdk } from '../../common/api/sdk';
 
   /**
    * 页签全集：三组式布局（组名仅供设置弹窗文案参考，看板列平铺不分组）——
-   * 排行（同一份全 A 报价换 sortKey）｜股池事件（连板 / 盘口异动 / 板块异动）｜席位与大宗（龙虎榜 / 大宗交易）。
+   * 排行（同一份全 A 报价换 sortKey）｜股池事件（连板 / 盘口异动 / 板块异动 /
+   * 新股次新，2026-10-29 王总指定自行情全景页签并入）｜席位与大宗（龙虎榜 / 大宗交易）。
    * 2026-10-27 王总指定：个股主力列删除；原「异动」列的盘口 / 板块子视图拆成两个独立列
    */
 const SORT_TAB_OPTIONS = [
@@ -47,6 +48,7 @@ const SORT_TAB_OPTIONS = [
   { label: '连板', value: 'event' },
   { label: '盘口异动', value: 'stock-changes' },
   { label: '板块异动', value: 'board-changes' },
+  { label: '新股次新', value: 'ipo' },
   { label: '龙虎榜', value: 'dragon-tiger' },
   { label: '大宗交易', value: 'block-trade' },
 ] as const;

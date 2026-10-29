@@ -13,6 +13,7 @@ export type GuideBlock =
   | { type: 'defs'; items: { term: string; desc: string }[] }
   | { type: 'tip'; text: string }
   | { type: 'code'; text: string }
+  | { type: 'image'; src: string; alt?: string; caption?: string }
   | { type: 'table'; head: string[]; rows: string[][] };
 
 /** 白皮书章节 */

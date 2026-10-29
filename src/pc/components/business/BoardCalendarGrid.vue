@@ -30,7 +30,7 @@ import { getBoardBucketBackground, getBoardBucketTextColor } from '../../../comm
  */
 
 const props = defineProps<{
-  /** 矩阵数据（行已按热门口径降序，日期降序） */
+  /** 矩阵数据（行序由页面决定：默认最新列得分降序，或当前列排序结果，日期降序） */
   matrix: BoardCalendarMatrix;
   /**
    * 滚动容器类
@@ -40,6 +40,10 @@ const props = defineProps<{
    *   （页面根部定高 → BaseCard fill → 本容器，链路上每层都要 min-h-0）
    */
   scrollClass?: string;
+  /** 当前列排序的交易日（null = 未启用列排序，行序 = 页面默认口径） */
+  sortDate?: string | null;
+  /** 当前列排序方向（sortDate 生效时必填语义） */
+  sortDir?: 'asc' | 'desc';
 }>();
 
 const emit = defineEmits<{
@@ -47,6 +51,8 @@ const emit = defineEmits<{
   cellClick: [row: BoardCalendarRow, cell: BoardCalendarCell | null, tradeDate: string];
   /** 点击板块名称（跳板块详情页：成分股 × 交易日 涨跌幅矩阵） */
   boardClick: [row: BoardCalendarRow];
+  /** 点击日期列头：请求按该列得分排序（页面负责 升/降/默认 循环） */
+  sortClick: [tradeDate: string];
 }>();
 
 /** 横向滚动容器（虚拟化测量可视宽度用） */
@@ -136,15 +142,21 @@ const cellTitle = (
         板块（{{ matrix.rows.length }}）
       </div>
       <div class="shrink-0" :style="{ width: `${offsetX}px` }" />
-      <div
+      <button
         v-for="index in visibleIndexes"
         :key="matrix.dates[index]"
-        class="sticky top-0 z-20 flex shrink-0 flex-col items-center justify-center gap-0.5 bg-surface"
+        type="button"
+        class="sticky top-0 z-20 flex shrink-0 cursor-pointer flex-col items-center justify-center gap-0.5 bg-surface transition-colors hover:bg-flat-weak"
+        :class="sortDate === matrix.dates[index] ? 'text-primary' : ''"
         :style="{ width: `${BOARD_CALENDAR_COL_WIDTH}px` }"
+        :title="`按 ${shortDate(matrix.dates[index])} 得分排序`"
+        @click="emit('sortClick', matrix.dates[index])"
       >
-        <span class="text-xs font-medium text-text">{{ shortDate(matrix.dates[index]) }}</span>
+        <span class="text-xs font-medium" :class="sortDate === matrix.dates[index] ? 'text-primary' : 'text-text'">
+          {{ shortDate(matrix.dates[index]) }}<template v-if="sortDate === matrix.dates[index]">{{ sortDir === 'asc' ? ' ↑' : ' ↓' }}</template>
+        </span>
         <span class="text-[10px] text-text-tertiary">{{ weekdayOf(matrix.dates[index]) }}</span>
-      </div>
+      </button>
       <div class="shrink-0" :style="{ width: `${tailWidth}px` }" />
     </div>
 

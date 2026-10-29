@@ -1,0 +1,165 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1078" font-family="'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="mBlue" viewBox="0 0 10 7" refX="9" refY="3.5" markerWidth="9" markerHeight="6.3" orient="auto-start-reverse">
+      <path d="M0,0 L10,3.5 L0,7 Z" fill="#2563eb"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1200" height="1078" fill="#ffffff"/>
+
+  <text x="600" y="44" text-anchor="middle" font-size="20" font-weight="700" fill="#0f172a">股票看板 · 主应用整体架构</text>
+  <text x="600" y="66" text-anchor="middle" font-size="12" fill="#64748b">一套 Vue 3.5 + TypeScript 代码库 → Windows / Android / 浏览器三端；无自建后端，行情直连公开接口，数据只落本机</text>
+
+  <!-- ① 客户端形态 -->
+  <rect x="40" y="84" width="1120" height="86" rx="10" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="5,4"/>
+  <text x="56" y="104" font-size="11" font-weight="700" fill="#475569">① 客户端形态 —— 三端同一代码库，构建期分流</text>
+  <rect x="70" y="116" width="330" height="42" rx="8" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="235" y="133" text-anchor="middle" font-size="12.5" font-weight="700" fill="#1e3a8a">Windows 桌面客户端（推荐）</text>
+  <text x="235" y="149" text-anchor="middle" font-size="10" fill="#475569">Tauri 2 · WebView2 · Rust 直连数据</text>
+  <rect x="435" y="116" width="330" height="42" rx="8" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="600" y="133" text-anchor="middle" font-size="12.5" font-weight="700" fill="#1e3a8a">Android 客户端</text>
+  <text x="600" y="149" text-anchor="middle" font-size="10" fill="#475569">Tauri 2 Mobile · Vant 4 · APK 直装</text>
+  <rect x="800" y="116" width="330" height="42" rx="8" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="965" y="133" text-anchor="middle" font-size="12.5" font-weight="700" fill="#1e3a8a">浏览器（本地开发模式）</text>
+  <text x="965" y="149" text-anchor="middle" font-size="10" fill="#475569">vite dev · /stock-proxy 同源代理</text>
+
+  <line x1="600" y1="170" x2="600" y2="202" stroke="#2563eb" stroke-width="2" marker-end="url(#mBlue)"/>
+  <rect x="542" y="178" width="116" height="15" fill="#ffffff" opacity="0.95"/>
+  <text x="600" y="189" text-anchor="middle" font-size="10.5" fill="#374151">装载同一前端</text>
+
+  <!-- ② 界面层 -->
+  <rect x="40" y="206" width="1120" height="118" rx="10" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="5,4"/>
+  <text x="56" y="226" font-size="11" font-weight="700" fill="#475569">② 界面层 —— 布局 / 页面 / 组件 / 图表 / 主题</text>
+  <rect x="70" y="238" width="250" height="64" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.2"/>
+  <text x="195" y="258" text-anchor="middle" font-size="12" font-weight="700" fill="#334155">MainLayout 布局壳</text>
+  <text x="195" y="274" text-anchor="middle" font-size="9" fill="#6b7280">侧栏分组导航 · 主区 @container</text>
+  <text x="195" y="288" text-anchor="middle" font-size="9" fill="#6b7280">右侧停靠面板 · 顶栏工具条</text>
+  <rect x="332" y="238" width="250" height="64" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.2"/>
+  <text x="457" y="258" text-anchor="middle" font-size="12" font-weight="700" fill="#334155">页面（路由懒加载分包）</text>
+  <text x="457" y="274" text-anchor="middle" font-size="9" fill="#6b7280">市场总览 · 盘面雷达 · 行情全景</text>
+  <text x="457" y="288" text-anchor="middle" font-size="9" fill="#6b7280">题材轮动 · 自选 · 资讯 · 账户 · 个股详情</text>
+  <rect x="594" y="238" width="250" height="64" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.2"/>
+  <text x="719" y="258" text-anchor="middle" font-size="12" font-weight="700" fill="#334155">通用组件 + 图表</text>
+  <text x="719" y="274" text-anchor="middle" font-size="9" fill="#6b7280">components/ui Base* 系列 · business</text>
+  <text x="719" y="288" text-anchor="middle" font-size="9" fill="#6b7280">ECharts 统一注册（echarts-setup）</text>
+  <rect x="856" y="238" width="250" height="64" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.2"/>
+  <text x="981" y="258" text-anchor="middle" font-size="12" font-weight="700" fill="#334155">主题体系</text>
+  <text x="981" y="274" text-anchor="middle" font-size="9" fill="#6b7280">data-theme 四主题 + 自定义主色</text>
+  <text x="981" y="288" text-anchor="middle" font-size="9" fill="#6b7280">data-trend 三套涨跌配色 · token 单源</text>
+
+  <line x1="600" y1="324" x2="600" y2="356" stroke="#2563eb" stroke-width="2" marker-end="url(#mBlue)"/>
+  <rect x="518" y="332" width="164" height="15" fill="#ffffff" opacity="0.95"/>
+  <text x="600" y="343" text-anchor="middle" font-size="10.5" fill="#374151">插件贡献注入界面（可逆）</text>
+
+  <!-- ③ 插件体系（横向贯穿） -->
+  <rect x="40" y="360" width="1120" height="110" rx="10" fill="#eef2ff" stroke="#6366f1" stroke-width="2"/>
+  <text x="56" y="380" font-size="11" font-weight="700" fill="#3730a3">③ 插件体系（横向贯穿，一切皆插件 —— 详图见下一节）</text>
+  <rect x="70" y="392" width="250" height="56" rx="8" fill="#ffffff" stroke="#818cf8" stroke-width="1.2"/>
+  <text x="195" y="411" text-anchor="middle" font-size="11.5" font-weight="700" fill="#3730a3">插件内核 pluginKernel</text>
+  <text x="195" y="427" text-anchor="middle" font-size="9" fill="#6b7280">加载 · 卸载 · 依赖收敛</text>
+  <text x="195" y="441" text-anchor="middle" font-size="9" fill="#6b7280">副作用袋：卸载即全量回滚</text>
+  <rect x="332" y="392" width="250" height="56" rx="8" fill="#ffffff" stroke="#818cf8" stroke-width="1.2"/>
+  <text x="457" y="411" text-anchor="middle" font-size="11.5" font-weight="700" fill="#3730a3">九贡献点 + 22 宿主服务</text>
+  <text x="457" y="427" text-anchor="middle" font-size="9" fill="#6b7280">sidebar / menu / header / dock…</text>
+  <text x="457" y="441" text-anchor="middle" font-size="9" fill="#6b7280">app:ui / quotes / http / polling…</text>
+  <rect x="594" y="392" width="250" height="56" rx="8" fill="#ffffff" stroke="#818cf8" stroke-width="1.2"/>
+  <text x="719" y="411" text-anchor="middle" font-size="11.5" font-weight="700" fill="#3730a3">用户插件安装链</text>
+  <text x="719" y="427" text-anchor="middle" font-size="9" fill="#6b7280">zip 六步校验 · 静态预检拦 import</text>
+  <text x="719" y="441" text-anchor="middle" font-size="9" fill="#6b7280">Blob URL 动态 import 挂载</text>
+  <rect x="856" y="392" width="250" height="56" rx="8" fill="#ffffff" stroke="#818cf8" stroke-width="1.2"/>
+  <text x="981" y="411" text-anchor="middle" font-size="11.5" font-weight="700" fill="#3730a3">插件市场（多源）</text>
+  <text x="981" y="427" text-anchor="middle" font-size="9" fill="#6b7280">GitHub Releases 解析主数据</text>
+  <text x="981" y="441" text-anchor="middle" font-size="9" fill="#6b7280">官方源 + 自定义源 ≤10</text>
+
+  <line x1="600" y1="470" x2="600" y2="502" stroke="#2563eb" stroke-width="2" marker-end="url(#mBlue)"/>
+  <rect x="518" y="478" width="164" height="15" fill="#ffffff" opacity="0.95"/>
+  <text x="600" y="489" text-anchor="middle" font-size="10.5" fill="#374151">消费宿主服务 · 读写状态</text>
+
+  <!-- ④ 应用状态与业务逻辑 -->
+  <rect x="40" y="506" width="1120" height="118" rx="10" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="5,4"/>
+  <text x="56" y="526" font-size="11" font-weight="700" fill="#475569">④ 应用状态与业务逻辑 —— 状态 / 轮询 / AI</text>
+  <rect x="70" y="538" width="250" height="64" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.2"/>
+  <text x="195" y="558" text-anchor="middle" font-size="12" font-weight="700" fill="#334155">Pinia 全局状态</text>
+  <text x="195" y="574" text-anchor="middle" font-size="9" fill="#6b7280">watchlist · settings · dock-panel</text>
+  <text x="195" y="588" text-anchor="middle" font-size="9" fill="#6b7280">market-status · data-cache · plugin</text>
+  <rect x="332" y="538" width="250" height="64" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.2"/>
+  <text x="457" y="558" text-anchor="middle" font-size="12" font-weight="700" fill="#334155">轮询引擎 usePolling</text>
+  <text x="457" y="574" text-anchor="middle" font-size="9" fill="#6b7280">交易窗口感知 · 失败指数退避</text>
+  <text x="457" y="588" text-anchor="middle" font-size="9" fill="#6b7280">页面可见性感知 · 轮询总开关</text>
+  <rect x="594" y="538" width="250" height="64" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.2"/>
+  <text x="719" y="558" text-anchor="middle" font-size="12" font-weight="700" fill="#334155">AI Agent（独立窗口）</text>
+  <text x="719" y="574" text-anchor="middle" font-size="9" fill="#6b7280">多会话树 · 定时任务 · 技能</text>
+  <text x="719" y="588" text-anchor="middle" font-size="9" fill="#6b7280">模型 / MCP / 人格可视化管理</text>
+  <rect x="856" y="538" width="250" height="64" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.2"/>
+  <text x="981" y="558" text-anchor="middle" font-size="12" font-weight="700" fill="#334155">MCP 工具集</text>
+  <text x="981" y="574" text-anchor="middle" font-size="9" fill="#6b7280">内置：应用接口 · stock-sdk · 市场数据</text>
+  <text x="981" y="588" text-anchor="middle" font-size="9" fill="#6b7280">+ 远端 MCP · 插件贡献 MCP</text>
+
+  <line x1="600" y1="624" x2="600" y2="656" stroke="#2563eb" stroke-width="2" marker-end="url(#mBlue)"/>
+  <rect x="542" y="632" width="116" height="15" fill="#ffffff" opacity="0.95"/>
+  <text x="600" y="643" text-anchor="middle" font-size="10.5" fill="#374151">取数统一经 api 层</text>
+
+  <!-- ⑤ 数据接口层 -->
+  <rect x="40" y="660" width="1120" height="118" rx="10" fill="#f8fafc" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="5,4"/>
+  <text x="56" y="680" font-size="11" font-weight="700" fill="#1e3a8a">⑤ 数据接口层 —— stock-sdk 单源 + 双通道代理（响应原字节透传）</text>
+  <rect x="70" y="692" width="250" height="64" rx="8" fill="#ffffff" stroke="#60a5fa" stroke-width="1.2"/>
+  <text x="195" y="712" text-anchor="middle" font-size="12" font-weight="700" fill="#1e3a8a">stock-sdk 数据源</text>
+  <text x="195" y="728" text-anchor="middle" font-size="9" fill="#6b7280">腾讯 + 东方财富聚合</text>
+  <text x="195" y="742" text-anchor="middle" font-size="9" fill="#6b7280">api/sdk.ts 唯一 import 入口</text>
+  <rect x="332" y="692" width="250" height="64" rx="8" fill="#ffffff" stroke="#60a5fa" stroke-width="1.2"/>
+  <text x="457" y="712" text-anchor="middle" font-size="12" font-weight="700" fill="#1e3a8a">Tauri 通道</text>
+  <text x="457" y="728" text-anchor="middle" font-size="9" fill="#6b7280">tauri-plugin-http Rust 直连</text>
+  <text x="457" y="742" text-anchor="middle" font-size="9" fill="#6b7280">无 CORS · capabilities 域名白名单</text>
+  <rect x="594" y="692" width="250" height="64" rx="8" fill="#ffffff" stroke="#60a5fa" stroke-width="1.2"/>
+  <text x="719" y="712" text-anchor="middle" font-size="12" font-weight="700" fill="#1e3a8a">浏览器通道</text>
+  <text x="719" y="728" text-anchor="middle" font-size="9" fill="#6b7280">/stock-proxy 同源转发（dev 中间件）</text>
+  <text x="719" y="742" text-anchor="middle" font-size="9" fill="#6b7280">GBK 原字节透传 · 3s 缓存 12s 超时</text>
+  <rect x="856" y="692" width="250" height="64" rx="8" fill="#ffffff" stroke="#60a5fa" stroke-width="1.2"/>
+  <text x="981" y="712" text-anchor="middle" font-size="12" font-weight="700" fill="#1e3a8a">频率红线（防封 IP）</text>
+  <text x="981" y="728" text-anchor="middle" font-size="9" fill="#6b7280">并发 ≤3 · 同上游 delay 500ms</text>
+  <text x="981" y="742" text-anchor="middle" font-size="9" fill="#6b7280">重接口点击触发不轮询</text>
+
+  <line x1="600" y1="778" x2="600" y2="810" stroke="#2563eb" stroke-width="2" marker-end="url(#mBlue)"/>
+  <rect x="518" y="786" width="164" height="15" fill="#ffffff" opacity="0.95"/>
+  <text x="600" y="797" text-anchor="middle" font-size="10.5" fill="#374151">快照缓存 · 结构化落库</text>
+
+  <!-- ⑥ 本地持久化 -->
+  <rect x="40" y="814" width="1120" height="118" rx="10" fill="#f0fdfa" stroke="#2dd4bf" stroke-width="1.5" stroke-dasharray="5,4"/>
+  <text x="56" y="834" font-size="11" font-weight="700" fill="#0f766e">⑥ 本地持久化 —— 无自建后端，数据只存在用户电脑里</text>
+  <rect x="70" y="846" width="250" height="64" rx="8" fill="#ffffff" stroke="#2dd4bf" stroke-width="1.2"/>
+  <text x="195" y="866" text-anchor="middle" font-size="12" font-weight="700" fill="#0f766e">SQLite stock-board.db</text>
+  <text x="195" y="882" text-anchor="middle" font-size="9" fill="#6b7280">自选 · 账户流水 · 板块日历</text>
+  <text x="195" y="896" text-anchor="middle" font-size="9" fill="#6b7280">plugin_storage 插件存储真身</text>
+  <rect x="332" y="846" width="250" height="64" rx="8" fill="#ffffff" stroke="#2dd4bf" stroke-width="1.2"/>
+  <text x="457" y="866" text-anchor="middle" font-size="12" font-weight="700" fill="#0f766e">插件动态表</text>
+  <text x="457" y="882" text-anchor="middle" font-size="9" fill="#6b7280">plugin_&lt;id&gt;_&lt;表&gt; 每插件独立</text>
+  <text x="457" y="896" text-anchor="middle" font-size="9" fill="#6b7280">声明式建表 · 缺列自动补</text>
+  <rect x="594" y="846" width="250" height="64" rx="8" fill="#ffffff" stroke="#2dd4bf" stroke-width="1.2"/>
+  <text x="719" y="866" text-anchor="middle" font-size="12" font-weight="700" fill="#0f766e">localStorage whf:app</text>
+  <text x="719" y="882" text-anchor="middle" font-size="9" fill="#6b7280">单 key 命名空间 appStorage</text>
+  <text x="719" y="896" text-anchor="middle" font-size="9" fill="#6b7280">设置 · 明暗偏好 · 已装插件代码</text>
+  <rect x="856" y="846" width="250" height="64" rx="8" fill="#ffffff" stroke="#2dd4bf" stroke-width="1.2"/>
+  <text x="981" y="866" text-anchor="middle" font-size="12" font-weight="700" fill="#0f766e">数据迁移</text>
+  <text x="981" y="882" text-anchor="middle" font-size="9" fill="#6b7280">DATA_PORT_MANIFEST 登记制</text>
+  <text x="981" y="896" text-anchor="middle" font-size="9" fill="#6b7280">导出 / 导入 JSON · 写前备份</text>
+
+  <line x1="600" y1="932" x2="600" y2="964" stroke="#2563eb" stroke-width="2" marker-end="url(#mBlue)"/>
+  <rect x="530" y="940" width="140" height="15" fill="#ffffff" opacity="0.95"/>
+  <text x="600" y="951" text-anchor="middle" font-size="10.5" fill="#374151">构建检查通过后发布</text>
+
+  <!-- ⑦ 工程化与发布 -->
+  <rect x="40" y="968" width="1120" height="86" rx="10" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="5,4"/>
+  <text x="56" y="988" font-size="11" font-weight="700" fill="#475569">⑦ 工程化与发布</text>
+  <rect x="70" y="998" width="250" height="42" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.2"/>
+  <text x="195" y="1014" text-anchor="middle" font-size="11" font-weight="700" fill="#334155">质量门禁</text>
+  <text x="195" y="1030" text-anchor="middle" font-size="9" fill="#6b7280">pnpm lint 全绿 · vue-tsc -b · 冒烟断言</text>
+  <rect x="332" y="998" width="250" height="42" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.2"/>
+  <text x="457" y="1014" text-anchor="middle" font-size="11" font-weight="700" fill="#334155">打包</text>
+  <text x="457" y="1030" text-anchor="middle" font-size="9" fill="#6b7280">tauri build → msi + nsis / apk</text>
+  <rect x="594" y="998" width="250" height="42" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.2"/>
+  <text x="719" y="1014" text-anchor="middle" font-size="11" font-weight="700" fill="#334155">CI 发布</text>
+  <text x="719" y="1030" text-anchor="middle" font-size="9" fill="#6b7280">release.yml 推 v* tag 全量发布 · 可单端</text>
+  <rect x="856" y="998" width="250" height="42" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.2"/>
+  <text x="981" y="1014" text-anchor="middle" font-size="11" font-weight="700" fill="#334155">官网（GitHub Pages）</text>
+  <text x="981" y="1030" text-anchor="middle" font-size="9" fill="#6b7280">src/docs 独立构建 · 文档 / 下载 / 插件生态</text>
+</svg>

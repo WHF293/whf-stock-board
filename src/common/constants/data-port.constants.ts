@@ -74,10 +74,12 @@ export const DATA_PORT_MANIFEST: readonly DataPortCategory[] = [
     label: '本地行情快照',
     db: 'stock-board',
     storage: 'local-storage',
-    nsKeys: ['panorama.review'],
+    // 历史牛市复盘的月 K 快照（panorama.review）自 2026-10-30 起随插件（dsh-history-review）
+    // 落插件 storage，随「插件与用户插件」类别迁移，不再在此登记
+    nsKeys: [],
     independentKeys: [NS_SECTOR_FLOW_HISTORY],
     defaultEnabled: true,
-    tip: '历史牛市复盘指数月 K 快照 / 板块历史净流入数据',
+    tip: '板块历史净流入数据',
   },
   {
     id: 'etf-holdings',

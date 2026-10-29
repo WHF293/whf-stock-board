@@ -1,5 +1,4 @@
 import { createRouter, createWebHashHistory } from 'vue-router';
-import MobileArticle from './views/MobileArticle.vue';
 import MobileBoard from './views/MobileBoard.vue';
 import MobileBoardCalendar from './views/MobileBoardCalendar.vue';
 import MobileIndustryLeaders from './views/MobileIndustryLeaders.vue';
@@ -36,7 +35,7 @@ export const mobileRouter = createRouter({
   history: createWebHashHistory(),
   routes: [
     { path: '/', name: 'home', component: MobileHome, meta: { tab: true } },
-    // 行情（2026-10-20 新增主 Tab）：指数模块 + 金刚区快捷入口（今天炒什么/连板/异动/龙虎榜）
+    // 行情（2026-10-20 新增主 Tab）：指据模块 + 金刚区快捷入口（今天炒什么/连板/异动/龙虎榜）
     { path: '/quote', name: 'quote', component: MobileQuote, meta: { tab: true } },
     { path: '/watchlist', name: 'watchlist', component: MobileWatchlist, meta: { tab: true } },
     { path: '/news', name: 'news', component: MobileHotNews, meta: { tab: true } },
@@ -49,12 +48,8 @@ export const mobileRouter = createRouter({
     // 股票搜索：首页 navbar 搜索入口的落点（二级页，无 TabBar）
     { path: '/search', name: 'search', component: MobileSearch },
     { path: '/theme', name: 'theme', component: MobileTheme },
-    {
-      path: '/article',
-      name: 'article',
-      component: MobileArticle,
-      // 原文页为 webview 容器：url / title / media 经 query 传入
-    },
+    // 原文阅读页（/article）已于 2026-10-30 删除：窄屏热点新闻改为 80% 屏高弹窗加载
+    // NewsArticlePane 节点（与大屏右栏同节点，仅承载容器不同）
     // === v2 二期二级页 ===
     { path: '/panorama', name: 'panorama', component: MobilePanorama },
     { path: '/market-rank', name: 'market-rank', component: MobileMarketRank },
@@ -64,7 +59,7 @@ export const mobileRouter = createRouter({
       name: 'rank-standalone',
       component: MobileMarketRank,
     },
-    // 历史牛熊（PC 行情全景-历史复盘的移动版；数据复用 panorama-review 单源，月K落 appStorage）
+    // 历史牛熊（PC 行情全景-历史复盘的移动版；数据复用 common/board-review 单源，月K落 appStorage）
     { path: '/bull-review', name: 'bull-review', component: MobileBullReview },
     // 新股次新股（v4.5.2 自行情全景拆出的独立二级页，入口在首页金刚区）
     { path: '/ipo', name: 'ipo', component: MobileIpoBoard },
