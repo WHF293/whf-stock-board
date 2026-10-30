@@ -88,3 +88,12 @@ export const BATCH_ADD_SKIPPED_TEMPLATE = '{skipped} 只已在当前分组，已
 
 /** 批量添加：校验请求失败时弹窗内的提示文案（不关弹窗，用户可重试） */
 export const BATCH_ADD_FAILED_TEXT = '查询失败，请稍后重试';
+
+/** 自选盯盘插件 id（「盯盘」行操作的归属插件；宿主据它判断委托插件还是提示安装） */
+export const WATCH_PLUGIN_ID = 'dsh-sidebar-watch';
+
+/** 盯盘插件缺席时点「盯盘」的浮窗文案 */
+export const WATCH_PLUGIN_MISSING_NOTIFY = {
+  title: '尚未安装盯盘插件',
+  body: '请先到「插件工坊」安装并启用「自选盯盘」，再来添加盯盘',
+} as const;
