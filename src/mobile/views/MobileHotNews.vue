@@ -48,9 +48,11 @@ import {
 } from '../cache';
 import { formatNewsTime, formatPct, formatSnapshotTime, isTopRank, pctClass } from '../utils/format';
 import NewsRow from '../components/NewsRow.vue';
+import NewsSkeleton from '../components/NewsSkeleton.vue';
 import NewsArticlePane from '../components/NewsArticlePane.vue';
 import type { NewsArticlePaneTarget } from '../components/NewsArticlePane.vue';
 import { useBreakpoint } from '../composables/use-breakpoint';
+import { useSwipeSwitch } from '../composables/use-swipe-switch';
 
 /**
  * 热点新闻（移动端）
@@ -386,26 +388,15 @@ const activeFetchedAt = computed<number | null>(
   () => pages[activeChannelKey.value]?.fetchedAt ?? null,
 );
 
-/**
- * 模板取状态（reactive 记录自动补默认值）；栏目 tab 面板各取各的频道数据，
- * 避免横滑过渡期间面板串用当前记忆栏目的数据
- * @param source 新闻源
- * @param channel 栏目定义
- * @returns 该「源 × 栏目」的状态
- */
-const pageOfChannel = (source: MobileNewsSource, channel: MobileNewsChannel): ChannelPageState => {
-  const key = `${source.key}:${channel.key}`;
-  return (pages[key] ??= PAGE_STATE_DEFAULT());
-};
+/** 当前「源 × 栏目」的页状态（reactive 记录自动补默认值；内容区单一渲染只读它） */
+const activePage = computed<ChannelPageState>(
+  () => pages[activeChannelKey.value] ?? PAGE_STATE_DEFAULT(),
+);
 
-/**
- * 「源 × 栏目」的缓存键
- * @param source 新闻源
- * @param channel 栏目定义
- * @returns 缓存键（`<sourceKey>:<channelKey>`）
- */
-const channelKeyOf = (source: MobileNewsSource, channel: MobileNewsChannel): string =>
-  `${source.key}:${channel.key}`;
+/** 当前频道的特殊渲染分支（缺省走 NewsRow 通用新闻列表；模板分支判定用） */
+const activeChannelSpecial = computed(
+  () => channelDefOf(activeChannelKey.value)?.special,
+);
 
 /**
  * 查找频道定义（type 判定 footer 文案用）
@@ -513,6 +504,30 @@ const switchSource = (offset: number): void => {
   const base = idx >= 0 ? idx : 0;
   activeIndex.value = (base + offset + len) % len;
 };
+
+/* === swiper 式横滑切源（2026-10-30 王总指定，交互对齐 youtube-desktop）===
+ * 中间为当前源实际内容，两侧相邻源骨架屏；拖拽跟手 → 松手按位移/轻扫速度判定 →
+ * 过阈值动画滑入相邻骨架屏、动画结束才切 activeIndex 发真实请求（未过阈值回弹）。
+ * 手势绑在下方 .m-swipe 内容区（不含子栏目 tabs 条，m-chips 主题条由 ignoreSelector 排除） */
+/** 当前源在可见源中的下标（横滑边界钳制用；隐藏源后与 activeIndex 解耦取实位） */
+const swipeIndex = computed(() => {
+  const idx = visibleSources.value.findIndex((source) => source.key === activeSource.value.key);
+  return Math.max(idx, 0);
+});
+
+const {
+  onSwipeEl,
+  phase: swipePhase,
+  containerStyle,
+} = useSwipeSwitch({
+  count: () => visibleSources.value.length,
+  index: () => swipeIndex.value,
+  // 手势绑定的内容区里只有主题 chips 需要横向滚动，整块让位原生横滚
+  ignoreSelector: '.m-chips',
+  onChange: (next) => {
+    activeIndex.value = next;
+  },
+});
 
 /**
  * 激活源变化（navbar 箭头 / 显隐校正 / 排序跟随）：
@@ -667,6 +682,16 @@ const emKeywordsOf = (st: ChannelPageState): EmHotKeyword[] =>
 const emConceptsOf = (st: ChannelPageState): EmConceptLeader[] =>
   st.special?.kind === 'emConcept' ? st.special.concepts : [];
 
+/** 当前频道内容是否为空（通用列表看 items、特殊榜单看各自载荷；骨架/空态判定用） */
+const activeEmpty = computed<boolean>(() => {
+  const st = activePage.value;
+  if (st.special?.kind === 'clsHot') return st.special.ranks.length === 0;
+  if (st.special?.kind === 'tpHot') return st.special.ranks.length === 0;
+  if (st.special?.kind === 'emHot') return st.special.keywords.length === 0;
+  if (st.special?.kind === 'emConcept') return st.special.concepts.length === 0;
+  return st.items.length === 0;
+});
+
 /**
  * 切到热点主题栏目时预拉主题列表
  * （资讯流快照缓存新鲜时 loadChannelPage 不会执行，主题 chips 需单独保障）
@@ -765,217 +790,201 @@ onUnmounted(() => {
     </van-notice-bar>
 
     <!-- 大屏（≥840px）主从布局容器：左列表（4/10）右原文（6/10）；
-         窄档为纯纵向壳（flex column），对 .m-tabs 的高度链透明，结构上等同原直排 -->
+         窄档为纯纵向壳（flex column），结构上等同原直排 -->
     <div class="m-news-duo">
       <div class="m-news-duo__l">
-        <!-- 子栏目 Tabs（原源 tabs 的位置，源切换改由 navbar 标题两侧箭头承担；
-             animated 点击切换横滑过渡；不开 swipeable，触摸拦截为零，垂直滚动完全原生）。
-             :key 按 source 强制换源整体重挂载：换源当轮 Vant 的 setLine 会跑在新 TabTitle
-             ref 登记之前而静默跳过（浏览器实测 2026-10-12，nextTick resize 也救不了），
-             指示条停留在旧源偏移；重挂载走 Tabs init 的测量路径，实测是准的 -->
+        <!-- 子栏目 Tabs：空 van-tab 只当分段选择器，内容由下方 .m-swipe 承担
+             （2026-10-30 横滑切源改版，同 MobileBoard）。:key 按 source 强制换源整体
+             重挂载：换源当轮 Vant 的 setLine 会跑在新 TabTitle ref 登记之前而静默跳过
+             （浏览器实测 2026-10-12，nextTick resize 也救不了），指示条停留在旧源偏移；
+             重挂载走 Tabs init 的测量路径，实测是准的 -->
         <van-tabs
           :key="activeSource.key"
           v-model:active="activeChannelIndex"
-          class="m-tabs"
-          animated
-          :lazy-render="false"
+          class="m-tabs m-tabs--selector"
           :ellipsis="false"
         >
-          <van-tab v-for="channel in activeSource.channels" :key="channel.key" :title="channel.label">
-            <van-pull-refresh
-              :model-value="pageOfChannel(activeSource, channel).refreshing"
-              @refresh="onPullRefresh(channelKeyOf(activeSource, channel))"
+          <van-tab v-for="channel in activeSource.channels" :key="channel.key" :title="channel.label" />
+        </van-tabs>
+
+        <!-- swiper 式横滑切源内容区（2026-10-30 王总指定，交互对齐 youtube-desktop）：
+             中间为当前源实际内容，两侧相邻源骨架屏（拖拽/过渡期挂载、随容器位移）；
+             首载与切源过渡态一律骨架屏（骨架即 loading），下拉 / 触底保留 loading 语义 -->
+        <div :ref="onSwipeEl" class="m-swipe">
+          <div class="m-swipe__inner" :style="containerStyle">
+            <!-- 相邻源骨架屏：边界侧不挂（不循环） -->
+            <div
+              v-if="swipePhase !== null && swipeIndex > 0"
+              class="m-swipe__side m-swipe__side--prev"
             >
-              <div v-if="pageOfChannel(activeSource, channel).error" class="m-error">
+              <NewsSkeleton />
+            </div>
+            <div
+              v-if="swipePhase !== null && swipeIndex < visibleSources.length - 1"
+              class="m-swipe__side m-swipe__side--next"
+            >
+              <NewsSkeleton />
+            </div>
+
+            <van-pull-refresh
+              :model-value="activePage.refreshing"
+              @refresh="onPullRefresh(activeChannelKey)"
+            >
+              <div v-if="activePage.error" class="m-error">
                 <van-icon name="warning-o" />
                 <div>内容加载失败，请检查网络后重试</div>
-                <button
-                  class="m-error__retry"
-                  @click="retry(channelKeyOf(activeSource, channel))"
-                >
+                <button class="m-error__retry" @click="retry(activeChannelKey)">
                   ↻ 重新加载
                 </button>
               </div>
               <template v-else>
-                <!-- 财联社热榜：名次榜（标题 + 时间 + 阅读数） -->
-                <div v-if="channel.special === 'clsHot'" class="m-rank-list">
-                  <button
-                    v-for="(hp, index) in clsRanksOf(pageOfChannel(activeSource, channel))"
-                    :key="hp.id"
-                    class="m-rank-row"
-                    @click="openSpecialLink(hp.url, hp.title, '财联社')"
-                  >
-                    <span
-                      class="m-rank-row__rank"
-                      :class="{ 'm-rank-row__rank--top': isTopRank(index + 1) }"
-                    >
-                      {{ index + 1 }}
-                    </span>
-                    <div class="m-rank-row__main">
-                      <div class="t">{{ hp.title }}</div>
-                      <div class="meta">
-                        <span>{{ formatNewsTime(hp.ctime) }}</span>
-                        <span>{{ formatReadNum(hp.readNum) }}阅读</span>
-                      </div>
+                <!-- 首载 / 切源过渡态：骨架屏（骨架即 loading，不再展示加载文案） -->
+                <NewsSkeleton v-if="activeEmpty && activePage.loading" />
+                <template v-else>
+                  <!-- 同花顺热点主题：主题 chips + 该主题资讯流（通用新闻列表） -->
+                  <template v-if="activeChannelSpecial === 'theme'">
+                    <div class="m-chips m-theme-chips">
+                      <button
+                        v-for="theme in thsThemes.items"
+                        :key="theme.themeId"
+                        class="m-chip m-chip--sub"
+                        :class="{ 'm-chip--active': selectedThemeId === theme.themeId }"
+                        @click="selectTheme(theme.themeId)"
+                      >
+                        {{ theme.themeName }}
+                      </button>
                     </div>
-                  </button>
-                  <div
-                    v-if="clsRanksOf(pageOfChannel(activeSource, channel)).length === 0 && !pageOfChannel(activeSource, channel).loading"
-                    class="m-empty"
-                  >
-                    该栏目暂无内容，点顶部箭头切换其他源
-                  </div>
-                </div>
-    
-                <!-- 澎湃热榜：名次榜（标题 + 相对时间） -->
-                <div v-else-if="channel.special === 'tpHot'" class="m-rank-list">
-                  <button
-                    v-for="(hp, index) in tpRanksOf(pageOfChannel(activeSource, channel))"
-                    :key="hp.contId"
-                    class="m-rank-row"
-                    @click="openSpecialLink(hp.url, hp.title, '澎湃新闻')"
-                  >
-                    <span
-                      class="m-rank-row__rank"
-                      :class="{ 'm-rank-row__rank--top': isTopRank(index + 1) }"
-                    >
-                      {{ index + 1 }}
-                    </span>
-                    <div class="m-rank-row__main">
-                      <div class="t">{{ hp.title }}</div>
-                      <div class="meta"><span>{{ hp.timeText }}</span></div>
+                    <div class="m-news-list">
+                      <NewsRow
+                        v-for="item in activePage.items"
+                        :key="item.oid"
+                        :item="item"
+                        @open="openArticle"
+                      />
                     </div>
-                  </button>
-                  <div
-                    v-if="tpRanksOf(pageOfChannel(activeSource, channel)).length === 0 && !pageOfChannel(activeSource, channel).loading"
-                    class="m-empty"
-                  >
-                    该栏目暂无内容，点顶部箭头切换其他源
-                  </div>
-                </div>
-    
-                <!-- 东财热搜：热词榜 -->
-                <div v-else-if="channel.special === 'emHot'" class="m-rank-list">
-                  <button
-                    v-for="(kw, index) in emKeywordsOf(pageOfChannel(activeSource, channel))"
-                    :key="kw.url"
-                    class="m-rank-row"
-                    @click="openSpecialLink(kw.url, kw.phrase, '东方财富')"
-                  >
-                    <span
-                      class="m-rank-row__rank"
-                      :class="{ 'm-rank-row__rank--top': isTopRank(index + 1) }"
-                    >
-                      {{ index + 1 }}
-                    </span>
-                    <div class="m-rank-row__main">
-                      <div class="t">
-                        {{ kw.phrase }}
-                        <span v-if="kw.isNew" class="m-kw-new">新</span>
-                      </div>
-                    </div>
-                    <van-icon name="arrow" class="m-rank-row__go" />
-                  </button>
-                  <div
-                    v-if="emKeywordsOf(pageOfChannel(activeSource, channel)).length === 0 && !pageOfChannel(activeSource, channel).loading"
-                    class="m-empty"
-                  >
-                    该栏目暂无内容，点顶部箭头切换其他源
-                  </div>
-                </div>
-    
-                <!-- 东财领涨概念：板块 + 涨跌幅 + 领涨股 -->
-                <div v-else-if="channel.special === 'emConcept'" class="m-rank-list">
-                  <button
-                    v-for="(cp, index) in emConceptsOf(pageOfChannel(activeSource, channel))"
-                    :key="cp.code"
-                    class="m-rank-row"
-                    @click="openSpecialLink(emConceptSearchUrl(cp.name), cp.name, '东方财富')"
-                  >
-                    <span
-                      class="m-rank-row__rank"
-                      :class="{ 'm-rank-row__rank--top': isTopRank(index + 1) }"
-                    >
-                      {{ index + 1 }}
-                    </span>
-                    <div class="m-rank-row__main">
-                      <div class="t">{{ cp.name }}</div>
-                      <div class="meta"><span>领涨股 {{ cp.leaderStock }}</span></div>
-                    </div>
-                    <span class="m-rank-row__pct m-num" :class="pctClass(cp.chgPct)">
-                      {{ formatPct(cp.chgPct) }}
-                    </span>
-                  </button>
-                  <div
-                    v-if="emConceptsOf(pageOfChannel(activeSource, channel)).length === 0 && !pageOfChannel(activeSource, channel).loading"
-                    class="m-empty"
-                  >
-                    该栏目暂无内容，点顶部箭头切换其他源
-                  </div>
-                </div>
-    
-                <!-- 同花顺热点主题：主题 chips + 该主题资讯流（通用新闻列表） -->
-                <template v-else-if="channel.special === 'theme'">
-                  <div class="m-chips m-theme-chips">
+                  </template>
+
+                  <!-- 财联社热榜：名次榜（标题 + 时间 + 阅读数） -->
+                  <div v-else-if="activeChannelSpecial === 'clsHot'" class="m-rank-list">
                     <button
-                      v-for="theme in thsThemes.items"
-                      :key="theme.themeId"
-                      class="m-chip m-chip--sub"
-                      :class="{ 'm-chip--active': selectedThemeId === theme.themeId }"
-                      @click="selectTheme(theme.themeId)"
+                      v-for="(hp, index) in clsRanksOf(activePage)"
+                      :key="hp.id"
+                      class="m-rank-row"
+                      @click="openSpecialLink(hp.url, hp.title, '财联社')"
                     >
-                      {{ theme.themeName }}
+                      <span
+                        class="m-rank-row__rank"
+                        :class="{ 'm-rank-row__rank--top': isTopRank(index + 1) }"
+                      >
+                        {{ index + 1 }}
+                      </span>
+                      <div class="m-rank-row__main">
+                        <div class="t">{{ hp.title }}</div>
+                        <div class="meta">
+                          <span>{{ formatNewsTime(hp.ctime) }}</span>
+                          <span>{{ formatReadNum(hp.readNum) }}阅读</span>
+                        </div>
+                      </div>
                     </button>
                   </div>
-                  <div v-if="thsThemes.loading && thsThemes.items.length === 0" class="m-empty">
-                    主题加载中…
+
+                  <!-- 澎湃热榜：名次榜（标题 + 相对时间） -->
+                  <div v-else-if="activeChannelSpecial === 'tpHot'" class="m-rank-list">
+                    <button
+                      v-for="(hp, index) in tpRanksOf(activePage)"
+                      :key="hp.contId"
+                      class="m-rank-row"
+                      @click="openSpecialLink(hp.url, hp.title, '澎湃新闻')"
+                    >
+                      <span
+                        class="m-rank-row__rank"
+                        :class="{ 'm-rank-row__rank--top': isTopRank(index + 1) }"
+                      >
+                        {{ index + 1 }}
+                      </span>
+                      <div class="m-rank-row__main">
+                        <div class="t">{{ hp.title }}</div>
+                        <div class="meta"><span>{{ hp.timeText }}</span></div>
+                      </div>
+                    </button>
                   </div>
-                  <div v-else-if="thsThemes.error && thsThemes.items.length === 0" class="m-error">
-                    <van-icon name="warning-o" />
-                    <div>主题列表加载失败</div>
-                    <button class="m-error__retry" @click="void ensureThsThemes()">↻ 重新加载</button>
+
+                  <!-- 东财热搜：热词榜 -->
+                  <div v-else-if="activeChannelSpecial === 'emHot'" class="m-rank-list">
+                    <button
+                      v-for="(kw, index) in emKeywordsOf(activePage)"
+                      :key="kw.url"
+                      class="m-rank-row"
+                      @click="openSpecialLink(kw.url, kw.phrase, '东方财富')"
+                    >
+                      <span
+                        class="m-rank-row__rank"
+                        :class="{ 'm-rank-row__rank--top': isTopRank(index + 1) }"
+                      >
+                        {{ index + 1 }}
+                      </span>
+                      <div class="m-rank-row__main">
+                        <div class="t">
+                          {{ kw.phrase }}
+                          <span v-if="kw.isNew" class="m-kw-new">新</span>
+                        </div>
+                      </div>
+                      <van-icon name="arrow" class="m-rank-row__go" />
+                    </button>
                   </div>
-                  <div class="m-news-list">
+
+                  <!-- 东财领涨概念：板块 + 涨跌幅 + 领涨股 -->
+                  <div v-else-if="activeChannelSpecial === 'emConcept'" class="m-rank-list">
+                    <button
+                      v-for="(cp, index) in emConceptsOf(activePage)"
+                      :key="cp.code"
+                      class="m-rank-row"
+                      @click="openSpecialLink(emConceptSearchUrl(cp.name), cp.name, '东方财富')"
+                    >
+                      <span
+                        class="m-rank-row__rank"
+                        :class="{ 'm-rank-row__rank--top': isTopRank(index + 1) }"
+                      >
+                        {{ index + 1 }}
+                      </span>
+                      <div class="m-rank-row__main">
+                        <div class="t">{{ cp.name }}</div>
+                        <div class="meta"><span>领涨股 {{ cp.leaderStock }}</span></div>
+                      </div>
+                      <span class="m-rank-row__pct m-num" :class="pctClass(cp.chgPct)">
+                        {{ formatPct(cp.chgPct) }}
+                      </span>
+                    </button>
+                  </div>
+
+                  <!-- 通用新闻列表（NewsRow） -->
+                  <div v-else class="m-news-list">
                     <NewsRow
-                      v-for="item in pageOfChannel(activeSource, channel).items"
+                      v-for="item in activePage.items"
                       :key="item.oid"
                       :item="item"
                       @open="openArticle"
                     />
-                    <div
-                      v-if="pageOfChannel(activeSource, channel).items.length === 0 && !pageOfChannel(activeSource, channel).loading"
-                      class="m-empty"
-                    >
-                      该主题暂无内容，切换其他主题试试
-                    </div>
                   </div>
                 </template>
-    
-                <!-- 通用新闻列表（NewsRow） -->
-                <div v-else class="m-news-list">
-                  <NewsRow
-                    v-for="item in pageOfChannel(activeSource, channel).items"
-                    :key="item.oid"
-                    :item="item"
-                    @open="openArticle"
-                  />
-                  <div
-                    v-if="pageOfChannel(activeSource, channel).items.length === 0 && !pageOfChannel(activeSource, channel).loading"
-                    class="m-empty"
-                  >
-                    该栏目暂无内容，点顶部箭头切换其他源
-                  </div>
+                <!-- 空态（非加载中且无内容） -->
+                <div v-if="activeEmpty && !activePage.loading" class="m-empty">
+                  {{
+                    activeChannelSpecial === 'theme'
+                      ? '该主题暂无内容，切换其他主题试试'
+                      : '该栏目暂无内容，点顶部箭头切换其他源'
+                  }}
                 </div>
                 <!-- 触底哨兵：进入视口自动追加下一页 -->
                 <div
-                  :ref="(el) => observeSentinel(channelKeyOf(activeSource, channel), el)"
+                  :ref="(el) => observeSentinel(activeChannelKey, el)"
                   class="m-load-sentinel"
                 ></div>
-                <div class="m-footer">{{ footerText(channelKeyOf(activeSource, channel)) }}</div>
+                <div class="m-footer">{{ footerText(activeChannelKey) }}</div>
               </template>
             </van-pull-refresh>
-          </van-tab>
-        </van-tabs>
+          </div>
+        </div>
       </div>
       <!-- 大屏右栏：原文阅读窗格（2026-10-28 王总指定：默认不显示，点左栏新闻才出现，
            关闭后右栏整体收起、左栏占满；窗格头部自带 ✕ 关闭按钮） -->

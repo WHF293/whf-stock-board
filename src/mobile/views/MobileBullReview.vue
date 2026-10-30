@@ -344,8 +344,10 @@ const bearCards = computed<LibCard[]>(() =>
     </div>
 
     <div class="m-sub-scroll">
-      <!-- 首次同步（三指数月K 串行错峰拉取） -->
-      <div v-if="loading" class="m-state">指数月K同步中…</div>
+      <!-- 首次同步（三指数月K 串行错峰拉取）：骨架屏过渡（骨架即 loading） -->
+      <div v-if="loading" class="m-card m-skel-fill">
+        <div v-for="i in 10" :key="i" class="m-skel-row"></div>
+      </div>
       <div v-else-if="loadError" class="m-state">
         月K同步失败（上游限频或网络异常）
         <span class="retry" @click="load(true)">重试</span>

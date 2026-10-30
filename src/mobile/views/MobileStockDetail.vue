@@ -365,7 +365,8 @@ const back = (): void => {
               </button>
             </div>
             <div class="m-card">
-              <div v-if="klineLoading" class="m-state">K 线加载中…</div>
+              <!-- K 线首载 / 切周期：块级骨架过渡（骨架即 loading） -->
+              <div v-if="klineLoading" class="m-skel-chart"></div>
               <div v-else-if="klineError" class="m-state">
                 K 线加载失败
                 <span class="retry" @click="loadKline()">重试</span>
@@ -423,7 +424,9 @@ const back = (): void => {
               <StockF10ExecutiveTab v-else-if="bottomTab === 'executive'" :symbol="symbol" />
               <StockF10HoldTab v-else-if="bottomTab === 'hold'" :symbol="symbol" />
               <template v-else>
-                <div v-if="bottomLoading" class="m-state">加载中…</div>
+                <div v-if="bottomLoading" class="m-skel-block">
+                  <div v-for="i in 8" :key="i" class="m-skel-row"></div>
+                </div>
                 <template v-else-if="bottomTab === 'trade'">
                   <div v-if="!tradeRecords.length" class="m-state">暂无交易记录</div>
                   <div

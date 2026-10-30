@@ -1650,7 +1650,7 @@ a.m-row--link {
   color: var(--color-primary);
 }
 
-@media (min-width: 600px) {
+@media (min-width: 600px) and (orientation: landscape) {
   /* 底部 TabBar 退役换左导航栏：主内容整体让位（fixed 元素不受父级 padding 影响，
      侧栏自行 fixed 定位；--m-rail-w = 侧栏宽 72，左缘贴 0 无外距） */
   :root {
@@ -1663,7 +1663,8 @@ a.m-row--link {
     padding-left: var(--m-rail-w);
   }
   /* TabBar 让位高度全部收回：面板底距 / 尾部占位改小间距 */
-  .m-page-flex .van-tab__panel {
+  .m-page-flex .van-tab__panel,
+  .m-swipe .van-pull-refresh__track {
     padding-bottom: 20px;
   }
   .m-tab-safe {
@@ -1694,7 +1695,8 @@ a.m-row--link {
      m-sub-page）仍用子项方案，两者等效 */
   .m-sub-scroll,
   .m-home-scroll .van-pull-refresh__track,
-  .m-page-flex .m-tabs .van-pull-refresh__track {
+  .m-page-flex .m-tabs .van-pull-refresh__track,
+  .m-swipe .van-pull-refresh__track {
     padding-inline: max(0px, calc((100% - 720px) / 2));
   }
   .m-tab-safe > *,
@@ -1725,13 +1727,14 @@ a.m-row--link {
   }
 }
 
-@media (min-width: 840px) {
+@media (min-width: 840px) and (orientation: landscape) {
   .m-cols {
     grid-template-columns: repeat(3, 1fr);
   }
   .m-sub-scroll,
   .m-home-scroll .van-pull-refresh__track,
-  .m-page-flex .m-tabs .van-pull-refresh__track {
+  .m-page-flex .m-tabs .van-pull-refresh__track,
+  .m-swipe .van-pull-refresh__track {
     padding-inline: max(0px, calc((100% - 1080px) / 2));
   }
   .m-tab-safe > *,
@@ -1766,4 +1769,63 @@ a.m-row--link {
     min-width: 0;
     border-left: 1px solid var(--color-border);
   }
+}
+
+/* ==== swiper 式横滑切源内容区（use-swipe-switch，热点新闻 / 今天炒什么）====
+   中间为当前源实际内容，两侧相邻源骨架屏（拖拽/过渡期才挂载）随容器位移；
+   overflow-x clip 裁掉两侧面板（不产生横向滚动容器），纵向滚动交给内部
+   pull-refresh 原生滚动，手势在捕获阶段拦截（拖拽期 stopPropagation） */
+.m-swipe {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow-x: clip;
+  touch-action: pan-y;
+}
+.m-swipe__inner {
+  position: relative;
+  height: 100%;
+}
+.m-swipe__side {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 100%;
+  overflow: hidden;
+  background: var(--m-page-bg);
+}
+.m-swipe__side--prev {
+  right: 100%;
+}
+.m-swipe__side--next {
+  left: 100%;
+}
+.m-swipe .van-pull-refresh {
+  height: 100%;
+  overflow-y: auto;
+  touch-action: pan-y;
+}
+.m-swipe .van-pull-refresh__track {
+  min-height: 100%;
+  /* 底部悬浮玻璃 TabBar + 全面屏手势区让位（原 .van-tab__panel 同口径） */
+  padding-bottom: calc(88px + var(--m-inset-bottom));
+}
+
+/* 块级骨架（弹层 / 页签区等行列表的加载过渡态）：复用 m-skel-row 微光行 */
+.m-skel-block {
+  background: var(--color-surface);
+}
+/* 图表位骨架（K 线等图表面的加载过渡态）：整块微光 */
+.m-skel-chart {
+  position: relative;
+  height: 220px;
+  overflow: hidden;
+  background: var(--color-surface);
+}
+.m-skel-chart::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(148, 163, 184, 0.16), transparent);
+  animation: m-shimmer 1.2s infinite;
 }

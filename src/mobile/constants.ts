@@ -278,3 +278,29 @@ export const DEBUG_BALL_DRAG_SLOP_PX = 6;
 
 /** 悬浮球默认位置：距视口右缘 / 底缘的偏移（px；底部避开 TabBar） */
 export const DEBUG_BALL_DEFAULT_INSET = { x: 16, y: 120 };
+
+/* ==== 横滑切源手势（use-swipe-switch，参数对齐 youtube-desktop useSwipeSwitch） ==== */
+
+/** 轴向锁定阈值（px）：横向位移达到该值且纵模比达标才进入跟手拖拽 */
+export const SWIPE_AXIS_LOCK_PX = 12;
+
+/** 轴向锁定纵横比：横向位移须大于纵向位移 × 该比值（纵向占优整轮让位原生滚动） */
+export const SWIPE_AXIS_RATIO = 1.2;
+
+/** 边界越拖橡皮筋阻尼系数（首项右拖 / 末项左拖） */
+export const SWIPE_OVERDRAG_DAMP = 0.28;
+
+/** 轻扫判定最小位移（px） */
+export const SWIPE_FLICK_MIN_PX = 40;
+
+/** 轻扫判定最小速度（px/ms） */
+export const SWIPE_FLICK_VELOCITY = 0.5;
+
+/** 切换过渡动画时长（毫秒） */
+export const SWIPE_ANIM_MS = 260;
+
+/** 切换过渡动画缓动曲线 */
+export const SWIPE_EASE = 'cubic-bezier(0.22, 0.61, 0.36, 1)';
+
+/** 骨架屏行数（新闻列表 / 榜单首载与横滑切源过渡态统一行数） */
+export const SKELETON_ROW_COUNT = 10;

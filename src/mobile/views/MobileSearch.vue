@@ -266,7 +266,10 @@ const pickHot = (name: string): void => {
             <span class="m-sch-hot__nm">{{ item.name }}</span>
           </div>
         </div>
-        <div v-if="hot.length === 0" class="m-state">热门榜单加载中…</div>
+        <!-- 热门榜单首载：骨架行过渡（骨架即 loading） -->
+        <div v-if="hot.length === 0" class="m-skel-block">
+          <div v-for="i in 6" :key="i" class="m-skel-row"></div>
+        </div>
       </template>
 
       <!-- 搜索结果 -->

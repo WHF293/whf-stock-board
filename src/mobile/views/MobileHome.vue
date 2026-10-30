@@ -969,9 +969,9 @@ const pctClass = (v: number | null): string =>
           <span class="num">换手</span>
         </div>
         <div class="m-cons__list">
-          <div v-if="consLoading" class="m-cons__state">
-            <van-loading size="26" />
-            成分股加载中…
+          <!-- 成分股首载：骨架屏过渡（骨架即 loading） -->
+          <div v-if="consLoading" class="m-skel-block">
+            <div v-for="i in 8" :key="i" class="m-skel-row"></div>
           </div>
           <div v-else-if="consError" class="m-cons__state">
             <van-icon name="warning-o" size="30" />

@@ -135,7 +135,9 @@ const kvRows = computed<KvRow[]>(() => {
 
     <!-- 业绩预告：行列表（预告类型 · 指标 + 同比增幅区间 + 原文摘要） -->
     <template v-if="activeTable === 'forecast'">
-      <div v-if="forecast.loading" class="m-state">加载中…</div>
+      <div v-if="forecast.loading" class="m-skel-block">
+        <div v-for="i in 8" :key="i" class="m-skel-row"></div>
+      </div>
       <div v-else-if="forecast.error" class="m-state">
         {{ forecast.error }}
         <button class="retry" @click="void reloadTable('forecast')">重试</button>
@@ -165,7 +167,9 @@ const kvRows = computed<KvRow[]>(() => {
 
     <!-- 三张期间报表：报告期 chips + 键值行 -->
     <template v-else>
-      <div v-if="periodBlock.loading" class="m-state">加载中…</div>
+      <div v-if="periodBlock.loading" class="m-skel-block">
+        <div v-for="i in 8" :key="i" class="m-skel-row"></div>
+      </div>
       <div v-else-if="periodBlock.error" class="m-state">
         {{ periodBlock.error }}
         <button class="retry" @click="void reloadTable(activeTable)">重试</button>
