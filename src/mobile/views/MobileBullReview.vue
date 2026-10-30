@@ -13,8 +13,8 @@
 import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { loadBullReview } from '../api/bull-review.api';
-import { BULL_PATTERNS, BULL_ROUNDS } from '../../pc/components/business/panorama-review/rounds';
-import { BEAR_PATTERNS, BEAR_ROUNDS } from '../../pc/components/business/panorama-review/bears';
+import { BULL_PATTERNS, BULL_ROUNDS } from '../../common/board-review/rounds';
+import { BEAR_PATTERNS, BEAR_ROUNDS } from '../../common/board-review/bears';
 import type {
   MonthlyBar,
   ReviewBearStats,
@@ -22,7 +22,7 @@ import type {
   ReviewRoundMeta,
   ReviewRoundStats,
   ReviewStageTone,
-} from '../../pc/components/business/panorama-review/types';
+} from '../../common/board-review/types';
 
 const router = useRouter();
 
@@ -344,8 +344,10 @@ const bearCards = computed<LibCard[]>(() =>
     </div>
 
     <div class="m-sub-scroll">
-      <!-- 首次同步（三指数月K 串行错峰拉取） -->
-      <div v-if="loading" class="m-state">指数月K同步中…</div>
+      <!-- 首次同步（三指数月K 串行错峰拉取）：骨架屏过渡（骨架即 loading） -->
+      <div v-if="loading" class="m-card m-skel-fill">
+        <div v-for="i in 10" :key="i" class="m-skel-row"></div>
+      </div>
       <div v-else-if="loadError" class="m-state">
         月K同步失败（上游限频或网络异常）
         <span class="retry" @click="load(true)">重试</span>

@@ -413,7 +413,9 @@ const fmtPct = (v: number | null): string => (v === null ? '--' : `${v > 0 ? '+'
         <span class="m-sec__s">涨跌停明细</span>
       </div>
       <div style="max-height: 50vh; overflow-y: auto">
-        <div v-if="sheetLoading" class="m-state">加载中…</div>
+        <div v-if="sheetLoading" class="m-skel-block">
+          <div v-for="i in 8" :key="i" class="m-skel-row"></div>
+        </div>
         <div v-else-if="!sheetStocks.length" class="m-state">当日无涨跌停记录</div>
         <div v-else class="m-card" style="border: none">
           <div

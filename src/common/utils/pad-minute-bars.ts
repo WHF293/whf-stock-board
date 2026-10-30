@@ -1,5 +1,7 @@
 import dayjs from 'dayjs';
 import type { KLineData } from 'klinecharts';
+import { MINUTE_AXIS_RANGES } from '../constants/kline.constants.ts';
+import type { MinuteAxisRange } from '../types/kline.types.ts';
 import { buildMinuteAxis } from './build-minute-axis';
 
 /**
@@ -25,11 +27,16 @@ const createPlaceholderBar = (timestamp: number): KLineData => ({
  *
  * 盘中接口只下发已发生的分钟（例如 10:30 只到 10:30），直接交给图表会把
  * 已有数据拉伸铺满画布、X 轴也随之缩到当前时刻；这里按交易日补齐固定分钟格，
- * 缺失的分钟以占位 bar 填充，使 X 轴恒定为 09:30~15:00
+ * 缺失的分钟以占位 bar 填充，使 X 轴恒定为交易时段全程
+ * （A 股 09:30~15:00 / 港股 09:30~16:00）
  * @param bars 当日分时序列（时间升序）
+ * @param ranges 时间轴分段配置（缺省 A 股 MINUTE_AXIS_RANGES；港股传 HK_MINUTE_AXIS_RANGES）
  * @returns 补齐后的序列（时间升序；数据为空时原样返回）
  */
-export const padMinuteBars = (bars: KLineData[]): KLineData[] => {
+export const padMinuteBars = (
+  bars: KLineData[],
+  ranges: readonly MinuteAxisRange[] = MINUTE_AXIS_RANGES,
+): KLineData[] => {
   if (bars.length === 0) return bars;
   const barByTime = new Map(bars.map((bar) => [bar.timestamp, bar]));
   const days = new Set(
@@ -37,7 +44,7 @@ export const padMinuteBars = (bars: KLineData[]): KLineData[] => {
   );
   const axis = new Set<number>();
   for (const day of days) {
-    for (const timestamp of buildMinuteAxis(day)) {
+    for (const timestamp of buildMinuteAxis(day, ranges)) {
       axis.add(timestamp);
     }
   }

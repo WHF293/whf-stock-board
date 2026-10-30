@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "stock-board",
-  "version": "4.27.0",
+  "version": "4.30.0",
   "identifier": "cn.whf.stockboard",
   "build": {
     "frontendDist": "../dist",
@@ -29,7 +29,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["nsis"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

@@ -1,9 +1,9 @@
 import { computed, ref } from 'vue';
-import { pluginKernel } from '../../pc/plugin/index';
+import { pluginKernel } from '../plugin/index';
 import {
   importUserPluginCode,
   mountUserPluginDefinition,
-} from '../../pc/plugin/user-plugin-loader';
+} from '../plugin/user-plugin-loader';
 import { listPluginTables, dropPluginTables } from '../api/plugin-db.api.ts';
 import { BUILTIN_PLUGINS } from '../../pc/plugins/index';
 import { usePluginStore } from '../stores/plugin';
@@ -16,7 +16,7 @@ import {
 import { trackAction } from '../../pc/weblog/weblogActions';
 import type { ComputedRef } from 'vue';
 import type { PluginPackageManifest } from '../utils/plugin-package';
-import type { UserPluginLintIssue } from '../../pc/plugin/user-plugin-lint';
+import type { UserPluginLintIssue } from '../plugin/user-plugin-lint';
 import type { UserPluginRecord } from '../types/plugin.types.ts';
 
 /** 安装结果 */
@@ -170,6 +170,8 @@ export const useUserPlugins = (): UseUserPluginsReturn => {
     };
     // 只有在线更新才带直链：本地导入的插件记它没意义，也不该让老记录凭空多一个字段
     if (options?.updateUrl) record.updateUrl = options.updateUrl;
+    // 支持端快照：定义声明了才写（历史记录无此字段按仅 PC 处理，移动端装配层据此过滤）
+    if (definition.devices) record.devices = [...definition.devices];
     if (!userPluginsStore.upsert(record)) {
       return { ok: false, error: '已安装插件数量超出上限，请先卸载不再使用的插件' };
     }

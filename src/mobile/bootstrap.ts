@@ -4,6 +4,7 @@ import piniaPluginPersistedstate from 'pinia-plugin-persistedstate';
 import Vant from 'vant';
 import 'vant/lib/index.css';
 import { mobileRouter } from './router';
+import { installMobilePlugins } from './plugin/setup';
 import MobileApp from './MobileApp.vue';
 import './mobile.css';
 import { disablePinchZoom } from '@/utils/disable-pinch-zoom';
@@ -11,8 +12,9 @@ import { disablePinchZoom } from '@/utils/disable-pinch-zoom';
 /**
  * 移动端启动（main.ts 在 --mode mobile 构建下动态加载，桌面构建整树剔除）
  *
- * 与桌面启动链的差异：不装配插件体系 / Agent / weblog / 自选 SQLite 镜像，
- * 只保留 pinia（持久化）+ Vant + 移动路由；主题三轴由 MobileApp 内
+ * 与桌面启动链的差异：不装配 Agent / weblog / 自选 SQLite 镜像 / PC 装配层，
+ * 保留 pinia（持久化）+ 插件体系（mobile/plugin/setup.ts，只挂声明了 mobile
+ * 支持端的用户插件）+ Vant + 移动路由；主题三轴由 MobileApp 内
  * useDocumentThemeSync 落 <html>（与桌面共用同一持久化）。
  * Vant 走全量注册 + 全量样式（移动产物独立打包，体积可接受；桌面不受影响）。
  */
@@ -27,6 +29,8 @@ export const bootstrapMobile = (): void => {
   pinia.use(piniaPluginPersistedstate);
 
   app.use(pinia);
+  // 插件装配必须在 pinia 之后、router 之前（插件路由要赶在首个导航就绪）
+  installMobilePlugins(pinia);
   app.use(Vant);
   app.use(mobileRouter);
   app.mount('#app');

@@ -8,3 +8,14 @@ export const SEARCH_MIN_KEYWORD_LENGTH = 2;
 export const SEARCH_HISTORY_MAX = 5;
 /** 搜索弹窗：上次搜索分组标题 */
 export const SEARCH_HISTORY_TITLE = '上次搜索';
+
+/**
+ * 搜索结果市场标识 → 展示文案（Tag）
+ *
+ * 只登记非 A 股市场（A股 sh/sz/bj 不展示 Tag，保持历史视觉不变）；
+ * SearchResult.market 为 SDK 原值（sh / sz / bj / hk / us…）
+ */
+export const SEARCH_MARKET_LABELS = {
+  hk: '港股',
+  us: '美股',
+} as const;

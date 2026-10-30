@@ -122,3 +122,45 @@ export interface ThsStockBoardPage {
   /** 总页数（从片段分页器解析；解析不到为 null） */
   totalPages: number | null;
 }
+
+/** 港股个股行情单行（同花顺港股板块 ajax 片段，13 列；代码为 HK2715 / K81810 等非 6 位形态） */
+export interface ThsHkStockRow {
+  /** 序号（服务端按当前排序全局编号） */
+  seq: number;
+  /** 同花顺代码原文（如 `HK2715` / `K81810`） */
+  rawCode: string;
+  /** 归一化腾讯符号（`hk02715`，normalizeHkCode 产物，用于打开详情） */
+  code: string;
+  /** 股票简称 */
+  name: string;
+  /** 现价（港元） */
+  price: number | null;
+  /** 涨跌幅（%） */
+  changePercent: number | null;
+  /** 涨跌（港元） */
+  change: number | null;
+  /** 换手率（%） */
+  turnoverRate: number | null;
+  /** 成交量展示文案（上游原文） */
+  volumeText: string;
+  /** 市盈率展示文案（数字文本或「亏损」） */
+  peText: string;
+  /** 昨收（港元） */
+  prevClose: number | null;
+  /** 开盘价（港元） */
+  open: number | null;
+  /** 最高价（港元） */
+  high: number | null;
+  /** 最低价（港元） */
+  low: number | null;
+}
+
+/** 港股个股行情分页结果 */
+export interface ThsHkStockBoardPage {
+  /** 当页行（保持页面顺序） */
+  rows: ThsHkStockRow[];
+  /** 当前页码（1 起） */
+  page: number;
+  /** 总页数（从片段分页器解析；解析不到为 null） */
+  totalPages: number | null;
+}

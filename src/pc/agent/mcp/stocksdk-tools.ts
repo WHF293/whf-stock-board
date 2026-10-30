@@ -181,7 +181,7 @@ export const STOCK_SDK_MCP_SERVER: BuiltinMcpServer = {
     entry({
       name: 'get_kline',
       description:
-        '获取 A 股 K 线（不复权，新浪源）。period: daily=日K / weekly=周K / monthly=月K / min5=5分钟线；返回 OHLCV 序列（按时间升序）',
+        '获取 K 线。A 股不复权（新浪源）；港股（hk00700 形态）为腾讯源前复权（上游不提供不复权）。period: daily=日K / weekly=周K / monthly=月K / min5=5分钟线；返回 OHLCV 序列（按时间升序）',
       schema: z.object({
         symbol: z.string().describe('股票代码（600519 / sh600519 等形态）'),
         period: z.enum(['daily', 'weekly', 'monthly', 'min5']).default('daily').describe('K 线周期'),
@@ -219,7 +219,7 @@ export const STOCK_SDK_MCP_SERVER: BuiltinMcpServer = {
     entry({
       name: 'calc_indicator',
       description:
-        '计算 A 股技术指标（基于日 K 收盘价，stock-sdk 纯函数）。kind: ma=均线(5/10/20/30/60) / macd=DIF·DEA·MACD / rsi=RSI(6/12/24) / boll=布林带(中轨/上轨/下轨)。返回最近 limit 根的指标值',
+        '计算技术指标（基于日 K 收盘价，stock-sdk 纯函数；A 股与港股均可）。kind: ma=均线(5/10/20/30/60) / macd=DIF·DEA·MACD / rsi=RSI(6/12/24) / boll=布林带(中轨/上轨/下轨)。返回最近 limit 根的指标值',
       schema: z.object({
         symbol: z.string().describe('股票代码（600519 / sh600519 等形态）'),
         kind: z.enum(['ma', 'macd', 'rsi', 'boll']).describe('指标类型'),
@@ -276,7 +276,7 @@ export const STOCK_SDK_MCP_SERVER: BuiltinMcpServer = {
     entry({
       name: 'search_stock',
       description:
-        '按名称或代码模糊搜索 A 股（返回代码 / 名称 / 市场，用于把用户口中的股票名转成代码）',
+        '按名称或代码模糊搜索股票（覆盖 A 股 / 港股 / 美股，结果 market 字段区分；用于把用户口中的股票名转成代码）',
       schema: z.object({
         keyword: z.string().min(1).describe('关键词（如 茅台 / 600519）'),
       }),
@@ -297,7 +297,7 @@ export const STOCK_SDK_MCP_SERVER: BuiltinMcpServer = {
     entry({
       name: 'normalize_symbol',
       description:
-        '股票代码形态归一化（600519 / SH600519 / sz000001 → sh600519 标准形态），仅本地计算不发请求',
+        '股票代码形态归一化（600519 / SH600519 / sz000001 / hk00700 → sh600519 / hk00700 标准形态），仅本地计算不发请求',
       schema: z.object({
         symbol: z.string().describe('原始代码'),
       }),

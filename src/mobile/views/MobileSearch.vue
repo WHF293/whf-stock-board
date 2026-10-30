@@ -26,6 +26,7 @@ import {
   STORAGE_NS_MOBILE_BOARD_SETTINGS,
   STORAGE_NS_MOBILE_SEARCH_HISTORY,
 } from '../../common/constants/storage-key.constants';
+import { SEARCH_MARKET_LABELS } from '../../common/constants/search.constants';
 
 const router = useRouter();
 const store = useWatchlistStore();
@@ -107,9 +108,11 @@ const onSearchNow = (): void => {
 /* === 结果行视图 === */
 
 /** 市场标签（按完整符号前缀推导）
- * @param code 完整符号（如 sh600519）
- * @returns 标签文案（沪A/深A/创/科创/北A），非 A 股返回空串 */
+ * @param code 完整符号（如 sh600519 / hk00700 / usAAPL）
+ * @returns 标签文案（沪A/深A/创/科创/北A/港股/美股），非上述市场返回空串 */
 const marketTag = (code: string): string => {
+  if (code.startsWith('hk')) return SEARCH_MARKET_LABELS.hk;
+  if (code.startsWith('us')) return SEARCH_MARKET_LABELS.us;
   if (code.startsWith('sh68')) return '科创';
   if (code.startsWith('sh6')) return '沪A';
   if (code.startsWith('sz30')) return '创';
@@ -120,8 +123,10 @@ const marketTag = (code: string): string => {
 
 /** 标签配色档
  * @param code 完整符号
- * @returns 配色类名（t-a/t-cre/t-star/t-bj） */
+ * @returns 配色类名（t-a/t-cre/t-star/t-bj/t-hk） */
 const tagCls = (code: string): string => {
+  if (code.startsWith('hk')) return 't-hk';
+  if (code.startsWith('us')) return 't-star';
   if (code.startsWith('sh68')) return 't-star';
   if (code.startsWith('sz30')) return 't-cre';
   if (code.startsWith('bj')) return 't-bj';
@@ -266,7 +271,10 @@ const pickHot = (name: string): void => {
             <span class="m-sch-hot__nm">{{ item.name }}</span>
           </div>
         </div>
-        <div v-if="hot.length === 0" class="m-state">热门榜单加载中…</div>
+        <!-- 热门榜单首载：骨架行过渡（骨架即 loading） -->
+        <div v-if="hot.length === 0" class="m-skel-block">
+          <div v-for="i in 6" :key="i" class="m-skel-row"></div>
+        </div>
       </template>
 
       <!-- 搜索结果 -->

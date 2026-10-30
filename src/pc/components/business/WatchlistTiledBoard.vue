@@ -1,16 +1,21 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { VueDraggable } from 'vue-draggable-plus';
 import BaseCard from '../ui/BaseCard.vue';
 import MenuIcon from '../ui/MenuIcon.vue';
+import { pluginKernel } from '../../../common/plugin/index';
 import { useWatchlistStore } from '../../../common/stores/watchlist';
+import { useNotificationsStore } from '../../../common/stores/notifications';
 import {
   WATCHLIST_GROUP_DRAG_ANIMATION_MS,
   WATCHLIST_GROUP_DRAG_GROUP,
   WATCHLIST_SORT_MODE_CYCLE,
   WATCHLIST_SORT_MODE_ICON,
   WATCHLIST_SORT_MODE_TITLE,
+  WATCH_PLUGIN_ID,
+  WATCH_PLUGIN_MISSING_NOTIFY,
 } from '../../../common/constants/watchlist.constants.ts';
+import { NOTIFY_SOURCE_WATCHLIST, NOTIFY_TONE } from '../../../common/constants/notify.constants.ts';
 import { getTrendByChangePercent } from '../../../common/constants/trend.constants.ts';
 import type { Trend } from '../../../common/constants/trend.constants.ts';
 import { TREND_PILL_CLASS, TREND_TEXT_CLASS } from '../../../common/constants/stock-colors.constants.ts';
@@ -21,6 +26,7 @@ import { findQuoteBySymbol } from '../../../common/utils/find-quote-by-symbol';
 import { useStockOpen } from '../../../common/composables/use-stock-open';
 import type { FullQuote } from '../../../common/types/stock-quote.types.ts';
 import type { WatchlistGroup, WatchlistSortMode, WatchlistStock } from '../../../common/types/watchlist.types.ts';
+import type { RegisteredStockRowAction, StockRowTarget } from '../../../common/types/plugin.types.ts';
 
 /**
  * 自选股平铺看板（2026-10-27 王总指定，Tab 模式已删除，本组件即自选股页主体）：
@@ -76,6 +82,63 @@ const trendOf = (symbol: string): Trend =>
 const openDetail = (symbol: string): void => {
   openSidebar(symbol);
 };
+
+// ---------- 插件贡献的行操作（ctx.stockRow，如自选盯盘的「盯盘」开关） ----------
+//
+// v4.22.0 平铺看板重构时丢了旧表格的行操作渲染，2026-10-30 恢复；
+// 另加宿主兜底：「自选盯盘」插件未安装 / 未启用时按钮仍显示（宿主自带），
+// 点击弹浮窗引导先装插件（王总 2026-10-30 指定）
+
+const notifyStore = useNotificationsStore();
+
+/** 注册表中的股票行操作（内核注册表响应式：插件启停即时增删按钮） */
+const rowActions = computed<RegisteredStockRowAction[]>(() => {
+  // revision 纳入依赖：贡献点增删后按钮立刻跟随
+  void pluginKernel.revision.value;
+  return [...pluginKernel.contributions.stockRows.actions];
+});
+
+/** 自选盯盘插件贡献的「盯盘」行操作（缺席 = 插件未安装或未启用） */
+const watchAction = computed<RegisteredStockRowAction | null>(
+  () => rowActions.value.find((action) => action.pluginId === WATCH_PLUGIN_ID) ?? null,
+);
+
+/**
+ * 行操作目标（只把「哪只票」交给插件，不暴露看板卡片对象）
+ * @param stock 自选股条目
+ * @returns 行操作目标
+ */
+const toRowTarget = (stock: WatchlistStock): StockRowTarget => ({
+  symbol: stock.symbol,
+  name: stock.name,
+});
+
+/**
+ * 「盯盘」按钮的提示文案（激活态切换到插件声明的「取消盯盘」）
+ * @param stock 自选股条目
+ * @returns 形如「盯盘 贵州茅台」的文案
+ */
+const watchButtonTitle = (stock: WatchlistStock): string =>
+  `${watchAction.value?.isActive(toRowTarget(stock)) ? watchAction.value.activeTitle : '盯盘'} ${stock.name}`;
+
+/**
+ * 点击「盯盘」：插件在 → 委托插件切换候选；缺席 → 浮窗引导先安装
+ * @param stock 自选股条目
+ */
+const onWatchClick = (stock: WatchlistStock): void => {
+  const action = watchAction.value;
+  if (!action) {
+    notifyStore.push({
+      title: WATCH_PLUGIN_MISSING_NOTIFY.title,
+      body: WATCH_PLUGIN_MISSING_NOTIFY.body,
+      tone: NOTIFY_TONE.PRIMARY,
+      source: NOTIFY_SOURCE_WATCHLIST,
+    });
+    return;
+  }
+  action.run(toRowTarget(stock));
+};
+
 
 // ---------- 拖拽改分组（vue-draggable-plus / Sortable，跨列 = 修改归属） ----------
 //
@@ -246,9 +309,37 @@ const onStocksReorder = (group: WatchlistGroup, stocks: WatchlistStock[]): void 
             >
               {{ formatPercent(findQuote(stock.symbol)?.changePercent) }}
             </span>
-            <!-- hover 操作：编辑、删除、拖拽把手（2026-10-28 王总指定顺序；
-                 把手恒在最右且 shrink-0，按钮出现时由左侧名称 truncate 吸收宽度，不顶把手） -->
+            <!-- hover 操作：盯盘、编辑、删除、拖拽把手（把手恒在最右且 shrink-0，
+                 按钮出现时由左侧名称 truncate 吸收宽度，不顶把手） -->
             <span class="hidden shrink-0 items-center gap-0.5 group-hover:flex">
+              <!-- 其他插件贡献的行操作：宿主只按注册表渲染（自选盯盘在位时也走这里渲染「盯盘」开关） -->
+              <button
+                v-for="action in rowActions"
+                :key="action.key"
+                type="button"
+                class="pressable rounded p-1 active:scale-90"
+                :class="
+                  action.isActive(toRowTarget(stock))
+                    ? 'bg-primary-weak text-primary'
+                    : 'text-text-tertiary hover:bg-flat-weak hover:text-text'
+                "
+                :title="`${action.isActive(toRowTarget(stock)) ? action.activeTitle : action.title} ${stock.name}`"
+                :aria-label="`${action.isActive(toRowTarget(stock)) ? action.activeTitle : action.title} ${stock.name}`"
+                @click.stop="action.run(toRowTarget(stock))"
+              >
+                <MenuIcon :name="action.icon" :size="13" />
+              </button>
+              <!-- 宿主兜底「盯盘」按钮：插件缺席时常显，点击引导先安装（避免功能入口凭空消失） -->
+              <button
+                v-if="!watchAction"
+                type="button"
+                class="pressable rounded p-1 text-text-tertiary hover:bg-flat-weak hover:text-text active:scale-90"
+                :title="watchButtonTitle(stock)"
+                :aria-label="watchButtonTitle(stock)"
+                @click.stop="onWatchClick(stock)"
+              >
+                <MenuIcon name="eye" :size="13" />
+              </button>
               <button
                 type="button"
                 data-track="WATCHLIST_EDIT_GROUPS"

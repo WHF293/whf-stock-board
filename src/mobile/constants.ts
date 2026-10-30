@@ -137,12 +137,14 @@ export const MOBILE_NEWS_SOURCE_LOGOS: Record<string, string> = {
 };
 
 /**
- * 移动端底部 Tab（主 Tab 页路径 + 图标 + 文案；icon 为 Vant 图标名，2026-10-20 起
- * 五 Tab：首页 / 行情 / 自选 / 新闻 / 我的；今天炒什么为行情页金刚区跳转的二级页，不入 Tab）
+ * 移动端底部 Tab（主 Tab 页路径 + 图标 + 文案；icon 为 Vant 图标名，2026-10-30 起
+ * 五 Tab：首页 / 插件 / 自选 / 新闻 / 我的——行情模块并入首页（P4），原行情 Tab 槽位
+ * 换插件入口（/plugins，与 MOBILE_PLUGINS_PATH 同源；今天炒什么等行情页金刚区入口
+ * 迁回首页金刚区候选集）
  */
 export const MOBILE_TAB_ITEMS: readonly { path: string; label: string; icon: string }[] = [
   { path: '/', label: '首页', icon: 'wap-home-o' },
-  { path: '/quote', label: '行情', icon: 'chart-trending-o' },
+  { path: '/plugins', label: '插件', icon: 'apps-o' },
   { path: '/watchlist', label: '自选', icon: 'star-o' },
   { path: '/news', label: '新闻', icon: 'newspaper-o' },
   { path: '/mine', label: '我的', icon: 'user-o' },
@@ -208,6 +210,46 @@ export const MOBILE_BOOK_EDGE_WIDTH = 40;
 /** 底部滑块拖动位移小于多少 px 视为点选（按点位直接选页，不进入拖拽态） */
 /** 手势条滑动切页阈值（|dx| 不小于此值且 |dx| > |dy| 才切页；与资金流向页翻页同值） */
 export const MOBILE_BOOK_SWIPE_PX = 48;
+
+/* ---- 首页金刚区动态行（2026-10-30 P3：解除 10 格上限，5 列动态行数 + 超 2 行折叠）---- */
+
+/** 金刚区每行入口数 */
+export const MOBILE_KING_ROW_SIZE = 5;
+
+/** 折叠态展示行数（超出的行收进展开区，通栏 chevron 展开/收起；会话内记忆不持久化，
+ * 交互对齐行情页全球指数「下拉显示更多」，方案 P3 定稿） */
+export const MOBILE_KING_COLLAPSED_ROWS = 2;
+
+/** 插件入口 icon 兜底（插件声明的 icon 是 PC MenuIcon 体系的 key，非 Vant 图标名时兜底） */
+export const MOBILE_KING_PLUGIN_ICON_FALLBACK = 'apps-o';
+
+/** 插件入口固定彩色调色板（取值域与内置金刚区彩色同一套；按路径稳定哈希取色，
+ * 同一入口恒同色、亮暗同一套，不随主题——2026-10-11 王总指定的金刚区彩色口径） */
+export const MOBILE_KING_PLUGIN_COLORS: readonly string[] = [
+  '#0ea5e9',
+  '#3b82f6',
+  '#10b981',
+  '#eab308',
+  '#14b8a6',
+  '#0e9488',
+  '#ef4444',
+  '#8b5cf6',
+  '#f97316',
+  '#ec4899',
+];
+
+/**
+ * 插件金刚区入口的固定彩色（按路径稳定哈希取调色板色）
+ * @param path 插件页路由路径
+ * @returns 调色板色值
+ */
+export const mobileKingPluginColor = (path: string): string => {
+  let hash = 0;
+  for (let i = 0; i < path.length; i += 1) {
+    hash = (hash * 31 + path.charCodeAt(i)) % 0x7fffffff;
+  }
+  return MOBILE_KING_PLUGIN_COLORS[hash % MOBILE_KING_PLUGIN_COLORS.length]!;
+};
 
 /** TabBar 液态玻璃折射（SVG feDisplacementMap；移植自 shuding/liquid-glass）----
  * 中间区域零位移、仅边缘环带折射；仅 Chromium 系 WebView 生效（backdrop-filter: url(#滤镜)），
@@ -278,3 +320,162 @@ export const DEBUG_BALL_DRAG_SLOP_PX = 6;
 
 /** 悬浮球默认位置：距视口右缘 / 底缘的偏移（px；底部避开 TabBar） */
 export const DEBUG_BALL_DEFAULT_INSET = { x: 16, y: 120 };
+
+/* ==== 横滑切源手势（use-swipe-switch，参数对齐 youtube-desktop useSwipeSwitch） ==== */
+
+/** 轴向锁定阈值（px）：横向位移达到该值且纵模比达标才进入跟手拖拽 */
+export const SWIPE_AXIS_LOCK_PX = 12;
+
+/** 轴向锁定纵横比：横向位移须大于纵向位移 × 该比值（纵向占优整轮让位原生滚动） */
+export const SWIPE_AXIS_RATIO = 1.2;
+
+/** 边界越拖橡皮筋阻尼系数（首项右拖 / 末项左拖） */
+export const SWIPE_OVERDRAG_DAMP = 0.28;
+
+/** 轻扫判定最小位移（px） */
+export const SWIPE_FLICK_MIN_PX = 40;
+
+/** 轻扫判定最小速度（px/ms） */
+export const SWIPE_FLICK_VELOCITY = 0.5;
+
+/** 切换过渡动画时长（毫秒） */
+export const SWIPE_ANIM_MS = 260;
+
+/** 切换过渡动画缓动曲线 */
+export const SWIPE_EASE = 'cubic-bezier(0.22, 0.61, 0.36, 1)';
+
+/** 骨架屏行数（新闻列表 / 榜单首载与横滑切源过渡态统一行数） */
+export const SKELETON_ROW_COUNT = 10;
+
+/* ---- 插件装配（2026-10-30 移动端插件体系，方案：.ai/开发方案/ 同日文档）---- */
+
+/** 个股详情二级页路径前缀（与 mobile/router.ts 的 /stock/:code 同源；app:stock-open 落点） */
+export const MOBILE_STOCK_DETAIL_PATH_PREFIX = '/stock';
+
+/** 市场状态时钟 tick 间隔（毫秒）：分钟级驱动交易窗口 getter（与 PC MainLayout 同值） */
+export const MOBILE_MARKET_STATUS_TICK_MS = 60_000;
+
+/* ---- 插件页 / 插件市场页（2026-10-30 移动端插件体系 P2/P5，方案：.ai/开发方案/ 同日文档）---- */
+
+/** 插件管理页路径（二级页，入口在「我的」） */
+export const MOBILE_PLUGINS_PATH = '/plugins';
+
+/** 插件市场页路径（二级页，入口在插件管理页空态与页内） */
+export const MOBILE_PLUGIN_MARKET_PATH = '/plugin-market';
+
+/** 插件管理页标题 */
+export const MOBILE_PLUGINS_TITLE = '插件';
+
+/** 插件市场页标题 */
+export const MOBILE_PLUGIN_MARKET_TITLE = '插件市场';
+
+/** 插件清单空态标题 */
+export const MOBILE_PLUGINS_EMPTY_TEXT = '还没有支持移动端的插件';
+
+/** 插件清单空态引导（方案 P2 定稿文案口径） */
+export const MOBILE_PLUGINS_EMPTY_HINT = '在 PC 端或插件市场安装声明支持移动端的插件';
+
+/** 插件清单空态的「去插件市场」按钮文案 */
+export const MOBILE_PLUGINS_GO_MARKET_LABEL = '去插件市场';
+
+/** 插件清单底部的市场入口按钮文案（已装有插件时也能进市场装更多） */
+export const MOBILE_PLUGINS_MARKET_ENTRY_LABEL = '插件市场 · 安装更多插件';
+
+/** 内置插件的归属说明文案（不可卸载，只能启停） */
+export const MOBILE_PLUGIN_BUILTIN_OWNER_LABEL = '随应用分发 · 只能启停，不能卸载';
+
+/** 插件清单里「进入插件页」按钮文案（插件贡献了 menu 页面才显示） */
+export const MOBILE_PLUGIN_OPEN_PAGE_LABEL = '进入';
+
+/** 插件清单里失败插件的「重试」按钮文案 */
+export const MOBILE_PLUGIN_RETRY_LABEL = '重试';
+
+/** 插件清单里用户插件的「卸载」按钮文案 */
+export const MOBILE_PLUGIN_UNINSTALL_LABEL = '卸载';
+
+/** 卸载确认弹窗标题 */
+export const MOBILE_PLUGIN_UNINSTALL_TITLE = '卸载插件';
+
+/**
+ * 卸载确认弹窗正文（第一段确认；数据表处置是第二段）
+ * @param name 插件展示名
+ * @param version 插件版本
+ * @returns 正文文案
+ */
+export const MOBILE_PLUGIN_UNINSTALL_MESSAGE = (name: string, version: string): string =>
+  `将卸载「${name}」v${version}：插件贡献的全部能力即刻撤销，插件运行时数据保留（重装后恢复）。是否继续？`;
+
+/** 数据表处置弹窗标题（卸载后插件声明过数据表时的第二段确认） */
+export const MOBILE_PLUGIN_DB_CLEANUP_TITLE = '插件数据表';
+
+/**
+ * 数据表处置弹窗正文
+ * @param pluginName 插件展示名
+ * @param tables 该插件名下的数据表（插件内表名）
+ * @returns 正文文案
+ */
+export const MOBILE_PLUGIN_DB_CLEANUP_MESSAGE = (pluginName: string, tables: readonly string[]): string =>
+  `「${pluginName}」已卸载。它在本地数据库有 ${tables.length} 张数据表（${tables.join('、')}），是否一并删除？删除后数据不可恢复。`;
+
+/** 数据表处置弹窗的「一并删除」按钮（确认键） */
+export const MOBILE_PLUGIN_DB_CLEANUP_DROP_LABEL = '一并删除';
+
+/** 数据表处置弹窗的「保留数据」按钮（取消键） */
+export const MOBILE_PLUGIN_DB_CLEANUP_KEEP_LABEL = '保留数据';
+
+/** 市场页「在线市场」分组标题 */
+export const MOBILE_PLUGIN_MARKET_SECTION_ONLINE = '在线市场';
+
+/** 市场页「本地安装」分组标题 */
+export const MOBILE_PLUGIN_MARKET_SECTION_LOCAL = '本地安装（zip 包）';
+
+/** 市场页本地安装分组说明 */
+export const MOBILE_PLUGIN_MARKET_LOCAL_HINT =
+  '选择 .zip 插件包即可解析安装，支持一次多选；仅「移动端可用」的包允许装到本机。';
+
+/** 本地 zip 安装的「选择插件包」按钮文案 */
+export const MOBILE_PLUGIN_ZIP_PICK_LABEL = '选择插件包';
+
+/** zip 包选择框的 accept（与 PC 安装弹窗同口径） */
+export const MOBILE_PLUGIN_ZIP_ACCEPT = '.zip';
+
+/** zip 任务卡「移除」按钮文案 */
+export const MOBILE_PLUGIN_ZIP_REMOVE_LABEL = '移除';
+
+/** 市场卡片与 zip 任务卡的「仅 PC 端可用」禁用说明（装不上移动端，展示但不放开安装） */
+export const MOBILE_PLUGIN_PC_ONLY_LABEL = '仅 PC 端可用';
+
+/** 安装成功提示（common 层浮窗在移动端无承载，由页面用 Toast 补位） */
+export const MOBILE_PLUGIN_INSTALL_OK_TOAST = '安装成功，可在插件页查看';
+
+/** 安装失败提示前缀（失败原因拼接在后） */
+export const MOBILE_PLUGIN_INSTALL_FAIL_TOAST = '安装失败';
+
+/** 插件信任提示（插件页 / 市场页页脚共用） */
+export const MOBILE_PLUGIN_TRUST_NOTE = '插件与应用同权限运行，请只安装来源可信的插件。';
+
+/** 市场目录加载中文案 */
+export const MOBILE_PLUGIN_MARKET_LOADING_TEXT = '正在加载插件列表…';
+
+/** 添加插件源弹窗标题 */
+export const MOBILE_PLUGIN_MARKET_SOURCE_ADD_TITLE = '添加插件源';
+
+/** 删除自定义源确认弹窗标题 */
+export const MOBILE_PLUGIN_MARKET_SOURCE_REMOVE_TITLE = '删除插件源';
+
+/**
+ * 删除自定义源确认弹窗正文
+ * @param repo 仓库全名
+ * @returns 确认文案
+ */
+export const MOBILE_PLUGIN_MARKET_SOURCE_REMOVE_MESSAGE = (repo: string): string =>
+  `将删除自定义源 ${repo}，其目录缓存一并清除（已安装的插件不受影响）。是否继续？`;
+
+/** 添加源成功提示 */
+export const MOBILE_PLUGIN_MARKET_SOURCE_ADD_OK_TOAST = '插件源已添加';
+
+/** 添加源失败提示（具体原因由弹窗行内错误承载） */
+export const MOBILE_PLUGIN_MARKET_SOURCE_ADD_FAIL_TOAST = '添加插件源失败';
+
+/** 删除源成功提示 */
+export const MOBILE_PLUGIN_MARKET_SOURCE_REMOVE_OK_TOAST = '插件源已删除';

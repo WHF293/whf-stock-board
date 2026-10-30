@@ -7,7 +7,7 @@ import StockDetailPanel from './StockDetailPanel.vue';
 import FuturesChainPanel from './FuturesChainPanel.vue';
 import StockF10Drawer from '../business/stock-f10/StockF10Drawer.vue';
 import DockResizer from '../business/DockResizer.vue';
-import { pluginKernel } from '../../plugin/index';
+import { pluginKernel } from '../../../common/plugin/index';
 import {
   DOCK_PANEL_WIDTH_MAX_RATIO,
   DOCK_LAYOUT_CANVAS_PADDING,

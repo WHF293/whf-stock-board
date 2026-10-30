@@ -2,7 +2,7 @@
 import { computed, provide } from 'vue';
 import BaseDrawer from '../ui/BaseDrawer.vue';
 import BaseEmpty from '../ui/BaseEmpty.vue';
-import { pluginKernel } from '../../plugin/index';
+import { pluginKernel } from '../../../common/plugin/index';
 import { PLUGIN_PANEL_HOST_KEY } from '../../plugin/panel-host';
 import { usePluginPanelsStore } from '../../../common/stores/plugin-panels';
 import { PLUGIN_PANEL_DRAWER_WIDTH } from '../../../common/constants/plugin.constants.ts';

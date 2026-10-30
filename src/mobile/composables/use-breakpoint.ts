@@ -1,11 +1,13 @@
 import { ref, type Ref } from 'vue';
 import { MOBILE_BREAKPOINT_LG_PX, MOBILE_BREAKPOINT_MD_PX } from '../constants';
 
-/** 断点状态：md = ≥600px（Medium），lg = ≥840px（Expanded） */
+/** 断点状态：md = ≥600px（Medium），lg = ≥840px（Expanded）；均要求横屏——
+ *  2026-10-30 王总指定：pad 竖屏整体回退 mobile 形态（TabBar / 页面布局同手机），
+ *  仅横屏才启用 Rail / 双栏等 pad 结构 */
 export interface MobileBreakpoint {
-  /** Medium 档及以上（≥600px）：底部 TabBar 换左侧 Rail、列表 2 列 */
+  /** Medium 档及以上（≥600px 且横屏）：底部 TabBar 换左侧 Rail、列表 2 列 */
   md: Ref<boolean>;
-  /** Expanded 档及以上（≥840px）：列表 3 列、个股详情双栏 */
+  /** Expanded 档及以上（≥840px 且横屏）：列表 3 列、个股详情双栏 */
   lg: Ref<boolean>;
 }
 
@@ -19,8 +21,9 @@ let initialized = false;
 function ensureWatchers(): void {
   if (initialized) return;
   initialized = true;
-  const mdQuery = window.matchMedia(`(min-width: ${MOBILE_BREAKPOINT_MD_PX}px)`);
-  const lgQuery = window.matchMedia(`(min-width: ${MOBILE_BREAKPOINT_LG_PX}px)`);
+  // 宽度断点叠加 orientation: landscape：pad 竖屏（宽再大）一律按 mobile 形态
+  const mdQuery = window.matchMedia(`(min-width: ${MOBILE_BREAKPOINT_MD_PX}px) and (orientation: landscape)`);
+  const lgQuery = window.matchMedia(`(min-width: ${MOBILE_BREAKPOINT_LG_PX}px) and (orientation: landscape)`);
   const sync = (): void => {
     md.value = mdQuery.matches;
     lg.value = lgQuery.matches;

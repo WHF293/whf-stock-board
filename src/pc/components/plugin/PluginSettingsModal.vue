@@ -6,8 +6,8 @@ import BaseModal from '../ui/BaseModal.vue';
 import BaseSwitch from '../ui/BaseSwitch.vue';
 import BaseTabs from '../ui/BaseTabs.vue';
 import MenuIcon from '../ui/MenuIcon.vue';
-import { pluginKernel } from '../../plugin/index';
-import type { PluginSettingsEntry } from '../../plugin/kernel';
+import { pluginKernel } from '../../../common/plugin/index';
+import type { PluginSettingsEntry } from '../../../common/plugin/kernel';
 import type { PluginSettingField } from '../../../common/types/plugin.types.ts';
 
 /**

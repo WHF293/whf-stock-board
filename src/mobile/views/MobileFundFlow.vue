@@ -670,7 +670,9 @@ onMounted(() => {
           <span class="m-ff-head__sub">近 {{ FUND_FLOW_MARKET_DAYS }} 日 · 单位亿</span>
           <button class="m-ff-head__btn" :disabled="marketLoading" @click="loadMarketFlow">↻</button>
         </header>
-        <div v-if="marketLoading && marketFlow.length === 0" class="m-ff-skeleton">加载中…</div>
+        <div v-if="marketLoading && marketFlow.length === 0" class="m-ff-skeleton">
+          <div v-for="i in 3" :key="i" class="m-ff-skel-bar"></div>
+        </div>
         <div v-else-if="marketError && marketFlow.length === 0" class="m-ff-error">
           <span>加载失败，请检查网络后重试</span>
           <span v-if="marketErrorDetail" class="m-ff-error__detail">{{ marketErrorDetail }}</span>
@@ -700,7 +702,7 @@ onMounted(() => {
           </button>
         </header>
         <div v-if="curveLoading && curveViews.length === 0" class="m-ff-skeleton">
-          加载曲线 {{ curveProgress.done }}/{{ curveProgress.total }}…
+          <div v-for="i in 3" :key="i" class="m-ff-skel-bar"></div>
         </div>
         <div v-else-if="curveError && curveViews.length === 0" class="m-ff-error">
           <span>板块资金曲线加载失败</span>
@@ -736,7 +738,7 @@ onMounted(() => {
           v-if="historyEnsuring && displayBoards.every((board) => board.missing)"
           class="m-ff-skeleton"
         >
-          历史数据准备中…
+          <div v-for="i in 3" :key="i" class="m-ff-skel-bar"></div>
         </div>
         <MobileGesturePager
           v-else-if="displayBoards.length > 0"
@@ -803,7 +805,9 @@ onMounted(() => {
             ↻
           </button>
         </header>
-        <div v-if="rankLoading && sectorRank.length === 0" class="m-ff-skeleton">加载中…</div>
+        <div v-if="rankLoading && sectorRank.length === 0" class="m-ff-skeleton">
+          <div v-for="i in 3" :key="i" class="m-ff-skel-bar"></div>
+        </div>
         <div v-else-if="rankError && sectorRank.length === 0" class="m-ff-error">
           <span>板块榜单加载失败</span>
           <span v-if="rankErrorDetail" class="m-ff-error__detail">{{ rankErrorDetail }}</span>
@@ -964,6 +968,18 @@ onMounted(() => {
   font-size: 12px;
   color: var(--color-text-3);
   text-align: center;
+}
+/* 骨架条（图表面首载过渡态，2026-10-30 起替代「加载中…」文案）：纵向堆叠微光条 */
+.m-ff-skeleton {
+  flex-direction: column;
+  gap: 10px;
+}
+.m-ff-skel-bar {
+  width: 62%;
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, transparent, rgba(148, 163, 184, 0.16), transparent);
+  animation: m-shimmer 1.2s infinite;
 }
 .m-ff-error {
   display: flex;

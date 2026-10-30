@@ -15,7 +15,7 @@ import PluginInstallModal from '../components/plugin/PluginInstallModal.vue';
 import PluginMarketPanel from '../components/plugin/PluginMarketPanel.vue';
 import PluginUpdateBar from '../components/plugin/PluginUpdateBar.vue';
 import { trackAction } from '../weblog/weblogActions';
-import { pluginKernel } from '../plugin/index';
+import { pluginKernel } from '../../common/plugin/index';
 import { BUILTIN_PLUGINS } from '../plugins/index';
 import { usePlugins } from '../../common/composables/use-plugins';
 import { usePluginUpdate } from '../../common/composables/use-plugin-update';
@@ -28,6 +28,7 @@ import {
   PLUGIN_LAB_INVENTORY_TAB_LABEL,
   PLUGIN_LAB_MORE_BUTTON_LABEL,
   PLUGIN_LAB_TICK_MS,
+  PLUGIN_MOBILE_READY_BADGE,
   PLUGIN_STATUS,
   PLUGIN_STATUS_LABEL,
   PLUGIN_STATUS_TONE,
@@ -432,6 +433,9 @@ const contributionSummary = (info: PluginRuntimeInfo): string => {
                   {{ PLUGIN_STATUS_LABEL[info.status] }}
                 </BaseTag>
                 <span class="text-xs text-text-tertiary">v{{ info.version }}</span>
+                <BaseTag v-if="info.devices.includes('mobile')" tone="flat">
+                  {{ PLUGIN_MOBILE_READY_BADGE }}
+                </BaseTag>
                 <BaseTag v-if="updateTagOf(info.id)" tone="primary">
                   {{ updateTagOf(info.id) }}
                 </BaseTag>

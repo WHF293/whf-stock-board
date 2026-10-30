@@ -97,10 +97,8 @@ onBeforeUnmount(() => {
 
 <template>
   <div ref="boxEl" class="m-heat-box">
-    <div v-if="props.loading" class="m-state m-heat-state">
-      <van-loading size="28" />
-      板块数据加载中…
-    </div>
+    <!-- 首载：块级骨架过渡（骨架即 loading，2026-10-30 起替代加载文案） -->
+    <div v-if="props.loading" class="m-skel-chart m-heat-skel"></div>
     <div v-else-if="props.error" class="m-state m-heat-state">
       <van-icon name="warning-o" size="32" />
       板块数据加载失败
@@ -154,6 +152,8 @@ onBeforeUnmount(() => {
 <style scoped>
 /* 根容器：随 flex 父级（.m-home-heat）撑满卡片剩余高度，状态态居中不空旷 */
 .m-heat-box { flex: 1 1 auto; min-height: 232px; }
+/* 首载骨架：撑满热力图位（块级微光） */
+.m-heat-skel { height: 100%; min-height: 232px; }
 .m-heat-state {
   height: 100%;
   display: flex;

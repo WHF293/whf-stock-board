@@ -22,9 +22,19 @@ import {
   fetchFundFlowRank,
   fetchIndividualFundFlow,
   fetchMarketFundFlow,
-  fetchNorthboundHoldingRank,
   fetchSectorFundFlowRank,
 } from '../../../common/api/flow.api.ts';
+import {
+  fetchNorthboundHoldingRank,
+  fetchNorthboundHistory,
+  fetchNorthboundIndividual,
+  fetchNorthboundMinute,
+  fetchNorthboundSummary,
+} from '../../../common/api/northbound.api.ts';
+import {
+  NORTHBOUND_HISTORY_DISCONTINUED_DATE,
+  NORTHBOUND_HISTORY_RANGE_OPTIONS,
+} from '../../../common/constants/northbound.constants.ts';
 import {
   fetchClsDepth,
   fetchEastmoneyHotNews,
@@ -418,28 +428,157 @@ export const MARKET_DATA_MCP_SERVER: BuiltinMcpServer = {
     entry({
       name: 'get_northbound_rank',
       description:
-        '获取北向资金（陆股通）持股市值排名：股票代码、名称、收盘价、涨跌幅、持股股数、持股市值、持股占流通股比、区间增持估计市值',
+        '获取北向资金持股个股排行：股票代码、名称、收盘价、涨跌幅、持股股数、持股市值、占流通股比、占总股本比。'
+        + '⚠️ 口径：上游已改为季度披露（北向持股明细 2024-08 起停每日更新），返回最新一期季度快照，'
+        + '无区间增持估计字段；market 为本地筛选不产生额外请求',
       schema: z.object({
-        limit: z.number().int().min(1).max(50).default(DEFAULT_ROWS).describe('返回条数（默认 20）'),
+        market: z
+          .enum(['all', 'shanghai', 'shenzhen'])
+          .default('all')
+          .describe('市场筛选（默认 all 全部；shanghai 沪市 / shenzhen 深市，本地过滤）'),
+        limit: z.number().int().min(1).max(50).default(DEFAULT_ROWS).describe('返回条数（默认 20，按持股市值降序）'),
       }),
       run: async (input) => {
-        const { limit } = input as { limit: number };
-        const rows = await fetchNorthboundHoldingRank();
-        const sorted = sortBy(rows, (row) => row.holdMarketValue, true);
+        const { market, limit } = input as { market: 'all' | 'shanghai' | 'shenzhen'; limit: number };
+        const rows = await fetchNorthboundHoldingRank({ market });
         return {
           text: {
             total: rows.length,
-            rows: take(sorted, limit).map((row) => ({
+            date: rows[0]?.date ?? null,
+            rows: take(rows, limit).map((row) => ({
               date: row.date,
               code: row.code,
               name: row.name,
               close: row.close,
               changePercent: row.changePercent,
+              holdShares: row.holdShares,
               holdMarketValue: row.holdMarketValue,
               holdRatioFloat: row.holdRatioFloat,
-              addMarketValue: row.addMarketValue,
+              holdRatioTotal: row.holdRatioTotal,
             })),
-            unit: '市值单位：元',
+            unit: '市值/收盘价单位：元；持股数单位：股',
+          },
+        };
+      },
+    }),
+    entry({
+      name: 'get_northbound_flow',
+      description:
+        '获取沪深港通（北向/南向）资金实时数据：action=summary 返回四通道汇总（沪股通/港股通沪/深股通/港股通深的'
+        + '净买额、涨跌家数、相关指数涨跌幅）；action=minute 返回当日分时净流入（每分钟一点，含沪/深/合计三序列）。'
+        + '⚠️ 口径：金额单位为万元；北向净买入自 2024-08 起停止实时披露（净额恒为 0，涨跌家数与指数不受影响），'
+        + '分时建议查 direction=south（南向）',
+      schema: z.object({
+        action: z.enum(['summary', 'minute']).describe('summary 汇总 / minute 当日分时'),
+        direction: z
+          .enum(['north', 'south'])
+          .default('south')
+          .describe('资金方向（仅 minute 生效；默认 south 南向，北向已停披露）'),
+      }),
+      run: async (input) => {
+        const { action, direction } = input as { action: 'summary' | 'minute'; direction: 'north' | 'south' };
+        if (action === 'summary') {
+          const rows = await fetchNorthboundSummary();
+          return {
+            text: {
+              rows: rows.map((row) => ({
+                date: row.date,
+                boardName: row.boardName,
+                direction: row.direction,
+                netBuyAmount: row.netBuyAmount,
+                upCount: row.upCount,
+                flatCount: row.flatCount,
+                downCount: row.downCount,
+                indexName: row.indexName,
+                indexChangePercent: row.indexChangePercent,
+              })),
+              unit: '净买额单位：万元；北向净额停披露（0 表示无数据非真实净额）',
+            },
+          };
+        }
+        const rows = await fetchNorthboundMinute(direction);
+        const valid = rows.filter((row) => row.totalNetInflow !== null);
+        const last = valid.at(-1) ?? null;
+        return {
+          text: {
+            direction,
+            pointCount: rows.length,
+            validPointCount: valid.length,
+            latest: last,
+            unit: '净流入单位：万元（shanghaiNetInflow 沪股通或港股通沪 / shenzhenNetInflow 深股通或港股通深 / totalNetInflow 合计）',
+          },
+        };
+      },
+    }),
+    entry({
+      name: 'get_northbound_history',
+      description:
+        '获取北向 / 南向资金按日历史：当日净买额、成交额、累计净买额、领涨股。'
+        + '⚠️ 口径：金额单位为元；北向净买额自 '
+        + NORTHBOUND_HISTORY_DISCONTINUED_DATE
+        + ' 起停止披露（此后为 null，但当日成交额照常披露），南向为港股通沪/深两通道按日合并',
+      schema: z.object({
+        direction: z.enum(['north', 'south']).default('south').describe('资金方向（默认 south 南向）'),
+        range: z
+          .enum(NORTHBOUND_HISTORY_RANGE_OPTIONS.map((option) => option.value) as ['30d', '60d', '120d'])
+          .default('30d')
+          .describe('时间范围（默认 30d）'),
+        limit: z.number().int().min(1).max(50).default(DEFAULT_ROWS).describe('返回最近 N 个交易日（默认 20）'),
+      }),
+      run: async (input) => {
+        const { direction, range, limit } = input as {
+          direction: 'north' | 'south';
+          range: '30d' | '60d' | '120d';
+          limit: number;
+        };
+        const rows = await fetchNorthboundHistory(direction, range);
+        return {
+          text: {
+            direction,
+            total: rows.length,
+            rows: take([...rows].reverse(), limit).map((row) => ({
+              date: row.date,
+              netBuyAmount: row.netBuyAmount,
+              dealAmount: row.dealAmount,
+              accNetBuyAmount: row.accNetBuyAmount,
+              topStockName: row.topStockName,
+              topStockChangePercent: row.topStockChangePercent,
+            })),
+            unit: '金额单位：元；北向净买额自 2024-08-19 起停披露为 null（成交额可用）',
+          },
+        };
+      },
+    }),
+    entry({
+      name: 'get_northbound_stock_holding',
+      description:
+        '获取个股北向持仓历史：持股数、持股市值、占流通股比、占总股本比、收盘价、涨跌幅。'
+        + '⚠️ 口径：上游为季度披露（2024-08 起北向持股明细季度更新），区间内通常只有季度末快照若干条；'
+        + 'symbol 支持 600519 / sh600519 形态',
+      schema: z.object({
+        symbol: z.string().min(1).describe('个股符号（600519 / sh600519 形态均可）'),
+        range: z
+          .enum(['30d', '60d', '120d'])
+          .default('120d')
+          .describe('回溯范围（默认 120d，覆盖 1-2 个季度快照）'),
+      }),
+      run: async (input) => {
+        const { symbol, range } = input as { symbol: string; range: '30d' | '60d' | '120d' };
+        const rows = await fetchNorthboundIndividual(symbol, range);
+        return {
+          text: {
+            symbol,
+            total: rows.length,
+            rows: rows.map((row) => ({
+              date: row.date,
+              holdShares: row.holdShares,
+              holdMarketValue: row.holdMarketValue,
+              holdRatioFloat: row.holdRatioFloat,
+              holdRatioTotal: row.holdRatioTotal,
+              close: row.close,
+              changePercent: row.changePercent,
+            })),
+            unit: '市值/收盘价单位：元；持股数单位：股',
           },
         };
       },

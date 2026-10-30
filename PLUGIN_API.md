@@ -66,6 +66,7 @@ export const myPlugin: PluginDefinition = {
   description: '一句话说明（插件管理弹窗展示）',
   author: '作者名',            // 缺省：内置插件显示「内置」，用户插件显示「用户安装」
   inject: ['other-plugin'],    // 可选：依赖的插件 id
+  devices: ['pc', 'mobile'],   // 可选：支持端声明（缺省 = 仅 PC；见下方字段表）
   config: {},                  // 可选：只读配置（ctx.config）
   settings: { /* §4.3 */ },    // 可选：设置声明 → 设置弹窗自动出现表单
   apply: (ctx) => { /* 所有注册都在这里 */ },   // 可同步，也可 async（异步时状态先进 mounting）
@@ -78,6 +79,7 @@ export const myPlugin: PluginDefinition = {
 | `name` / `version` / `description` | `string` | ✅ | 展示用 |
 | `author` | `string` | — | 缺省按来源兜底 |
 | `inject` | `readonly string[]` | — | 依赖未挂载 → 本插件停在 `pending`；依赖被禁用 → 级联回 `pending`；**环形依赖不死循环**（都停在 pending） |
+| `devices` | `readonly PluginDevice[]` | — | 支持端声明，合法取值 `'pc' / 'mobile'`（`PLUGIN_DEVICES` 白名单，结构校验要求非空数组）。**缺省 = 仅 PC**；声明含 `mobile` 表示作者已在窄屏验证过可用，宿主才会在移动端装配层挂载本插件——未声明的插件在移动端**彻底不存在**（不挂载、不显示、不报错）。安装时冗余快照进 `UserPluginRecord.devices`，启动重挂按快照过滤（不必先执行代码）；`PluginRuntimeInfo.devices` 已归一化（缺省补成 `['pc']`） |
 | `config` | `Record<string, unknown>` | — | 只读，随定义下发 |
 | `settings` | `PluginSettingsDeclaration` | — | 见 §4.3 |
 | `apply` | `(ctx) => void \| Promise<void>` | ✅ | 抛错 → 状态 `failed` + **已产生的贡献点全量回滚**，不自动重试（用户在管理弹窗点重试） |
@@ -170,6 +172,15 @@ ctx.menu.add({
 > `fallbackLanding` 的解析顺序（宿主 `recoverVanishedRoute`）：
 > ① 声明了 `fallbackLanding` 的页面（**宿主自带页优先**，再是插件声明的）→ ② 侧栏第一个菜单 → ③ 宿主首页 `/dashboard`；
 > 跳转用 `replace`（原页面已不存在）+ 右下角浮窗说明原因。
+
+> **移动端（Android App，v4.30.0 起）**：插件菜单**不进底部 TabBar**（五个主 Tab 由宿主固定）。
+> 声明含 `mobile` 且带 `component` 的菜单页，会在移动端首页「金刚区」自动混入一个入口 tile：
+> label/icon 取贡献声明（icon 非 Vant 图标名时兜底 `apps-o`），颜色按路径稳定哈希取固定调色板，
+> 恒排内置入口之后、不参与长按编排；页面本体经 `attachPluginRoutes(mobileRouter, { layoutRouteName: null })`
+> 注册为**顶层路由**（移动端无 PC 主布局）。插件的管理 / 安装入口在底部「插件」Tab（`/plugins`）
+> 与其内的插件市场页。另注意：移动端装配层只 provide **服务子集**（无 `panel:open` / `panel:close` /
+> `app:stock-picker` / `app:agent-ask`——移动端没有停靠面板、选股弹窗与 Agent），插件若要双端通用，
+> 对这四个服务必须容忍缺席（`ctx.consume` 返回 undefined 时降级，不要裸调）。
 
 ### 3.3 `ctx.router.add()` — 隐藏路由（不进菜单）
 
@@ -951,6 +962,7 @@ export default {
 | 改了什么 | 必须同步 |
 | --- | --- |
 | `AppServiceMap` / `AppEventMap` / 贡献点类型 | 本文档 + `AGENTS.md`「插件体系」+ `README.md`「插件体系」+ `PLUGIN_WIKI.md`（第三方那份） |
+| `devices` 字段 / 移动端装配行为（`PLUGIN_DEVICES` 白名单、金刚区混入、服务子集） | 本文档 §1.1 + §3.2 + `AGENTS.md`「插件体系」与「移动端」两节 + `PLUGIN_WIKI.md`（含移动适配验收口径） |
 | 插件会用到的宿主 `types/` / `constants/` | 独立仓库 `whf-stock-board-plugin`（位置不由本仓库假定）：跑一次 `node scripts/sync-host-contract.mjs` 重出 `host/` 契约快照（那边类型层会直接报错） |
 | `ctx.db` 的表 / 列 | Agent MCP 工具描述（`src/agent/mcp/app-tools.ts` 的 `db_query` / `db_execute`） |
 | 新增 / 删除的 API | `SERVER_API.md`（若是网络接口） |

@@ -15,6 +15,8 @@ import type { BoardSource } from '../../common/constants/hot-board.constants.ts'
 import { STORAGE_NS_MOBILE_BOARD_SETTINGS } from '../../common/constants/storage-key.constants.ts';
 import { MOBILE_CACHE_TTL_MS } from '../constants';
 import { mobileCacheGet, mobileCacheGetStale, mobileCacheSet } from '../cache';
+import { useSwipeSwitch } from '../composables/use-swipe-switch';
+import BoardSkeleton from '../components/BoardSkeleton.vue';
 import { appStorage } from '../../common/utils/app-local-storage';
 import {
   formatPct,
@@ -114,6 +116,11 @@ const activeKey = computed(() => {
   return `${source}:${groupOf(source)}`;
 });
 
+/** 当前「平台 × 分组」的页状态（reactive 记录自动补默认值；内容区单一渲染只读它） */
+const activePage = computed<BoardPageState>(
+  () => pages[activeKey.value] ?? BOARD_PAGE_DEFAULT(),
+);
+
 const activeFetchedAt = computed<number | null>(() => pages[activeKey.value]?.fetchedAt ?? null);
 
 /** 每平台当前分组（默认各平台第一组；会话内记忆） */
@@ -124,18 +131,6 @@ const groupBySource = reactive<Record<string, string>>(
 );
 
 const pages = reactive<Record<string, BoardPageState>>({});
-
-/**
- * 模板取状态（reactive 记录自动补默认值）；分组 tab 面板各取各的分组数据，
- * 避免横滑过渡期间面板串用当前记忆分组的数据
- * @param source 平台 key
- * @param group 分组 key
- * @returns 该「平台 × 分组」的状态
- */
-const pageOfGroup = (source: BoardSource, group: string): BoardPageState => {
-  const key = buildCacheKey(source, group);
-  return (pages[key] ??= BOARD_PAGE_DEFAULT());
-};
 
 /**
  * 平台当前选中的分组 key
@@ -223,6 +218,27 @@ const switchSource = (offset: number): void => {
   const base = idx >= 0 ? idx : 0;
   activeIndex.value = (base + offset + len) % len;
 };
+
+/* === swiper 式横滑切平台（2026-10-30 王总指定，同 MobileHotNews）===
+ * 中间为当前平台实际榜单，两侧相邻平台骨架屏；拖拽跟手 → 松手按位移/轻扫速度判定 →
+ * 过阈值动画滑入相邻骨架屏、动画结束才切 activeIndex 发真实请求（未过阈值回弹） */
+/** 当前平台在可见平台中的下标（横滑边界钳制用） */
+const swipeIndex = computed(() => {
+  const idx = visibleSources.value.indexOf(activeSource.value);
+  return Math.max(idx, 0);
+});
+
+const {
+  onSwipeEl,
+  phase: swipePhase,
+  containerStyle,
+} = useSwipeSwitch({
+  count: () => visibleSources.value.length,
+  index: () => swipeIndex.value,
+  onChange: (next) => {
+    activeIndex.value = next;
+  },
+});
 
 /**
  * 激活平台变化（navbar 箭头 / 显隐校正 / 排序跟随）：
@@ -333,88 +349,104 @@ onMounted(() => {
       快照生成于 {{ formatSnapshotTime(activeFetchedAt) }} · 缓存 30 分钟 · 下拉刷新
     </van-notice-bar>
 
-    <!-- 分组 Tabs（原平台 tabs 的位置，平台切换改由 navbar 标题两侧箭头承担；
-         animated 点击切换横滑过渡；不开 swipeable，触摸拦截为零，垂直滚动完全原生）。
-         :key 按平台强制换源整体重挂载：换源当轮 Vant 的 setLine 会跑在新 TabTitle
-         ref 登记之前而静默跳过（浏览器实测 2026-10-12，nextTick resize 也救不了），
-         指示条停留在旧平台偏移；重挂载走 Tabs init 的测量路径，实测是准的 -->
+    <!-- 分组 Tabs：空 van-tab 只当分段选择器，内容由下方 .m-swipe 承担
+         （2026-10-30 横滑切平台改版，同 MobileHotNews）。:key 按平台强制换源整体重挂载：
+         换源当轮 Vant 的 setLine 会跑在新 TabTitle ref 登记之前而静默跳过
+         （浏览器实测 2026-10-12），指示条停留在旧平台偏移；重挂载走 Tabs init 的
+         测量路径，实测是准的 -->
     <van-tabs
       :key="activeSource"
       v-model:active="activeGroupIndex"
-      class="m-tabs"
-      animated
-      :lazy-render="false"
+      class="m-tabs m-tabs--selector"
       :ellipsis="false"
     >
-      <van-tab v-for="group in groupsOf(activeSource)" :key="group.value" :title="group.label">
-        <van-pull-refresh
-          :model-value="pageOfGroup(activeSource, group.value).refreshing"
-          @refresh="onPullRefresh(activeSource, group.value)"
+      <van-tab v-for="group in groupsOf(activeSource)" :key="group.value" :title="group.label" />
+    </van-tabs>
+
+    <!-- swiper 式横滑切平台内容区（2026-10-30 王总指定，交互对齐 youtube-desktop）：
+         中间为当前平台实际榜单，两侧相邻平台骨架屏（拖拽/过渡期挂载、随容器位移）；
+         首载与切平台过渡态一律骨架屏（骨架即 loading），下拉保留 loading 语义 -->
+    <div :ref="onSwipeEl" class="m-swipe">
+      <div class="m-swipe__inner" :style="containerStyle">
+        <!-- 相邻平台骨架屏：边界侧不挂（不循环） -->
+        <div
+          v-if="swipePhase !== null && swipeIndex > 0"
+          class="m-swipe__side m-swipe__side--prev"
         >
-          <div v-if="pageOfGroup(activeSource, group.value).error" class="m-error">
+          <BoardSkeleton />
+        </div>
+        <div
+          v-if="swipePhase !== null && swipeIndex < visibleSources.length - 1"
+          class="m-swipe__side m-swipe__side--next"
+        >
+          <BoardSkeleton />
+        </div>
+
+        <van-pull-refresh
+          :model-value="activePage.refreshing"
+          @refresh="onPullRefresh(activeSource, groupOf(activeSource))"
+        >
+          <div v-if="activePage.error" class="m-error">
             <div>榜单加载失败，请检查网络后重试</div>
             <button
               class="m-error__retry"
-              @click="ensureBoard(activeSource, group.value, { force: true })"
+              @click="ensureBoard(activeSource, groupOf(activeSource), { force: true })"
             >
               ↻ 重新加载
             </button>
           </div>
-          <template v-else>
-            <div class="m-board-card">
-              <div class="m-board-head">
-                <div class="m-board-head__logo">{{ logoOf(activeSource) }}</div>
-                <div class="m-board-head__title">{{ BOARD_SOURCE_LABELS[activeSource] }}</div>
-                <div class="m-board-head__time">
-                  {{ formatSnapshotTime(pageOfGroup(activeSource, group.value).fetchedAt) }} 抓取
-                </div>
-              </div>
-              <div class="m-board-list">
-                <div
-                  v-for="item in pageOfGroup(activeSource, group.value).items"
-                  :key="item.symbol"
-                  class="m-board-row"
-                  @click="goStock(item.symbol)"
-                >
-                  <span
-                    class="m-board-row__rank"
-                    :class="{ 'm-board-row__rank--top': isTopRank(item.rank) }"
-                  >
-                    {{ item.rank }}
-                  </span>
-                  <div class="m-board-row__name">
-                    <div class="t">{{ item.name }}</div>
-                    <div class="c">{{ item.code }}</div>
-                  </div>
-                  <div class="m-board-row__px">
-                    <div class="p m-num">{{ item.price ?? '--' }}</div>
-                    <div class="g m-num" :class="pctClass(item.changePct)">
-                      {{ formatPct(item.changePct) }}
-                    </div>
-                  </div>
-                  <div class="m-board-row__heat">
-                    <div class="h">{{ item.heatLabel || '--' }}</div>
-                    <span
-                      class="hc m-num"
-                      :class="rankChangeClass(item.rankChange)"
-                    >
-                      {{ formatRankChange(item.rankChange) }}
-                    </span>
-                  </div>
-                </div>
-                <div
-                  v-if="pageOfGroup(activeSource, group.value).items.length === 0 && !pageOfGroup(activeSource, group.value).loading"
-                  class="m-empty"
-                >
-                  榜单暂无内容，点顶部箭头切换其他平台
-                </div>
-                <div v-if="pageOfGroup(activeSource, group.value).items.length > 0" class="m-footer">已经到底了~</div>
+          <div v-else class="m-board-card">
+            <div class="m-board-head">
+              <div class="m-board-head__logo">{{ logoOf(activeSource) }}</div>
+              <div class="m-board-head__title">{{ BOARD_SOURCE_LABELS[activeSource] }}</div>
+              <div class="m-board-head__time">
+                {{ formatSnapshotTime(activePage.fetchedAt) }} 抓取
               </div>
             </div>
-          </template>
+            <!-- 首载 / 切平台过渡态：骨架屏（骨架即 loading） -->
+            <BoardSkeleton v-if="activePage.items.length === 0 && activePage.loading" />
+            <div v-else class="m-board-list">
+              <div
+                v-for="item in activePage.items"
+                :key="item.symbol"
+                class="m-board-row"
+                @click="goStock(item.symbol)"
+              >
+                <span
+                  class="m-board-row__rank"
+                  :class="{ 'm-board-row__rank--top': isTopRank(item.rank) }"
+                >
+                  {{ item.rank }}
+                </span>
+                <div class="m-board-row__name">
+                  <div class="t">{{ item.name }}</div>
+                  <div class="c">{{ item.code }}</div>
+                </div>
+                <div class="m-board-row__px">
+                  <div class="p m-num">{{ item.price ?? '--' }}</div>
+                  <div class="g m-num" :class="pctClass(item.changePct)">
+                    {{ formatPct(item.changePct) }}
+                  </div>
+                </div>
+                <div class="m-board-row__heat">
+                  <div class="h">{{ item.heatLabel || '--' }}</div>
+                  <span
+                    class="hc m-num"
+                    :class="rankChangeClass(item.rankChange)"
+                  >
+                    {{ formatRankChange(item.rankChange) }}
+                  </span>
+                </div>
+              </div>
+              <div v-if="activePage.items.length === 0 && !activePage.loading" class="m-empty">
+                榜单暂无内容，点顶部箭头切换其他平台
+              </div>
+              <div v-if="activePage.items.length > 0" class="m-footer">已经到底了~</div>
+            </div>
+          </div>
         </van-pull-refresh>
-      </van-tab>
-    </van-tabs>
+      </div>
+    </div>
 
     <!-- 平台设置弹层（显隐 + 拖拽排序；vue-draggable-plus，handle 手柄 + force-fallback） -->
     <van-popup v-model:show="settingsOpen" position="bottom" round>

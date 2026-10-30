@@ -4,7 +4,7 @@ import { useAgentStore } from '@/common/stores/agent';
 import type { BuiltinMcpServer } from '@/pc/agent/mcp/types';
 import type { GrantResourceKind, McpTransport } from '@/common/types/agent.types';
 import { listBuiltinMcpServers, resetMcpRuntime } from '@/pc/agent/mcp/registry';
-import { pluginKernel } from '@/pc/plugin';
+import { pluginKernel } from '@/common/plugin';
 import { parseMcpJsonText } from '@/common/utils/mcp-json';
 import BaseModal from '@/pc/components/ui/BaseModal.vue';
 import BaseButton from '@/pc/components/ui/BaseButton.vue';

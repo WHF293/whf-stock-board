@@ -1,5 +1,6 @@
 import { BOARD_DATA_LEVEL, SW_LEVEL1_BOARDS } from '../constants/board-calendar.constants.ts';
 import {
+  ROTATION_ESCAPE_SCORE_RATE_DEFAULT,
   ROTATION_LOW_VOLUME_LIMIT,
   ROTATION_MAINLINE_MIN,
   ROTATION_MEMBER_LIMIT,
@@ -28,9 +29,11 @@ import type {
  * 输出 bump 图与详情区所需的全部视图模型，单测可直接对输入输出写，不碰 Vue。
  *
  * 口径（2026-10-21 王总逐项定稿，详见 .ai/开发方案/2026-10-21-前端-题材轮动页面开发方案.md）：
- * - 每日候选：板块涨停家数 ≥ minLimitUp 且 得分率 ≥ minScoreRate（2026-10-23 追加上榜门槛：
+ * - 每日候选分两个方向（2026-10-30 王总指定涌入 / 逃离，入口在题材轮动设置弹窗）：
+ *   涌入 = 板块涨停家数 ≥ minLimitUp 且 得分率 ≥ minScoreRate（2026-10-23 追加上榜门槛：
  *   全军覆没日不得强行取前三，如当日 Top1 得分率 -2.86 的冰点日仍被画上 bump 图），
  *   按 (涨停数 desc, 得分 desc) 取前 topN；
+ *   逃离 = 得分率 ≤ escapeScoreRate（独立门槛，不设涨停下限），按得分升序取前 topN；
  * - 名次 = 候选排序位（1 起），掉榜日记 null（bump 线在此断开）；
  * - 段构建：日期升序扫描，同板块「今日在榜且昨日在榜」延段，否则开新段（隔日重现开新段新色，不做合并）；
  * - 段色：调色板按段序循环取用；
@@ -110,6 +113,9 @@ export const buildBoardRotation = (
   const topN = options.topN ?? ROTATION_TOP_N;
   const minLimitUp = options.minLimitUp ?? ROTATION_MIN_LIMIT_UP;
   const minScoreRate = options.minScoreRate ?? ROTATION_MIN_SCORE_RATE_DEFAULT;
+  // 上榜方向（2026-10-30 王总指定涌入 / 逃离移入设置弹窗）：逃离用独立的最高得分率门槛
+  const isEscape = (options.direction ?? 'inflow') === 'escape';
+  const escapeScoreRate = options.escapeScoreRate ?? ROTATION_ESCAPE_SCORE_RATE_DEFAULT;
   const mainlineMin = options.mainlineMin ?? ROTATION_MAINLINE_MIN;
   const lowVolumeLimit = options.lowVolumeLimit ?? ROTATION_LOW_VOLUME_LIMIT;
 
@@ -174,11 +180,24 @@ export const buildBoardRotation = (
       downCount += row.downCount;
     }
 
-    // 候选：涨停 ≥ 阈值且得分率 ≥ 上榜门槛（过滤负得分率板块），按 (涨停数 desc, 得分 desc)
-    const candidates = dayRows
-      .filter((row) => row.limitUp >= minLimitUp && row.scoreRate >= minScoreRate)
-      .sort((a, b) => b.limitUp - a.limitUp || b.score - a.score || a.boardCode.localeCompare(b.boardCode))
-      .slice(0, topN);
+    // 候选（2026-10-30 王总指定涌入 / 逃离双方向）：
+    // 涌入 = 涨停 ≥ 阈值且得分率 ≥ 上榜最低得分率，按 (涨停数 desc, 得分 desc) 取前 topN；
+    // 逃离 = 得分率 ≤ 逃离上榜最高得分率（独立可调门槛，不设涨停下限——被抛弃的板块往往零涨停），
+    // 按得分升序取前 topN（得分最低的排第 1 名 = 资金出逃最猛）
+    const candidates = (
+      isEscape
+        ? dayRows
+            .filter((row) => row.scoreRate <= escapeScoreRate)
+            .sort((a, b) => a.score - b.score || a.boardCode.localeCompare(b.boardCode))
+        : dayRows
+            .filter((row) => row.limitUp >= minLimitUp && row.scoreRate >= minScoreRate)
+            .sort(
+              (a, b) =>
+                b.limitUp - a.limitUp ||
+                b.score - a.score ||
+                a.boardCode.localeCompare(b.boardCode),
+            )
+    ).slice(0, topN);
 
     const top: RotationDayPoint[] = candidates.map((row, index) => ({
       tradeDate: date,
@@ -200,7 +219,12 @@ export const buildBoardRotation = (
       isFullSnapshot,
       isFinal: meta?.isFinal ?? false,
       isLowVolume: limitUpCnt < lowVolumeLimit,
-      isMainline: top.length > 0 && (top[0]?.limitUp ?? 0) >= mainlineMin && limitUpCnt >= lowVolumeLimit,
+      // 主线判定只对涌入方向有意义（逃离方向的 Top1 是最弱板块，打「主线」标签是误读）
+      isMainline:
+        !isEscape &&
+        top.length > 0 &&
+        (top[0]?.limitUp ?? 0) >= mainlineMin &&
+        limitUpCnt >= lowVolumeLimit,
       topBoardName: top[0]?.boardName ?? null,
       top,
     });

@@ -3,8 +3,16 @@ import { computed, nextTick, ref, watch } from 'vue';
 import MenuIcon from "../ui/MenuIcon.vue";
 import { useStockSearch } from '../../../common/composables/use-stock-search';
 import { useStockSearchHistoryStore } from '../../../common/stores/stock-search-history';
-import { SEARCH_HISTORY_TITLE } from '../../../common/constants/search.constants.ts';
+import { SEARCH_HISTORY_TITLE, SEARCH_MARKET_LABELS } from '../../../common/constants/search.constants.ts';
 import type { SearchResult } from '../../../common/types/stock-quote.types.ts';
+
+/**
+ * 搜索结果行市场 Tag 文案（非 A 股才有：hk 港股 / us 美股；A股返回 undefined 不渲染）
+ * @param result 搜索结果
+ * @returns 市场文案（A 股为 undefined）
+ */
+const marketLabel = (result: SearchResult): string | undefined =>
+  SEARCH_MARKET_LABELS[result.market as keyof typeof SEARCH_MARKET_LABELS];
 
 /**
  * 标的搜索弹窗（Vue 官网 DocSearch 风格）：
@@ -185,7 +193,15 @@ const onInputKeydown = (event: KeyboardEvent): void => {
                 @click="select(result)"
               >
                 <div class="flex items-center justify-between gap-2">
-                  <span class="text-sm font-medium text-text">{{ result.name }}</span>
+                  <span class="flex items-center gap-1.5">
+                    <span
+                      v-if="marketLabel(result)"
+                      class="shrink-0 rounded px-1 py-px text-[10px] leading-4 bg-flat-weak text-text-secondary"
+                    >
+                      {{ marketLabel(result) }}
+                    </span>
+                    <span class="text-sm font-medium text-text">{{ result.name }}</span>
+                  </span>
                   <MenuIcon
                     v-if="index === activeIndex"
                     name="arrowLeft"

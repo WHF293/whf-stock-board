@@ -17,7 +17,7 @@ import DataExportModal from "../components/business/DataExportModal.vue";
 import DataImportModal from "../components/business/DataImportModal.vue";
 import { isDataPortAvailable } from "../../common/api/data-port.api.ts";
 import { isAutoStartEnabled } from "../../common/api/autostart.api.ts";
-import { pluginKernel } from "../plugin/index";
+import { pluginKernel } from "../../common/plugin/index";
 import { sdk } from "../../common/api/sdk";
 import { MENU_DEFAULT_ORDER, MENU_ITEMS, ROUTE_PATH } from "../../common/constants/router-meta.constants.ts";
 import {

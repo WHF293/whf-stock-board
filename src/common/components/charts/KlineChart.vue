@@ -25,9 +25,9 @@ import {
   CHART_TEXT_COLOR,
 } from '../../constants/chart.constants.ts';
 import {
-  MINUTE_AXIS_TICKS,
-  MINUTE_AXIS_TOTAL,
+  MINUTE_AXIS_CONFIG,
   TIMELINE_PCT_AXIS_HEADROOM,
+  type MinuteAxisMarket,
 } from '../../constants/kline.constants.ts';
 import { padMinuteBars } from '../../utils/pad-minute-bars';
 import { readCssVar } from '../../utils/read-css-var';
@@ -98,6 +98,11 @@ const props = defineProps<{
    * 序列补齐到 09:30~15:00 的固定分钟格，X 轴不随盘中进度拉伸
    */
   intradayAxis?: boolean;
+  /**
+   * 分时固定轴市场（cn A 股 / hk 港股）：单日分时的补齐轴、固定刻度、总格数
+   * 按市场取配置（MINUTE_AXIS_CONFIG）；不传默认 'cn'，既有 A 股消费方零改动
+   */
+  market?: MinuteAxisMarket;
   /** 成交 BS/T 标注点（时间升序）；数据或标注变化时吸附最近 bar 重建覆盖物 */
   tradeMarks?: TradeMark[];
 }>();
@@ -201,6 +206,9 @@ const TIMELINE_PCT_YAXIS: YAxisTemplate = {
 
 registerYAxis(TIMELINE_PCT_YAXIS);
 
+/** 当前市场的分时固定轴配置（ranges / total / ticks，A 股缺省） */
+const minuteAxisConfig = computed(() => MINUTE_AXIS_CONFIG[props.market ?? 'cn']);
+
 /**
  * timeline 模式的展示数据派生（分时 / 五日专用，蜡烛模式原样透传）：
  *
@@ -216,7 +224,9 @@ registerYAxis(TIMELINE_PCT_YAXIS);
  */
 const displayBars = computed<KLineData[]>(() => {
   if (props.mode !== 'timeline') return props.bars;
-  const bars = props.intradayAxis ? padMinuteBars(props.bars) : props.bars;
+  const bars = props.intradayAxis
+    ? padMinuteBars(props.bars, minuteAxisConfig.value.ranges)
+    : props.bars;
   const pre = props.preClose ?? props.bars[0]?.close ?? null;
   if (!pre) return bars;
   const round3 = (value: number): number => Number(value.toFixed(3));
@@ -354,7 +364,7 @@ let axisWidth = 0;
 /**
  * 分时 X 轴固定刻度的轴下标
  *
- * 按 MINUTE_AXIS_TICKS 的时刻在补齐后的序列里定位（定位不到的时刻自动跳过）
+ * 按当前市场分时轴刻度（minuteAxisConfig.ticks）的时刻在补齐后的序列里定位
  */
 const minuteAxisTickMarks = computed<{ index: number; timestamp: number; label: string }[]>(
   () => {
@@ -362,7 +372,7 @@ const minuteAxisTickMarks = computed<{ index: number; timestamp: number; label: 
     if (!props.intradayAxis || bars.length === 0) return [];
     const day = dayjs(bars[0].timestamp).format('YYYY-MM-DD');
     const marks: { index: number; timestamp: number; label: string }[] = [];
-    for (const tick of MINUTE_AXIS_TICKS) {
+    for (const tick of minuteAxisConfig.value.ticks) {
       const timestamp = dayjs(`${day} ${tick.time}`).valueOf();
       const index = bars.findIndex((bar) => bar.timestamp === timestamp);
       if (index >= 0) marks.push({ index, timestamp, label: tick.label });
@@ -421,7 +431,7 @@ const buildXAxisTicks = (params: AxisCreateTicksParams): AxisTick[] => {
       void nextTick(() => fitTimelineBarSpace());
     }
     if (props.intradayAxis) {
-      const barSpace = axisWidth / MINUTE_AXIS_TOTAL;
+      const barSpace = axisWidth / minuteAxisConfig.value.total;
       return minuteAxisTickMarks.value.map((mark) => ({
         coord: (mark.index + 0.5) * barSpace,
         value: mark.timestamp,

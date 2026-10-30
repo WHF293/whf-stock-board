@@ -7,6 +7,7 @@ import BaseInput from '../ui/BaseInput.vue';
 import BaseModal from '../ui/BaseModal.vue';
 import BaseTag from '../ui/BaseTag.vue';
 import { usePluginMarket } from '../../../common/composables/use-plugin-market';
+import { PLUGIN_MOBILE_READY_BADGE } from '../../../common/constants/plugin.constants.ts';
 import { normalizeRepoInput } from '../../../common/utils/normalize-repo-input';
 import { formatBytes } from '../../../common/utils/format-bytes';
 import { compareVersion, isNewerVersion } from '../../../common/utils/plugin-version';
@@ -495,6 +496,9 @@ const publishedDateOf = (version: PluginMarketVersion): string =>
             <div class="flex flex-wrap items-center gap-2">
               <span class="text-sm font-medium text-text">{{ entry.name }}</span>
               <BaseTag tone="primary">v{{ entry.latest.version }}</BaseTag>
+              <BaseTag v-if="entry.devices?.includes('mobile')" tone="flat">
+                {{ PLUGIN_MOBILE_READY_BADGE }}
+              </BaseTag>
               <span class="text-[11px] text-text-tertiary">{{ sourceBadgeOf(entry.sourceRepo) }}</span>
             </div>
             <p v-if="entry.description" class="mt-1 text-xs text-text-secondary">{{ entry.description }}</p>
