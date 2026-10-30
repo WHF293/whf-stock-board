@@ -5,7 +5,7 @@
  * 内核在插件卸载时按**逆序**统一撤销。这样卸载插件等价于把它的贡献全部抹掉，
  * 插件作者不需要写任何反向逻辑，也不会出现「卸载了但监听还在 / 定时器还在跑」的泄漏。
  */
-import type { Disposable } from '../../common/types/plugin.types.ts';
+import type { Disposable } from '../types/plugin.types.ts';
 
 /**
  * 由清理函数创建撤销句柄（幂等：重复 dispose 只执行一次清理）

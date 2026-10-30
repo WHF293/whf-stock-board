@@ -13,8 +13,8 @@ import {
   removePluginRow,
   selectPluginRows,
   updatePluginRow,
-} from '../../common/api/plugin-db.api.ts';
-import type { PluginDbColumn, PluginDatabase, PluginDbQuery } from '../../common/types/plugin.types.ts';
+} from '../api/plugin-db.api.ts';
+import type { PluginDbColumn, PluginDatabase, PluginDbQuery } from '../types/plugin.types.ts';
 
 /**
  * 创建某插件专属的数据库句柄（内核在构造 ctx 时调用）

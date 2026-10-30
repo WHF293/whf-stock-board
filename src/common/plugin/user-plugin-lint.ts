@@ -17,7 +17,7 @@
  * 刻意保持纯函数：不 import 任何浏览器 / 插件内核依赖，可被烟雾测试直跑。
  * 将来若宿主上 import map（让第三方可以正规写 import），关掉这里的 import 规则即可。
  */
-import { USER_PLUGIN_LINT_DOC_HINT, USER_PLUGIN_LINT_MAX_ISSUES } from '../../common/constants/plugin.constants.ts';
+import { USER_PLUGIN_LINT_DOC_HINT, USER_PLUGIN_LINT_MAX_ISSUES } from '../constants/plugin.constants.ts';
 
 /** 一条预检问题 */
 export interface UserPluginLintIssue {

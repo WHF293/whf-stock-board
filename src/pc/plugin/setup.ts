@@ -33,6 +33,7 @@ import { requestAgentAnalysis } from '../agent/agent-bridge';
 import { APP_VERSION } from '../../common/constants/app-info.constants.ts';
 import { resolveRouteFallback } from '../../common/utils/resolve-route-fallback';
 import { openExternalUrl } from '../../common/utils/open-external-url';
+import { isUrlInAllowedHosts } from '../../common/utils/url-in-allowed-hosts';
 import { searchStocks } from '../../common/api/search.api.ts';
 import { fetchFullQuotes } from '../../common/api/quotes.api.ts';
 import { proxyFetch } from '../../common/api/proxy-fetch';
@@ -51,7 +52,7 @@ import MenuIcon from '../components/ui/MenuIcon.vue';
 import TabConfigButton from '../components/ui/TabConfigButton.vue';
 import { useTabConfig } from '../../common/composables/use-tab-config';
 import { BUILTIN_PLUGINS } from '../plugins/index';
-import { pluginKernel } from './index';
+import { pluginKernel } from '../../common/plugin/index';
 import {
   createFormatService,
   createMarketDataService,
@@ -60,8 +61,8 @@ import {
   createStockOpenService,
   createWatchlistService,
 } from './app-services';
-import { mountUserPluginRecord } from './user-plugin-loader';
-import { attachPluginRoutes } from './router-bridge';
+import { mountUserPluginRecord } from '../../common/plugin/user-plugin-loader';
+import { attachPluginRoutes } from '../../common/plugin/router-bridge';
 import { router } from '../router/index';
 import { usePluginPanelsStore } from '../../common/stores/plugin-panels';
 import { usePluginStore } from '../../common/stores/plugin';
@@ -204,28 +205,6 @@ const closePanelByKey = (panelKey: string): void => {
 };
 
 /**
- * 判断目标地址是否在代理白名单内（与代理中间件同一套后缀匹配规则）
- *
- * Tauri 端由 Rust 侧的 http scope 兜底（越界请求直接被拒），浏览器端由
- * `/stock-proxy` 中间件校验。这里给插件一个**自检**手段：与其请求被拒后才发现，
- * 不如发起前就知道行不行。
- * @param url 目标地址
- * @returns 是否允许访问
- */
-const isAllowedProxyTarget = (url: string): boolean => {
-  let host: string;
-  try {
-    host = new URL(url).hostname;
-  } catch {
-    // 相对路径 / 非法 URL 一律不在白名单内（插件不应该访问应用自身接口之外的相对地址）
-    return false;
-  }
-  return STOCK_PROXY_ALLOWED_HOSTS.some(
-    (allowed) => host === allowed || host.endsWith(`.${allowed}`),
-  );
-};
-
-/**
  * 装配插件体系（幂等）
  *
  * 必须在 `app.use(pinia)` 之后、首个导航之前调用：
@@ -265,7 +244,7 @@ export const installPlugins = (pinia?: Pinia): void => {
   pluginKernel.services.provide('app:http', {
     fetch: proxyFetch,
     allowedHosts: STOCK_PROXY_ALLOWED_HOSTS,
-    isAllowed: isAllowedProxyTarget,
+    isAllowed: isUrlInAllowedHosts,
   });
   // 行情报价：宿主封装腾讯源，插件不必自己拼上游 URL、处理转码与频率红线
   pluginKernel.services.provide('app:quotes', { fetchFullQuotes });

@@ -8,7 +8,7 @@
  * 同名服务后注册者覆盖先注册者（后者撤销时**恢复**前者），保证卸载可逆。
  */
 import { createDisposable } from './disposable';
-import type { AppServiceMap, Disposable } from '../../common/types/plugin.types.ts';
+import type { AppServiceMap, Disposable } from '../types/plugin.types.ts';
 
 export class PluginServiceContainer {
   /** 服务名 → 实现（当前生效者） */

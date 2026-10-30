@@ -17,7 +17,7 @@ import { POLLING_INTERVAL } from '../constants/polling.constants.ts';
 import { useMarketStatusStore } from '../stores/market-status';
 import { useSettingsStore } from '../stores/settings';
 import { handleSdkError } from '../utils/handle-sdk-error';
-import type { PollingOptions, PollingScheduler } from '../types/polling.types.ts';
+import type { PollingMarket, PollingOptions, PollingScheduler } from '../types/polling.types.ts';
 
 /**
  * 创建一个轮询调度器
@@ -31,7 +31,15 @@ import type { PollingOptions, PollingScheduler } from '../types/polling.types.ts
  * @returns 调度句柄（pause / resume / runNow / activate / isEligible / stop）
  */
 export const createPollingScheduler = (options: PollingOptions): PollingScheduler => {
-  const { task, intervalMs, tradingAware = false, market = 'A', immediate = true } = options;
+  const { task, intervalMs, tradingAware = false, immediate = true } = options;
+
+  /**
+   * 归一市场取值：getter 形态在窗口 computed 内调用（响应式依赖自动追踪），
+   * 静态值包一层常函数
+   * @returns 当前轮询所属市场（未配置时回退 A 股）
+   */
+  const resolveMarket = (): PollingMarket =>
+    typeof options.market === 'function' ? options.market() : (options.market ?? 'A');
 
   const marketStatusStore = useMarketStatusStore();
   const settingsStore = useSettingsStore();
@@ -47,9 +55,12 @@ export const createPollingScheduler = (options: PollingOptions): PollingSchedule
     if (!tradingAware) {
       return true;
     }
+    const market = resolveMarket();
     return market === 'US'
       ? marketStatusStore.isUsPollingWindow
-      : marketStatusStore.isASharePollingWindow;
+      : market === 'HK'
+        ? marketStatusStore.isHkPollingWindow
+        : marketStatusStore.isASharePollingWindow;
   });
 
   /**

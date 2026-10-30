@@ -32,7 +32,8 @@ import { toFullSymbol } from '../../../common/utils/to-full-symbol';
 import { useDataCacheStore } from '../../../common/stores/data-cache';
 import { useDockPanelStore } from '../../../common/stores/dock-panel';
 import { DATA_CACHE_KEY } from '../../../common/constants/data-cache.constants.ts';
-import { pluginKernel } from '../../plugin/index';
+import { isHkSymbol } from '../../../common/utils/is-hk-symbol';
+import { pluginKernel } from '../../../common/plugin/index';
 
 /**
  * 个股详情面板（右侧停靠面板内容，布局参考同花顺移动端）：
@@ -56,6 +57,9 @@ const dockPanel = useDockPanelStore();
  * 归一化符号：600519 / SH600519 / sh600519 等形态统一为 sh600519
  */
 const symbol = computed<string>(() => toFullSymbol(String(props.symbol ?? '')));
+
+/** 符号市场（hk 港股 / cn A 股缺省）：K 线分时固定轴与轮询窗口按市场取 */
+const symbolMarket = computed<'hk' | 'cn'>(() => (isHkSymbol(symbol.value) ? 'hk' : 'cn'));
 
 // ---------- 「查看更多」：跳转个股详情整页（2026-10-24 王总指定，
 //             报价头右上角高光按钮；自选增删由详情页顶栏承接，侧栏不再放） ----------
@@ -85,6 +89,8 @@ usePolling({
   task: fetchQuote,
   intervalMs: POLLING_INTERVAL.QUOTES_INTRADAY,
   tradingAware: true,
+  // getter：面板实例跨标的复用（A 股 ↔ 港股切换不重挂），窗口随符号响应式切换
+  market: () => (symbolMarket.value === 'hk' ? 'HK' : 'A'),
 });
 
 // ---------- 图表周期（按钮组切换：分时 / 五日 / 5分 / 日K / 周K / 月K，均走新浪源） ----------
@@ -231,6 +237,7 @@ const detailSections = computed(() => pluginKernel.contributions.stockDetail.sec
           :pre-close="quoteRef?.prevClose ?? null"
           :symbol="symbol"
           :intraday-axis="chartPeriod === 'minute'"
+          :market="symbolMarket"
           :trade-marks="chartTradeMarks"
           sub-volume-only
           :resize-tick="chartResizeTick"

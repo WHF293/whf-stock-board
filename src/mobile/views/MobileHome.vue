@@ -2,28 +2,49 @@
 /**
  * 首页（v3 Tab1）：按 .ai/项目资源/stock-board-mobile-home-tab-v3.html 版式
  *
- * 自上而下：navbar（股票看板+搜索）→ 金刚区 5×2（通栏）→ 成交额曲线
- * → 涨跌分布·市场情绪合并卡 → 板块热力。
- * 2026-10-20：指数模块与金刚区四项（今天炒什么/连板/异动/龙虎榜）迁至新行情 Tab
- * （MobileQuote，/quote）；资金流向自 TabBar 移出改入金刚区；大盘评级与今天炒什么
- * 两卡迁至行情页平铺，板块热力自行情页迁回（王总指定两模块互换）。
- * - 金刚区：行情全景/板块日历/历史牛熊/(次)新股/个股行情/资金流向（显隐排序可设置；
- *   2026-10-20 盘面雷达（原市场榜单）亦迁至行情页金刚区）
+ * 自上而下：navbar（股票看板+搜索）→ 指数模块（A 股条 + 全球指数展开区，2026-10-30 自
+ * 行情页并回置顶，方案 P4）→ 金刚区（动态行 + 超 2 行折叠 + 插件入口混入，方案 P3）
+ * → 书本翻页（成交额 / 涨跌分布·情绪 / 板块热力 / 大盘评级四页）
+ * → 今天炒什么卡（平铺，自行情页并回）。
+ * 2026-10-30：行情页（MobileQuote，/quote）整体并入首页并删除——指数模块置顶、
+ * 行情页金刚区五项迁回候选集、大盘评级卡进书本第四页、今天炒什么卡保留平铺。
+ * - 指数：fetchFullQuotes（东财，30s TTL）+ fetchGlobalIndexQuotes（展开时拉取）；
+ *   失败态保留指数名、数值 --/--%
+ * - 金刚区：行情全景/板块日历/历史牛熊/(次)新股/个股行情/资金流向/行业龙头/今天炒什么/
+ *   盘面雷达/连板/异动/龙虎榜（显隐排序可设置）；插件贡献的 menu 页（devices 含 mobile）
+ *   混入候选集尾部，pluginKernel.revision 驱动；每行 5 格、行数 ceil(n/5)，超 2 行折叠
  * - 成交额：fetchMarketTurnover 重接口拉一次 + 快照缓存；30/60/180 交易日本地切片；
  *   自研 SVG 折线（两市总额面积线 + 上证/深证），仿 MobilePanorama 轻量方案
  * - 涨跌分布·情绪：fetchAllMarketQuotes→countDistribution（8 桶）；
  *   涨停四池串行错峰→computeMarketSentiment；30s 前台轮询（useMobilePolling）
+ * - 大盘评级：MobileRatingCard 自持 60s TTL 轮询（书本第四页）
  * - 分区独立降级：成交额/分布/情绪/热榜各自重试，互不阻塞
  */
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { showFailToast } from 'vant';
 import { VueDraggable } from 'vue-draggable-plus';
-import { fetchAllMarketQuotes } from '../../common/api/quotes.api';
+import {
+  fetchAllMarketQuotes,
+  fetchFullQuotes,
+} from '../../common/api/quotes.api';
+import { fetchGlobalIndexQuotes } from '../../common/api/panorama.api';
+import { fetchHotBoard } from '../../common/api/hot-board.api';
 import { fetchMarketTurnover } from '../../common/api/turnover.api';
 import { fetchZtPool } from '../../common/api/event.api';
 import { fetchIndustryConstituents } from '../../common/api/board.api';
 import { fetchCalendarBoardPanorama } from '../../common/api/board-calendar.api';
+import { INDEX_SYMBOLS } from '../../common/constants/index-symbols.constants';
+import {
+  BOARD_GROUPS,
+  BOARD_SOURCE_LABELS,
+  BOARD_SOURCE_ORDER,
+} from '../../common/constants/hot-board.constants';
+import type { BoardSource } from '../../common/constants/hot-board.constants';
+import type { HotBoardItem } from '../../common/types/hot-board.types';
+import type { GlobalIndexQuote } from '../../common/types/panorama.types';
+import type { FullQuote } from '../../common/types/stock-quote.types';
+import { pluginKernel } from '../../common/plugin/index';
 import { HEATMAP_DRILL_STOCK_COUNT } from '../../common/constants/heatmap.constants';
 import { toFullSymbol } from '../../common/utils/to-full-symbol';
 import {
@@ -39,11 +60,23 @@ import type { DistributionCount } from '../../common/types/distribution.types';
 import { computeMarketSentiment } from '../../common/utils/compute-market-sentiment';
 import type { MarketSentiment } from '../../common/types/market-sentiment.types';
 import { appStorage } from '../../common/utils/app-local-storage';
-import { STORAGE_NS_MOBILE_KING_SETTINGS } from '../../common/constants/storage-key.constants';
+import {
+  STORAGE_NS_MOBILE_BOARD_SETTINGS,
+  STORAGE_NS_MOBILE_KING_SETTINGS,
+} from '../../common/constants/storage-key.constants';
 import { mobileCacheGet, mobileCacheSet } from '../cache';
-import { MOBILE_TURNOVER_RANGE_DEFAULT, MOBILE_TURNOVER_RANGES } from '../constants';
+import {
+  MOBILE_KING_COLLAPSED_ROWS,
+  MOBILE_KING_PLUGIN_ICON_FALLBACK,
+  MOBILE_KING_ROW_SIZE,
+  MOBILE_TURNOVER_RANGE_DEFAULT,
+  MOBILE_TURNOVER_RANGES,
+  mobileKingPluginColor,
+} from '../constants';
 import { useMobilePolling } from '../composables/use-mobile-polling';
 import MobileHeatmap from '../components/MobileHeatmap.vue';
+import MobileRatingCard from '../components/MobileRatingCard.vue';
+import BookFlipBook from '../components/BookFlipBook.vue';
 import ArmsSparkline from '../components/ArmsSparkline.vue';
 import { ingestBreadthSnapshot, readBreadthDay } from '../../common/api/market-breadth-db.api';
 import type { MarketBreadth, BreadthPoint } from '../../common/types/market-breadth.types.ts';
@@ -60,14 +93,16 @@ const goTarget = (to: string): void => {
   void router.push(to);
 };
 
-/* === 金刚区（5×2：入口数动态，v3.1 稿；搜索入口在 navbar 不占格） ===
+/* === 金刚区（动态行：入口数不设上限，v4.30 P3；搜索入口在 navbar 不占格） ===
    v4.2.1：icon 换 Vant 线性图标（unicode 观感差）；移除自选 / 热点新闻（TabBar 已有入口）；
    连板 / 异动 / 龙虎榜独立榜页（/rank/:rank）与历史牛熊（/bull-review）为独立二级页。
    2026-10-11：tile 底改浅灰（--m-king-ic-bg），icon 改每项固定彩色（color 字段，不随主题）；
    2026-10-12：新股次新股自行情全景拆出独立页（/ipo）补位；「新股」更名「(次)新股」；
    长按任意 tile 弹出入口设置（显隐 + 排序，参考热点新闻源设置，超 10 入口时用户自行取舍）
    2026-10-20：今天炒什么 / 连板 / 异动 / 龙虎榜迁出行情页金刚区（首页不再展示）；
-   资金流向自 TabBar 移出后改入金刚区（/fund-flow 二级页） */
+   资金流向自 TabBar 移出后改入金刚区（/fund-flow 二级页）
+   2026-10-30（P4）：行情页五项（今天炒什么 / 盘面雷达 / 连板 / 异动 / 龙虎榜）迁回候选集，
+   行情页删除后统一一份候选集；插件贡献的 menu 页混入候选集尾部（P3，devices 含 mobile） */
 interface KingItem {
   icon: string;
   label: string;
@@ -76,7 +111,7 @@ interface KingItem {
   color: string;
 }
 /** 金刚区全部候选入口（key = to 路由路径，唯一）；显隐/顺序由用户设置持久化决定 */
-const KING_ITEMS: readonly KingItem[] = [
+const BUILTIN_KING_ITEMS: readonly KingItem[] = [
   { icon: 'eye-o', label: '行情全景', to: '/panorama', color: '#0ea5e9' },
   { icon: 'calendar-o', label: '板块日历', to: '/board-calendar', color: '#3b82f6' },
   { icon: 'replay', label: '历史牛熊', to: '/bull-review', color: '#10b981' },
@@ -85,12 +120,17 @@ const KING_ITEMS: readonly KingItem[] = [
   { icon: 'bars', label: '个股行情', to: '/stock-market', color: '#14b8a6' },
   // 资金流向（2026-10-20 自 TabBar 移出改入金刚区）
   { icon: 'gold-coin-o', label: '资金流向', to: '/fund-flow', color: '#0e9488' },
-  // 机构行为 / 市场宽度（2026-10-29 下线：PC 侧转插件分发，移动端无插件体系不再提供）
   // 行业龙头（2026-10-29 新增；PC 行情全景-行业龙头模块移动版：板块/细分赛道固定清单 + 报价）
   { icon: 'medal-o', label: '行业龙头', to: '/industry-leaders', color: '#ef4444' },
+  // 今天炒什么 / 盘面雷达 / 连板 / 异动 / 龙虎榜（2026-10-30 P4 自行情页迁回）
+  { icon: 'fire-o', label: '今天炒什么', to: '/board', color: '#f97316' },
+  { icon: 'chart-trending-o', label: '盘面雷达', to: '/market-rank', color: '#8b5cf6' },
+  { icon: 'medal-o', label: '连板', to: '/rank/event', color: '#f59e0b' },
+  { icon: 'bell', label: '异动', to: '/rank/events', color: '#ef4444' },
+  { icon: 'flag-o', label: '龙虎榜', to: '/rank/dragon-tiger', color: '#ec4899' },
 ];
-/** to → 定义（设置弹窗行渲染 / 持久化序回填用） */
-const KING_BY_TO = new Map(KING_ITEMS.map((item) => [item.to, item]));
+/** to → 定义（设置弹窗行渲染 / 持久化序回填用；仅 builtin——插件入口随插件生灭，不进持久化设置） */
+const KING_BY_TO = new Map(BUILTIN_KING_ITEMS.map((item) => [item.to, item]));
 
 /** 金刚区入口设置持久化形态（order 全量序 / hidden 隐藏集合），与新闻源设置同构 */
 interface KingSettings {
@@ -106,7 +146,7 @@ const readKingSettings = (): KingSettings => {
       if (Array.isArray(parsed.order) && Array.isArray(parsed.hidden)) {
         // 未知 key 剔除、新入口按默认序补尾（版本升级后 defs 增删的兜底）
         const known = parsed.order.filter((to) => KING_BY_TO.has(to));
-        for (const item of KING_ITEMS) {
+        for (const item of BUILTIN_KING_ITEMS) {
           if (!known.includes(item.to)) known.push(item.to);
         }
         return { order: known, hidden: parsed.hidden.filter((to) => KING_BY_TO.has(to)) };
@@ -115,7 +155,7 @@ const readKingSettings = (): KingSettings => {
       // 坏包回落默认
     }
   }
-  return { order: KING_ITEMS.map((item) => item.to), hidden: [] };
+  return { order: BUILTIN_KING_ITEMS.map((item) => item.to), hidden: [] };
 };
 
 const kingSettings = reactive<KingSettings>(readKingSettings());
@@ -127,16 +167,64 @@ const persistKingSettings = (): void => {
   );
 };
 
-/** 可见入口（隐藏项不渲染；顺序 = 设置调整后的持久化序） */
-const visibleKingItems = computed<KingItem[]>(() =>
-  kingSettings.order
+/**
+ * 插件贡献的金刚区入口（方案 P3：pluginKernel.revision 驱动，随插件挂载 / 卸载 / 启停增删）
+ *
+ * 只混 devices 含 mobile 且带页面的 menu 项；to = 插件 path，label 直接取贡献声明，
+ * icon 是 PC MenuIcon 体系的 key 与 Vant 图标名不通，统一兜底；color 按路径稳定哈希取色。
+ */
+const pluginKingItems = computed<KingItem[]>(() => {
+  void pluginKernel.revision.value;
+  return pluginKernel.contributions.menu.items
+    .filter(
+      (item) =>
+        item.component !== undefined &&
+        pluginKernel.get(item.pluginId)?.devices.includes('mobile') === true,
+    )
+    .map((item) => ({
+      icon: MOBILE_KING_PLUGIN_ICON_FALLBACK,
+      label: item.title,
+      to: item.path,
+      color: mobileKingPluginColor(item.path),
+    }));
+});
+
+/** 可见入口（builtin 按用户设置序，插件项恒排尾部且不进显隐设置；隐藏项不渲染） */
+const visibleKingItems = computed<KingItem[]>(() => [
+  ...kingSettings.order
     .filter((to) => !kingSettings.hidden.includes(to))
     .map((to) => KING_BY_TO.get(to))
     .filter((item): item is KingItem => item !== undefined),
+  ...pluginKingItems.value,
+]);
+
+/* --- 动态行 + 折叠（方案 P3：每行 5 格、行数 ceil(n/5)，解除 10 格上限；
+     超 2 行折叠，通栏 chevron 展开/收起，交互对齐全球指数「下拉显示更多」，
+     会话内记忆不持久化） --- */
+const kingExpanded = ref(false);
+
+/** 总行数（含插件入口） */
+const kingRowCount = computed(() =>
+  Math.ceil(visibleKingItems.value.length / MOBILE_KING_ROW_SIZE),
 );
 
-/** 预留虚线位：补齐 5×2 版面（入口满 10 个时为 0） */
-const kingTodoCount = computed(() => Math.max(0, 10 - visibleKingItems.value.length));
+/** 是否超折叠行数（超出才出现展开/收起钮） */
+const kingOverflow = computed(() => kingRowCount.value > MOBILE_KING_COLLAPSED_ROWS);
+
+/** 渲染行数（折叠态只露前 2 行） */
+const kingShownRows = computed(() =>
+  kingOverflow.value && !kingExpanded.value ? MOBILE_KING_COLLAPSED_ROWS : kingRowCount.value,
+);
+
+/** 渲染的入口（按行数截断） */
+const kingShownItems = computed(() =>
+  visibleKingItems.value.slice(0, kingShownRows.value * MOBILE_KING_ROW_SIZE),
+);
+
+/** 预留虚线位：补满末行（折叠态补满第 2 行） */
+const kingTodoCount = computed(
+  () => kingShownRows.value * MOBILE_KING_ROW_SIZE - kingShownItems.value.length,
+);
 
 /* --- 金刚区设置弹窗（长按 tile 打开；桌面浏览器右键同开，便于调试） --- */
 const kingSettingsOpen = ref(false);
@@ -215,7 +303,78 @@ const goTile = (to: string): void => {
   goTarget(to);
 };
 
-/* === 指数模块已迁至行情页 MobileQuote（2026-10-20 王总指定；首页金刚区四项同步迁出） === */
+/* === 指数模块（2026-10-30 P4 自行情页迁回置顶：A 股指数条 + 全球指数展开区，
+       数据口径与交互不变；行情高频入口务必一屏内可见） === */
+const INDEX_LABELS: Record<string, string> = {
+  sh000001: '上证指数',
+  sz399001: '深证成指',
+  sz399006: '创业板指',
+};
+/**
+ * A 股指数条列表（2026-10-13 王总：去掉科创50；PC 市场总览仍用全量 INDEX_SYMBOLS）
+ */
+const HOME_INDEX_SYMBOLS = INDEX_SYMBOLS.filter((code) => code !== 'sh000688');
+interface IndexPill {
+  code: string;
+  name: string;
+  price: number;
+  changePct: number | null;
+}
+const indices = ref<IndexPill[]>([]);
+const indicesError = ref(false);
+const INDEX_TTL_MS = 30_000;
+let indicesAt = 0;
+
+/** A 股指数条占位（名称取 INDEX_LABELS，顺序与 HOME_INDEX_SYMBOLS 一致） */
+const indexPlaceholders = HOME_INDEX_SYMBOLS.map((code) => ({
+  code,
+  name: INDEX_LABELS[code] ?? code,
+}));
+
+/** 全球指数占位名（顺序与 PANORAMA_GLOBAL_INDEX_SECIDS 对齐） */
+const GLOBAL_INDEX_PLACEHOLDERS = [
+  '恒生指数',
+  '道琼斯',
+  '纳斯达克',
+  '标普500',
+  '日经225',
+  '韩国KOSPI',
+];
+
+/* 全球指数（PC 同款 6 项：恒生/道琼斯/纳斯达克/标普500/日经225/KOSPI，东财 ulist 源） */
+const globalIndices = ref<GlobalIndexQuote[]>([]);
+const globalIndicesError = ref(false);
+/** 展开区显隐（会话内记忆即可，与 PC 展开开关一致不持久化） */
+const indexExpanded = ref(false);
+
+const loadGlobalIndices = async (force = false): Promise<void> => {
+  if (!force && globalIndices.value.length > 0) return;
+  try {
+    // 上游 200 ≠ 有数据（diff 缺失返回空数组），空数组也按错误态给重试入口
+    globalIndices.value = await fetchGlobalIndexQuotes();
+    globalIndicesError.value = globalIndices.value.length === 0;
+  } catch {
+    globalIndicesError.value = true;
+  }
+};
+
+const loadIndices = async (force = false): Promise<void> => {
+  if (!force && Date.now() - indicesAt < INDEX_TTL_MS) return;
+  void loadGlobalIndices(force);
+  try {
+    const quotes: FullQuote[] = await fetchFullQuotes(HOME_INDEX_SYMBOLS);
+    indices.value = quotes.map((q) => ({
+      code: q.code,
+      name: q.name || INDEX_LABELS[q.code] || q.code,
+      price: q.price,
+      changePct: q.changePercent,
+    }));
+    indicesError.value = false;
+    indicesAt = Date.now();
+  } catch {
+    indicesError.value = true;
+  }
+};
 
 /* === 成交额曲线：重接口拉一次 + 快照缓存；窗口本地切片 === */
 const turnover = ref<TurnoverDayItem[]>([]);
@@ -643,19 +802,73 @@ const goConstituent = (code: string): void => {
 const refreshing = ref(false);
 const onRefresh = async (): Promise<void> => {
   try {
-    await Promise.all([loadTurnover(true), loadMarketPulse(), loadHeat(true)]);
+    await Promise.all([
+      loadIndices(true),
+      loadTurnover(true),
+      loadMarketPulse(),
+      loadHeat(true),
+      loadBoardCard(),
+    ]);
+    void ratingCardRef.value?.load(true);
   } finally {
     refreshing.value = false;
   }
 };
 
 onMounted(() => {
+  void loadIndices(true);
   void loadTurnover();
   void loadMarketPulse();
   void loadHeat();
+  void loadBoardCard();
 });
 
-/* === 大盘评级与今天炒什么已迁至行情页 MobileQuote（2026-10-20 王总指定，板块热力回迁首页） === */
+/* === 今天炒什么入口卡（2026-10-30 P4 自行情页迁回，平铺）：主线 + Top5 预览 === */
+interface BoardCardState {
+  source: BoardSource | null;
+  mainline: string;
+  top5: HotBoardItem[];
+}
+const boardCard = ref<BoardCardState>({ source: null, mainline: '', top5: [] });
+const boardError = ref(false);
+
+/** 与 MobileBoard 同口径读平台设置（顺序 + 显隐）
+ * @returns 平台设置对象：order 为展示顺序，hidden 为隐藏平台列表 */
+const readBoardSettings = (): { order: BoardSource[]; hidden: BoardSource[] } => {
+  const raw = appStorage.getItem(STORAGE_NS_MOBILE_BOARD_SETTINGS);
+  if (raw !== null) {
+    try {
+      const parsed = JSON.parse(raw) as Partial<{ order: BoardSource[]; hidden: BoardSource[] }>;
+      if (Array.isArray(parsed.order) && Array.isArray(parsed.hidden)) {
+        return { order: parsed.order, hidden: parsed.hidden };
+      }
+    } catch {
+      // 坏包回落默认
+    }
+  }
+  return { order: [...BOARD_SOURCE_ORDER], hidden: [] };
+};
+
+const loadBoardCard = async (): Promise<void> => {
+  try {
+    const { order, hidden } = readBoardSettings();
+    const source = order.find((key) => !hidden.includes(key)) ?? BOARD_SOURCE_ORDER[0]!;
+    const group = BOARD_GROUPS[source][0]!.value;
+    const items = await fetchHotBoard(source, group);
+    boardCard.value = {
+      source,
+      mainline: items[0]?.name ?? '',
+      top5: items.slice(0, 5),
+    };
+    boardError.value = false;
+  } catch {
+    boardError.value = true;
+  }
+};
+
+/* === 大盘评级（2026-10-30 P4 自行情页迁回，进书本第四页；自持 60s TTL 轮询，
+       下拉刷新强制重拉） === */
+const ratingCardRef = ref<InstanceType<typeof MobileRatingCard> | null>(null);
 
 /* === 格式化 === */
 /**
@@ -688,10 +901,98 @@ const pctClass = (v: number | null): string =>
 
     <!-- 整页下拉刷新（面板内滚动 + PullRefresh 宿主结构，与 news/board 同构） -->
     <van-pull-refresh v-model="refreshing" class="m-home-scroll" @refresh="onRefresh">
-      <!-- 1. 金刚区 5×2（通栏贴边，v3 稿；长按任意 tile 弹出入口设置，桌面右键同开） -->
+      <!-- 1. 指数模块（2026-10-30 P4 自行情页迁回置顶：A 股指数条 + 全球指数展开区，
+           行情高频入口务必一屏内可见） -->
+      <div class="m-home-index-bar">
+        <!-- 失败态：保留指数名，数值显示 --/--%（弱化展示），不整块报错 -->
+        <template v-if="indicesError">
+          <div
+            v-for="item in indexPlaceholders"
+            :key="item.code"
+            class="m-home-index m-home-index--err"
+          >
+            <div class="m-home-index__name">{{ item.name }}</div>
+            <div class="m-home-index__px">--</div>
+            <div class="m-home-index__pct">--%</div>
+          </div>
+        </template>
+        <template v-else-if="indices.length > 0">
+          <div v-for="item in indices" :key="item.code" class="m-home-index">
+            <div class="m-home-index__name">{{ item.name }}</div>
+            <div class="m-home-index__px" :class="pctClass(item.changePct)">
+              {{ fmtPrice(item.price) }}
+            </div>
+            <div class="m-home-index__pct" :class="pctClass(item.changePct)">
+              {{ fmtPct(item.changePct) }}
+            </div>
+          </div>
+        </template>
+        <div v-for="n in 3" v-else :key="n" class="m-home-index m-home-index--skeleton">
+          <van-skeleton title :row="1" :loading="true" />
+        </div>
+      </div>
+      <!-- 指数条失败提示：异常占位 + 重试（仅在失败态出现） -->
+      <div v-if="indicesError" class="m-home-err-strip">
+        <van-icon name="warning-o" />
+        指数加载失败
+        <button class="m-err-retry" @click="loadIndices(true)">重试</button>
+      </div>
+      <!-- 全球指数展开区（PC 市场总览同款高度过渡：常驻容器 max-height + opacity） -->
+      <div class="m-home-index-expand" :class="{ 'm-home-index-expand--open': indexExpanded }">
+        <template v-if="indexExpanded">
+          <!-- 失败态：保留指数名 + --/--% 占位（与 A 股指数条同口径） -->
+          <template v-if="globalIndicesError">
+            <div class="m-home-index-grid">
+              <div
+                v-for="name in GLOBAL_INDEX_PLACEHOLDERS"
+                :key="name"
+                class="m-home-index m-home-index--err"
+              >
+                <div class="m-home-index__name">{{ name }}</div>
+                <div class="m-home-index__px">--</div>
+                <div class="m-home-index__pct">--%</div>
+              </div>
+            </div>
+            <div class="m-home-err-strip">
+              <van-icon name="warning-o" />
+              全球指数加载失败
+              <button class="m-err-retry" @click="loadGlobalIndices(true)">重试</button>
+            </div>
+          </template>
+          <div v-else-if="globalIndices.length > 0" class="m-home-index-grid">
+            <div v-for="g in globalIndices" :key="g.code" class="m-home-index">
+              <div class="m-home-index__name">{{ g.name }}</div>
+              <div class="m-home-index__px" :class="pctClass(g.changePercent)">
+                {{ g.price === null ? '--' : fmtPrice(g.price) }}
+              </div>
+              <div class="m-home-index__pct" :class="pctClass(g.changePercent)">
+                {{ fmtPct(g.changePercent) }}
+              </div>
+            </div>
+          </div>
+          <div v-else class="m-home-index-grid">
+            <div v-for="n in 6" :key="n" class="m-home-index m-home-index--skeleton">
+              <van-skeleton title :row="1" :loading="true" />
+            </div>
+          </div>
+        </template>
+      </div>
+      <!-- 全球指数展开开关（通栏居中幽灵圆钮，仅 chevron；展开时 icon 落在全球指数下方） -->
+      <button
+        class="m-home-index-more"
+        :class="{ 'm-home-index-more--open': indexExpanded }"
+        :aria-expanded="indexExpanded"
+        :aria-label="indexExpanded ? '收起全球指数' : '展开全球指数'"
+        @click="indexExpanded = !indexExpanded"
+      >
+        <van-icon name="arrow-down" />
+      </button>
+
+      <!-- 2. 金刚区（通栏贴边，v3 稿；2026-10-30 P3：5 列动态行，超 2 行折叠——补位只补末行，
+           插件声明的 mobile 菜单页恒排内置项之后；长按任意 tile 弹出入口设置，桌面右键同开） -->
       <div class="m-home-king">
         <div
-          v-for="item in visibleKingItems"
+          v-for="item in kingShownItems"
           :key="item.to"
           class="m-home-king__item"
           @click="goTile(item.to)"
@@ -709,241 +1010,308 @@ const pctClass = (v: number | null): string =>
           <span class="m-home-king__name">预留</span>
         </div>
       </div>
+      <!-- 金刚区折叠开关（入口超 2 行才出现；通栏 chevron，交互对齐全球指数「下拉显示更多」，
+           会话内记忆不持久化） -->
+      <button
+        v-if="kingOverflow"
+        class="m-home-index-more"
+        :class="{ 'm-home-index-more--open': kingExpanded }"
+        :aria-expanded="kingExpanded"
+        :aria-label="kingExpanded ? '收起更多入口' : '展开更多入口'"
+        @click="kingExpanded = !kingExpanded"
+      >
+        <van-icon name="arrow-down" />
+      </button>
 
-
-      <!-- 3~4 成交额 / 涨跌分布·情绪：平铺直排（2026-10-20 王总指定，
-           移除书本翻页容器；大盘评级/今天炒什么同日迁至行情页。数据加载逻辑不变） -->
-      <div class="m-home-panel">
-        <!-- 标题行移入卡内（王总 2026-10-12：三模块标题统一进卡片，视觉更整体） -->
-        <div class="m-home-sec m-home-sec--in">
-          <span class="m-home-sec__t">成交额</span>
-          <span class="m-home-sec__s">单位：亿元</span>
-        </div>
-        <div v-if="turnoverError" class="m-home-err-box m-home-err-box--turn">
-          <van-icon name="warning-o" />
-          成交额加载失败
-          <span class="retry" @click="loadTurnover(true)">重试</span>
-        </div>
-        <template v-else-if="turnPaths.length > 0">
-          <!-- 实时摘要（2026-10-13 并入：同花顺 dq 域，同时刻环比后端直出；失败静默隐藏） -->
-          <div v-if="!rtError && rtMinute" class="m-home-rt">
-            <div class="m-home-rt__main">
-              <span class="m-home-rt__label">今日实时</span>
-              <b class="m-home-rt__num">{{ rtRealtimeText }}</b>
+      <!-- 3. 书本翻页四页（v4.30 P4：恢复书本容器，大盘评级自行情页并回进第四页）：
+           face0 成交额 / face1 涨跌分布·情绪 / face2 板块热力 / face3 大盘评级 -->
+      <BookFlipBook>
+        <template #face0>
+          <div class="m-home-panel">
+            <!-- 标题行移入卡内（王总 2026-10-12：三模块标题统一进卡片，视觉更整体） -->
+            <div class="m-home-sec m-home-sec--in">
+              <span class="m-home-sec__t">成交额</span>
+              <span class="m-home-sec__s">单位：亿元</span>
             </div>
-            <span class="m-home-rt__item">较上一日 <b :class="rtChangeCls">{{ rtChangeText }}</b></span>
-            <span class="m-home-rt__item">预测全天 <b>{{ rtPredictText }}</b></span>
-          </div>
-          <div v-if="!rtError && rtDay" class="m-home-rt-avg">
-            <span>5日均 <b>{{ rtAvg5Text }}</b></span>
-            <span>60日均 <b>{{ rtAvg60Text }}</b></span>
-            <span>较5日均 <b :class="rtVsAvg5Cls">{{ rtVsAvg5 ?? '--' }}</b></span>
-          </div>
-          <div class="m-home-panel__head">
-            <span class="m-home-panel__t">近 {{ turnoverRange }} 日成交额</span>
-            <div class="m-home-chips">
-              <button
-                v-for="days in MOBILE_TURNOVER_RANGES"
-                :key="days"
-                class="m-home-chip"
-                :class="{ on: turnoverRange === days }"
-                @click="onRangeChange(days)"
-              >
-                {{ days }}日
-              </button>
+            <div v-if="turnoverError" class="m-home-err-box m-home-err-box--turn">
+              <van-icon name="warning-o" />
+              成交额加载失败
+              <span class="retry" @click="loadTurnover(true)">重试</span>
             </div>
-          </div>
-          <div v-if="turnLegend" class="m-home-legend">
-            <span><i class="lg" :style="{ background: CHART_LINE_BLUE }"></i>两市 <b>{{ turnLegend.total }}</b></span>
-            <span><i class="lg" :style="{ background: CHART_LINE_GREEN }"></i>上证 <b>{{ turnLegend.sh }}</b></span>
-            <span><i class="lg" :style="{ background: CHART_LINE_PURPLE }"></i>深证 <b>{{ turnLegend.sz }}</b></span>
-          </div>
-          <div class="m-home-chart">
-            <div class="m-home-chart__y">
-              <span v-for="tick in (turnAxis?.ticks ?? []).slice().reverse()" :key="tick">{{ fmtTickYi(tick) }}</span>
-            </div>
-            <div
-              ref="plotEl"
-              class="m-home-chart__plot"
-              @pointermove="onPlotMove"
-              @pointerdown="onPlotMove"
-              @pointerleave="onPlotLeave"
-              @pointercancel="onPlotLeave"
-            >
-              <svg viewBox="0 0 100 100" preserveAspectRatio="none">
-                <g stroke="rgba(140,152,155,.14)" stroke-width="1" vector-effect="non-scaling-stroke">
-                  <line x1="0" y1="0" x2="100" y2="0" vector-effect="non-scaling-stroke" />
-                  <line x1="0" y1="33.33" x2="100" y2="33.33" vector-effect="non-scaling-stroke" />
-                  <line x1="0" y1="66.66" x2="100" y2="66.66" vector-effect="non-scaling-stroke" />
-                  <line x1="0" y1="100" x2="100" y2="100" vector-effect="non-scaling-stroke" />
-                </g>
-                <path
-                  v-for="line in turnPaths.filter((l) => l.area)"
-                  :key="`${line.key}-area`"
-                  :d="`${line.d} L100,100 L0,100 Z`"
-                  :fill="CHART_LINE_BLUE"
-                  opacity="0.06"
-                />
-                <path
-                  v-for="line in turnPaths"
-                  :key="line.key"
-                  :d="line.d"
-                  fill="none"
-                  :stroke="line.color"
-                  stroke-width="1.6"
-                  vector-effect="non-scaling-stroke"
-                  stroke-linejoin="round"
-                  :opacity="line.area ? 1 : 0.9"
-                />
-              </svg>
-              <!-- 逐日常驻数据点（小号；crosshair 悬停时由大号白边点覆盖强调） -->
-              <span
-                v-for="(pt, idx) in turnDots"
-                :key="`${idx}-${pt.k}`"
-                class="m-home-dot m-home-dot--sm"
-                :class="pt.k"
-                :style="{ left: `${pt.x}%`, top: `${pt.y}%` }"
-              ></span>
-              <!-- crosshair overlay：竖线 + 三线圆点 + 数值浮层 -->
-              <template v-if="hoverPoint">
-                <div class="m-home-cross" :style="{ left: `${hoverPoint.x}%` }"></div>
-                <span
-                  v-for="dot in hoverPoint.dots"
-                  :key="dot.k"
-                  class="m-home-dot"
-                  :class="dot.k"
-                  :style="{ left: `${dot.x}%`, top: `${dot.y}%` }"
-                ></span>
-                <div
-                  class="m-home-tip"
-                  :class="hoverPoint.x > 55 ? 'm-home-tip--r' : 'm-home-tip--l'"
-                  :style="{ left: `${hoverPoint.x}%` }"
-                >
-                  <div class="m-home-tip__d">{{ hoverPoint.date.slice(5) }}</div>
-                  <div class="m-home-tip__row"><i class="lg" :style="{ background: CHART_LINE_BLUE }"></i>两市<b>{{ hoverPoint.total }}亿</b></div>
-                  <div class="m-home-tip__row"><i class="lg" :style="{ background: CHART_LINE_GREEN }"></i>上证<b>{{ hoverPoint.sh }}亿</b></div>
-                  <div class="m-home-tip__row"><i class="lg" :style="{ background: CHART_LINE_PURPLE }"></i>深证<b>{{ hoverPoint.sz }}亿</b></div>
-                  <div class="m-home-tip__row"><i class="lg" style="background: transparent"></i>较上日<b :class="hoverPoint.deltaCls">{{ hoverPoint.delta }}亿</b></div>
+            <template v-else-if="turnPaths.length > 0">
+              <!-- 实时摘要（2026-10-13 并入：同花顺 dq 域，同时刻环比后端直出；失败静默隐藏） -->
+              <div v-if="!rtError && rtMinute" class="m-home-rt">
+                <div class="m-home-rt__main">
+                  <span class="m-home-rt__label">今日实时</span>
+                  <b class="m-home-rt__num">{{ rtRealtimeText }}</b>
                 </div>
-              </template>
+                <span class="m-home-rt__item">较上一日 <b :class="rtChangeCls">{{ rtChangeText }}</b></span>
+                <span class="m-home-rt__item">预测全天 <b>{{ rtPredictText }}</b></span>
+              </div>
+              <div v-if="!rtError && rtDay" class="m-home-rt-avg">
+                <span>5日均 <b>{{ rtAvg5Text }}</b></span>
+                <span>60日均 <b>{{ rtAvg60Text }}</b></span>
+                <span>较5日均 <b :class="rtVsAvg5Cls">{{ rtVsAvg5 ?? '--' }}</b></span>
+              </div>
+              <div class="m-home-panel__head">
+                <span class="m-home-panel__t">近 {{ turnoverRange }} 日成交额</span>
+                <div class="m-home-chips">
+                  <button
+                    v-for="days in MOBILE_TURNOVER_RANGES"
+                    :key="days"
+                    class="m-home-chip"
+                    :class="{ on: turnoverRange === days }"
+                    @click="onRangeChange(days)"
+                  >
+                    {{ days }}日
+                  </button>
+                </div>
+              </div>
+              <div v-if="turnLegend" class="m-home-legend">
+                <span><i class="lg" :style="{ background: CHART_LINE_BLUE }"></i>两市 <b>{{ turnLegend.total }}</b></span>
+                <span><i class="lg" :style="{ background: CHART_LINE_GREEN }"></i>上证 <b>{{ turnLegend.sh }}</b></span>
+                <span><i class="lg" :style="{ background: CHART_LINE_PURPLE }"></i>深证 <b>{{ turnLegend.sz }}</b></span>
+              </div>
+              <div class="m-home-chart">
+                <div class="m-home-chart__y">
+                  <span v-for="tick in (turnAxis?.ticks ?? []).slice().reverse()" :key="tick">{{ fmtTickYi(tick) }}</span>
+                </div>
+                <div
+                  ref="plotEl"
+                  class="m-home-chart__plot"
+                  @pointermove="onPlotMove"
+                  @pointerdown="onPlotMove"
+                  @pointerleave="onPlotLeave"
+                  @pointercancel="onPlotLeave"
+                >
+                  <svg viewBox="0 0 100 100" preserveAspectRatio="none">
+                    <g stroke="rgba(140,152,155,.14)" stroke-width="1" vector-effect="non-scaling-stroke">
+                      <line x1="0" y1="0" x2="100" y2="0" vector-effect="non-scaling-stroke" />
+                      <line x1="0" y1="33.33" x2="100" y2="33.33" vector-effect="non-scaling-stroke" />
+                      <line x1="0" y1="66.66" x2="100" y2="66.66" vector-effect="non-scaling-stroke" />
+                      <line x1="0" y1="100" x2="100" y2="100" vector-effect="non-scaling-stroke" />
+                    </g>
+                    <path
+                      v-for="line in turnPaths.filter((l) => l.area)"
+                      :key="`${line.key}-area`"
+                      :d="`${line.d} L100,100 L0,100 Z`"
+                      :fill="CHART_LINE_BLUE"
+                      opacity="0.06"
+                    />
+                    <path
+                      v-for="line in turnPaths"
+                      :key="line.key"
+                      :d="line.d"
+                      fill="none"
+                      :stroke="line.color"
+                      stroke-width="1.6"
+                      vector-effect="non-scaling-stroke"
+                      stroke-linejoin="round"
+                      :opacity="line.area ? 1 : 0.9"
+                    />
+                  </svg>
+                  <!-- 逐日常驻数据点（小号；crosshair 悬停时由大号白边点覆盖强调） -->
+                  <span
+                    v-for="(pt, idx) in turnDots"
+                    :key="`${idx}-${pt.k}`"
+                    class="m-home-dot m-home-dot--sm"
+                    :class="pt.k"
+                    :style="{ left: `${pt.x}%`, top: `${pt.y}%` }"
+                  ></span>
+                  <!-- crosshair overlay：竖线 + 三线圆点 + 数值浮层 -->
+                  <template v-if="hoverPoint">
+                    <div class="m-home-cross" :style="{ left: `${hoverPoint.x}%` }"></div>
+                    <span
+                      v-for="dot in hoverPoint.dots"
+                      :key="dot.k"
+                      class="m-home-dot"
+                      :class="dot.k"
+                      :style="{ left: `${dot.x}%`, top: `${dot.y}%` }"
+                    ></span>
+                    <div
+                      class="m-home-tip"
+                      :class="hoverPoint.x > 55 ? 'm-home-tip--r' : 'm-home-tip--l'"
+                      :style="{ left: `${hoverPoint.x}%` }"
+                    >
+                      <div class="m-home-tip__d">{{ hoverPoint.date.slice(5) }}</div>
+                      <div class="m-home-tip__row"><i class="lg" :style="{ background: CHART_LINE_BLUE }"></i>两市<b>{{ hoverPoint.total }}亿</b></div>
+                      <div class="m-home-tip__row"><i class="lg" :style="{ background: CHART_LINE_GREEN }"></i>上证<b>{{ hoverPoint.sh }}亿</b></div>
+                      <div class="m-home-tip__row"><i class="lg" :style="{ background: CHART_LINE_PURPLE }"></i>深证<b>{{ hoverPoint.sz }}亿</b></div>
+                      <div class="m-home-tip__row"><i class="lg" style="background: transparent"></i>较上日<b :class="hoverPoint.deltaCls">{{ hoverPoint.delta }}亿</b></div>
+                    </div>
+                  </template>
+                </div>
+              </div>
+              <div v-if="turnAxis" class="m-home-chart__x">
+                <span>{{ turnAxis.days[0]!.date.slice(5) }}</span>
+                <span>{{ turnAxis.days.at(-1)!.date.slice(5) }}</span>
+              </div>
+            </template>
+            <div v-else class="m-home-panel__skel">
+              <van-skeleton title :row="4" :loading="true" />
             </div>
           </div>
-          <div v-if="turnAxis" class="m-home-chart__x">
-            <span>{{ turnAxis.days[0]!.date.slice(5) }}</span>
-            <span>{{ turnAxis.days.at(-1)!.date.slice(5) }}</span>
+        </template>
+
+        <template #face1>
+          <div class="m-home-panel">
+            <div class="m-home-sec m-home-sec--in">
+              <span class="m-home-sec__t">涨跌分布 · 市场情绪</span>
+              <span class="m-home-sec__s">全市场 A 股 · 30s 轮询</span>
+            </div>
+            <div v-if="distError" class="m-home-err-box m-home-err-box--dist">
+              <van-icon name="warning-o" />
+              涨跌分布加载失败
+              <span class="retry" @click="loadBreadth(true)">重试</span>
+            </div>
+            <template v-else-if="distBars.length > 0">
+              <div class="m-home-dist-head">
+                <span class="m-home-panel__t">今日涨跌分布</span>
+                <div class="m-home-dist-cnt">
+                  <span class="m-up">上涨 <b>{{ riseCount.toLocaleString() }}</b> 家</span>
+                  <span class="m-down">下跌 <b>{{ fallCount.toLocaleString() }}</b> 家</span>
+                </div>
+              </div>
+              <div class="m-home-dist">
+                <svg viewBox="0 0 100 100" preserveAspectRatio="none">
+                  <g stroke="rgba(140,152,155,.14)" stroke-width="1">
+                    <line x1="0" y1="0" x2="100" y2="0" vector-effect="non-scaling-stroke" />
+                    <line x1="0" y1="50" x2="100" y2="50" vector-effect="non-scaling-stroke" />
+                    <line x1="0" y1="100" x2="100" y2="100" vector-effect="non-scaling-stroke" />
+                  </g>
+                  <rect
+                    v-for="bar in distBars"
+                    :key="bar.key"
+                    :x="bar.x"
+                    :y="100 - bar.h"
+                    :width="bar.w"
+                    :height="bar.h"
+                    rx="1"
+                    :fill="bar.color"
+                    opacity="0.88"
+                  />
+                </svg>
+              </div>
+              <div class="m-home-dist__labels">
+                <span v-for="bar in distBars" :key="`lb-${bar.key}`">{{ bar.label }}</span>
+              </div>
+
+              <!-- ARMS 分时（与涨跌分布同源快照；随行情 30s 更新，零新增请求） -->
+              <div v-if="armsSeries.length > 0 && breadth" class="m-home-arms">
+                <div class="m-home-arms-head">
+                  <span class="t">ARMS 分时</span>
+                  <span class="v" :class="armsTone === 'up' ? 'm-up' : armsTone === 'down' ? 'm-down' : ''">
+                    {{ armsText }}
+                  </span>
+                  <span class="pill" :class="`pill--${armsTone}`">{{ armsLabel }}</span>
+                  <span class="hint">1.0 平衡线 · 随快照更新</span>
+                </div>
+                <ArmsSparkline :points="armsSeries" />
+              </div>
+            </template>
+            <div v-else class="m-home-panel__skel">
+              <van-skeleton title :row="4" :loading="true" />
+            </div>
+
+            <!-- 市场情绪：图下小字提示行 + 连板梯队药丸 -->
+            <div v-if="sentiError" class="m-home-err-box m-home-err-box--senti">
+              <van-icon name="warning-o" />
+              情绪数据加载失败
+              <span class="retry" @click="loadSenti(true)">重试</span>
+            </div>
+            <template v-else-if="senti">
+              <div class="m-home-senti-line">
+                <span>涨停 <b class="m-up">{{ senti.limitUpCount }}</b></span><i>/</i>
+                <span>跌停 <b class="m-down">{{ senti.limitDownCount }}</b></span><i>/</i>
+                <span>炸板 <b>{{ senti.brokenCount }}</b>{{ senti.brokenRate === null ? '' : `（${senti.brokenRate.toFixed(0)}%）` }}</span><i>/</i>
+                <span>最高连板 <b class="m-up">{{ senti.maxLadder }}</b> 板</span><i>/</i>
+                <span>昨涨停均涨 <b :class="pctClass(senti.yesterdayZtAvgPct)">{{ fmtPct(senti.yesterdayZtAvgPct) }}</b></span>
+              </div>
+              <div v-if="senti.ladder.length > 0" class="m-home-ladder">
+                <span
+                  v-for="step in senti.ladder"
+                  :key="step.board"
+                  class="m-home-lad"
+                  :class="{ hot: step.board >= 3 }"
+                >
+                  {{ step.board === 1 ? '首板' : `${step.board}板` }} · {{ step.count }} 家
+                </span>
+              </div>
+            </template>
+            <div v-else class="m-home-panel__skel">
+              <van-skeleton title :row="2" :loading="true" />
+            </div>
           </div>
         </template>
-        <div v-else class="m-home-panel__skel">
-          <van-skeleton title :row="4" :loading="true" />
-        </div>
+
+        <template #face2>
+          <!-- 板块热力（2026-10-20 自行情页迁回；点击格子下钻成分股） -->
+          <div class="m-card m-home-heat">
+            <div class="m-home-sec m-home-sec--in">
+              <span class="m-home-sec__t">板块热力</span>
+              <span class="m-home-sec__s">Top 10 · 面积 ∝ 总市值</span>
+            </div>
+            <MobileHeatmap
+              v-if="!heatError"
+              :boards="heatBoards"
+              :loading="heatLoading"
+              :error="false"
+              @select="openConstituents"
+            />
+            <div v-else class="m-state m-heat-err">
+              <van-icon name="warning-o" size="32" />
+              <div>板块数据加载失败</div>
+              <span class="retry" @click="loadHeat(true)">重试</span>
+            </div>
+          </div>
+        </template>
+
+        <template #face3>
+          <!-- 大盘评级（v4.30 P4 自行情页迁回；组件自持 60s TTL 轮询） -->
+          <div class="m-card m-home-rate">
+            <div class="m-home-sec m-home-sec--in">
+              <span class="m-home-sec__t">大盘评级</span>
+              <span class="m-home-sec__s">同花顺评分 · 60s 刷新</span>
+            </div>
+            <MobileRatingCard ref="ratingCardRef" />
+          </div>
+        </template>
+      </BookFlipBook>
+
+      <!-- 4. 今天炒什么（v4.30 P4 自行情页迁回，平铺；点击进 /board） -->
+      <div class="m-home-sec">
+        <span class="m-home-sec__t">今天炒什么</span>
+        <span class="m-home-sec__s">热度主线 · Top5 预览</span>
       </div>
-
-      <div class="m-home-panel">
-        <div class="m-home-sec m-home-sec--in">
-          <span class="m-home-sec__t">涨跌分布 · 市场情绪</span>
-          <span class="m-home-sec__s">全市场 A 股 · 30s 轮询</span>
-        </div>
-        <div v-if="distError" class="m-home-err-box m-home-err-box--dist">
-          <van-icon name="warning-o" />
-          涨跌分布加载失败
-          <span class="retry" @click="loadBreadth(true)">重试</span>
-        </div>
-        <template v-else-if="distBars.length > 0">
-          <div class="m-home-dist-head">
-            <span class="m-home-panel__t">今日涨跌分布</span>
-            <div class="m-home-dist-cnt">
-              <span class="m-up">上涨 <b>{{ riseCount.toLocaleString() }}</b> 家</span>
-              <span class="m-down">下跌 <b>{{ fallCount.toLocaleString() }}</b> 家</span>
-            </div>
-          </div>
-          <div class="m-home-dist">
-            <svg viewBox="0 0 100 100" preserveAspectRatio="none">
-              <g stroke="rgba(140,152,155,.14)" stroke-width="1">
-                <line x1="0" y1="0" x2="100" y2="0" vector-effect="non-scaling-stroke" />
-                <line x1="0" y1="50" x2="100" y2="50" vector-effect="non-scaling-stroke" />
-                <line x1="0" y1="100" x2="100" y2="100" vector-effect="non-scaling-stroke" />
-              </g>
-              <rect
-                v-for="bar in distBars"
-                :key="bar.key"
-                :x="bar.x"
-                :y="100 - bar.h"
-                :width="bar.w"
-                :height="bar.h"
-                rx="1"
-                :fill="bar.color"
-                opacity="0.88"
-              />
-            </svg>
-          </div>
-          <div class="m-home-dist__labels">
-            <span v-for="bar in distBars" :key="`lb-${bar.key}`">{{ bar.label }}</span>
-          </div>
-
-          <!-- ARMS 分时（与涨跌分布同源快照；随行情 30s 更新，零新增请求） -->
-          <div v-if="armsSeries.length > 0 && breadth" class="m-home-arms">
-            <div class="m-home-arms-head">
-              <span class="t">ARMS 分时</span>
-              <span class="v" :class="armsTone === 'up' ? 'm-up' : armsTone === 'down' ? 'm-down' : ''">
-                {{ armsText }}
-              </span>
-              <span class="pill" :class="`pill--${armsTone}`">{{ armsLabel }}</span>
-              <span class="hint">1.0 平衡线 · 随快照更新</span>
-            </div>
-            <ArmsSparkline :points="armsSeries" />
-          </div>
-        </template>
-        <div v-else class="m-home-panel__skel">
-          <van-skeleton title :row="4" :loading="true" />
-        </div>
-
-        <!-- 市场情绪：图下小字提示行 + 连板梯队药丸 -->
-        <div v-if="sentiError" class="m-home-err-box m-home-err-box--senti">
-          <van-icon name="warning-o" />
-          情绪数据加载失败
-          <span class="retry" @click="loadSenti(true)">重试</span>
-        </div>
-        <template v-else-if="senti">
-          <div class="m-home-senti-line">
-            <span>涨停 <b class="m-up">{{ senti.limitUpCount }}</b></span><i>/</i>
-            <span>跌停 <b class="m-down">{{ senti.limitDownCount }}</b></span><i>/</i>
-            <span>炸板 <b>{{ senti.brokenCount }}</b>{{ senti.brokenRate === null ? '' : `（${senti.brokenRate.toFixed(0)}%）` }}</span><i>/</i>
-            <span>最高连板 <b class="m-up">{{ senti.maxLadder }}</b> 板</span><i>/</i>
-            <span>昨涨停均涨 <b :class="pctClass(senti.yesterdayZtAvgPct)">{{ fmtPct(senti.yesterdayZtAvgPct) }}</b></span>
-          </div>
-          <div v-if="senti.ladder.length > 0" class="m-home-ladder">
-            <span
-              v-for="step in senti.ladder"
-              :key="step.board"
-              class="m-home-lad"
-              :class="{ hot: step.board >= 3 }"
-            >
-              {{ step.board === 1 ? '首板' : `${step.board}板` }} · {{ step.count }} 家
-            </span>
-          </div>
-        </template>
-        <div v-else class="m-home-panel__skel">
-          <van-skeleton title :row="2" :loading="true" />
-        </div>
+      <div v-if="boardError" class="m-home-err-box m-home-err-box--board">
+        <van-icon name="warning-o" />
+        榜单加载失败
+        <span class="retry" @click="loadBoardCard()">重试</span>
       </div>
-
-      <!-- 5. 板块热力（自行情页迁回，2026-10-20 王总指定两模块互换；点击格子下钻成分股） -->
-      <div class="m-card m-home-heat">
-        <div class="m-home-sec m-home-sec--in">
-          <span class="m-home-sec__t">板块热力</span>
-          <span class="m-home-sec__s">Top 10 · 面积 ∝ 总市值</span>
+      <div v-else-if="boardCard.top5.length === 0" class="m-home-board-card">
+        <van-skeleton title :row="3" :loading="true" />
+      </div>
+      <div v-else class="m-home-board-card" @click="router.push('/board')">
+        <div class="m-home-board-card__head">
+          <span class="m-home-board-card__badge">
+            {{ boardCard.source ? BOARD_SOURCE_LABELS[boardCard.source] : '' }}
+          </span>
+          <span class="m-home-board-card__more">查看更多 ›</span>
         </div>
-        <MobileHeatmap
-          v-if="!heatError"
-          :boards="heatBoards"
-          :loading="heatLoading"
-          :error="false"
-          @select="openConstituents"
-        />
-        <div v-else class="m-state m-heat-err">
-          <van-icon name="warning-o" size="32" />
-          <div>板块数据加载失败</div>
-          <span class="retry" @click="loadHeat(true)">重试</span>
+        <div
+          v-for="(item, i) in boardCard.top5"
+          :key="item.code"
+          class="m-home-board-row"
+          @click.stop="router.push('/board')"
+        >
+          <span class="m-home-board-row__rank" :class="{ top: i === 0 }">{{ i + 1 }}</span>
+          <span class="m-home-board-row__nm">
+            {{ item.name }}<span class="code">{{ item.code }}</span>
+          </span>
+          <span class="m-home-board-row__heat">{{ item.heatLabel }}</span>
+          <span class="m-home-board-row__pct" :class="pctClass(item.changePct)">
+            {{ fmtPct(item.changePct) }}
+          </span>
         </div>
       </div>
 

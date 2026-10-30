@@ -9,9 +9,9 @@
  * 事件名约定 `namespace:action`（如 `note:saved` / `sidebar:changed`），
  * 内置事件表见 `types/plugin.types.ts` 的 `AppEventMap`。
  */
-import { PLUGIN_EVENT_HISTORY_MAX } from '../../common/constants/plugin.constants.ts';
+import { PLUGIN_EVENT_HISTORY_MAX } from '../constants/plugin.constants.ts';
 import { createDisposable } from './disposable';
-import type { AppEventMap, Disposable, PluginEventRecord } from '../../common/types/plugin.types.ts';
+import type { AppEventMap, Disposable, PluginEventRecord } from '../types/plugin.types.ts';
 
 /** 订阅者函数形态（参数不做过深的类型包装，运行时按 emit 的实参传递） */
 type EventHandler = (...args: never[]) => void;

@@ -10,33 +10,43 @@ import MobileIpoBoard from './views/MobileIpoBoard.vue';
 import MobileMarketRank from './views/MobileMarketRank.vue';
 import MobileMine from './views/MobileMine.vue';
 import MobilePanorama from './views/MobilePanorama.vue';
-import MobileQuote from './views/MobileQuote.vue';
+import MobilePluginMarket from './views/MobilePluginMarket.vue';
+import MobilePlugins from './views/MobilePlugins.vue';
 import MobileSearch from './views/MobileSearch.vue';
 import MobileSettings from './views/MobileSettings.vue';
 import MobileStockDetail from './views/MobileStockDetail.vue';
 import MobileStockMarket from './views/MobileStockMarket.vue';
 import MobileTheme from './views/MobileTheme.vue';
 import MobileWatchlist from './views/MobileWatchlist.vue';
+import {
+  MOBILE_PLUGIN_MARKET_PATH,
+  MOBILE_PLUGINS_PATH,
+  MOBILE_STOCK_DETAIL_PATH_PREFIX,
+} from './constants';
 
 /** 主 Tab 页路径（底部 TabBar 只在这些路由显示，显隐由 MobileTabBar 按 MOBILE_TAB_ITEMS 判定；
  * MobileApp 的页面切换动画也按此声明序判定前进/后退方向，二级页视为最末；
- * 2026-10-20 起五 Tab：首页 / 行情 / 自选 / 新闻 / 我的） */
-export const MOBILE_TAB_PATHS: readonly string[] = ['/', '/quote', '/watchlist', '/news', '/mine'];
+ * 2026-10-30 起五 Tab：首页 / 插件 / 自选 / 新闻 / 我的——行情页并入首页（P4），
+ * 原行情 Tab 槽位换插件入口（方案：.ai/开发方案/ 同日文档） */
+export const MOBILE_TAB_PATHS: readonly string[] = ['/', '/plugins', '/watchlist', '/news', '/mine'];
 
 /**
  * 移动端路由（hash 模式：Tauri Android WebView 的 file/本地加载形态下无需服务端配合）
  *
  * meta.tab = true 的路由为底部 TabBar 主 Tab（TabBar 显隐由 MobileTabBar 按 MOBILE_TAB_ITEMS 判定）；
- * /board（今天炒什么）自 v1.2 起为行情页金刚区跳转的二级页，不占 Tab；
+ * /board（今天炒什么）为金刚区跳转的二级页，不占 Tab；
  * /mine 自 2026-10-20 起回归 TabBar 第五 Tab（此前 2026-10-12 曾移出、由首页 navbar logo 进入）；
- * /panorama /market-rank /board-calendar /stock 为 v2 二期二级页（DESIGN-MOBILE.md §4）
+ * /panorama /market-rank /board-calendar /stock 为 v2 二期二级页（DESIGN-MOBILE.md §4）；
+ * /quote 自 2026-10-30 起保留 redirect 兼容旧入口（行情模块并入首页，方案 P4）
  */
 export const mobileRouter = createRouter({
   history: createWebHashHistory(),
   routes: [
     { path: '/', name: 'home', component: MobileHome, meta: { tab: true } },
-    // 行情（2026-10-20 新增主 Tab）：指据模块 + 金刚区快捷入口（今天炒什么/连板/异动/龙虎榜）
-    { path: '/quote', name: 'quote', component: MobileQuote, meta: { tab: true } },
+    // 行情（2026-10-20~2026-10-30 主 Tab）：指数/金刚区/评级/今天炒什么并入首页，保留重定向兼容旧入口
+    { path: '/quote', redirect: '/' },
+    // 插件（2026-10-30 P4 转正第二主 Tab，此前 P2 为「我的」页进入的二级页）
+    { path: MOBILE_PLUGINS_PATH, name: 'plugins', component: MobilePlugins, meta: { tab: true } },
     { path: '/watchlist', name: 'watchlist', component: MobileWatchlist, meta: { tab: true } },
     { path: '/news', name: 'news', component: MobileHotNews, meta: { tab: true } },
     // 资金流向：自 2026-10-20 起移出 TabBar，入口改首页金刚区（页面保留为二级页）
@@ -72,7 +82,9 @@ export const mobileRouter = createRouter({
     { path: '/industry-leaders', name: 'industry-leaders', component: MobileIndustryLeaders },
     // /board-calendar 列表矩阵；/board-calendar/:code 板块详情矩阵
     { path: '/board-calendar/:code?', name: 'board-calendar', component: MobileBoardCalendar },
+    // 插件市场页（P5：在线市场 + 本地 zip 安装通道，入口在插件管理页）
+    { path: MOBILE_PLUGIN_MARKET_PATH, name: 'plugin-market', component: MobilePluginMarket },
     // 个股 K 线详情：全站股票行点击统一落点（code 为完整符号，如 sh600519）
-    { path: '/stock/:code', name: 'stock', component: MobileStockDetail },
+    { path: `${MOBILE_STOCK_DETAIL_PATH_PREFIX}/:code`, name: 'stock', component: MobileStockDetail },
   ],
 });

@@ -8,6 +8,7 @@ import { useTabConfig } from '../../common/composables/use-tab-config';
 import PanoramaCnBoard from '../components/business/PanoramaCnBoard.vue';
 import PanoramaLeadersBoard from '../components/business/PanoramaLeadersBoard.vue';
 import StockMarketView from './StockMarketView.vue';
+import HongKongMarketView from './HongKongMarketView.vue';
 import {
   fetchGlobalFuturesPanorama,
   fetchGlobalIndexPanorama,
@@ -27,7 +28,8 @@ import { POLLING_INTERVAL } from '../../common/constants/polling.constants.ts';
 /**
  * 行情全景（2026-10-29 王总指定整合）：全景（A股 36 板块平铺 + 美股行业 ETF + 全球宏观
  * 三组卡片竖向分布，原三个独立 tab 合并）/ 行业龙头（板块 / 细分赛道静态清单卡片流）/
- * 全部个股（原侧栏「个股行情」页并入，2026-10-22 王总指定）
+ * 大A个股（原侧栏「个股行情」页并入，2026-10-22 王总指定；2026-10-30 更名）/
+ * 港股个股（2026-10-30 王总指定新增，同花顺港股板块）
  *
  * 注：原「最新板块资金」模块已于 2026-10-13 独立成页（/board-flow 资金流向）；
  * 原「大盘云图」tab 已于 2026-10-13 独立成页（/heatmap 大盘云图，侧栏入口 2026-10-22 移除，
@@ -44,7 +46,8 @@ import { POLLING_INTERVAL } from '../../common/constants/polling.constants.ts';
 const MODULE_TABS = [
   { label: '全景', value: 'overview' },
   { label: '行业龙头', value: 'leaders' },
-  { label: '全部个股', value: 'stocks' },
+  { label: '大A个股', value: 'stocks' },
+  { label: '港股个股', value: 'hkStocks' },
 ] as const;
 
 /** 各接口请求间隔（毫秒）：对同一上游串行错峰 */
@@ -56,9 +59,12 @@ const { visibleOptions: moduleTabOptions, activeValue: activeModule } = useTabCo
   MODULE_TABS,
 );
 
-/** 是否处于组件自管数据的模块（行业龙头 / 全部个股：宿主不拉数据，无骨架 / 空态逻辑） */
+/** 是否处于组件自管数据的模块（行业龙头 / 大A个股 / 港股个股：宿主不拉数据，无骨架 / 空态逻辑） */
 const isSelfManagedModule = computed(
-  () => activeModule.value === 'leaders' || activeModule.value === 'stocks',
+  () =>
+    activeModule.value === 'leaders' ||
+    activeModule.value === 'stocks' ||
+    activeModule.value === 'hkStocks',
 );
 
 const dataCache = useDataCacheStore();
@@ -215,10 +221,15 @@ const isEmpty = computed(
       <!-- 行业龙头：板块 / 细分赛道静态清单卡片流（数据自管） -->
       <PanoramaLeadersBoard v-if="activeModule === 'leaders'" class="min-h-0 flex-1" />
 
-      <!-- 全部个股：原侧栏「个股行情」页整卡并入（数据 / 轮询 / 翻页自管，v-if 挂载即启停轮询）；
+      <!-- 大A个股：原侧栏「个股行情」页整卡并入（数据 / 轮询 / 翻页自管，v-if 挂载即启停轮询）；
            外层滚动容器兜底卡内容超高（.table-scroll 自带 560px 内滚） -->
       <div v-else-if="activeModule === 'stocks'" class="min-h-0 flex-1 overflow-y-auto">
         <StockMarketView />
+      </div>
+
+      <!-- 港股个股：同花顺港股板块分页表（数据 / 轮询 / 翻页自管，挂载结构与大A个股同款） -->
+      <div v-else-if="activeModule === 'hkStocks'" class="min-h-0 flex-1 overflow-y-auto">
+        <HongKongMarketView />
       </div>
 
       <!-- 加载骨架（全景：美股 / 宏观首载） -->

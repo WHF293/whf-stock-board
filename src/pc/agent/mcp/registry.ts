@@ -19,7 +19,7 @@ import type { StructuredToolInterface } from '@langchain/core/tools';
 import { isTauri } from '@tauri-apps/api/core';
 import { type z } from 'zod';
 import { listMcps } from '../../../common/composables/use-agent-db';
-import { pluginKernel } from '../../plugin/index';
+import { pluginKernel } from '../../../common/plugin/index';
 import { APP_MCP_SERVER } from './app-tools';
 import { FINANCIAL_DATA_MCP_SERVER } from './financial-tools';
 import { MARKET_DATA_MCP_SERVER } from './market-tools';

@@ -2,7 +2,7 @@
 import { computed, nextTick, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import MenuIcon from '../ui/MenuIcon.vue';
-import { pluginKernel } from '../../../pc/plugin/index';
+import { pluginKernel } from '../../../common/plugin/index';
 import { useStockSearch } from '../../../common/composables/use-stock-search';
 import { appStorage } from '../../../common/utils/app-local-storage';
 import { matchPaletteItems } from '../../../common/utils/match-command-palette';

@@ -5,14 +5,14 @@
  * 副作用袋与日志前缀，因此插件内部任何注册都会自动归属到这一次挂载，
  * 卸载时被一并撤销。
  */
-import { PLUGIN_LOG_PREFIX, PLUGIN_STORAGE_NAMESPACE_PREFIX } from '../../common/constants/plugin.constants.ts';
+import { PLUGIN_LOG_PREFIX, PLUGIN_STORAGE_NAMESPACE_PREFIX } from '../constants/plugin.constants.ts';
 import * as vueRuntime from 'vue';
-import { appStorage } from '../../common/utils/app-local-storage';
+import { appStorage } from '../utils/app-local-storage';
 import {
   loadPluginStorage,
   savePluginStorageEntry,
   deletePluginStorageEntry,
-} from '../../common/api/plugin-storage-db.api.ts';
+} from '../api/plugin-storage-db.api.ts';
 import { createDisposable } from './disposable';
 import { createPluginDatabase } from './database';
 import { createPluginSettingsStore } from './settings';
@@ -32,7 +32,7 @@ import type {
   PluginSettingsStore,
   PluginStorage,
   PluginVueRuntime,
-} from '../../common/types/plugin.types.ts';
+} from '../types/plugin.types.ts';
 
 /**
  * 创建按插件隔离的持久化句柄

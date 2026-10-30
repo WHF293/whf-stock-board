@@ -18,12 +18,12 @@
  */
 import { computed, ref } from 'vue';
 import { useUserPlugins } from './use-user-plugins';
-import { auditPluginClassNames } from '../../pc/plugin/user-plugin-class-audit';
-import { formatLintBlockers, lintUserPluginCode } from '../../pc/plugin/user-plugin-lint';
+import { auditPluginClassNames } from '../plugin/user-plugin-class-audit';
+import { formatLintBlockers, lintUserPluginCode } from '../plugin/user-plugin-lint';
 import {
   evaluateUserPluginModule,
   validateUserPluginDefinition,
-} from '../../pc/plugin/user-plugin-loader';
+} from '../plugin/user-plugin-loader';
 import {
   checkManifestConsistency,
   parsePluginPackage,

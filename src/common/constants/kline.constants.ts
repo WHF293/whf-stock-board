@@ -32,6 +32,60 @@ export const MINUTE_AXIS_TICKS: readonly MinuteAxisTick[] = [
   { time: '15:00', label: '15:00' },
 ];
 
+/**
+ * 港股分时固定时间轴分段（与港股连续竞价时段逐分钟对齐）
+ *
+ * 上午 09:31~12:00、下午 13:01~16:00，合计 330 格。
+ * 港股无 A 股式尾盘集合竞价，16:00 即最后一格
+ */
+export const HK_MINUTE_AXIS_RANGES: readonly MinuteAxisRange[] = [
+  { start: '09:31', count: 150 },
+  { start: '13:01', count: 180 },
+];
+
+/** 港股分时固定时间轴总格数（330） */
+export const HK_MINUTE_AXIS_TOTAL = HK_MINUTE_AXIS_RANGES.reduce(
+  (total, range) => total + range.count,
+  0,
+);
+
+/**
+ * 港股分时 X 轴固定刻度（7 个）
+ *
+ * 左端标注开盘时刻 09:30，午休分界标注 13:00（13:01 为午后首根）
+ */
+export const HK_MINUTE_AXIS_TICKS: readonly MinuteAxisTick[] = [
+  { time: '09:31', label: '09:30' },
+  { time: '10:30', label: '10:30' },
+  { time: '11:30', label: '11:30' },
+  { time: '13:01', label: '13:00' },
+  { time: '14:00', label: '14:00' },
+  { time: '15:00', label: '15:00' },
+  { time: '16:00', label: '16:00' },
+];
+
+/**
+ * 分时固定时间轴配置按市场（`cn` A 股缺省 / `hk` 港股）
+ *
+ * KlineChart 的 market prop 与 padMinuteBars / buildMinuteAxis 的 ranges 参数
+ * 都从本表取值；A 股为缺省市场，既有调用方零改动
+ */
+export const MINUTE_AXIS_CONFIG = {
+  cn: {
+    ranges: MINUTE_AXIS_RANGES,
+    total: MINUTE_AXIS_TOTAL,
+    ticks: MINUTE_AXIS_TICKS,
+  },
+  hk: {
+    ranges: HK_MINUTE_AXIS_RANGES,
+    total: HK_MINUTE_AXIS_TOTAL,
+    ticks: HK_MINUTE_AXIS_TICKS,
+  },
+} as const;
+
+/** 分时轴市场（`cn` A 股 / `hk` 港股） */
+export type MinuteAxisMarket = keyof typeof MINUTE_AXIS_CONFIG;
+
 /** MACD 参数（快线 / 慢线 / 信号线，与图表库内置口径一致） */
 export const MACD_PARAMS = [12, 26, 9] as const;
 

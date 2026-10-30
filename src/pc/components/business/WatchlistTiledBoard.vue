@@ -3,7 +3,7 @@ import { computed, ref } from 'vue';
 import { VueDraggable } from 'vue-draggable-plus';
 import BaseCard from '../ui/BaseCard.vue';
 import MenuIcon from '../ui/MenuIcon.vue';
-import { pluginKernel } from '../../plugin/index';
+import { pluginKernel } from '../../../common/plugin/index';
 import { useWatchlistStore } from '../../../common/stores/watchlist';
 import { useNotificationsStore } from '../../../common/stores/notifications';
 import {

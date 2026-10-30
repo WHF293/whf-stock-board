@@ -1,5 +1,5 @@
 import { computed } from 'vue';
-import { pluginKernel } from '../../pc/plugin/index';
+import { pluginKernel } from '../plugin/index';
 import { usePluginStore } from '../stores/plugin';
 import { PLUGIN_STATUS } from '../constants/plugin.constants.ts';
 import { trackAction } from '../../pc/weblog/weblogActions';

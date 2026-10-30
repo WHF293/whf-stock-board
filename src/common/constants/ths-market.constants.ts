@@ -87,6 +87,32 @@ export const THS_STOCK_BOARD_ORDER = {
 /** 每页条数（实测 board=all 翻页：第 2 页序号 21-40） */
 export const THS_STOCK_BOARD_PAGE_SIZE = 20;
 
+// ---------- q 域：港股个股行情（行情中心港股板块 ajax HTML 片段，GBK） ----------
+
+/** 港股个股行情片段地址模板（与 A 股模板同构，仅路径段不同；2026-10-30 实测） */
+export const THS_HK_BOARD_URL_TEMPLATE =
+  'https://q.10jqka.com.cn/hk/detail/board/all/field/{field}/order/{order}/page/{page}/ajax/1/';
+
+/** 港股板块排序 field → 参数（表头 field 属性实测；board 仅 all 一档） */
+export const THS_HK_STOCK_BOARD_FIELDS = {
+  price: 'xj',
+  changePercent: 'zdf',
+  change: 'zd',
+  turnoverRate: 'hs',
+  volumeText: 'cjl',
+  peText: 'syl',
+  prevClose: 'zs',
+  open: 'kp',
+  high: 'zgj',
+  low: 'zdj',
+} as const;
+
+/** 可排序字段的 key（ThsHkStockRow 的数值/文案列；seq/code/name 不参与排序） */
+export type ThsHkStockBoardField = keyof typeof THS_HK_STOCK_BOARD_FIELDS;
+
+/** 港股个股每页条数（实测每页 50 行，全市场 ≈51 页 / 2600 只） */
+export const THS_HK_STOCK_BOARD_PAGE_SIZE = 50;
+
 // ---------- 大盘评级文案映射（照抄同花顺前端 hssc_v1.min.js 的五档写死映射） ----------
 
 /** 评分 → 投资建议五档（升序阈值；命中「首个 score < min」之前的一档） */

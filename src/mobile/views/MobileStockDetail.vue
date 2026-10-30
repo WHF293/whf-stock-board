@@ -36,6 +36,8 @@ import type { EtfHoldingItem } from '../../common/types/etf.types';
 import type { FullQuote } from 'stock-sdk';
 import { pctClass, formatNewsTime } from '../utils/format';
 import { isEtfSymbol } from '../../common/utils/is-etf-symbol';
+import { isHkSymbol } from '../../common/utils/is-hk-symbol';
+import { pluginKernel } from '../../common/plugin/index';
 import MobileFinancialPanel from '../components/MobileFinancialPanel.vue';
 import StockF10BaseInfoTab from '../../pc/components/business/stock-f10/StockF10BaseInfoTab.vue';
 import StockF10ExecutiveTab from '../../pc/components/business/stock-f10/StockF10ExecutiveTab.vue';
@@ -51,6 +53,9 @@ const router = useRouter();
 
 /** 完整符号（sh600519 形态） */
 const symbol = computed(() => String(route.params.code ?? ''));
+
+/** 符号市场（hk 港股 / cn A 股缺省）：K 线分时固定轴按市场取 */
+const symbolMarket = computed<'hk' | 'cn'>(() => (isHkSymbol(symbol.value) ? 'hk' : 'cn'));
 
 /* === 报价头 === */
 const quote = ref<FullQuote | null>(null);
@@ -297,6 +302,15 @@ watch(period, () => void loadKline());
 const back = (): void => {
   router.back();
 };
+
+/* === 个股详情扩展区（插件贡献，宿主只承载不参与内容） === */
+/** 已注册的扩展区块（按 order 升序；仅展示声明了 mobile 支持端的插件，卸载即整体消失） */
+const pluginSections = computed(
+  () =>
+    pluginKernel.contributions.stockDetail.sections.filter(
+      (section) => pluginKernel.get(section.pluginId)?.devices.includes('mobile') === true,
+    ),
+);
 </script>
 
 <template>
@@ -380,6 +394,7 @@ const back = (): void => {
                   :pre-close="quote.prevClose ?? null"
                   :symbol="symbol"
                   :intraday-axis="period === 'minute'"
+                  :market="symbolMarket"
                   auto-height
                 />
               </div>
@@ -522,6 +537,15 @@ const back = (): void => {
               </template>
             </div>
           </div>
+        </div>
+      </template>
+      <!-- === 个股详情扩展区（插件贡献）：区块标题 + 卡片，宿主只传 symbol === -->
+      <template v-for="section in pluginSections" :key="section.key">
+        <div class="m-sec" style="padding-top: 10px">
+          <span class="m-sec__t">{{ section.title }}</span>
+        </div>
+        <div class="m-card">
+          <component :is="section.component" v-bind="section.props" :symbol="symbol" />
         </div>
       </template>
       <div class="m-sub-tail"></div>

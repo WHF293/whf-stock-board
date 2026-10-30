@@ -6,7 +6,7 @@
  *
  * 因此这个是**不纯**的（依赖 `document`），别放进 lint 文件里。
  */
-import { readHostCssClasses } from '../../common/utils/host-css-classes';
+import { readHostCssClasses } from '../utils/host-css-classes';
 import { collectPluginClassUsages, filterMissingPluginClasses } from './user-plugin-lint';
 import type { UserPluginLintIssue } from './user-plugin-lint';
 

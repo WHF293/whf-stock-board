@@ -18,6 +18,8 @@ import { appStorage } from '../utils/app-local-storage';
 import { buildUpdateProxyInit } from '../utils/update-proxy';
 import { trackApiRequest } from '../../pc/weblog/weblogActions';
 import { compareVersion } from '../utils/plugin-version';
+import { PLUGIN_DEVICES } from '../constants/plugin.constants.ts';
+import type { PluginDevice } from '../constants/plugin.constants.ts';
 import {
   PLUGIN_MARKET_BUILTIN_REPO,
   PLUGIN_MARKET_CACHE_TTL_MS,
@@ -68,6 +70,7 @@ interface EnhanceEntryRaw {
   author?: unknown;
   sha256?: unknown;
   changelog?: unknown;
+  devices?: unknown;
 }
 
 /** 增强清单的宽松解析结果 */
@@ -275,6 +278,19 @@ const applyEnhancement = (
       if (typeof hit.author === 'string') entry.author = hit.author;
       if (typeof hit.sha256 === 'string') version.sha256 = hit.sha256;
       if (typeof hit.changelog === 'string') version.changelog = hit.changelog;
+    }
+    // 支持端按条目回填（宽松口径：全部取值命中白名单才采纳，与安装校验同一份白名单）
+    for (const entry of entries) {
+      const versions = [entry.latest, ...entry.history];
+      const hit = versions
+        .map((version) => enhance.get(`${entry.id}@${version.version}`))
+        .find((item) => item?.devices !== undefined);
+      if (!hit || !Array.isArray(hit.devices) || hit.devices.length === 0) continue;
+      const valid = hit.devices.every(
+        (device): device is PluginDevice =>
+          typeof device === 'string' && (PLUGIN_DEVICES as readonly string[]).includes(device),
+      );
+      if (valid) entry.devices = [...hit.devices];
     }
   }
 };

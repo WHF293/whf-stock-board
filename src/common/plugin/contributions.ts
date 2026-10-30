@@ -28,8 +28,8 @@ import {
   SIDEBAR_PANEL_VISIBLE_WHEN_COLLAPSED_DEFAULT,
   STOCK_DETAIL_SECTION_ORDER_DEFAULT,
   STOCK_ROW_ACTION_ORDER_DEFAULT,
-} from '../../common/constants/plugin.constants.ts';
-import { SIDEBAR_MENU_GROUP_DEFAULT } from '../../common/constants/sidebar-group.constants.ts';
+} from '../constants/plugin.constants.ts';
+import { SIDEBAR_MENU_GROUP_DEFAULT } from '../constants/sidebar-group.constants.ts';
 import { createDisposable } from './disposable';
 import type { PluginEventBus } from './events';
 import type { DisposableBag } from './disposable';
@@ -62,8 +62,8 @@ import type {
   StockDetailSectionContribution,
   StockRowActionContribution,
   StockRowContributor,
-} from '../../common/types/plugin.types.ts';
-import type { BuiltinMcpServer } from '../agent/mcp/types';
+} from '../types/plugin.types.ts';
+import type { BuiltinMcpServer } from '../../pc/agent/mcp/types';
 
 /**
  * 把多个撤销句柄合成一个（任一环节回滚都能整体撤销）

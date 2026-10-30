@@ -10,15 +10,15 @@
  * （`onVanishedRoute`）——插件被关掉后页面其实已经不存在了，得有人把用户接走。
  */
 import { watch } from 'vue';
-import { LAYOUT_ROUTE_NAME } from '../../common/constants/router-meta.constants.ts';
-import { findVanishedRoute } from '../../common/utils/find-vanished-route';
+import { LAYOUT_ROUTE_NAME } from '../constants/router-meta.constants.ts';
+import { findVanishedRoute } from '../utils/find-vanished-route';
 import { pluginKernel } from './index';
 import type { RouteRecordRaw, Router } from 'vue-router';
 import type {
   PluginRouteBridgeOptions,
   RegisteredRoute,
   VanishedRouteInfo,
-} from '../../common/types/plugin.types.ts';
+} from '../types/plugin.types.ts';
 
 /** 已挂载的插件路由条目 */
 interface MountedRoute {
@@ -62,6 +62,9 @@ export const attachPluginRoutes = (
 ): (() => void) => {
   /** 已挂载的插件路由：key → 路由声明 + 移除函数 */
   const mounted = new Map<string, MountedRoute>();
+  // 布局父路由：缺省 PC 主布局；显式传 null（移动端无主布局）时全部顶层注册
+  const parentRouteName =
+    options.layoutRouteName === undefined ? LAYOUT_ROUTE_NAME : options.layoutRouteName;
 
   /**
    * 当前停留的页面随插件撤销时的收尾（检测 + 交给宿主）
@@ -96,9 +99,10 @@ export const attachPluginRoutes = (
       if (mounted.has(route.key)) continue;
       mounted.set(route.key, {
         route,
-        remove: route.underLayout
-          ? router.addRoute(LAYOUT_ROUTE_NAME, toRouteRecord(route))
-          : router.addRoute(toRouteRecord(route)),
+        remove:
+          route.underLayout && parentRouteName !== null
+            ? router.addRoute(parentRouteName, toRouteRecord(route))
+            : router.addRoute(toRouteRecord(route)),
       });
     }
     const vanished: RegisteredRoute[] = [];

@@ -29,6 +29,10 @@ const US_EVENING_START = 21 * 60 + 30;
 const US_EVENING_END = 24 * 60;
 const US_MORNING_END = 4 * 60;
 
+/** 港股轮询窗口（本地时间分钟数）：09:30 - 16:00 */
+const HK_WINDOW_START = 9 * 60 + 30;
+const HK_WINDOW_END = 16 * 60;
+
 /**
  * 本地时间当日分钟数
  * @param date 任意 Date 实例
@@ -129,6 +133,20 @@ export const useMarketStatusStore = defineStore('market-status', {
         return day >= 2 && day <= 6;
       }
       return false;
+    },
+
+    /**
+     * 港股行情轮询窗口（本地时间，SDK 日历不支持港股假日，按星期近似）：
+     * 周一~周五 09:30 - 16:00（港股时段与北京同为 UTC+8，本地时间即港股时间）
+     * @param state store 状态
+     * @returns true 表示处于港股轮询窗口
+     */
+    isHkPollingWindow: (state: MarketStatusState): boolean => {
+      void state.clockTick;
+      const now = new Date();
+      const minutes = localMinutes(now);
+      const day = localDay(now);
+      return day >= 1 && day <= 5 && minutes >= HK_WINDOW_START && minutes <= HK_WINDOW_END;
     },
   },
 

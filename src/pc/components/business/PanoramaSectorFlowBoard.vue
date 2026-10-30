@@ -498,13 +498,16 @@ const onRankExport = async (): Promise<void> => {
       </div>
     </Teleport>
 
-    <!-- 模块工具条：曲线操作（截至时间 / 进度说明在左侧）；2026-10-29 起恒为曲线视图，切换已删 -->
+    <!-- 模块工具条：模块名 + 截至时间 / 进度说明在左侧；2026-10-29 起恒为曲线视图，切换已删 -->
     <div class="mb-2 flex shrink-0 flex-wrap items-center justify-between gap-2">
-      <div class="text-xs text-text-tertiary">
-        <template v-if="curveAsOfText">截至 {{ curveAsOfText }}</template>
-        <template v-if="isCurveLoading">
-          · 加载曲线 {{ curveProgress.done }}/{{ curveProgress.total }}
-        </template>
+      <div class="flex flex-wrap items-center gap-x-2">
+        <span class="text-sm font-medium text-text">板块当日资金流入</span>
+        <span class="text-xs text-text-tertiary">
+          <template v-if="curveAsOfText">截至 {{ curveAsOfText }}</template>
+          <template v-if="isCurveLoading">
+            · 加载曲线 {{ curveProgress.done }}/{{ curveProgress.total }}
+          </template>
+        </span>
       </div>
       <div class="flex items-center gap-2">
         <BaseButton variant="ghost" @click="goSectorFlowHistory">查看历史净流入</BaseButton>

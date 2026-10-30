@@ -10,11 +10,12 @@
  * 因此「新增一个能力」的方式永远是**写一个插件**，而不是给内核打补丁。
  */
 import {
+  PLUGIN_DEVICE_DEFAULT,
   PLUGIN_DISABLED_BY_DEFAULT,
   PLUGIN_ORIGIN,
   PLUGIN_STATUS,
   USER_PLUGIN_AUTHOR_LABEL,
-} from '../../common/constants/plugin.constants.ts';
+} from '../constants/plugin.constants.ts';
 import { ref } from 'vue';
 import { DisposableBag } from './disposable';
 import { PluginEventBus } from './events';
@@ -31,7 +32,7 @@ import type {
   PluginSettingsDeclaration,
   PluginSettingsStore,
   PluginStatus,
-} from '../../common/types/plugin.types.ts';
+} from '../types/plugin.types.ts';
 
 /** 内核中的插件条目 */
 interface PluginEntry {
@@ -423,6 +424,7 @@ export class PluginKernel {
       author:
         definition.author
         ?? (entry.origin === PLUGIN_ORIGIN.USER ? USER_PLUGIN_AUTHOR_LABEL : '内置'),
+      devices: definition.devices ?? PLUGIN_DEVICE_DEFAULT,
       builtin: entry.origin === PLUGIN_ORIGIN.BUILTIN,
       origin: entry.origin,
       status: entry.status,

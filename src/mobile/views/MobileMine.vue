@@ -4,7 +4,11 @@ import { useRouter } from 'vue-router';
 import { showConfirmDialog, showToast } from 'vant';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { APP_VERSION, RELEASES_URL, SITE_URL } from '../../common/constants/app-info.constants.ts';
-import { MOBILE_DISCLAIMER, MOBILE_POLLING_OPTIONS } from '../constants';
+import {
+  MOBILE_PLUGINS_PATH,
+  MOBILE_DISCLAIMER,
+  MOBILE_POLLING_OPTIONS,
+} from '../constants';
 import { THEME_COLOR_OPTIONS } from '../../common/constants/theme-color.constants.ts';
 import type { ThemeColor } from '../../common/constants/theme-color.constants.ts';
 import { TREND_THEME_OPTIONS } from '../../common/constants/trend-theme.constants.ts';
@@ -55,6 +59,11 @@ const onHeroTap = (): void => {
 
 const goTheme = (): void => {
   void router.push('/theme');
+};
+
+/** 进插件管理页（2026-10-30 移动端插件体系 P2 入口） */
+const goPlugins = (): void => {
+  void router.push(MOBILE_PLUGINS_PATH);
 };
 
 // ---- 外观：深色模式（行内分段直切，与主题设置页共享同一持久化） ----
@@ -247,6 +256,14 @@ const toggleAbout = (key: 'disclaimer' | 'source'): void => {
     <!-- 通用（原设置页分组沿用） -->
     <div class="m-set-label">通用</div>
     <div class="m-set-group">
+      <button class="m-set-row" @click="goPlugins">
+        <div class="m-set-row__ic">⬡</div>
+        <div class="m-set-row__t">
+          插件
+          <span class="d">插件市场 · 启停与卸载管理</span>
+        </div>
+        <span class="m-set-row__arr">›</span>
+      </button>
       <button class="m-set-row" @click="openSite">
         <div class="m-set-row__ic">⌂</div>
         <div class="m-set-row__t">

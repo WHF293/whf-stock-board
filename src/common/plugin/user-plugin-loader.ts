@@ -8,17 +8,18 @@
  * 校验函数刻意保持纯（不 import 浏览器 / Pinia 依赖），可被烟雾测试直跑。
  */
 import {
+  PLUGIN_DEVICES,
   PLUGIN_ID_PATTERN,
   PLUGIN_ORIGIN,
   USER_PLUGIN_BLOB_MIME,
-} from '../../common/constants/plugin.constants.ts';
+} from '../constants/plugin.constants.ts';
 import { pluginKernel } from './index';
 import { formatLintBlockers, lintUserPluginCode } from './user-plugin-lint';
 import type { UserPluginLintIssue } from './user-plugin-lint';
 import type {
   PluginDefinition,
   UserPluginRecord,
-} from '../../common/types/plugin.types.ts';
+} from '../types/plugin.types.ts';
 
 /** 用户插件模块的期望形态（ESM 默认导出或具名 `plugin` 导出） */
 interface UserPluginModule {
@@ -88,6 +89,22 @@ export const validateUserPluginDefinition = (
   }
   if (typeof candidate.apply !== 'function') {
     return { ok: false, error: '缺少挂载入口（apply 函数）' };
+  }
+  // devices 可选；出现时须为非空数组且取值在白名单内 —— 空数组意味着「两端都不可见」的
+  // 隐形插件，宁可安装期报错也不让它悄悄消失
+  if (candidate.devices !== undefined) {
+    if (!Array.isArray(candidate.devices) || candidate.devices.length === 0) {
+      return { ok: false, error: 'devices 须为非空数组（如 ["pc", "mobile"]），空数组不允许' };
+    }
+    const invalid = candidate.devices.filter(
+      (device) => !PLUGIN_DEVICES.includes(device as (typeof PLUGIN_DEVICES)[number]),
+    );
+    if (invalid.length > 0) {
+      return {
+        ok: false,
+        error: `devices 含未知取值：${invalid.join('、')}（合法取值：${PLUGIN_DEVICES.join(' / ')}）`,
+      };
+    }
   }
   return { ok: true, definition: value as PluginDefinition };
 };

@@ -10,7 +10,7 @@ import { reactive } from 'vue';
 import type {
   PluginSettingField,
   PluginSettingsStore,
-} from '../../common/types/plugin.types.ts';
+} from '../types/plugin.types.ts';
 
 /** 设置值在插件 storage 里的键名 */
 export const PLUGIN_SETTINGS_STORAGE_KEY = 'settings';

@@ -1,7 +1,6 @@
 import type {
   FundFlowRankItem,
   MarketFundFlow,
-  NorthboundHoldingRankItem,
   SectorFundFlowItem,
   StockFundFlowDaily,
 } from '../types/flow.types.ts';
@@ -41,12 +40,3 @@ export const fetchFundFlowRank = async (): Promise<FundFlowRankItem[]> =>
  */
 export const fetchSectorFundFlowRank = async (): Promise<SectorFundFlowItem[]> =>
   sdk.fundFlow.sectorRank({ sectorType: 'industry' });
-
-/**
- * 拉取北向持股排名（东财源）
- *
- ⚠️ 重接口：仅在进入资金动向页时拉取，不参与轮询
- * @returns 北向持股市值排名（当日口径）
- */
-export const fetchNorthboundHoldingRank = async (): Promise<NorthboundHoldingRankItem[]> =>
-  sdk.northbound.holdingRank({ market: 'all', period: 'today' });

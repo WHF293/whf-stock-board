@@ -181,6 +181,11 @@ pluginKernel.revision              // ref<number>：宿主响应式依赖它感�
   —— 这几类过去只能靠 import 宿主内部模块（`useStockOpen` / `stores/watchlist` /
   `composables/polling-scheduler` / `StockSearchModal`），官方插件改成 zip 分发后必须走服务。
   改这几个服务等于改第三方插件的地板，务必同步 PLUGIN_API.md 与 PLUGIN_WIKI.md
+- **双端装配与 `devices` 契约（v4.30.0 起）**：内核已下沉 `src/common/plugin/`（PC `src/plugin/` 只留
+  re-export 与 PC 专属装配），插件定义新增可选字段 `devices`（`PLUGIN_DEVICES = ['pc', 'mobile']`，
+  **缺省 = 仅 PC**；声明含 `mobile` 表示作者已在窄屏验证过，移动端装配层才挂载它，未声明在移动端彻底不存在）。
+  移动端装配在 `src/mobile/plugin/setup.ts`（服务子集 17 个、插件页注册为顶层路由、只挂用户插件），
+  详见「移动端」一节的插件体系条目；改宿主服务 / 贡献点契约时**两份装配 + 两份文档**（PLUGIN_API/WIKI）都要过一遍。
 
 ### 插件工坊不是插件（v2.6.2 起转正）
 
@@ -434,17 +439,26 @@ tauri fetch 绕 webview CORS）。
 ## 移动端（Android，Tauri 2 Mobile）
 
 与桌面共用同一代码库，`vite --mode mobile` **构建期分流**：桌面入口（`main.ts` → `App.vue` → MainLayout）
-完全不受影响；移动端入口挂 `src/mobile/`（`MobileApp.vue` 底部三 Tab：热点新闻 / 今天炒什么 / 我的，
-二级页：设置 / 主题设置 / 原文阅读页）。方案与交互定稿见
-`.ai/开发方案/2026-10-09-客户端-热点新闻与今天炒什么安卓App可行性报告.md` 与
-`.ai/项目资源/stock-board-mobile-dual-tab-v1.html`（v1.1 需求稿；`local_docs/` 已废除，稿类产物一律进 `.ai/项目资源/`）。
+完全不受影响；移动端入口挂 `src/mobile/`（`MobileApp.vue` 底部五 Tab：首页 / 插件 / 自选 / 新闻 / 我的，
+2026-10-30 起行情模块并入首页、原行情 Tab 槽位换插件入口 `MobilePlugins.vue`；
+二级页：设置 / 主题设置 / 插件市场 / 榜单 / 板块详情等）。方案与交互定稿见
+`.ai/开发方案/2026-10-09-客户端-热点新闻与今天炒什么安卓App可行性报告.md`、
+`.ai/项目资源/stock-board-mobile-dual-tab-v1.html`（v1.1 需求稿；`local_docs/` 已废除，稿类产物一律进 `.ai/项目资源/`）
+与 `.ai/开发方案/2026-10-30-移动端-移动端插件体系与首页信息架构重组开发方案.md`（插件体系 + 首页重组）。
 
 - **组件库**：Vant 4（仅移动入口引入，桌面 bundle 不含）；Swipe（源/平台横滑切换，`:loop="false"`
   边界无效，与 chips 双向联动）、PullRefresh（顶部下拉刷新）、List（上拉加载）、Skeleton/Empty/Toast；
   主题经 CSS 变量桥接 DESIGN.md token；榜单行 / 新闻行等数据展示保持自研轻组件
 - **复用与禁区**：移动页只准 import 数据层（`api/news.api.ts` / `api/hot-board.api.ts`）、
   constants、stores 与纯函数；**禁止 import 桌面专属模块**（`WebviewWindow` / `agent-bridge` /
-  `dock-panel` / 停靠面板组件等）——import 了就会把桌面代码拖进移动包或直接报错
+  `dock-panel` / 停靠面板组件 / `src/plugin` PC 装配层等）——import 了就会把桌面代码拖进移动包或直接报错
+- **插件体系（v4.30.0 起）**：内核在 `src/common/plugin/`（与 PC 单源），移动端有自己的装配层
+  `src/mobile/plugin/setup.ts`（`bootstrap.ts` 在 pinia 之后、mobileRouter 之前调 `installMobilePlugins(pinia)`）：
+  只 provide **服务子集**（17 个；无 `panel:open` / `panel:close` / `app:stock-picker` / `app:agent-ask`），
+  `attachPluginRoutes(mobileRouter, { layoutRouteName: null })` 把插件页注册为顶层路由；
+  只挂 `devices` 含 `'mobile'` 的**用户插件**（`BUILTIN_PLUGINS` 为空且移动端不 import 它）。
+  插件菜单页自动混入首页金刚区（icon 非 Vant 名兜底 `apps-o`、颜色按路径哈希），不进底部 TabBar；
+  管理页 `/plugins` + 市场页 `/plugin-market`；个股详情页消费 `stockDetail` 扩展区。
 - **双端纪律（硬性）**：改动共享 api / composable / stores 后必须双端各验一次：
   `pnpm lint && pnpm build`（桌面）+ `pnpm tauri android dev`（移动真机）
 - **Rust 门控**：`tauri_plugin_autostart::init` 与 `build_tray` 已 `#[cfg(desktop)]`；

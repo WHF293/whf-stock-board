@@ -17,6 +17,8 @@ import {
   upsertKlineBars,
   upsertKlineCacheMeta,
 } from './kline-db.api.ts';
+import { isHkSymbol } from '../utils/is-hk-symbol';
+import { fetchHkKline } from './hk-kline.api';
 import { fetchSinaKline, type SinaKlinePeriod } from './sina-kline.api.ts';
 
 /**
@@ -56,6 +58,12 @@ export const fetchKlineCached = async (
   options?: KlineCacheOptions,
 ): Promise<KLineData[]> => {
   const write = options?.write ?? true;
+  // 港股符号走腾讯源直连（新浪接口不支持港股，实测返回 var _=(null)）；
+  // v1 不进本地 SQLite 缓存层——该层「历史不变、只补尾部」策略按新浪源口径设计，
+  // 腾讯源复权（qfq）与取数形态不同，留待有真实需求再做；内存快照（data-cache）天然生效
+  if (isHkSymbol(symbol)) {
+    return fetchHkKline(symbol, period, { barLimit: options?.barLimit });
+  }
   // 未纳入缓存的周期，或浏览器端无 SQLite ⇒ 退回纯网络取数
   if (!isCacheablePeriod(period) || !isKlineCacheAvailable()) {
     return fetchSinaKline(symbol, period, { barLimit: options?.barLimit });

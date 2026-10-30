@@ -11,6 +11,8 @@
  * sha256 / changelog 的**增强通道**（缺失时字段为空串、跳过校验），不是市场的主数据。
  */
 
+import type { PluginDevice } from '../constants/plugin.constants.ts';
+
 /** 一个插件源（GitHub 仓库） */
 export interface PluginMarketSource {
   /** 仓库全名 `owner/repo`（唯一键；内置官方源同样用它寻址） */
@@ -53,6 +55,12 @@ export interface PluginMarketEntry {
   description: string;
   /** 作者（index.json 增强命中才有；否则空串） */
   author: string;
+  /**
+   * 支持端（index.json 增强命中才有；否则缺省 = 未声明，按仅 PC 口径展示）
+   *
+   * 市场卡片据此在安装前标注「移动端可用」；与插件定义的 devices 同语义。
+   */
+  devices?: readonly PluginDevice[];
   /** 来自哪个源（`owner/repo`） */
   sourceRepo: string;
   /** 是否来自内置官方源（UI 标「官方」用） */

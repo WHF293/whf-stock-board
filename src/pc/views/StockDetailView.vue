@@ -51,6 +51,7 @@ import { DATA_CACHE_KEY } from '../../common/constants/data-cache.constants.ts';
 import { DEFAULT_GROUP_ID } from '../../common/constants/watchlist.constants.ts';
 import { getTrendByChangePercent } from '../../common/constants/trend.constants.ts';
 import { TREND_TEXT_CLASS } from '../../common/constants/stock-colors.constants.ts';
+import { isHkSymbol } from '../../common/utils/is-hk-symbol';
 
 /**
  * 股票详情整页（/stock-detail/:symbol，全站双击个股进入）：
@@ -82,6 +83,9 @@ const stockContext = useStockContextStore();
  * 归一化符号：600519 / SH600519 / sh600519 等形态统一为 sh600519
  */
 const symbol = computed<string>(() => toFullSymbol(String(route.params.symbol ?? '')));
+
+/** 符号市场（hk 港股 / cn A 股缺省）：K 线分时固定轴与轮询窗口按市场取 */
+const symbolMarket = computed<'hk' | 'cn'>(() => (isHkSymbol(symbol.value) ? 'hk' : 'cn'));
 
 /** 当前股票是否已加入自选（任一分组） */
 const isInWatchlist = computed(() => watchlistStore.allSymbols.includes(symbol.value));
@@ -121,6 +125,8 @@ usePolling({
   task: fetchQuote,
   intervalMs: POLLING_INTERVAL.QUOTES_INTRADAY,
   tradingAware: true,
+  // getter：KeepAlive 缓存页在 A 股 / 港股标的间切换不重挂，窗口随符号响应式切换
+  market: () => (symbolMarket.value === 'hk' ? 'HK' : 'A'),
 });
 
 /**
@@ -608,6 +614,7 @@ const pctClass = (value: number | null): string =>
             :sub-indicators="settingsStore.chartSubIndicators"
             :symbol="symbol"
             :intraday-axis="chartPeriod === 'minute'"
+            :market="symbolMarket"
             :trade-marks="chartTradeMarks"
             auto-height
             @crosshair-bar="onCrosshairBar"
