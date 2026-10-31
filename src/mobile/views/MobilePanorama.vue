@@ -293,3 +293,10 @@ const fmtPct = (v: number | null): string => (v === null ? '--' : `${v > 0 ? '+'
     </div>
   </div>
 </template>
+
+<style scoped>
+/* navbar/tabs 与清单卡之间留空隙（2026-10-31 真机反馈列表贴顶；同新股独立页 .m-sub-scroll） */
+.m-sub-scroll {
+  padding-top: 10px;
+}
+</style>

@@ -6,6 +6,7 @@ import BaseEmpty from '../ui/BaseEmpty.vue';
 import StockDetailPanel from './StockDetailPanel.vue';
 import FuturesChainPanel from './FuturesChainPanel.vue';
 import StockF10Drawer from '../business/stock-f10/StockF10Drawer.vue';
+import BoardProfitDockPanel from '../business/BoardProfitDockPanel.vue';
 import DockResizer from '../business/DockResizer.vue';
 import { pluginKernel } from '../../../common/plugin/index';
 import {
@@ -50,13 +51,15 @@ const openDetailPage = (): void => {
   void router.push(`${ROUTE_PATH.STOCK_DETAIL}/${symbol}`);
 };
 
-/** 面板头部标题（个股详情 / 产业链 / F10 用固定模式；插件面板用其声明标题） */
+/** 面板头部标题（个股详情 / 产业链 / F10 / 气泡图用固定模式；插件面板用其声明标题） */
 const panelTitle = computed(() => {
   if (dockPanel.content === DOCK_PANEL_CONTENT.STOCK) return '个股详情';
   if (dockPanel.content === DOCK_PANEL_CONTENT.CHAIN)
     return `${dockPanel.chainVarietyName} · 产业链`;
   if (dockPanel.content === DOCK_PANEL_CONTENT.F10)
     return `更多信息 · ${dockPanel.f10Name || dockPanel.f10Symbol}`;
+  if (dockPanel.content === DOCK_PANEL_CONTENT.PROFIT_BUBBLE)
+    return `赚钱效应${dockPanel.profitDate ? ` · ${dockPanel.profitDate}` : ''}`;
   if (dockPanel.content === DOCK_PANEL_CONTENT.PLUGIN) return pluginPanel.value?.title ?? '插件面板';
   return '';
 });
@@ -172,6 +175,14 @@ onBeforeUnmount(() => {
           v-else-if="dockPanel.content === DOCK_PANEL_CONTENT.F10"
           :symbol="dockPanel.f10Symbol"
           :name="dockPanel.f10Name"
+        />
+        <!-- 赚钱效应气泡图（板块分析页扩展行「查看赚钱效应」发起，2026-10-31 王总指定）：
+             拖宽 / 持久化复用容器能力，气泡布局随实测宽防抖重排 -->
+        <BoardProfitDockPanel
+          v-else-if="dockPanel.content === DOCK_PANEL_CONTENT.PROFIT_BUBBLE"
+          :trade-date="dockPanel.profitDate"
+          @focus-change="(date: string) => (dockPanel.profitDate = date)"
+          @focus-reset="dockPanel.profitDate = ''"
         />
         <!-- 插件停靠面板：面板被卸载（插件禁用）时降级为空态，不留白屏 -->
         <component

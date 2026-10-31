@@ -179,8 +179,10 @@ ctx.menu.add({
 > 恒排内置入口之后、不参与长按编排；页面本体经 `attachPluginRoutes(mobileRouter, { layoutRouteName: null })`
 > 注册为**顶层路由**（移动端无 PC 主布局）。插件的管理 / 安装入口在底部「插件」Tab（`/plugins`）
 > 与其内的插件市场页。另注意：移动端装配层只 provide **服务子集**（无 `panel:open` / `panel:close` /
-> `app:stock-picker` / `app:agent-ask`——移动端没有停靠面板、选股弹窗与 Agent），插件若要双端通用，
-> 对这四个服务必须容忍缺席（`ctx.consume` 返回 undefined 时降级，不要裸调）。
+> `app:stock-picker` / `app:agent-ask` / `app:watch-widget-settings`——移动端没有停靠面板、选股弹窗、
+> Agent 与任务栏小组件），插件若要双端通用，
+> 对这五个服务必须容忍缺席（`ctx.consume` 返回 undefined 时降级，不要裸调）。
+> 手机竖屏 / pad 竖屏 / pad 横屏三形态的排版与交互适配规范见 `PLUGIN_WIKI.md` §8.4。
 
 ### 3.3 `ctx.router.add()` — 隐藏路由（不进菜单）
 

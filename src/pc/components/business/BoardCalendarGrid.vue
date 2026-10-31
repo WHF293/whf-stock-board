@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
+import BoardRowExpandPanel from './BoardRowExpandPanel.vue';
 import {
   BOARD_CALENDAR_COL_OVERSCAN,
   BOARD_CALENDAR_COL_WIDTH,
@@ -44,15 +45,30 @@ const props = defineProps<{
   sortDate?: string | null;
   /** 当前列排序方向（sortDate 生效时必填语义） */
   sortDir?: 'asc' | 'desc';
+  /** 当前展开的扩展行键（`<boardCode>|<tradeDate>`；null = 无展开） */
+  expandedKey?: string | null;
+  /** 展开行内容（expandedKey 非 null 时必传；由页面持有状态与数据） */
+  expanded?: {
+    row: BoardCalendarRow;
+    cell: BoardCalendarCell;
+    tradeDate: string;
+    profileConsCount: number;
+  } | null;
 }>();
 
 const emit = defineEmits<{
-  /** 点击单元格（cell 为 null 表示该日无快照） */
+  /** 点击单元格（cell 为 null 表示该日无快照；页面据此展开 / 收起扩展行） */
   cellClick: [row: BoardCalendarRow, cell: BoardCalendarCell | null, tradeDate: string];
   /** 点击板块名称（跳板块详情页：成分股 × 交易日 涨跌幅矩阵） */
   boardClick: [row: BoardCalendarRow];
   /** 点击日期列头：请求按该列得分排序（页面负责 升/降/默认 循环） */
   sortClick: [tradeDate: string];
+  /** 扩展行【查看赚钱效应】：打开右侧停靠面板并聚焦该交易日 */
+  expandProfitClick: [tradeDate: string];
+  /** 扩展行【查看板块详情】：进入板块详情页 */
+  expandBoardClick: [boardCode: string];
+  /** 扩展行成分股行点击：打开个股详情侧边栏 */
+  expandStockClick: [symbol: string];
 }>();
 
 /** 横向滚动容器（虚拟化测量可视宽度用） */
@@ -64,6 +80,13 @@ const { visibleIndexes, offsetX, tailWidth, onScroll } = useHorizontalVirtual({
   scrollRef,
   overscan: BOARD_CALENDAR_COL_OVERSCAN,
 });
+
+/** 展开行的收窄视图（null = 无展开）：模板条件里的 expanded 收窄由这里统一判定 */
+const expandView = computed(() =>
+  props.expandedKey !== null && props.expanded !== null && props.expanded !== undefined
+    ? props.expanded
+    : null,
+);
 
 /** 星期文案（列头第二行） */
 const WEEKDAY_LABELS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
@@ -160,56 +183,85 @@ const cellTitle = (
       <div class="shrink-0" :style="{ width: `${tailWidth}px` }" />
     </div>
 
-    <!-- 数据行：行高固定，不需要纵向虚拟化（36 行 × ~25 可视列 ≈ 900 节点） -->
-    <div
-      v-for="row in matrix.rows"
-      :key="row.code"
-      class="flex border-b border-flat-weak last:border-0"
-      :style="{ height: `${BOARD_CALENDAR_ROW_HEIGHT}px` }"
-    >
+    <!-- 数据行：行高固定，不需要纵向虚拟化（36 行 × ~25 可视列 ≈ 900 节点）；
+         行后可挂全宽扩展行（sticky left 吸左，不参与横向虚拟化） -->
+    <template v-for="row in matrix.rows" :key="row.code">
       <div
-        class="sticky left-0 z-10 shrink-0 border-r border-flat-weak bg-surface"
-        :style="{ width: `${BOARD_CALENDAR_NAME_COL_WIDTH}px` }"
+        class="flex border-b border-flat-weak last:border-0"
+        :style="{ height: `${BOARD_CALENDAR_ROW_HEIGHT}px` }"
       >
-        <button
-          type="button"
-          class="pressable flex h-full w-full flex-col justify-center px-3 text-left hover:bg-flat-weak"
-          :title="`${row.name} 成分股涨跌幅矩阵（点击进入板块详情）`"
-          @click="emit('boardClick', row)"
+        <div
+          class="sticky left-0 z-10 shrink-0 border-r border-flat-weak bg-surface"
+          :style="{ width: `${BOARD_CALENDAR_NAME_COL_WIDTH}px` }"
         >
-          <span class="bc-name truncate text-sm font-medium text-text">{{ row.name }}</span>
-          <span class="truncate text-[10px] text-text-tertiary">
-            {{ row.code }} · 近5日涨停 {{ row.heatLimitUp }}
-          </span>
+          <button
+            type="button"
+            class="pressable flex h-full w-full flex-col justify-center px-3 text-left hover:bg-flat-weak"
+            :title="`${row.name} 成分股涨跌幅矩阵（点击进入板块详情）`"
+            @click="emit('boardClick', row)"
+          >
+            <span class="bc-name truncate text-sm font-medium text-text">{{ row.name }}</span>
+            <span class="truncate text-[10px] text-text-tertiary">
+              {{ row.code }} · 近5日涨停 {{ row.heatLimitUp }}
+            </span>
+          </button>
+        </div>
+        <div class="shrink-0" :style="{ width: `${offsetX}px` }" />
+        <button
+          v-for="index in visibleIndexes"
+          :key="`${row.code}-${matrix.dates[index]}`"
+          type="button"
+          class="bc-cell pressable flex shrink-0 flex-col items-center justify-center gap-0.5 border-r border-flat-weak text-[11px] leading-tight"
+          :class="row.cells[index] ? 'cursor-pointer' : 'cursor-default'"
+          :style="[{ width: `${BOARD_CALENDAR_COL_WIDTH}px` }, cellStyle(row.cells[index] ?? null)]"
+          :title="cellTitle(row.cells[index] ?? null, row, matrix.dates[index])"
+          :aria-label="`${row.name} ${matrix.dates[index]} 详情`"
+          :disabled="!row.cells[index]"
+          @click="emit('cellClick', row, row.cells[index] ?? null, matrix.dates[index])"
+        >
+          <template v-if="row.cells[index]">
+            <span class="font-medium tabular-nums">涨停 {{ row.cells[index]?.limitUp }}</span>
+            <span class="tabular-nums opacity-80">跌停 {{ row.cells[index]?.limitDown }}</span>
+            <!-- 历史回补日角标（右上角三角）：含义见图例与公告条，悬停有 title 详解 -->
+            <i v-if="row.cells[index]?.dataLevel === 0" class="bc-backfill-mark" aria-hidden="true" />
+          </template>
+          <span v-else class="text-[11px]">--</span>
         </button>
+        <div class="shrink-0" :style="{ width: `${tailWidth}px` }" />
       </div>
-      <div class="shrink-0" :style="{ width: `${offsetX}px` }" />
-      <button
-        v-for="index in visibleIndexes"
-        :key="`${row.code}-${matrix.dates[index]}`"
-        type="button"
-        class="bc-cell pressable flex shrink-0 flex-col items-center justify-center gap-0.5 border-r border-flat-weak text-[11px] leading-tight"
-        :class="row.cells[index] ? 'cursor-pointer' : 'cursor-default'"
-        :style="[{ width: `${BOARD_CALENDAR_COL_WIDTH}px` }, cellStyle(row.cells[index] ?? null)]"
-        :title="cellTitle(row.cells[index] ?? null, row, matrix.dates[index])"
-        :aria-label="`${row.name} ${matrix.dates[index]} 详情`"
-        :disabled="!row.cells[index]"
-        @click="emit('cellClick', row, row.cells[index] ?? null, matrix.dates[index])"
+      <!-- 扩展行（2026-10-31 替代明细弹窗）：全宽吸左（sticky left），内容为
+           汇总条 + 成分股表（BoardRowExpandPanel），随展开键切换挂载 -->
+      <div
+        v-if="expandView !== null && expandView.row.code === row.code"
+        class="bc-expand-row"
       >
-        <template v-if="row.cells[index]">
-          <span class="font-medium tabular-nums">涨停 {{ row.cells[index]?.limitUp }}</span>
-          <span class="tabular-nums opacity-80">跌停 {{ row.cells[index]?.limitDown }}</span>
-          <!-- 历史回补日角标（右上角三角）：含义见图例与公告条，悬停有 title 详解 -->
-          <i v-if="row.cells[index]?.dataLevel === 0" class="bc-backfill-mark" aria-hidden="true" />
-        </template>
-        <span v-else class="text-[11px]">--</span>
-      </button>
-      <div class="shrink-0" :style="{ width: `${tailWidth}px` }" />
-    </div>
+        <BoardRowExpandPanel
+          :board="expandView.row"
+          :cell="expandView.cell"
+          :trade-date="expandView.tradeDate"
+          :profile-cons-count="expandView.profileConsCount"
+          @profit-click="emit('expandProfitClick', $event)"
+          @board-click="emit('expandBoardClick', $event)"
+          @stock-click="emit('expandStockClick', $event)"
+        />
+      </div>
+    </template>
   </div>
 </template>
 
 <style scoped>
+/*
+ * 扩展行（2026-10-31 替代明细弹窗）：横向滚动容器内的全宽吸左行——
+ * sticky left:0 + width:100%（= 容器可视宽），横向滚动时内容区平移而
+ * 扩展行钉在可视区；纵向高度由 BoardRowExpandPanel 的 max-height 约束。
+ */
+.bc-expand-row {
+  position: sticky;
+  left: 0;
+  width: 100%;
+  z-index: 15;
+}
+
 /* 单元格需要相对定位承载右上角的「回补日」标记 */
 .bc-cell {
   position: relative;

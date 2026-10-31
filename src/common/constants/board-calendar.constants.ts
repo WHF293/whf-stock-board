@@ -365,8 +365,13 @@ export const BOARD_PROFIT_METRIC_OPTIONS = [
  * 但保留下限让 0 值（多空完全均衡）也画得出来。详见 `utils/bubble-layout.ts`。
  */
 export const BOARD_PROFIT_BUBBLE = {
-  /** 画布宽度 */
+  /** 画布宽度（实测宽不可得时的回落值；侧边栏内按实测宽重排） */
   WIDTH: 1280,
+  /**
+   * 实测宽防抖（毫秒，2026-10-31 迁入可拖宽侧边栏）：拖拽过程 ResizeObserver
+   * 连续回调合并为一次布局重算，过渡期旧布局经 preserveAspectRatio 等比缩放
+   */
+  RESIZE_DEBOUNCE_MS: 160,
   /** 最小高度（气泡堆叠不高时上下均分留白） */
   MIN_HEIGHT: 380,
   /**
@@ -435,7 +440,8 @@ export const BOARD_CALENDAR_RANGE_OPTIONS = [
 
 /**
  * 主区视图：rotation = 题材轮动 bump 图（默认）/ list = 涨跌停矩阵列表 /
- * bubble = 赚钱效应气泡图 / mainline = 板块Top 分析
+ * bubble = 赚钱效应气泡图（2026-10-31 起迁入右侧停靠面板，key 保留类型兼容）/
+ * mainline = 板块Top 分析
  *
  * 2026-10-21 王总指定：页面改名「题材轮动」，四个 Tab 改名重排
  * （列表 → 板块日历、气泡图 → 赚钱效应、板块分析 → 板块Top、题材轮动置于首位）。
@@ -449,22 +455,29 @@ export const BOARD_CALENDAR_VIEW = {
   SEESAW: 'seesaw',
 } as const;
 
-/** 主区视图默认值（页面即题材轮动页，默认进新视图） */
+/** 主区视图默认值（页面即板块分析页，默认进新视图） */
 export const BOARD_CALENDAR_VIEW_DEFAULT = BOARD_CALENDAR_VIEW.ROTATION;
 
 /**
  * 主区视图选项（BaseTabs，顺序 = 页面 Tab 顺序）
  *
- * 2026-10-22 王总指定：板块Top 不再作为独立 Tab，移入题材轮动 Tab 下方作子模块
- * （按当日成交额取每日 Top N，范围与题材轮动的近 10/20/30 日同步）；
- * MAINLINE key 保留（类型与持久化兼容），仅从选项中移除。
+ * 2026-10-22 王总指定：板块Top 不再作为独立 Tab，移入题材轮动 Tab 下方作子模块；
+ * 2026-10-31 王总指定：赚钱效应 Tab 删除，气泡图迁入右侧停靠面板（扩展行
+ * 「查看赚钱效应」按钮打开），选项随之移除；MAINLINE key 保留（类型与持久化兼容）。
  */
 export const BOARD_CALENDAR_VIEW_OPTIONS = [
   { label: '题材轮动', value: BOARD_CALENDAR_VIEW.ROTATION },
   { label: '板块日历', value: BOARD_CALENDAR_VIEW.LIST },
-  { label: '赚钱效应', value: BOARD_CALENDAR_VIEW.BUBBLE },
   { label: '风格跷跷板', value: BOARD_CALENDAR_VIEW.SEESAW },
 ] as const;
+
+/**
+ * 板块日历扩展行（2026-10-31 王总指定：点击单元格展开扩展行替代明细弹窗）
+ */
+/** 扩展行左栏（汇总条 + 按钮）固定宽度（px） */
+export const BOARD_EXPAND_SUMMARY_WIDTH = 300;
+/** 扩展行整体最大高度（px，一屏语义：不超过主区可视高度） */
+export const BOARD_EXPAND_MAX_HEIGHT = 640;
 
 /** 板块分析：每日按得分绝对值取前 N 名（横看同一板块是否连续在榜 = 资金集中，跳来跳去 = 快速轮动；多空由色阶区分） */
 export const BOARD_MAINLINE_TOP_N = 10;

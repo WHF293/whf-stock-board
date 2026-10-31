@@ -32,6 +32,7 @@ import type {
 } from '../../common/api/news.api.ts';
 import {
   MOBILE_CACHE_TTL_MS,
+  MOBILE_CHANNEL_LOAD_TIMEOUT_MS,
   MOBILE_NEWS_PAGE_SIZE,
   MOBILE_NEWS_SOURCES,
   MOBILE_NEWS_SOURCE_LOGOS,
@@ -39,6 +40,7 @@ import {
   SINA_LID_STOCK,
 } from '../constants';
 import type { MobileNewsChannel, MobileNewsSource } from '../constants';import { STORAGE_NS_MOBILE_NEWS_SETTINGS } from '../../common/constants/storage-key.constants.ts';
+import { withTimeout } from '../utils/with-timeout';
 import { appStorage } from '../../common/utils/app-local-storage';
 import {
   mobileCacheGet,
@@ -455,7 +457,13 @@ const ensureChannel = async (
   if (!opts.silent) st.error = false;
   const requestPage = st.page;
   try {
-    const result = await loadChannelPage(channelKey, { page: requestPage, cursor: st.cursor });
+    // 超时竞速兜底：上游 TCP 挂起不落地时 reject → 下方 catch 落错误态（带重试出口），
+    // 避免横滑切 tab 后骨架屏无限等待（2026-10-30 真机反馈）
+    const result = await withTimeout(
+      loadChannelPage(channelKey, { page: requestPage, cursor: st.cursor }),
+      MOBILE_CHANNEL_LOAD_TIMEOUT_MS,
+      '新闻频道加载超时',
+    );
     if (opts.force || requestPage === 1) {
       st.items = result.items;
     } else {
@@ -518,10 +526,20 @@ const swipeIndex = computed(() => {
 const {
   onSwipeEl,
   phase: swipePhase,
+  innerGesture: swipeInner,
   containerStyle,
 } = useSwipeSwitch({
   count: () => visibleSources.value.length,
   index: () => swipeIndex.value,
+  // 内层步进优先（2026-10-30 王总指定）：源内子栏目还可切时横滑切栏目，到首/末栏目才切源
+  canStepInner: (dir) => {
+    const next = activeChannelIndex.value + dir;
+    return next >= 0 && next < activeSource.value.channels.length;
+  },
+  onStepInner: (dir) => {
+    // watch(activeChannelIndex) 已接栏目加载，v-model 回流即切 tab
+    activeChannelIndex.value += dir;
+  },
   // 手势绑定的内容区里只有主题 chips 需要横向滚动，整块让位原生横滚
   ignoreSelector: '.m-chips',
   onChange: (next) => {
@@ -812,15 +830,15 @@ onUnmounted(() => {
              首载与切源过渡态一律骨架屏（骨架即 loading），下拉 / 触底保留 loading 语义 -->
         <div :ref="onSwipeEl" class="m-swipe">
           <div class="m-swipe__inner" :style="containerStyle">
-            <!-- 相邻源骨架屏：边界侧不挂（不循环） -->
+            <!-- 相邻源骨架屏：边界侧不挂（不循环）；内层手势（切源内栏目）不渲染 -->
             <div
-              v-if="swipePhase !== null && swipeIndex > 0"
+              v-if="swipePhase !== null && !swipeInner && swipeIndex > 0"
               class="m-swipe__side m-swipe__side--prev"
             >
               <NewsSkeleton />
             </div>
             <div
-              v-if="swipePhase !== null && swipeIndex < visibleSources.length - 1"
+              v-if="swipePhase !== null && !swipeInner && swipeIndex < visibleSources.length - 1"
               class="m-swipe__side m-swipe__side--next"
             >
               <NewsSkeleton />

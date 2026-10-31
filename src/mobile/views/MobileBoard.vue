@@ -13,10 +13,11 @@ import {
 } from '../../common/constants/hot-board.constants.ts';
 import type { BoardSource } from '../../common/constants/hot-board.constants.ts';
 import { STORAGE_NS_MOBILE_BOARD_SETTINGS } from '../../common/constants/storage-key.constants.ts';
-import { MOBILE_CACHE_TTL_MS } from '../constants';
+import { MOBILE_CACHE_TTL_MS, MOBILE_CHANNEL_LOAD_TIMEOUT_MS } from '../constants';
 import { mobileCacheGet, mobileCacheGetStale, mobileCacheSet } from '../cache';
 import { useSwipeSwitch } from '../composables/use-swipe-switch';
 import BoardSkeleton from '../components/BoardSkeleton.vue';
+import { withTimeout } from '../utils/with-timeout';
 import { appStorage } from '../../common/utils/app-local-storage';
 import {
   formatPct,
@@ -183,7 +184,13 @@ const ensureBoard = async (
   st.loading = true;
   if (!opts.silent) st.error = false;
   try {
-    const items = await fetchHotBoard(source, group);
+    // 超时竞速兜底：上游挂起不落地时 reject → 下方 catch 落错误态（带重试出口），
+    // 避免横滑切分组后骨架屏无限等待（2026-10-30 真机反馈）
+    const items = await withTimeout(
+      fetchHotBoard(source, group),
+      MOBILE_CHANNEL_LOAD_TIMEOUT_MS,
+      '榜单加载超时',
+    );
     st.items = items;
     st.fetchedAt = Date.now();
     mobileCacheSet(key, items);
@@ -231,10 +238,20 @@ const swipeIndex = computed(() => {
 const {
   onSwipeEl,
   phase: swipePhase,
+  innerGesture: swipeInner,
   containerStyle,
 } = useSwipeSwitch({
   count: () => visibleSources.value.length,
   index: () => swipeIndex.value,
+  // 内层步进优先（2026-10-30 王总指定）：平台内分组还可切时横滑切分组，到首/末分组才切平台
+  canStepInner: (dir) => {
+    const next = activeGroupIndex.value + dir;
+    return next >= 0 && next < groupsOf(activeSource.value).length;
+  },
+  onStepInner: (dir) => {
+    // watch(activeGroupIndex) 已接分组加载，v-model 回流即切 tab
+    activeGroupIndex.value += dir;
+  },
   onChange: (next) => {
     activeIndex.value = next;
   },
@@ -368,15 +385,15 @@ onMounted(() => {
          首载与切平台过渡态一律骨架屏（骨架即 loading），下拉保留 loading 语义 -->
     <div :ref="onSwipeEl" class="m-swipe">
       <div class="m-swipe__inner" :style="containerStyle">
-        <!-- 相邻平台骨架屏：边界侧不挂（不循环） -->
+        <!-- 相邻平台骨架屏：边界侧不挂（不循环）；内层手势（切平台内分组）不渲染 -->
         <div
-          v-if="swipePhase !== null && swipeIndex > 0"
+          v-if="swipePhase !== null && !swipeInner && swipeIndex > 0"
           class="m-swipe__side m-swipe__side--prev"
         >
           <BoardSkeleton />
         </div>
         <div
-          v-if="swipePhase !== null && swipeIndex < visibleSources.length - 1"
+          v-if="swipePhase !== null && !swipeInner && swipeIndex < visibleSources.length - 1"
           class="m-swipe__side m-swipe__side--next"
         >
           <BoardSkeleton />

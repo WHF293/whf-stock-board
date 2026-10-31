@@ -29,6 +29,8 @@ interface DockPanelState {
   f10Symbol: string;
   /** F10 抽屉的标的名称（标题展示用；content = f10 时生效） */
   f10Name: string;
+  /** 赚钱效应气泡图聚焦的交易日（YYYY-MM-DD；content = profit-bubble 时生效） */
+  profitDate: string;
   /** 面板宽度（像素，localStorage 持久化） */
   width: number;
   /** 面板内右侧栏（五档 / 筹码）是否显示（默认不显示，localStorage 持久化） */
@@ -51,6 +53,7 @@ export const useDockPanelStore = defineStore('dock-panel', {
     chainVarietyName: '',
     f10Symbol: '',
     f10Name: '',
+    profitDate: '',
     width: DOCK_PANEL_WIDTH_DEFAULT,
     showSidePanel: false,
   }),
@@ -88,18 +91,28 @@ export const useDockPanelStore = defineStore('dock-panel', {
       this.open = true;
     },
 
-    /**
-     * 打开个股「更多信息」资料抽屉（交易记录 / 成分股 / 财务 / 资讯 / 基本资料 /
-     * 发行相关 / 高管简介 / 参股控股）
-     * @param symbol 标的符号（sh600519 / 600519 形态均可，内部归一化）
-     * @param name 标的名称（面板标题展示用）
-     */
-    openF10(symbol: string, name: string): void {
-      this.content = DOCK_PANEL_CONTENT.F10;
-      this.f10Symbol = symbol;
-      this.f10Name = name;
-      this.open = true;
-    },
+  /**
+   * 打开个股「更多信息」资料抽屉（交易记录 / 成分股 / 财务 / 资讯 / 基本资料 /
+   * 发行相关 / 高管简介 / 参股控股）
+   * @param symbol 标的符号（sh600519 / 600519 形态均可，内部归一化）
+   * @param name 标的名称（面板标题展示用）
+   */
+  openF10(symbol: string, name: string): void {
+    this.content = DOCK_PANEL_CONTENT.F10;
+    this.f10Symbol = symbol;
+    this.f10Name = name;
+    this.open = true;
+  },
+
+  /**
+   * 打开赚钱效应气泡图面板（板块分析页扩展行「查看赚钱效应」发起）
+   * @param tradeDate 聚焦交易日（YYYY-MM-DD；空串 = 最新完整快照日）
+   */
+  openProfitBubble(tradeDate: string): void {
+    this.content = DOCK_PANEL_CONTENT.PROFIT_BUBBLE;
+    this.profitDate = tradeDate;
+    this.open = true;
+  },
 
     /** 收起面板 */
     close(): void {

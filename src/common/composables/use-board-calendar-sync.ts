@@ -443,6 +443,16 @@ const buildDailySnapshot = async (
    * 单板块失败仅该板块无分桶（buckets = null 回退），不阻断整轮采集。 */
   const quotesByBoard = new Map<string, Map<string, number>>();
   const limitSymbolsByBoard = new Map<string, { up: Set<string>; down: Set<string> }>();
+  // 本地成分清单反查表（boardCode → symbols）：分桶行情走腾讯多通道时按清单
+  // 定向取数（零 clist 翻页，2026-10-30 起不依赖被封禁的清单通道）
+  const symbolsByBoard = new Map<string, string[]>();
+  for (const [symbol, boardCodes] of constituentMap) {
+    for (const code of boardCodes) {
+      const list = symbolsByBoard.get(code);
+      if (list) list.push(symbol);
+      else symbolsByBoard.set(code, [symbol]);
+    }
+  }
   for (const board of CALENDAR_BOARDS) {
     const ups = upGroup.groups.get(board.code) ?? [];
     const downs = downGroup.groups.get(board.code) ?? [];
@@ -455,7 +465,13 @@ const buildDailySnapshot = async (
     });
     await delay(BOARD_REQUEST_GAP_MS);
     try {
-      quotesByBoard.set(board.code, await fetchBoardConstituentChangePct(board.code));
+      quotesByBoard.set(
+        board.code,
+        await fetchBoardConstituentChangePct(
+          board.code,
+          symbolsByBoard.get(board.code)?.map((symbol) => ({ symbol })),
+        ),
+      );
     } catch (error) {
       console.warn(
         `[board-calendar] ${board.name} 成分股涨跌幅取数失败，该板块无分桶：${toErrorMessage(error)}`,

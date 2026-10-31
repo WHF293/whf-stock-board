@@ -290,6 +290,10 @@ export const FUND_FLOW_HISTORY_CARD_HEIGHT = 230;
 /** 手势翻页：横滑判定阈值（|dx| 不小于此值且 |dx| > |dy| 才切页） */
 export const FUND_FLOW_PAGER_SWIPE_PX = 48;
 
+/** 资金流向取数超时（毫秒；2026-10-30 真机反馈弱网 TCP 挂起 → 图表区骨架/白屏无出口，
+ * 与新闻频道 MOBILE_CHANNEL_LOAD_TIMEOUT_MS 同口径的竞速兜底） */
+export const FUND_FLOW_LOAD_TIMEOUT_MS = 15_000;
+
 /* ---- 首页成交额曲线（移动端专属窗口；PC 市场总览为 30/60/180，共用 common 常量互不影响）---- */
 
 /** 可选交易日窗口（最近 N 个交易日；2026-10-13 起与 PC 共用 common 变量，10/30/60 同源） */
@@ -335,6 +339,9 @@ export const SWIPE_OVERDRAG_DAMP = 0.28;
 /** 轻扫判定最小位移（px） */
 export const SWIPE_FLICK_MIN_PX = 40;
 
+/** 内层步进判定位移（px）：源内 tab 还可切时，横滑过该位移（或轻扫）即切 tab 不切源 */
+export const SWIPE_INNER_STEP_PX = 48;
+
 /** 轻扫判定最小速度（px/ms） */
 export const SWIPE_FLICK_VELOCITY = 0.5;
 
@@ -354,6 +361,13 @@ export const MOBILE_STOCK_DETAIL_PATH_PREFIX = '/stock';
 
 /** 市场状态时钟 tick 间隔（毫秒）：分钟级驱动交易窗口 getter（与 PC MainLayout 同值） */
 export const MOBILE_MARKET_STATUS_TICK_MS = 60_000;
+
+/**
+ * 频道加载超时（毫秒）：横滑切 tab / 首载的上游请求竞速上限——
+ * 弱网下上游 TCP 挂起不落地会让 loading 永真、骨架屏无限等待（2026-10-30 真机反馈），
+ * 超时后经 ensureChannel / ensureBoard 既有 catch 落错误态（带「重新加载」出口）
+ */
+export const MOBILE_CHANNEL_LOAD_TIMEOUT_MS = 15_000;
 
 /* ---- 插件页 / 插件市场页（2026-10-30 移动端插件体系 P2/P5，方案：.ai/开发方案/ 同日文档）---- */
 

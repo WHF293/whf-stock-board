@@ -29,9 +29,17 @@ import type {
 } from '../../common/types/dragon-tiger.types';
 import type { FullQuote } from 'stock-sdk';
 import { toFullSymbol } from '../../common/utils/to-full-symbol';
+import { useBreakpoint } from '../composables/use-breakpoint';
+import { useStockPane } from '../composables/use-stock-pane';
+import StockDetailPane from '../components/StockDetailPane.vue';
 
 const router = useRouter();
 const route = useRoute();
+
+/* lg 档主从布局（稿：Pad横屏主从布局改造 S2，独立榜 /rank/:rank 同构）：
+ * 点行右栏就地看个股，窄档 / 竖屏保持整页跳转 */
+const { lg } = useBreakpoint();
+const { paneSymbol, paneOpen, openStock, closePane } = useStockPane();
 
 /** 拆分为独立页的 3 榜（入口在首页金刚区，路由 /rank/:rank；不再作为盘面雷达 chips 子项） */
 const STANDALONE_RANKS = {
@@ -381,9 +389,18 @@ const activeEventTabIndex = computed({
   set: (index: number) => onRankClick(EVENT_TABS[index]!.key),
 });
 
+/** 行点击：lg 档写右栏窗格就地阅读（板块异动行 code 为空天然不响应），
+ * 窄档 / 竖屏整页跳转
+ * @param code 6 位代码 */
 const goStock = (code: string): void => {
   if (!code) return;
-  void router.push(`/stock/${toFullSymbol(code)}`);
+  const symbol = toFullSymbol(code);
+  if (!symbol) return;
+  if (lg.value) {
+    openStock(symbol);
+    return;
+  }
+  void router.push(`/stock/${symbol}`);
 };
 
 /** 整页下拉刷新
@@ -426,73 +443,83 @@ useMobilePolling(() => {
       @click-left="router.back()"
     />
 
-    <!-- 6 榜分组 Tabs（参考今天炒什么：van-tabs 选择器模式；独立页模式隐藏） -->
-    <van-tabs
-      v-if="!standaloneRank"
-      v-model:active="activeRankIndex"
-      class="m-tabs m-tabs--selector"
-      :ellipsis="false"
-    >
-      <van-tab v-for="r in RANKS" :key="r.key" :title="r.label" />
-    </van-tabs>
+    <!-- lg 主从布局（稿 S2）：左榜单 + 右个股详情窗格（窄档 m-duo 退化为纵向零副作用） -->
+    <div class="m-duo">
+      <div class="m-duo__l">
+        <!-- 6 榜分组 Tabs（参考今天炒什么：van-tabs 选择器模式；独立页模式隐藏） -->
+        <van-tabs
+          v-if="!standaloneRank"
+          v-model:active="activeRankIndex"
+          class="m-tabs m-tabs--selector"
+          :ellipsis="false"
+        >
+          <van-tab v-for="r in RANKS" :key="r.key" :title="r.label" />
+        </van-tabs>
 
-    <!-- 异动独立页双 Tab：盘口异动 / 板块异动（对齐 PC 盘面雷达-异动页签的双列表） -->
-    <van-tabs
-      v-if="isEventStandalone"
-      v-model:active="activeEventTabIndex"
-      class="m-tabs m-tabs--selector"
-      :ellipsis="false"
-    >
-      <van-tab v-for="t in EVENT_TABS" :key="t.key" :title="t.label" />
-    </van-tabs>
+        <!-- 异动独立页双 Tab：盘口异动 / 板块异动（对齐 PC 盘面雷达-异动页签的双列表） -->
+        <van-tabs
+          v-if="isEventStandalone"
+          v-model:active="activeEventTabIndex"
+          class="m-tabs m-tabs--selector"
+          :ellipsis="false"
+        >
+          <van-tab v-for="t in EVENT_TABS" :key="t.key" :title="t.label" />
+        </van-tabs>
 
-    <div class="m-sub-scroll">
-      <van-pull-refresh v-model="refreshing" @refresh="onRefresh">
-        <div v-if="loading" class="m-card m-skel-fill">
-          <div v-for="i in 10" :key="i" class="m-skel-row"></div>
-        </div>
-        <div v-else-if="error" class="m-state">
-          榜单加载失败
-          <span class="retry" @click="loadRank(activeRank, true)">重试</span>
-        </div>
-        <div v-else class="m-card">
-          <!-- 表头（王总 2026-10-12：异动 / 连板 / 龙虎榜三页缺表头，对全部榜补齐；
-               连板 / 龙虎榜的值列可点击排序，箭头指示当前列与升降序） -->
-          <div class="m-rowhead">
-            <div class="m-rowhead__nm">{{ RANK_HEADERS[activeRank][0] }}</div>
-            <span
-              v-for="(head, ci) in RANK_HEADERS[activeRank].slice(1)"
-              :key="ci"
-              class="m-rowhead__v"
-              :class="{
-                'm-rowhead__v--sort': sortKeyOf(activeRank, ci),
-                'm-rowhead__v--on': sortKey === sortKeyOf(activeRank, ci) && sortKey !== null,
-              }"
-              @click="onHeaderSort(activeRank, ci)"
-            >
-              {{ head }}
-              <template v-if="sortKey !== null && sortKey === sortKeyOf(activeRank, ci)">
-                {{ sortAsc ? '▲' : '▼' }}
-              </template>
-            </span>
-          </div>
-          <div
-            v-for="row in activeRows"
-            :key="row.key"
-            class="m-row"
-            @click="goStock(row.code)"
-          >
-            <div class="m-row__nm">
-              {{ row.name }}
-              <span v-if="row.sub" class="sub">{{ row.sub }}</span>
+        <div class="m-sub-scroll">
+          <van-pull-refresh v-model="refreshing" @refresh="onRefresh">
+            <div v-if="loading" class="m-card m-skel-fill">
+              <div v-for="i in 10" :key="i" class="m-skel-row"></div>
             </div>
-            <span v-if="row.v1" class="m-row__val" :class="[row.v1Cls, 'sm']">{{ row.v1 }}</span>
-            <span v-if="row.v2" class="m-row__pct" :class="row.v2Cls">{{ row.v2 }}</span>
-          </div>
-          <div v-if="!activeRows.length" class="m-state">暂无数据</div>
+            <div v-else-if="error" class="m-state">
+              榜单加载失败
+              <span class="retry" @click="loadRank(activeRank, true)">重试</span>
+            </div>
+            <div v-else class="m-card">
+              <!-- 表头（王总 2026-10-12：异动 / 连板 / 龙虎榜三页缺表头，补齐（对全部 10 榜生效）；
+                   连板 / 龙虎榜的值列可点击排序，箭头指示当前列与升降序） -->
+              <div class="m-rowhead">
+                <div class="m-rowhead__nm">{{ RANK_HEADERS[activeRank][0] }}</div>
+                <span
+                  v-for="(head, ci) in RANK_HEADERS[activeRank].slice(1)"
+                  :key="ci"
+                  class="m-rowhead__v"
+                  :class="{
+                    'm-rowhead__v--sort': sortKeyOf(activeRank, ci),
+                    'm-rowhead__v--on': sortKey === sortKeyOf(activeRank, ci) && sortKey !== null,
+                  }"
+                  @click="onHeaderSort(activeRank, ci)"
+                >
+                  {{ head }}
+                  <template v-if="sortKey !== null && sortKey === sortKeyOf(activeRank, ci)">
+                    {{ sortAsc ? '▲' : '▼' }}
+                  </template>
+                </span>
+              </div>
+              <div
+                v-for="row in activeRows"
+                :key="row.key"
+                class="m-row"
+                :class="{ 'm-row--pane': row.code && paneSymbol === toFullSymbol(row.code) }"
+                @click="goStock(row.code)"
+              >
+                <div class="m-row__nm">
+                  {{ row.name }}
+                  <span v-if="row.sub" class="sub">{{ row.sub }}</span>
+                </div>
+                <span v-if="row.v1" class="m-row__val" :class="[row.v1Cls, 'sm']">{{ row.v1 }}</span>
+                <span v-if="row.v2" class="m-row__pct" :class="row.v2Cls">{{ row.v2 }}</span>
+              </div>
+              <div v-if="!activeRows.length" class="m-state">暂无数据</div>
+            </div>
+          </van-pull-refresh>
+          <div class="m-sub-tail"></div>
         </div>
-      </van-pull-refresh>
-      <div class="m-sub-tail"></div>
+      </div>
+      <!-- 右窗格仅选中个股时渲染（2026-10-31 王总指定「选中才显示右边栏」），未选中左栏铺满 -->
+      <aside v-if="lg && paneOpen" class="m-duo__r">
+        <StockDetailPane :symbol="paneSymbol" @close="closePane" />
+      </aside>
     </div>
   </div>
 </template>

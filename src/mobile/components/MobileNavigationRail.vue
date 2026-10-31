@@ -56,6 +56,9 @@ const visible = computed(() => md.value);
   border-right: 1px solid var(--color-border);
   overflow-y: auto;
   overflow-x: hidden;
+  /* 顶部安全区（2026-10-31 真机反馈：pad 横屏 edge-to-edge 下状态栏盖住 app 标）：
+     --m-inset-top 由 MainActivity 实测注入（dev/桌面 env() 恒 0），与 navbar 同源 */
+  padding-top: var(--m-inset-top);
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 .m-rail__logo {

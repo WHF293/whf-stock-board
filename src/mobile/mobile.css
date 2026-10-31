@@ -323,6 +323,22 @@ body {
   padding: 2px;
 }
 .m-nav-switch .m-nav-switch__flip { transform: rotate(180deg); }
+/* navbar 右侧动作 icon 组（刷新 + 搜索，2026-10-30 首页 / 个股行情下拉刷新按钮化）：
+   间距对齐 m-nav-switch 的 9px 档，icon 色沿用 navbar 固定色方案（亮黑 / 暗白） */
+.m-nav-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+.m-nav-actions .van-icon {
+  color: var(--van-nav-bar-icon-color);
+  padding: 2px;
+}
+/* 刷新按钮：刷新中图标匀速自转（replay 环形箭头语义），转完即停 */
+.m-nav-refresh--spinning { animation: m-nav-spin 0.9s linear infinite; }
+@keyframes m-nav-spin {
+  to { transform: rotate(360deg); }
+}
 /* 首页 navbar 左侧 app logo 样式已随 logo 移除（2026-10-20，「我的」回归 TabBar 后冗余） */
 
 /* chips 横滚区（一级源 / 二级子栏目 / 平台 / 分组共用）；v3 起透明底浮于页面底色 */
@@ -1531,6 +1547,129 @@ a.m-row--link {
   overflow-x: visible;
 }
 
+/* ==== 主从布局通用壳（lg 档左列表右详情，稿：Pad横屏主从布局改造 S10）====
+   窄档为纯纵向（flex column，占位零副作用）；页面把既有列表结构包进 __l、
+   右栏 aside __r 只在窗格打开时渲染（open 蕴含 lg——竖屏旋转自动关）。
+   左列表行选中态统一 m-row--pane（主题色浅底 + 左缘 3px 竖条） */
+.m-duo {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.m-duo__l {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.m-row--pane {
+  background: var(--color-primary-soft);
+  box-shadow: inset 3px 0 0 var(--color-primary);
+}
+
+/* 主从右栏占位态（窗格未打开时引导点行；Unicode icon，主题色浅底） */
+.m-duo-ph {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--color-text-3);
+  font-size: 12px;
+  line-height: 1.7;
+  text-align: center;
+}
+.m-duo-ph__ic {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+
+/* 个股详情窗格（StockDetailPane，__r 内部主体）：窄右栏自适应紧凑排版 */
+.m-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px calc(12px + var(--m-inset-bottom));
+}
+.m-pane__head {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  row-gap: 2px;
+}
+.m-pane__nm {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-text-1);
+}
+.m-pane__nm .code {
+  margin-left: 6px;
+  font-size: 10.5px;
+  font-weight: 400;
+  color: var(--color-text-3);
+  font-family: var(--font-num);
+}
+.m-pane__close {
+  grid-row: 1;
+  grid-column: 2;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--color-flat-weak);
+  color: var(--color-text-2);
+  font-size: 13px;
+  cursor: pointer;
+}
+.m-pane__px {
+  font-size: 24px;
+  font-weight: 800;
+  font-family: var(--font-num);
+  line-height: 1.15;
+}
+.m-pane__chg {
+  font-size: 12px;
+  font-weight: 700;
+  font-family: var(--font-num);
+}
+.m-pane__grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px 10px;
+  background: var(--color-surface);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+.m-pane__grid-t {
+  font-size: 10px;
+  color: var(--color-text-3);
+}
+.m-pane__grid-v {
+  font-size: 12.5px;
+  font-weight: 700;
+  font-family: var(--font-num);
+  margin-top: 2px;
+}
+.m-pane .m-chips {
+  padding: 0 2px;
+}
+.m-pane .m-card {
+  border-radius: 12px;
+}
+.m-pane .m-sec {
+  padding-top: 0;
+}
+
 /* 个股详情滚动区顶距：m-card 无 top margin（margin: 0 12px 10px），
    报价头会贴死 navbar——补 12px 与 m-sec 顶部节奏统一（2026-10-28 王总） */
 .m-stk-scroll {
@@ -1684,9 +1823,12 @@ a.m-row--link {
     width: auto;
   }
   /* fixed 导航栏（设置 / 主题等二级页）同理让位：fixed 元素不受父级 padding 影响，
-     不让位会整条压在 Rail 下面 */
+     不让位会整条压在 Rail 下面。⚠️ 必须同时锚 right:0——fixed 元素只锚 left 时
+     width:auto 退化为内容宽，navbar 会塌成返回箭头那么宽、标题被截断
+     （2026-10-31 插件页真机复现）；锚两端后 navbar 铺满主区、标题居中于主区 */
   .van-nav-bar--fixed {
     left: var(--m-rail-w);
+    right: 0;
     width: auto;
   }
   /* 内容限宽：滚动容器自身对称 padding-inline（百分比基于父级宽）实现居中限宽，
@@ -1695,7 +1837,7 @@ a.m-row--link {
      子块宽度收缩成 fit-content（卡片不再通栏）。普通块流容器（m-tab-safe /
      m-sub-page）仍用子项方案，两者等效 */
   .m-sub-scroll,
-  .m-home-scroll .van-pull-refresh__track,
+  .m-home-scroll,
   .m-page-flex .m-tabs .van-pull-refresh__track,
   .m-swipe .van-pull-refresh__track {
     padding-inline: max(0px, calc((100% - 720px) / 2));
@@ -1733,7 +1875,7 @@ a.m-row--link {
     grid-template-columns: repeat(3, 1fr);
   }
   .m-sub-scroll,
-  .m-home-scroll .van-pull-refresh__track,
+  .m-home-scroll,
   .m-page-flex .m-tabs .van-pull-refresh__track,
   .m-swipe .van-pull-refresh__track {
     padding-inline: max(0px, calc((100% - 1080px) / 2));
@@ -1742,7 +1884,7 @@ a.m-row--link {
   .m-sub-page > * {
     max-width: 1080px;
   }
-  .m-home-scroll .van-pull-refresh__track > *,
+  .m-home-scroll > *,
   .m-page-flex .m-tabs .van-pull-refresh__track > * {
     max-width: 1080px;
   }
@@ -1769,6 +1911,37 @@ a.m-row--link {
     flex: 6;
     min-width: 0;
     border-left: 1px solid var(--color-border);
+  }
+  /* 主从布局通用壳（S10）：左列表 55 / 右窗格 45，右栏独立纵向滚动
+     （左栏内容限宽 padding 只作用于 __l，窗格全高贴边） */
+  .m-duo {
+    flex-direction: row;
+  }
+  .m-duo__l {
+    flex: 55;
+  }
+  .m-duo__r {
+    flex: 45;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    border-left: 1px solid var(--color-border);
+    background: var(--m-page-bg);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  /* 自选分组看板（S1 修复 2026-10-30：lg 下分组卡由固定 300px 改弹性均分铺满左栏，
+     不再在卡片右侧留大空隙；分组多过一屏时 min-width 顶出横向滚动；
+     竖屏形态走上方基础规则，不受影响） */
+  .m-wl-board .m-wl-col {
+    width: auto;
+    flex: 1 1 0;
+    min-width: 280px;
+  }
+  /* 右窗格缺席（未选中个股，2026-10-31 王总指定「选中才显示右边栏」）时左栏铺满整行：
+     :has 不可用的旧 WebView 退化为 flex:55（右侧留白），不破布局 */
+  .m-duo:not(:has(> .m-duo__r)) > .m-duo__l {
+    flex: 1;
   }
 }
 

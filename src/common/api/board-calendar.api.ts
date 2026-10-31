@@ -1,5 +1,4 @@
 import {
-  BOARD_BUCKET_QUOTE_FIELDS,
   BOARD_CALENDAR_URL,
   BOARD_FUND_FLOW_FIELDS,
   BOARD_LIST_PAGE_SIZE,
@@ -26,6 +25,7 @@ import type {
 } from '../types/board-calendar.types.ts';
 import type { SectorFundFlowItem } from '../types/flow.types.ts';
 import { delay } from '../utils/delay';
+import { fetchConstituentQuotesBatch, fetchConstituentQuotesByList } from './board-constituent-quote.api.ts';
 import { proxyFetch } from './proxy-fetch';
 import { push2Fetch } from './push2-fetch';
 
@@ -210,35 +210,32 @@ export const fetchBoardSnapshot = async (): Promise<Map<string, BoardSnapshotIte
 /**
  * 拉取某板块全部成分股的实时涨跌幅（得分分桶采集专用）
  *
- * 走 clist `fs=b:BKxxxx` 逐页翻全（页大小与成分股同步共用 `BOARD_LIST_PAGE_SIZE`），
- * 只取 `f12`（代码）与 `f3`（涨跌幅%）。停牌股上游给 `'-'`，经 toNumberOrNull 归 null 后
- * 不计入返回值（分桶侧自然跳过，不落入任何桶）。
+ * 2026-10-30 起改走腾讯批量报价多通道（`fetchConstituentQuotesBatch`，见
+ * board-constituent-quote.api.ts）：clist 路径在本机被 TCP 封禁且无兜底，
+ * 每日分桶整段降级。成员清单优先用调用方传入的本地清单（零上游）；未传时
+ * 回落 clist 清单通道（封禁窗口内会失败，与旧版行为一致）。
+ * 停牌 / 无行情成员不计入返回值（分桶侧自然跳过，不落入任何桶）。
  * @param boardCode 板块代码（BKxxxx）
- * @returns symbol → 涨跌幅（%）；上游异常时抛出
- * @throws Error 上游返回空数据（限频 / 异常）时抛出
+ * @param constituents 板块成分清单（可选；本地 board_constituent 的 symbol 列表）
+ * @returns symbol → 涨跌幅（%）；两通道均失败时抛出
+ * @throws Error 腾讯与东财通道均失败时抛出
  */
 export const fetchBoardConstituentChangePct = async (
   boardCode: string,
+  constituents?: Array<{ symbol: string }>,
 ): Promise<Map<string, number>> => {
+  const symbols =
+    constituents && constituents.length > 0
+      ? constituents.map((item) => item.symbol)
+      : (await fetchBoardConstituents(boardCode)).map((item) => item.symbol);
+  const quotes = await fetchConstituentQuotesBatch(symbols);
   const map = new Map<string, number>();
-  const fs = `b:${boardCode}`;
-  // 页数上限复用成分股同步的 CONSTITUENT_MAX_PAGES（机械设备 629 只 → 7 页，留余量）；
-  // 上游异常时 page 拉空 / 不足整页自然终止，顶到上限则抛错（避免死循环打上游）
-  for (let pn = 1; pn <= CONSTITUENT_MAX_PAGES; pn += 1) {
-    const rows = await fetchClistPage(fs, BOARD_BUCKET_QUOTE_FIELDS, pn);
-    for (const row of rows) {
-      const symbol = toText(row.f12);
-      const changePercent = toNumberOrNull(row.f3);
-      if (symbol !== '' && changePercent !== null) {
-        map.set(symbol, changePercent);
-      }
-    }
-    // 不足整页 = 已到末页（clist 无 total 透出，fetchClistPage 只回行数组）
-    if (rows.length < BOARD_LIST_PAGE_SIZE) {
-      return map;
+  for (const [symbol, quote] of quotes) {
+    if (quote.changePercent !== null) {
+      map.set(symbol, quote.changePercent);
     }
   }
-  throw new Error(`板块 ${boardCode} 成分股涨跌幅翻页超限（>${CONSTITUENT_MAX_PAGES} 页）`);
+  return map;
 };
 
 /* -------------------------------- 涨跌停池 -------------------------------- */
@@ -347,32 +344,28 @@ export const fetchBoardConstituents = async (boardCode: string): Promise<Constit
 };
 
 /**
- * 拉取某板块成分股的实时行情（弹窗「全部成分股」页签，仅当日可用）
+ * 拉取某板块成分股的实时行情（板块分析扩展行 / 原明细弹窗用）
+ *
+ * 2026-10-30 起改走多通道（`fetchConstituentQuotesByList`，见
+ * board-constituent-quote.api.ts）：原 clist 翻页在本机被 TCP 封禁且无兜底。
+ * 成员清单优先用调用方传入的本地清单；未传时回落 clist 清单通道（封禁窗口内
+ * 会失败，与旧版行为一致）。行情缺失的成员保留清单行（价格等置 null）。
  * @param boardCode 板块代码（BKxxxx）
- * @returns 成分股行情列表
+ * @param constituents 板块成分清单（可选；本地 board_constituent 行）
+ * @returns 成分股行情列表（按涨跌幅降序）
  */
 export const fetchBoardConstituentQuotes = async (
   boardCode: string,
+  constituents?: Array<{ symbol: string; stockName: string }>,
 ): Promise<BoardConstituentQuote[]> => {
-  const items: BoardConstituentQuote[] = [];
-  for (let pn = 1; pn <= CONSTITUENT_MAX_PAGES; pn += 1) {
-    const rows = await fetchClistPage(`b:${boardCode}`, 'f12,f14,f2,f3,f8,f6', pn);
-    for (const row of rows) {
-      const symbol = toText(row.f12);
-      if (!/^\d{6}$/.test(symbol)) continue;
-      items.push({
-        symbol,
-        name: toText(row.f14),
-        price: toNumberOrNull(row.f2),
-        changePercent: toNumberOrNull(row.f3),
-        turnoverRate: toNumberOrNull(row.f8),
-        amount: toNumberOrNull(row.f6),
-      });
-    }
-    if (rows.length < BOARD_LIST_PAGE_SIZE) break;
-    await delay(BOARD_REQUEST_GAP_MS);
+  if (constituents && constituents.length > 0) {
+    return fetchConstituentQuotesByList(constituents);
   }
-  return items;
+  // clist 清单字段是 name（ConstituentItem），对齐本函数的 stockName 口径
+  const fallback = await fetchBoardConstituents(boardCode);
+  return fetchConstituentQuotesByList(
+    fallback.map((item) => ({ symbol: item.symbol, stockName: item.name })),
+  );
 };
 
 /* -------------------------------- 交易日轴 -------------------------------- */

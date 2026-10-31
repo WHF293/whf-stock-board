@@ -281,12 +281,10 @@ const edgeStyle = { width: `${MOBILE_BOOK_EDGE_WIDTH}px` };
 .m-book__face--front > :slotted(.m-card) {
   flex: 1 1 auto;
 }
-/* 底部手势条内嵌到卡片底部（王总 2026-10-12，同板块历史净流入的条效果）：
-   卡片底部留出 28px 内嵌区，条上移 24px 盖住卡片底圆角，左右内缩 12px */
+/* 底部手势条内嵌区已废除（2026-10-30 王总指定指示条移出卡片）：恢复面板自然底边 */
 .m-book__face--front > :slotted(.m-home-panel),
 .m-book__face--front > :slotted(.m-card) {
   margin-bottom: 0;
-  padding-bottom: 28px;
 }
 /* 面板内部也纵向排布：成交额图区自动拉伸撑满（2026-10-11 王总反馈成交额下方太空） */
 .m-book__face--front > :slotted(.m-home-panel) {
@@ -313,13 +311,13 @@ const edgeStyle = { width: `${MOBILE_BOOK_EDGE_WIDTH}px` };
 }
 .m-book__edge--l { left: 0; }
 .m-book__edge--r { right: 0; }
-/* 底部通栏手势条：内嵌卡片底部（同板块历史净流入的条），track 底色与卡面区分；
-   上移盖住卡片底圆角，整条为滑动/点按触达区（2026-10-12 王总定稿） */
+/* 底部通栏手势条：独立于卡片下方（2026-10-30 王总指定，替代 2026-10-12 的
+   内嵌覆盖式——不再上移盖住卡片底圆角），与卡片间隔 4px；整条为滑动/点按触达区 */
 .m-book__slider {
   position: relative;
   z-index: 5;
   height: 22px;
-  margin: -24px 24px 12px;
+  margin: 4px 24px 12px;
   border-radius: 999px;
   background: var(--color-border);
   touch-action: none;

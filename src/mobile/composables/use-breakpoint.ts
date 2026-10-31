@@ -31,6 +31,11 @@ function ensureWatchers(): void {
   sync();
   mdQuery.addEventListener('change', sync);
   lgQuery.addEventListener('change', sync);
+  // 兜底（2026-10-31）：部分 WebView 的 MQL change 事件不可靠（dev 实测：窄视口启动
+  // 后变宽，matchMedia 命中已翻转但 ref 滞后 false，表现为主从页行点击仍走整页跳转）。
+  // resize / orientationchange 时强制重查（sync 幂等，代价为两次布尔赋值）
+  window.addEventListener('resize', sync);
+  window.addEventListener('orientationchange', sync);
 }
 
 /**

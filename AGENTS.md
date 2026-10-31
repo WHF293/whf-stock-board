@@ -454,7 +454,7 @@ tauri fetch 绕 webview CORS）。
   `dock-panel` / 停靠面板组件 / `src/plugin` PC 装配层等）——import 了就会把桌面代码拖进移动包或直接报错
 - **插件体系（v4.30.0 起）**：内核在 `src/common/plugin/`（与 PC 单源），移动端有自己的装配层
   `src/mobile/plugin/setup.ts`（`bootstrap.ts` 在 pinia 之后、mobileRouter 之前调 `installMobilePlugins(pinia)`）：
-  只 provide **服务子集**（17 个；无 `panel:open` / `panel:close` / `app:stock-picker` / `app:agent-ask`），
+  只 provide **服务子集**（17 个；无 `panel:open` / `panel:close` / `app:stock-picker` / `app:agent-ask` / `app:watch-widget-settings`），
   `attachPluginRoutes(mobileRouter, { layoutRouteName: null })` 把插件页注册为顶层路由；
   只挂 `devices` 含 `'mobile'` 的**用户插件**（`BUILTIN_PLUGINS` 为空且移动端不 import 它）。
   插件菜单页自动混入首页金刚区（icon 非 Vant 名兜底 `apps-o`、颜色按路径哈希），不进底部 TabBar；
@@ -583,3 +583,10 @@ tauri fetch 绕 webview CORS）。
 本项目 UI 严格遵循根目录 `DESIGN.md`（基于项目现有 theme.css 提炼的自定义风格）。
 所有界面代码必须使用其中的 token（颜色、字体、圆角、间距），禁止引入规范之外的颜色、字号、圆角值。
 新增组件样式前先查阅 DESIGN.md 的 components 一节；token 单源为 `src/assets/styles/theme.css`（Tailwind 4 @theme），改色值需与 `src/constants/stock-colors.constants.ts` 同步。
+
+<!-- agent-hub:start -->
+本项目所有 AI agent 共享记忆位于 `.ai/`：
+- 开始任务前，先读 `.ai/MEMORY.md` 和最近几天的 `.ai/memory/` 日志
+- 完成实质工作后，把做了什么/为什么追加到 `.ai/memory/YYYY-MM-DD.md`
+- 稳定的项目约定写入 `.ai/PROJECT.md`
+<!-- agent-hub:end -->
