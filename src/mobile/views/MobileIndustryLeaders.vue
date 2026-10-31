@@ -20,8 +20,15 @@ import {
 } from '../../common/constants/industry-leaders.constants.ts';
 import { fetchLeaderQuotes, type LeaderQuote } from '../../common/api/industry-leaders.api.ts';
 import { useMobilePolling } from '../composables/use-mobile-polling';
+import { useBreakpoint } from '../composables/use-breakpoint';
+import { useStockPane } from '../composables/use-stock-pane';
+import StockDetailPane from '../components/StockDetailPane.vue';
 import { pctClass } from '../utils/format';
 import { mobileCacheGet, mobileCacheSet } from '../cache';
+
+/* lg 档主从布局（稿：Pad横屏主从布局改造 S5）：点行右栏就地看个股 */
+const { lg } = useBreakpoint();
+const { paneSymbol, paneOpen, openStock, closePane } = useStockPane();
 
 const router = useRouter();
 
@@ -89,10 +96,15 @@ const onKindChange = (value: LeaderKind): void => {
 const quoteOf = (symbol: string): LeaderQuote | null => quotesMap.value.get(symbol) ?? null;
 
 /**
- * 行点击：进个股详情页（港股 A 股口径详情可能无数据，由详情页自行兜底）
+ * 行点击：lg 档写右栏窗格就地阅读，窄档 / 竖屏进个股详情页
+ * （港股 A 股口径详情可能无数据，由详情页 / 窗格自行兜底）
  * @param symbol 完整符号
  */
 const goStock = (symbol: string): void => {
+  if (lg.value) {
+    openStock(symbol);
+    return;
+  }
   void router.push(`/stock/${symbol}`);
 };
 
@@ -117,54 +129,64 @@ const onRefresh = async (): Promise<void> => {
       @click-left="router.back()"
     />
 
-    <!-- 维度 chips（板块 / 细分赛道） -->
-    <div class="m-chips" style="padding-top: 8px">
-      <button
-        v-for="opt in LEADER_KIND_OPTIONS"
-        :key="opt.value"
-        class="m-chip"
-        :class="{ 'm-chip--active': kind === opt.value }"
-        @click="onKindChange(opt.value)"
-      >
-        {{ opt.label }}
-      </button>
-    </div>
+    <!-- lg 主从布局（稿 S5）：左龙头清单 + 右个股详情窗格 -->
+    <div class="m-duo">
+      <div class="m-duo__l">
+        <!-- 维度 chips（板块 / 细分赛道） -->
+        <div class="m-chips" style="padding-top: 8px">
+          <button
+            v-for="opt in LEADER_KIND_OPTIONS"
+            :key="opt.value"
+            class="m-chip"
+            :class="{ 'm-chip--active': kind === opt.value }"
+            @click="onKindChange(opt.value)"
+          >
+            {{ opt.label }}
+          </button>
+        </div>
 
-    <div class="m-sub-scroll m-il-scroll">
-      <van-pull-refresh v-model="refreshing" @refresh="onRefresh">
-        <div v-if="loading && quotesMap.size === 0" class="m-card m-skel-fill">
-          <div v-for="i in 8" :key="i" class="m-skel-row"></div>
-        </div>
-        <div v-else-if="error && quotesMap.size === 0" class="m-state">
-          龙头报价加载失败
-          <span class="retry" @click="loadQuotes(true)">重试</span>
-        </div>
-        <template v-else>
-          <div class="m-sec"><span class="m-sec__t">点击行进个股页 · 清单固定不可改</span></div>
-          <div v-for="group in groups" :key="group.name" class="m-card m-il-group">
-            <div class="m-il-group__head">
-              <span class="m-il-group__name">{{ group.name }}</span>
-              <span class="m-il-group__count">{{ group.stocks.length }} 只</span>
+        <div class="m-sub-scroll m-il-scroll">
+          <van-pull-refresh v-model="refreshing" @refresh="onRefresh">
+            <div v-if="loading && quotesMap.size === 0" class="m-card m-skel-fill">
+              <div v-for="i in 8" :key="i" class="m-skel-row"></div>
             </div>
-            <div
-              v-for="stock in group.stocks"
-              :key="stock.symbol"
-              class="m-row"
-              @click="goStock(stock.symbol)"
-            >
-              <span class="m-row__nm">
-                {{ quoteOf(stock.symbol)?.name ?? stock.name }}
-                <span class="code">{{ stock.symbol.slice(2) }}</span>
-              </span>
-              <span class="m-row__val">{{ quoteOf(stock.symbol)?.price?.toFixed(2) ?? '--' }}</span>
-              <span class="m-row__pct" :class="pctClass(quoteOf(stock.symbol)?.changePercent ?? null)">
-                {{ (quoteOf(stock.symbol)?.changePercent ?? null) === null ? '--' : (quoteOf(stock.symbol)!.changePercent! > 0 ? '+' : '') + quoteOf(stock.symbol)!.changePercent!.toFixed(2) + '%' }}
-              </span>
+            <div v-else-if="error && quotesMap.size === 0" class="m-state">
+              龙头报价加载失败
+              <span class="retry" @click="loadQuotes(true)">重试</span>
             </div>
-          </div>
-        </template>
-      </van-pull-refresh>
-      <div class="m-sub-tail"></div>
+            <template v-else>
+              <div class="m-sec"><span class="m-sec__t">点击行进个股页 · 清单固定不可改</span></div>
+              <div v-for="group in groups" :key="group.name" class="m-card m-il-group">
+                <div class="m-il-group__head">
+                  <span class="m-il-group__name">{{ group.name }}</span>
+                  <span class="m-il-group__count">{{ group.stocks.length }} 只</span>
+                </div>
+                <div
+                  v-for="stock in group.stocks"
+                  :key="stock.symbol"
+                  class="m-row"
+                  :class="{ 'm-row--pane': paneSymbol === stock.symbol }"
+                  @click="goStock(stock.symbol)"
+                >
+                  <span class="m-row__nm">
+                    {{ quoteOf(stock.symbol)?.name ?? stock.name }}
+                    <span class="code">{{ stock.symbol.slice(2) }}</span>
+                  </span>
+                  <span class="m-row__val">{{ quoteOf(stock.symbol)?.price?.toFixed(2) ?? '--' }}</span>
+                  <span class="m-row__pct" :class="pctClass(quoteOf(stock.symbol)?.changePercent ?? null)">
+                    {{ (quoteOf(stock.symbol)?.changePercent ?? null) === null ? '--' : (quoteOf(stock.symbol)!.changePercent! > 0 ? '+' : '') + quoteOf(stock.symbol)!.changePercent!.toFixed(2) + '%' }}
+                  </span>
+                </div>
+              </div>
+            </template>
+          </van-pull-refresh>
+          <div class="m-sub-tail"></div>
+        </div>
+      </div>
+      <!-- 右窗格仅选中个股时渲染（2026-10-31 王总指定「选中才显示右边栏」），未选中左栏铺满 -->
+      <aside v-if="lg && paneOpen" class="m-duo__r">
+        <StockDetailPane :symbol="paneSymbol" @close="closePane" />
+      </aside>
     </div>
   </div>
 </template>

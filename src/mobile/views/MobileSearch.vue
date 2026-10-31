@@ -27,9 +27,17 @@ import {
   STORAGE_NS_MOBILE_SEARCH_HISTORY,
 } from '../../common/constants/storage-key.constants';
 import { SEARCH_MARKET_LABELS } from '../../common/constants/search.constants';
+import { useBreakpoint } from '../composables/use-breakpoint';
+import { useStockPane } from '../composables/use-stock-pane';
+import StockDetailPane from '../components/StockDetailPane.vue';
 
 const router = useRouter();
 const store = useWatchlistStore();
+
+/* lg 档主从布局（稿：Pad横屏主从布局改造 S6）：点结果行右栏就地看个股，
+ * 连续查多只不丢搜索上下文；窄档 / 竖屏整页跳转 */
+const { lg } = useBreakpoint();
+const { paneSymbol, paneOpen, openStock, closePane } = useStockPane();
 
 /* === 热门搜索（与首页入口卡同口径：平台设置内第一个可见榜单 Top6） === */
 const hot = ref<HotBoardItem[]>([]);
@@ -138,11 +146,15 @@ const tagCls = (code: string): string => {
  * @returns 裸数字代码 */
 const bareCode = (code: string): string => code.replace(/^[a-z]{2}/, '');
 
-/** 行点击进个股详情（并记入最近搜索）
+/** 行点击进个股详情（并记入最近搜索）：lg 档写右栏窗格就地阅读
  * @param code 完整符号
  * @param name 股票名（记录用；热门词路径没有则不记） */
 const goStock = (code: string, name?: string): void => {
   if (name) rememberStock({ code, name });
+  if (lg.value) {
+    openStock(code);
+    return;
+  }
   void router.push(`/stock/${code}`);
 };
 
@@ -231,72 +243,94 @@ const pickHot = (name: string): void => {
       @click-left="router.back()"
     />
 
-    <!-- 通栏输入块：输入框 + 搜索按钮（固定在列表上方，不随内容滚动） -->
-    <div class="m-sch-bar">
-      <input
-        v-model="keyword"
-        class="m-sch-input"
-        placeholder="代码 / 名称 / 拼音"
-        @update:model-value="onInput"
-        @keyup.enter="onSearchNow"
-      />
-      <span class="m-sch-go" @click="onSearchNow">搜索</span>
-    </div>
+    <!-- lg 主从布局（稿 S6）：左 输入框+结果清单 + 右个股详情窗格 -->
+    <div class="m-duo">
+      <div class="m-duo__l">
+        <!-- 通栏输入块：输入框 + 搜索按钮（固定在列表上方，不随内容滚动） -->
+        <div class="m-sch-bar">
+          <input
+            v-model="keyword"
+            class="m-sch-input"
+            placeholder="代码 / 名称 / 拼音"
+            @update:model-value="onInput"
+            @keyup.enter="onSearchNow"
+          />
+          <span class="m-sch-go" @click="onSearchNow">搜索</span>
+        </div>
 
-    <div class="m-sub-scroll">
-      <!-- 无有效关键词：最近搜索 + 热门搜索 -->
-      <template v-if="results.length === 0 && keyword.trim().length < 2">
-        <template v-if="history.length > 0">
-          <div class="m-sch-hot__t m-sch-his__t">
-            最近搜索
-            <span class="m-sch-his__clear" @click="clearHistory">清空</span>
-          </div>
-          <div class="m-card m-sch-card">
-            <div v-for="h in history" :key="h.code" class="m-row m-sch-row">
-              <div class="m-sch-row__main" @click="goStock(h.code, h.name)">
-                <div class="m-sch-row__nm">{{ h.name }}</div>
-                <div class="m-sch-row__meta">
-                  <span class="m-sch-row__code">{{ bareCode(h.code) }}</span>
+        <div class="m-sub-scroll">
+          <!-- 无有效关键词：最近搜索 + 热门搜索 -->
+          <template v-if="results.length === 0 && keyword.trim().length < 2">
+            <template v-if="history.length > 0">
+              <div class="m-sch-hot__t m-sch-his__t">
+                最近搜索
+                <span class="m-sch-his__clear" @click="clearHistory">清空</span>
+              </div>
+              <div class="m-card m-sch-card">
+                <div
+                  v-for="h in history"
+                  :key="h.code"
+                  class="m-row m-sch-row"
+                  :class="{ 'm-row--pane': paneSymbol === h.code }"
+                >
+                  <div class="m-sch-row__main" @click="goStock(h.code, h.name)">
+                    <div class="m-sch-row__nm">{{ h.name }}</div>
+                    <div class="m-sch-row__meta">
+                      <span class="m-sch-row__code">{{ bareCode(h.code) }}</span>
+                    </div>
+                  </div>
+                  <van-icon name="cross" class="m-sch-add" @click.stop="removeHistory(h.code)" />
                 </div>
               </div>
-              <van-icon name="cross" class="m-sch-add" @click.stop="removeHistory(h.code)" />
-            </div>
-          </div>
-        </template>
+            </template>
 
-        <div class="m-sch-hot__t">热门搜索</div>
-        <div class="m-sch-hot__grid">
-          <div v-for="(item, i) in hot" :key="item.code" class="m-sch-hot__item" @click="pickHot(item.name)">
-            <span class="m-sch-hot__rank" :class="`r${i + 1}`">{{ i + 1 }}</span>
-            <span class="m-sch-hot__nm">{{ item.name }}</span>
-          </div>
-        </div>
-        <!-- 热门榜单首载：骨架行过渡（骨架即 loading） -->
-        <div v-if="hot.length === 0" class="m-skel-block">
-          <div v-for="i in 6" :key="i" class="m-skel-row"></div>
-        </div>
-      </template>
-
-      <!-- 搜索结果 -->
-      <template v-else>
-        <div v-if="searching" class="m-state">搜索中…</div>
-        <div v-else-if="results.length === 0" class="m-state">无匹配结果</div>
-        <div v-else class="m-card m-sch-card">
-          <div v-for="item in results" :key="item.code" class="m-row m-sch-row">
-            <div class="m-sch-row__main" @click="goStock(item.code, item.name)">
-              <div class="m-sch-row__nm">{{ item.name }}</div>
-              <div class="m-sch-row__meta">
-                <span v-if="marketTag(item.code)" class="m-sch-tag" :class="tagCls(item.code)">
-                  {{ marketTag(item.code) }}
-                </span>
-                <span class="m-sch-row__code">{{ bareCode(item.code) }}</span>
+            <div class="m-sch-hot__t">热门搜索</div>
+            <div class="m-sch-hot__grid">
+              <div v-for="(item, i) in hot" :key="item.code" class="m-sch-hot__item" @click="pickHot(item.name)">
+                <span class="m-sch-hot__rank" :class="`r${i + 1}`">{{ i + 1 }}</span>
+                <span class="m-sch-hot__nm">{{ item.name }}</span>
               </div>
             </div>
-            <van-icon name="plus" class="m-sch-add" @click.stop="onAdd(item)" />
-          </div>
+            <!-- 热门榜单首载：骨架行过渡（骨架即 loading） -->
+            <div v-if="hot.length === 0" class="m-skel-block">
+              <div v-for="i in 6" :key="i" class="m-skel-row"></div>
+            </div>
+          </template>
+
+          <!-- 搜索结果 -->
+          <template v-else>
+            <div v-if="searching" class="m-state">搜索中…</div>
+            <div v-else-if="results.length === 0" class="m-state">无匹配结果</div>
+            <div v-else class="m-card m-sch-card">
+              <div
+                v-for="item in results"
+                :key="item.code"
+                class="m-row m-sch-row"
+                :class="{ 'm-row--pane': paneSymbol === item.code }"
+              >
+                <div class="m-sch-row__main" @click="goStock(item.code, item.name)">
+                  <div class="m-sch-row__nm">{{ item.name }}</div>
+                  <div class="m-sch-row__meta">
+                    <span v-if="marketTag(item.code)" class="m-sch-tag" :class="tagCls(item.code)">
+                      {{ marketTag(item.code) }}
+                    </span>
+                    <span class="m-sch-row__code">{{ bareCode(item.code) }}</span>
+                  </div>
+                </div>
+                <van-icon name="plus" class="m-sch-add" @click.stop="onAdd(item)" />
+              </div>
+            </div>
+          </template>
+          <div class="m-sub-tail"></div>
         </div>
-      </template>
-      <div class="m-sub-tail"></div>
+      </div>
+      <aside v-if="lg" class="m-duo__r">
+        <StockDetailPane v-if="paneOpen" :symbol="paneSymbol" @close="closePane" />
+        <div v-else class="m-duo-ph">
+          <span class="m-duo-ph__ic">▤</span>
+          <p>点击左侧结果 / 最近搜索行<br />右栏就地查看个股详情</p>
+        </div>
+      </aside>
     </div>
   </div>
 </template>

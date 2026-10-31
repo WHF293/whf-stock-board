@@ -20,8 +20,15 @@ import { toFullSymbol } from '../../common/utils/to-full-symbol';
 import type { ThsStockRow } from '../../common/types/ths-market.types.ts';
 import { pctClass } from '../utils/format';
 import { useMobilePolling } from '../composables/use-mobile-polling';
+import { useBreakpoint } from '../composables/use-breakpoint';
+import { useStockPane } from '../composables/use-stock-pane';
+import StockDetailPane from '../components/StockDetailPane.vue';
 
 const router = useRouter();
+
+/* lg 档主从布局（稿：Pad横屏主从布局改造 S7）：点行右栏就地看个股 */
+const { lg } = useBreakpoint();
+const { paneSymbol, paneOpen, openStock, closePane } = useStockPane();
 
 /** 板块 chips（横滚；与 PC Tab 同一常量单源） */
 const boards = THS_STOCK_BOARD_TABS;
@@ -98,23 +105,32 @@ useMobilePolling(() => {
   }
 });
 
-/** 整页下拉刷新：重置回第 1 页 */
-const refreshing = ref(false);
-const onRefresh = async (): Promise<void> => {
+/** 刷新（2026-10-30 起改由 navbar 刷新按钮触发，不再下拉刷新）：重置回第 1 页。
+ * 刷新中按钮图标旋转并防重入 */
+const navRefreshing = ref(false);
+const refreshAll = async (): Promise<void> => {
+  if (navRefreshing.value) return;
+  navRefreshing.value = true;
   try {
     await loadPage('reset');
   } finally {
-    refreshing.value = false;
+    navRefreshing.value = false;
   }
 };
 
 /**
- * 行点击 → 个股详情（6 位代码归一化 sh/sz/bj 完整符号）
+ * 行点击 → 个股详情（6 位代码归一化 sh/sz/bj 完整符号）：
+ * lg 档写右栏窗格就地阅读，窄档 / 竖屏整页跳转
  * @param code 6 位代码
  */
 const goStock = (code: string): void => {
   const symbol = toFullSymbol(code);
-  if (symbol) void router.push(`/stock/${symbol}`);
+  if (!symbol) return;
+  if (lg.value) {
+    openStock(symbol);
+    return;
+  }
+  void router.push(`/stock/${symbol}`);
 };
 
 /* === 格式化 === */
@@ -130,70 +146,88 @@ const fmtPct = (v: number | null): string => (v === null ? '--' : `${v > 0 ? '+'
       safe-area-inset-top
       left-arrow
       @click-left="router.back()"
-    />
-
-    <!-- 板块分组 Tabs（参考今天炒什么：van-tabs 选择器模式，空 van-tab 只当分段选择器；
-         不用 animated——内容面板不在此组件内，指示条位移已足够） -->
-    <van-tabs
-      v-model:active="activeBoardIndex"
-      class="m-tabs m-tabs--selector"
-      :ellipsis="false"
     >
-      <van-tab v-for="item in boards" :key="item.board" :title="item.label" />
-    </van-tabs>
+      <template #right>
+        <van-icon
+          name="replay"
+          size="19"
+          class="m-nav-refresh"
+          :class="{ 'm-nav-refresh--spinning': navRefreshing }"
+          @click="refreshAll"
+        />
+      </template>
+    </van-nav-bar>
 
-    <div class="m-sub-scroll">
-      <van-pull-refresh v-model="refreshing" @refresh="onRefresh">
-        <div class="m-card">
-          <!-- 字段头（移动端不做表头排序） -->
-          <div class="m-sm-rowhead">
-            <span class="nm">名称</span>
-            <span class="num">现价</span>
-            <span class="num">涨跌幅</span>
-            <span class="num">成交额</span>
-            <span class="num">换手</span>
-          </div>
+    <!-- lg 主从布局（稿 S7）：左全量列表 + 右个股详情窗格 -->
+    <div class="m-duo">
+      <div class="m-duo__l">
+        <!-- 板块分组 Tabs（参考今天炒什么：van-tabs 选择器模式，空 van-tab 只当分段选择器；
+             不用 animated——内容面板不在此组件内，指示条位移已足够） -->
+        <van-tabs
+          v-model:active="activeBoardIndex"
+          class="m-tabs m-tabs--selector"
+          :ellipsis="false"
+        >
+          <van-tab v-for="item in boards" :key="item.board" :title="item.label" />
+        </van-tabs>
 
-          <div v-if="error" class="m-state">
-            个股行情加载失败
-            <span class="retry" @click="loadPage('reset')">重试</span>
-          </div>
-          <div v-else-if="rows.length === 0 && loading" class="m-skel-fill">
-            <div v-for="i in 10" :key="i" class="m-skel-row"></div>
-          </div>
-          <div v-else-if="rows.length === 0" class="m-state">暂无数据</div>
-
-          <!-- van-list 上拉加载：每页 20 条（与上游单页条数一致） -->
-          <van-list
-            v-else
-            v-model:loading="loading"
-            :finished="finished"
-            finished-text="已加载全部"
-            loading-text="加载中…"
-            @load="() => loadPage('more')"
-          >
-            <div
-              v-for="row in rows"
-              :key="row.code"
-              class="m-sm-row"
-              @click="goStock(row.code)"
-            >
-              <span class="nm">
-                <b>{{ row.name }}</b>
-                <i>{{ row.code }}</i>
-              </span>
-              <span class="num m-num">{{ fmtPx(row.price) }}</span>
-              <span class="num m-num" :class="pctClass(row.changePercent)">{{ fmtPct(row.changePercent) }}</span>
-              <span class="num m-num muted">{{ row.amountText }}</span>
-              <span class="num m-num muted">
-                {{ row.turnoverRate === null ? '--' : `${row.turnoverRate.toFixed(2)}%` }}
-              </span>
+        <div class="m-sub-scroll">
+          <div class="m-card">
+            <!-- 字段头（移动端不做表头排序） -->
+            <div class="m-sm-rowhead">
+              <span class="nm">名称</span>
+              <span class="num">现价</span>
+              <span class="num">涨跌幅</span>
+              <span class="num">成交额</span>
+              <span class="num">换手</span>
             </div>
-          </van-list>
-        </div>
 
-        <div class="m-home-tail"></div>
-      </van-pull-refresh>
+            <div v-if="error" class="m-state">
+              个股行情加载失败
+              <span class="retry" @click="loadPage('reset')">重试</span>
+            </div>
+            <div v-else-if="rows.length === 0 && loading" class="m-skel-fill">
+              <div v-for="i in 10" :key="i" class="m-skel-row"></div>
+            </div>
+            <div v-else-if="rows.length === 0" class="m-state">暂无数据</div>
+
+            <!-- van-list 上拉加载：每页 20 条（与上游单页条数一致） -->
+            <van-list
+              v-else
+              v-model:loading="loading"
+              :finished="finished"
+              finished-text="已加载全部"
+              loading-text="加载中…"
+              @load="() => loadPage('more')"
+            >
+              <div
+                v-for="row in rows"
+                :key="row.code"
+                class="m-sm-row"
+                :class="{ 'm-row--pane': paneSymbol === toFullSymbol(row.code) }"
+                @click="goStock(row.code)"
+              >
+                <span class="nm">
+                  <b>{{ row.name }}</b>
+                  <i>{{ row.code }}</i>
+                </span>
+                <span class="num m-num">{{ fmtPx(row.price) }}</span>
+                <span class="num m-num" :class="pctClass(row.changePercent)">{{ fmtPct(row.changePercent) }}</span>
+                <span class="num m-num muted">{{ row.amountText }}</span>
+                <span class="num m-num muted">
+                  {{ row.turnoverRate === null ? '--' : `${row.turnoverRate.toFixed(2)}%` }}
+                </span>
+              </div>
+            </van-list>
+          </div>
+
+          <div class="m-home-tail"></div>
+        </div>
+      </div>
+      <!-- 右窗格仅选中个股时渲染（2026-10-31 王总指定「选中才显示右边栏」），未选中左栏铺满 -->
+      <aside v-if="lg && paneOpen" class="m-duo__r">
+        <StockDetailPane :symbol="paneSymbol" @close="closePane" />
+      </aside>
     </div>
   </div>
 </template>

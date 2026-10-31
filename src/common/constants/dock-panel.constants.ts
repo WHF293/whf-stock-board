@@ -16,6 +16,8 @@ export const DOCK_PANEL_CONTENT = {
   CHAIN: 'chain',
   /** 个股 F10 资料抽屉（财务 / 资讯 / 基本资料 / 发行相关 / 高管简介 / 参股控股，详情页发起） */
   F10: 'f10',
+  /** 赚钱效应气泡图（板块分析页扩展行「查看赚钱效应」发起，2026-10-31 王总指定） */
+  PROFIT_BUBBLE: 'profit-bubble',
 } as const;
 
 /** 面板内容类型 */

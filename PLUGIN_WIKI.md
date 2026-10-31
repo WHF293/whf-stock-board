@@ -361,8 +361,15 @@ ctx.settings.reset();
 | `app:http` | **受控网络请求**：走宿主上游通道，仅白名单域名（第 5.5 节） |
 | `app:quotes` | **行情报价**：按代码批量取实时快照（第 5.6 节） |
 | `app:market` | **市场剖面**：沪深逐日成交额 / 指定交易日涨停池（重接口，别轮询）+ 行业板块列表（轻接口，可低频轮询；第 5.10 节） |
+| `app:market-data` | **市场资讯**：实时成交额快照 / 热点新闻标题（六源切换）/ 热股榜单（五平台切换） |
 | `app:format` | **格式化与涨跌语义**：红涨绿跌、百分比 / 价格 / 相对时间、符号互转、`delay` / `debounce`（第 5.11 节） |
+| `app:market-status` | **盘中状态**：`isIntraday`（A 股盘中判定，交易日历 + 分钟级时钟，宿主单源实现） |
+| `app:theme` | **主题实时快照**：`isDark` / `themeColor` / `trendTheme`（响应式，跟宿主设置页即时联动） |
+| `app:watch-widget-settings` | **任务栏小组件配置**（仅 PC 提供，移动端缺席——见第 8.4.7 节） |
 | `app:agent-ask` | **唤起 Agent 分析窗口**：把一条自包含 prompt 送到 Agent（新开会话直接发送），建议传 `source` 标明来源（第 5.13 节） |
+
+> 上表共 **22 个**。移动端装配层只 provide 其中 **17 个**——缺席 `panel:open` / `panel:close` /
+> `app:stock-picker` / `app:agent-ask` / `app:watch-widget-settings`，降级写法见第 8.4.7 节。
 
 ### 5.1 `app:notify`
 
@@ -842,27 +849,182 @@ writeFileSync('my-plugin.zip', zipSync({
 - **卸载入口**：插件工坊或设置 → 插件管理，卡片底部「卸载」需点两次（第二次变「确认卸载」），
   防手滑；卸完 plugin 的代码、面板、菜单、路由、命令立即消失，无需重启。
 
-### 8.4 想让安卓 App 也能用？（移动端适配，v4.30.0 起）
+### 8.4 想让安卓 App 也能用？（移动端与 pad 适配规范，v4.30.0 起）
 
 安卓 App（移动端）与桌面共用同一套插件内核，但**默认看不到你的插件**——在定义里声明
-`devices: ['pc', 'mobile']` 后才会被移动端挂载。声明前请按这份口径自查：
+`devices: ['pc', 'mobile']` 后才会被移动端挂载。这一节是移动端与 pad 的**完整适配规范**：
+照着写，同一份代码在手机竖屏、pad 竖屏、pad 横屏上都是统一的交互与排版，不需要为 pad 单独出包。
 
-| 验收项 | 口径 |
-| --- | --- |
-| 宽度 | ~375px 视口内**无横向滚动、无内容截断**（不要假设有侧栏宽度可用） |
-| 交互 | **无 hover 依赖**（触屏没有悬停）：悬停才能看到的信息 / 按钮一律改为常显或点击展开 |
-| 触控 | 可点目标 ≥ 44×44px，间距不挤；避免双击 / 右键类交互 |
-| 组件 | 用 `app:ui` 的宿主组件（自带移动端观感），别自己堆 Tailwind 类 |
-| 服务 | 移动端**没有** `panel:open` / `panel:close` / `app:stock-picker` / `app:agent-ask`——双端通用的插件对这四个服务必须容忍缺席（`ctx.consume` 返回 undefined 时降级） |
+#### 8.4.1 总原则：一套规范三端通用
 
-移动端会用到你的哪些贡献点：
+设备差异已经由宿主消化，你的插件只面对一个**流式容器**：
+
+- **pad 竖屏 = 手机形态**：宿主在竖屏下整体回退手机布局（底部 TabBar / 单列页面），
+  你的插件拿到的容器与手机完全一致，**不写任何 pad 专属分支**；
+- **pad 横屏 = 同一份 DOM 的更宽容器**：TabBar 换成左侧导航栏（Rail）并给内容让位
+  （让位由宿主在根容器统一处理，你的页面自动从 Rail 右侧开始，不会被压住）；
+- 推论：**不要在插件里判断 `orientation` / `userAgent` / 视口宽度**。形态切换是宿主的事，
+  你只负责把内容排成「宽度不定，从 ~360px 到上千 px 都成立」的单列流。
+
+#### 8.4.2 三种形态对照
+
+| 形态 | 宿主口径 | 宿主替你做的 | 你要做的 |
+| --- | --- | --- | --- |
+| 手机竖屏 | 视口 < 600px，或竖屏 | 底部 TabBar、页面容器、安全区 | 流式单列排版 |
+| pad 竖屏 | 视口 ≥ 600px 且**竖屏** | **整体回退手机形态**（与上行完全一致） | 与手机相同，零额外工作 |
+| pad 横屏 | 视口 ≥ 600px 且横屏（≥ 840px 为进阶档） | TabBar 换 Rail 并让位；宿主自有页面限宽 720 / 1080px、列表 2 / 3 列 | 流式单列 + 自行限宽（§8.4.5） |
+
+#### 8.4.3 devices 声明
+
+- 要在移动端出现必须显式声明：`devices: ['pc', 'mobile']`（只写 `['mobile']` = 仅移动端）；
+- **缺省 = 仅 PC**：未声明的插件在移动端**彻底不存在**（不挂载、不显示、不报错）；
+- 声明含 `mobile` = 你已按 §8.4.8 自查并在真机验证过；安卓 App 的插件市场与本地 zip 安装
+  **只放行声明了 mobile 的包**（未声明的包标「仅 PC 端可用」，展示但装不上）；
+- 声明在安装时冗余快照进安装记录、启动按快照过滤——**改声明要重新出包、用户重装才生效**。
+
+#### 8.4.4 你的贡献点在移动端落在哪
 
 - **`ctx.menu.add` 带 `component` 的页面** → 自动混入移动端首页「金刚区」入口 tile
-  （title / icon 取声明，icon 非 Vant 图标名时兜底 `apps-o`；颜色按路径哈希取固定彩色），
-  页面本体注册为全屏顶层路由（没有 PC 侧栏 / 主布局包裹）；
-- **`ctx.sidebar` / `ctx.header` / `ctx.dock` / `ctx.command`** → 移动端暂不消费（声明了也无害，桌面照常）；
+  （label / icon 取声明，icon 非 Vant 图标名时兜底 `apps-o`；颜色按路径哈希取固定彩色），
+  页面本体注册为**全屏顶层路由**（没有 PC 侧栏 / 主布局包裹）；
 - **`ctx.stockDetail.add`** → 移动端个股详情页底部同样注入扩展区（传 `symbol`，与桌面同语义）；
+- **`ctx.sidebar` / `ctx.header` / `ctx.dock` / `ctx.command` / `ctx.stockRow`** → 移动端暂不消费
+  （声明了也无害，桌面照常）；
 - 管理 / 安装：底部「插件」Tab（启停 / 卸载 / 重试），其内的插件市场页可在线装。
+
+#### 8.4.5 布局与排版规范
+
+**插件页是全屏顶层路由：宿主不给你导航栏、滚动容器和限宽**，页面脚手架自己搭：
+
+```js
+// 页面外壳：占满全屏、纵向流、自带留白与安全区；内容限宽居中（pad 横屏不无限拉长）
+const PageShell = {
+  render: () => h('div', {
+    style: {
+      display: 'flex', flexDirection: 'column', minHeight: '100vh',
+      padding: '12px', boxSizing: 'border-box',
+      paddingBottom: 'calc(12px + env(safe-area-inset-bottom))',
+    },
+  }, [
+    h('div', { style: { maxWidth: '720px', width: '100%', margin: '0 auto' } }, [
+      /* …内容，全部用 app:ui 组件（§5.4） */
+    ]),
+  ]),
+};
+```
+
+条款（真实约束，不是风格建议）：
+
+1. **流式宽度**：容器宽度自适应，**禁写死像素宽**；内容限宽用 `maxWidth` + `margin: '0 auto'`
+   （对齐宿主自有页面的 720 / 1080px 档位即可）；
+2. **不要自己再做形态判断**：确需多列 / 分栏这类结构差异时没有正规通道——插件没有样式表通道，
+   渲染 `<style>` 标签塞 `@media` 属于未承诺的 hack，宿主不保证它一直可用；**保持单列流**，
+   宽容器下天然成立；
+3. **颜色与字号走宿主 token**：内联 `style` 引用宿主 CSS 变量（`var(--color-text)` /
+   `var(--color-surface)` / `var(--color-border)` …，与宿主 `theme.css` 同源），明暗与主题色
+   切换实时跟随；写死色值 = 换主题就露馅；
+4. **自带返回入口**：宿主不渲染移动端导航栏，插件页要有明确的「返回」——可靠写法是
+   `app:navigate('/')`（`history.back()` 在「冷启动直进插件页」时没有历史可退）；
+5. **安全区**：吸底元素用 `env(safe-area-inset-bottom)` 预留全面屏手势区；
+6. **不用给 TabBar 让位**：插件页不在五个主 Tab 之列，底部 TabBar 不会出现在你的页面上
+   （pad 横屏的 Rail 让位同样由宿主处理）。
+
+#### 8.4.6 交互规范
+
+| 条款 | 原因 |
+| --- | --- |
+| 可点目标 ≥ 44×44px，相邻可点区间留白 | 手指热区远大于鼠标光标，PC 上「能点上」不代表移动端能点准 |
+| **零 hover 依赖**：悬停才出现的信息 / 操作一律常显或点击展开 | 触屏没有悬停，hover 出口不可达 |
+| 不要自挂 `touchstart` / `touchmove` 做横滑、下拉手势 | 会和宿主的下拉刷新 / 横滑切换抢事件；点按用 `onClick` 就够 |
+| 可点反馈用按压态（`:active` 变色 / 缩放），不用 hover 态表达「可点」 | 同上 |
+| 弹层一律 `app:ui` 的 `Modal` / `Drawer` / `confirm()` | 原生 `alert` / `prompt` 破坏观感且不跟主题 |
+| 首载用 `app:ui` 的 `Skeleton`，空态用 `Empty` | 移动网络下白屏比桌面刺眼 |
+
+#### 8.4.7 组件与服务：拿到的 / 缺席的 / 行为不同的
+
+**组件**：`app:ui` 十二个组件**两端同源下发**（宿主把 PC 基础组件原样给你，主题 token 两端共享
+同一份 CSS 变量），`confirm()` 在移动端由 Vant 弹窗承载（`okVariant` 不映射配色，语义靠文案）。
+
+**服务**：移动端装配层只 provide **17 个**，以下 **5 个缺席**——`ctx.consume` 返回 `undefined`，
+双端通用插件必须判空降级（`kernel:runtime` 的 `listServices()` 可查当前实际生效的服务）：
+
+| 缺席服务 | 为什么没有 | 双端通用的替代写法 |
+| --- | --- | --- |
+| `panel:open` / `panel:close` | 无侧栏面板与停靠面板 | 面板内容改做成 `ctx.menu.add` 的插件页（自动进金刚区）；「关掉自己」用 `app:navigate` 离开 |
+| `app:stock-picker` | 无宿主选股弹窗 | `app:stock-search` + `app:ui` 自搭简易选择列表；或该入口仅 PC 渲染 |
+| `app:agent-ask` | 移动端无 Agent | 功能入口判空隐藏 |
+| `app:watch-widget-settings` | 无任务栏小组件 | 同上，判空跳过 |
+
+两个**在、但行为与 PC 不同**的服务，别按 PC 心智使用：
+
+- **`app:stock-open`**：`openSidebar` / `openPage` 两条语义**都落个股详情二级页**；
+  `openPage` 的第二参数（来源列表）移动端忽略；
+- **`app:notify`**：`dismiss()` 关掉**全部**浮窗、`dismissBySource()` 是空操作、`dedupeKey` 被忽略
+  （移动端由 Vant Notify 承载，无单条关闭句柄）——别指望精确撤销自己那一条。
+
+#### 8.4.8 上架前自查清单（三形态各过一遍）
+
+手机竖屏 / pad 竖屏 / pad 横屏**逐项过**（pad 竖屏的表现应与手机完全一致）：
+
+- [ ] 无横向滚动、无内容截断（最小 ~360px 宽起验）
+- [ ] pad 横屏：内容居中限宽或自然流式，没有被 Rail 压住、没有无限拉长的超长行
+- [ ] 全部可点目标 ≥ 44×44px；没有任何「悬停才能发现」的功能
+- [ ] 5 个缺席服务全部判空降级（PC 上全有——不判空的话，问题只在真机上暴露）
+- [ ] 自带返回入口；吸底元素预留安全区
+- [ ] 明暗模式与主题色切换后无写死色残留
+- [ ] 停用 / 卸载再重装，页面数据与设置正常恢复（`ctx.storage` / `ctx.db` 通道）
+
+#### 8.4.9 最小可抄骨架（双端通用插件页）
+
+```js
+export default {
+  id: 'mobile-page-demo',
+  name: '双端页面示例',
+  version: '1.0.0',
+  description: '同一份代码：PC 侧栏面板 + 移动端金刚区页面',
+  devices: ['pc', 'mobile'],                    // 声明了移动端才会在安卓 App 出现
+  apply(ctx) {
+    const ui = ctx.consume('app:ui');           // 两端同源下发
+    const notify = ctx.consume('app:notify');   // 两端都有（行为差异见 §8.4.7）
+    const nav = ctx.consume('app:navigate');
+    const { h, ref } = ctx.vue;
+    const text = ref('');
+
+    const body = () => [
+      h(ui.Input, {
+        modelValue: text.value,
+        'onUpdate:modelValue': (v) => { text.value = v; },
+        placeholder: '记一笔',
+      }),
+      h(ui.Button, {
+        variant: 'primary',
+        onClick: () => notify?.notify({ title: '已记录', body: text.value }),
+      }, () => '保存'),
+    ];
+
+    // PC：侧栏面板（移动端不消费 sidebar，声明了也无害）
+    ctx.sidebar.add({ id: 'main', title: '双端示例', icon: 'star', order: 360,
+      component: { render: () => h('div', { class: 'flex flex-col gap-2 p-3' }, body()) } });
+
+    // 移动端：全屏顶层路由页（自带返回 + 安全区 + 限宽；PC 不消费 menu 时也不冲突）
+    ctx.menu.add({
+      path: '/mobile-page-demo', title: '双端示例', icon: 'star',
+      component: {
+        render: () => h('div', {
+          style: {
+            display: 'flex', flexDirection: 'column', minHeight: '100vh',
+            padding: '12px', boxSizing: 'border-box',
+            paddingBottom: 'calc(12px + env(safe-area-inset-bottom))',
+          },
+        }, [
+          h(ui.Button, { variant: 'ghost', onClick: () => nav?.('/') }, () => '← 返回'),
+          h('div', { style: { maxWidth: '720px', width: '100%', margin: '0 auto' } }, body()),
+        ]),
+      },
+    });
+  },
+};
+```
 
 ---
 

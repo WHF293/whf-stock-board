@@ -22,10 +22,16 @@ import type { WatchlistStock } from '../../common/types/watchlist.types';
 import { mobileCacheGetStale, mobileCacheSet } from '../cache';
 import { useMobilePolling } from '../composables/use-mobile-polling';
 import { useBreakpoint } from '../composables/use-breakpoint';
+import { useStockPane } from '../composables/use-stock-pane';
+import StockDetailPane from '../components/StockDetailPane.vue';
 
 const router = useRouter();
 const store = useWatchlistStore();
 const { lg } = useBreakpoint();
+
+/* lg 档主从布局（稿：Pad横屏主从布局改造 S1）：点行右栏就地看个股，
+   窄档 / 竖屏保持整页跳转 */
+const { paneSymbol, paneOpen, openStock, closePane } = useStockPane();
 
 /** 当前分组 id（容错：分组被删后回落默认组） */
 const activeGroupId = ref(store.groups[0]?.id ?? DEFAULT_GROUP_ID);
@@ -101,11 +107,16 @@ const rowsOfGroup = (groupId: string): WatchRowView[] =>
 /** 窄屏当前分组行视图 */
 const activeRows = computed(() => rowsOfGroup(activeGroupId.value));
 
-/** 行点击进个股详情（长按弹层触发后吞掉本次 click）
+/** 行点击进个股详情（长按弹层触发后吞掉本次 click）：
+ * lg 档写右栏窗格就地阅读，窄档 / 竖屏整页跳转（同热点新闻 lg 分流口径）
  * @param symbol 完整符号（如 sh600519） */
 const goStock = (symbol: string): void => {
   if (suppressClick.value) {
     suppressClick.value = false;
+    return;
+  }
+  if (lg.value) {
+    openStock(symbol);
     return;
   }
   void router.push(`/stock/${symbol}`);
@@ -359,65 +370,73 @@ const onSheetRemove = (): void => {
     <!-- ≥840px 大屏（2026-10-28 王总指定：样式参考 PC 分组卡片列）：
          全部分组并排卡片列（横向滚动，列体各自纵向滚动），列头 = 分组名 + 数量 + 添加号
          （落点 = 本分组）；点列头选中该组（nav 删除按钮作用对象），末尾虚线卡新建分组 -->
-    <div v-if="lg" class="m-wl-board">
-      <section
-        v-for="group in store.groups"
-        :key="group.id"
-        class="m-wl-col"
-        :class="{ 'm-wl-col--active': group.id === activeGroupId }"
-        @click="activeGroupId = group.id"
-      >
-        <header class="m-wl-col__head">
-          <span class="nm">{{ group.name }}</span>
-          <span class="n">{{ group.stocks.length }} 只</span>
-          <button
-            type="button"
-            class="m-wl-col__add"
-            :aria-label="`添加股票到「${group.name}」`"
-            @click.stop="openSearch(group.id)"
-          >
-            <van-icon name="plus" size="15" />
-          </button>
-        </header>
-        <div class="m-wl-col__body">
-          <van-swipe-cell v-for="row in rowsOfGroup(group.id)" :key="row.stock.symbol">
-            <div
-              class="m-row m-wl-row"
-              @click="goStock(row.stock.symbol)"
-              @touchstart.passive="onTouchStart(row.stock)"
-              @touchmove.passive="onTouchMove"
-              @touchend.passive="onTouchEnd"
-              @touchcancel.passive="onTouchEnd"
-              @mousedown="onMouseDown(row.stock)"
-              @mouseup="onMouseUp"
-              @mouseleave="onMouseUp"
-              @contextmenu.prevent="openSheet(row.stock)"
+    <!-- lg 主从布局（稿 S1）：左分组看板 + 右个股详情窗格（占位态引导点行） -->
+    <div v-if="lg" class="m-duo">
+      <div class="m-wl-board m-duo__l">
+        <section
+          v-for="group in store.groups"
+          :key="group.id"
+          class="m-wl-col"
+          :class="{ 'm-wl-col--active': group.id === activeGroupId }"
+          @click="activeGroupId = group.id"
+        >
+          <header class="m-wl-col__head">
+            <span class="nm">{{ group.name }}</span>
+            <span class="n">{{ group.stocks.length }} 只</span>
+            <button
+              type="button"
+              class="m-wl-col__add"
+              :aria-label="`添加股票到「${group.name}」`"
+              @click.stop="openSearch(group.id)"
             >
-              <div class="m-row__nm">
-                {{ row.stock.name }}
-                <span class="sub">{{ row.stock.symbol }}</span>
-              </div>
-              <span class="m-row__val" :class="row.priceCls">{{ row.price }}</span>
-              <span class="m-row__pct pill" :class="[row.pctCls, row.pillCls]">{{ row.pct }}</span>
-            </div>
-            <template #right>
-              <van-button
-                square
-                type="danger"
-                class="m-wl-del"
-                @click.stop="onRemoveStock(row, group.id)"
+              <van-icon name="plus" size="15" />
+            </button>
+          </header>
+          <div class="m-wl-col__body">
+            <van-swipe-cell v-for="row in rowsOfGroup(group.id)" :key="row.stock.symbol">
+              <div
+                class="m-row m-wl-row"
+                :class="{ 'm-row--pane': paneSymbol === row.stock.symbol }"
+                @click="goStock(row.stock.symbol)"
+                @touchstart.passive="onTouchStart(row.stock)"
+                @touchmove.passive="onTouchMove"
+                @touchend.passive="onTouchEnd"
+                @touchcancel.passive="onTouchEnd"
+                @mousedown="onMouseDown(row.stock)"
+                @mouseup="onMouseUp"
+                @mouseleave="onMouseUp"
+                @contextmenu.prevent="openSheet(row.stock)"
               >
-                删除
-              </van-button>
-            </template>
-          </van-swipe-cell>
-          <p v-if="group.stocks.length === 0" class="m-wl-col__empty">空分组</p>
-        </div>
-      </section>
-      <button type="button" class="m-wl-col-new" @click="groupDlg = true">
-        <van-icon name="plus" size="16" />
-        新建分组
-      </button>
+                <div class="m-row__nm">
+                  {{ row.stock.name }}
+                  <span class="sub">{{ row.stock.symbol }}</span>
+                </div>
+                <span class="m-row__val" :class="row.priceCls">{{ row.price }}</span>
+                <span class="m-row__pct pill" :class="[row.pctCls, row.pillCls]">{{ row.pct }}</span>
+              </div>
+              <template #right>
+                <van-button
+                  square
+                  type="danger"
+                  class="m-wl-del"
+                  @click.stop="onRemoveStock(row, group.id)"
+                >
+                  删除
+                </van-button>
+              </template>
+            </van-swipe-cell>
+            <p v-if="group.stocks.length === 0" class="m-wl-col__empty">空分组</p>
+          </div>
+        </section>
+        <button type="button" class="m-wl-col-new" @click="groupDlg = true">
+          <van-icon name="plus" size="16" />
+          新建分组
+        </button>
+      </div>
+      <!-- 右窗格仅选中个股时渲染（2026-10-31 王总指定「选中才显示右边栏」），未选中左栏铺满 -->
+      <aside v-if="paneOpen" class="m-duo__r">
+        <StockDetailPane :symbol="paneSymbol" @close="closePane" />
+      </aside>
     </div>
 
     <template v-else>

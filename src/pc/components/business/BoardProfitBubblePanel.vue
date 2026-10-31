@@ -20,6 +20,7 @@ import {
   getBoardBucketTextColor,
   resolveBoardScoreBucket,
 } from '../../../common/utils/board-score-colors';
+import { useDebouncedElementWidth } from '../../../common/composables/use-debounced-element-width';
 import { layoutBubbles } from '../../../common/utils/bubble-layout';
 import type { BubbleLayoutOptions, BubbleLayoutNode } from '../../../common/utils/bubble-layout';
 import { formatYuan } from '../../../common/utils/format-yuan';
@@ -53,6 +54,15 @@ const metric = ref<BoardProfitMetric>(BOARD_PROFIT_METRIC_DEFAULT);
 const hoveredKey = ref<string | null>(null);
 /** 悬停指针的视口坐标（悬停卡片用） */
 const pointer = ref<{ x: number; y: number } | null>(null);
+
+/**
+ * 画布容器实测宽（2026-10-31 迁入可拖宽侧边栏，王总指定气泡图跟随宽度自适应）：
+ * trailing 防抖 160ms（拖拽全程至多一次布局重算，过渡期旧布局等比缩放过渡）；
+ * 未测得（首帧 / 其它挂载点）回落固定常量，主区行为不变
+ */
+const { target: canvasRef, width: canvasWidth } = useDebouncedElementWidth({
+  debounceMs: BOARD_PROFIT_BUBBLE.RESIZE_DEBOUNCE_MS,
+});
 
 /** 悬停卡片尺寸（用于贴边翻转，避免溢出视口） */
 const TOOLTIP_WIDTH = 252;
@@ -128,7 +138,7 @@ interface BubbleView extends BubbleLayoutNode {
 
 /** 布局参数（常量为 UPPER_SNAKE 键，这里按 BubbleLayoutOptions 显式映射，避免键名对不上） */
 const layoutOptions = computed<BubbleLayoutOptions>(() => ({
-  width: BOARD_PROFIT_BUBBLE.WIDTH,
+  width: canvasWidth.value > 0 ? canvasWidth.value : BOARD_PROFIT_BUBBLE.WIDTH,
   minHeight: BOARD_PROFIT_BUBBLE.MIN_HEIGHT,
   maxHeight: BOARD_PROFIT_BUBBLE.MAX_HEIGHT,
   minRadius: BOARD_PROFIT_BUBBLE.MIN_RADIUS,
@@ -308,8 +318,9 @@ const onLeave = (): void => {
     <BaseEmpty v-if="rows.length === 0" text="暂无板块得分数据，请先采集" />
 
     <!-- 气泡画布：吃掉面板剩余高度，svg preserveAspectRatio 等比缩放适配容器
-         （宽屏横向撑满、矮屏整图等比缩小），任何数据下都不出现滚动条 -->
-    <div v-else class="relative min-h-0 flex-1">
+         （宽屏横向撑满、矮屏整图等比缩小），任何数据下都不出现滚动条；
+         canvasRef 供实测宽防抖重排（侧边栏拖宽时布局跟随，见上方 canvasWidth） -->
+    <div v-else class="relative min-h-0 flex-1" :ref="canvasRef">
       <svg
         :viewBox="`0 0 ${layout.width} ${layout.height}`"
         class="block h-full w-full select-none"

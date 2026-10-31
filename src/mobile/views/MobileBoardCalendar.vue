@@ -35,9 +35,17 @@ import type { BoardDetailRow } from '../../common/types/board-detail.types';
 import { resolveBoardScoreBucket } from '../../common/utils/board-score-colors';
 import { toFullSymbol } from '../../common/utils/to-full-symbol';
 import { pctClass } from '../utils/format';
+import { useBreakpoint } from '../composables/use-breakpoint';
+import { useStockPane } from '../composables/use-stock-pane';
+import StockDetailPane from '../components/StockDetailPane.vue';
 
 const route = useRoute();
 const router = useRouter();
+
+/* lg 档主从布局（稿：Pad横屏主从布局改造 S3）：涨跌停明细 / 详情矩阵的股票行
+ * 右栏就地看个股；板块详情窗格留二期（移动端列表模式无板块详情入口） */
+const { lg } = useBreakpoint();
+const { paneSymbol, paneOpen, openStock, closePane } = useStockPane();
 
 /** 详情模式的板块 code（路由参数驱动） */
 const detailCode = computed(() => (typeof route.params.code === 'string' ? route.params.code : ''));
@@ -192,10 +200,18 @@ const onCellClick = async (boardCode: string, boardName: string, date: string): 
   }
 };
 
+/** 股票行点击：lg 档写右栏窗格就地阅读，窄档 / 竖屏整页跳转
+ * @param symbol 6 位代码（涨跌停明细行 / 详情矩阵行） */
 const goStock = (symbol: string): void => {
   if (!symbol) return;
+  const full = toFullSymbol(symbol);
+  if (!full) return;
+  if (lg.value) {
+    openStock(full);
+    return;
+  }
   sheetVisible.value = false;
-  void router.push(`/stock/${toFullSymbol(symbol)}`);
+  void router.push(`/stock/${full}`);
 };
 
 /* === 详情模式：成分股×日 涨跌幅矩阵 === */
@@ -297,113 +313,122 @@ const fmtPct = (v: number | null): string => (v === null ? '--' : `${v > 0 ? '+'
       @click-left="back"
     />
 
-    <!-- 范围分组 Tabs（参考今天炒什么：van-tabs 选择器模式；列表 6 档 / 详情 6 档，
-         :key 按模式强制重挂——tab 数组变化时 Vant 的 setLine 会跑在新 TabTitle
-         ref 登记之前而静默跳过，重挂走 init 测量路径才准，同今天炒什么换源先例） -->
-    <van-tabs
-      :key="isDetail ? 'detail' : 'list'"
-      v-model:active="activeRangeIndex"
-      class="m-tabs m-tabs--selector"
-      :ellipsis="false"
-    >
-      <van-tab v-for="opt in rangeOptions" :key="opt.value" :title="opt.label" />
-    </van-tabs>
+    <!-- lg 主从布局（稿 S3）：左矩阵 / 右个股详情窗格（涨跌停明细行、详情矩阵行落右栏） -->
+    <div class="m-duo">
+      <div class="m-duo__l">
+        <!-- 范围分组 Tabs（参考今天炒什么：van-tabs 选择器模式；列表 6 档 / 详情 6 档，
+             :key 按模式强制重挂——tab 数组变化时 Vant 的 setLine 会跑在新 TabTitle
+             ref 登记之前而静默跳过，重挂走 init 测量路径才准，同今天炒什么换源先例） -->
+        <van-tabs
+          :key="isDetail ? 'detail' : 'list'"
+          v-model:active="activeRangeIndex"
+          class="m-tabs m-tabs--selector"
+          :ellipsis="false"
+        >
+          <van-tab v-for="opt in rangeOptions" :key="opt.value" :title="opt.label" />
+        </van-tabs>
 
-    <!-- H5 无 Tauri SQLite 降级 -->
-    <div v-if="!dbAvailable" class="m-state">
-      板块日历依赖本地数据库，当前环境不可用
-    </div>
-
-    <div v-else class="m-sub-scroll">
-      <!-- 加载/错误 -->
-      <div v-if="isDetail ? detailLoading : matrixLoading" class="m-card m-skel-fill">
-        <div v-for="i in 10" :key="i" class="m-skel-row"></div>
-      </div>
-      <div v-else-if="isDetail ? detailError : matrixError" class="m-state">
-        矩阵数据加载失败
-        <span class="retry" @click="isDetail ? loadDetail() : loadMatrix()">重试</span>
-      </div>
-
-      <!-- === 列表矩阵 === -->
-      <template v-else-if="!isDetail">
-        <!-- 首次采集横幅（本地库无数据时自动触发，完成后自动刷新） -->
-        <div v-if="collecting" class="m-sec">
-          <span class="m-sec__s">本地暂无日历数据，正在首次采集（约需 1~2 分钟），完成后自动刷新…</span>
+        <!-- H5 无 Tauri SQLite 降级 -->
+        <div v-if="!dbAvailable" class="m-state">
+          板块日历依赖本地数据库，当前环境不可用
         </div>
-        <div class="m-cal-legend">
-          <span>色阶</span>
-          <i class="m-cal-l3"></i>强多
-          <i class="m-cal-l2"></i>偏多
-          <i class="m-cal-l1"></i>弱多
-          <i class="m-cal-l4"></i>弱空
-          <i class="m-cal-l5"></i>偏空
-          <i class="m-cal-l6"></i>强空
-        </div>
-        <template v-if="matrixRows.length">
-          <div
-            class="m-cal-scroll m-card"
-            :style="{ '--days': selectedDates.length }"
-          >
-            <div class="m-cal-head">
-              <div class="m-cal-cell">板块</div>
-              <div v-for="d in selectedDates" :key="d" class="m-cal-cell">{{ d.slice(5) }}</div>
+
+        <div v-else class="m-sub-scroll">
+          <!-- 加载/错误 -->
+          <div v-if="isDetail ? detailLoading : matrixLoading" class="m-card m-skel-fill">
+            <div v-for="i in 10" :key="i" class="m-skel-row"></div>
+          </div>
+          <div v-else-if="isDetail ? detailError : matrixError" class="m-state">
+            矩阵数据加载失败
+            <span class="retry" @click="isDetail ? loadDetail() : loadMatrix()">重试</span>
+          </div>
+
+          <!-- === 列表矩阵 === -->
+          <template v-else-if="!isDetail">
+            <!-- 首次采集横幅（本地库无数据时自动触发，完成后自动刷新） -->
+            <div v-if="collecting" class="m-sec">
+              <span class="m-sec__s">本地暂无日历数据，正在首次采集（约需 1~2 分钟），完成后自动刷新…</span>
             </div>
-            <div v-for="row in boardRows" :key="row.code" class="m-cal-row">
-              <div class="m-cal-row__name">{{ row.name }}</div>
+            <div class="m-cal-legend">
+              <span>色阶</span>
+              <i class="m-cal-l3"></i>强多
+              <i class="m-cal-l2"></i>偏多
+              <i class="m-cal-l1"></i>弱多
+              <i class="m-cal-l4"></i>弱空
+              <i class="m-cal-l5"></i>偏空
+              <i class="m-cal-l6"></i>强空
+            </div>
+            <template v-if="matrixRows.length">
               <div
-                v-for="(cell, idx) in row.cells"
-                :key="idx"
-                class="m-cal-day"
-                :class="toCellView(cell).level"
-                @click="cell && onCellClick(row.code, row.name, selectedDates[idx]!)"
+                class="m-cal-scroll m-card"
+                :style="{ '--days': selectedDates.length }"
               >
-                <div class="m-cal-day__v" :class="toCellView(cell).strong ? '' : ''">
-                  {{ cell ? (cell.limitUp || 0) : '·' }}
+                <div class="m-cal-head">
+                  <div class="m-cal-cell">板块</div>
+                  <div v-for="d in selectedDates" :key="d" class="m-cal-cell">{{ d.slice(5) }}</div>
                 </div>
-                <div class="m-cal-day__s">{{ cell ? (cell.limitDown || 0) : '' }}</div>
+                <div v-for="row in boardRows" :key="row.code" class="m-cal-row">
+                  <div class="m-cal-row__name">{{ row.name }}</div>
+                  <div
+                    v-for="(cell, idx) in row.cells"
+                    :key="idx"
+                    class="m-cal-day"
+                    :class="toCellView(cell).level"
+                    @click="cell && onCellClick(row.code, row.name, selectedDates[idx]!)"
+                  >
+                    <div class="m-cal-day__v" :class="toCellView(cell).strong ? '' : ''">
+                      {{ cell ? (cell.limitUp || 0) : '·' }}
+                    </div>
+                    <div class="m-cal-day__s">{{ cell ? (cell.limitDown || 0) : '' }}</div>
+                  </div>
+                </div>
               </div>
+            </template>
+            <div v-else class="m-state">
+              {{ collecting ? '采集完成后自动显示矩阵' : '暂无板块日历数据，可下拉重进本页重试' }}
             </div>
-          </div>
-        </template>
-        <div v-else class="m-state">
-          {{ collecting ? '采集完成后自动显示矩阵' : '暂无板块日历数据，可下拉重进本页重试' }}
-        </div>
-        <div class="m-sec">
-          <span class="m-sec__s">格内数字：涨停家数 / 跌停家数 · 点格看明细</span>
-        </div>
-      </template>
+            <div class="m-sec">
+              <span class="m-sec__s">格内数字：涨停家数 / 跌停家数 · 点格看明细</span>
+            </div>
+          </template>
 
-      <!-- === 详情矩阵（成分股×日涨跌幅） === -->
-      <template v-else>
-        <div class="m-cal-legend">
-          <span>色阶</span>
-          <i class="m-cal-l3"></i>&gt;5%
-          <i class="m-cal-l2"></i>2~5%
-          <i class="m-cal-l1"></i>0~2%
-          <i class="m-cal-l4"></i>-2~0%
-          <i class="m-cal-l5"></i>-5~-2%
-          <i class="m-cal-l6"></i>&lt;-5%
-        </div>
-        <div class="m-cal-scroll m-card" :style="{ '--days': detailDates.length }">
-          <div class="m-cal-head">
-            <div class="m-cal-cell">成分股</div>
-            <div v-for="d in detailDates" :key="d" class="m-cal-cell">{{ d.slice(5) }}</div>
-          </div>
-          <div v-for="row in detailRows" :key="row.symbol" class="m-cal-row" @click="goStock(row.fullSymbol)">
-            <div class="m-cal-row__name">{{ row.name }}</div>
-            <div
-              v-for="(v, idx) in row.cells"
-              :key="idx"
-              class="m-cal-day"
-              :class="detailCellClass(v)"
-            >
-              <div class="m-cal-day__v" :class="pctClass(v)">{{ v === null ? '·' : v.toFixed(1) }}</div>
+          <!-- === 详情矩阵（成分股×日涨跌幅） === -->
+          <template v-else>
+            <div class="m-cal-legend">
+              <span>色阶</span>
+              <i class="m-cal-l3"></i>&gt;5%
+              <i class="m-cal-l2"></i>2~5%
+              <i class="m-cal-l1"></i>0~2%
+              <i class="m-cal-l4"></i>-2~0%
+              <i class="m-cal-l5"></i>-5~-2%
+              <i class="m-cal-l6"></i>&lt;-5%
             </div>
-          </div>
-          <div v-if="!detailRows.length" class="m-state">暂无成分股数据</div>
+            <div class="m-cal-scroll m-card" :style="{ '--days': detailDates.length }">
+              <div class="m-cal-head">
+                <div class="m-cal-cell">成分股</div>
+                <div v-for="d in detailDates" :key="d" class="m-cal-cell">{{ d.slice(5) }}</div>
+              </div>
+              <div v-for="row in detailRows" :key="row.symbol" class="m-cal-row" @click="goStock(row.fullSymbol)">
+                <div class="m-cal-row__name">{{ row.name }}</div>
+                <div
+                  v-for="(v, idx) in row.cells"
+                  :key="idx"
+                  class="m-cal-day"
+                  :class="detailCellClass(v)"
+                >
+                  <div class="m-cal-day__v" :class="pctClass(v)">{{ v === null ? '·' : v.toFixed(1) }}</div>
+                </div>
+              </div>
+              <div v-if="!detailRows.length" class="m-state">暂无成分股数据</div>
+            </div>
+          </template>
+          <div class="m-sub-tail"></div>
         </div>
-      </template>
-      <div class="m-sub-tail"></div>
+      </div>
+      <!-- 右窗格仅选中个股时渲染（2026-10-31 王总指定「选中才显示右边栏」），未选中左栏铺满 -->
+      <aside v-if="lg && paneOpen" class="m-duo__r">
+        <StockDetailPane :symbol="paneSymbol" @close="closePane" />
+      </aside>
     </div>
 
     <!-- 点格：涨跌停明细 bottom sheet -->

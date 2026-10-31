@@ -2,11 +2,9 @@
 import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import BoardCalendarGrid from '../components/business/BoardCalendarGrid.vue';
-import BoardCellDetailModal from '../components/business/BoardCellDetailModal.vue';
 import BoardDataSyncMenu from '../components/business/BoardDataSyncMenu.vue';
 import BoardFilterModal from '../components/business/BoardFilterModal.vue';
 import BoardMainlinePanel from '../components/business/BoardMainlinePanel.vue';
-import BoardProfitBubblePanel from '../components/business/BoardProfitBubblePanel.vue';
 import BoardRotationPanel from '../components/business/BoardRotationPanel.vue';
 import StyleSeesawPanel from '../components/business/StyleSeesawPanel.vue';
 import BaseButton from '../components/ui/BaseButton.vue';
@@ -145,14 +143,19 @@ const calendarView = ref<BoardCalendarViewMode>(BOARD_CALENDAR_VIEW_DEFAULT);
 const rotationRange = ref<string>(String(ROTATION_DEFAULT_RANGE));
 /** 题材轮动上榜方向（涌入 / 逃离，2026-10-29 王总指定；双向绑定给 BoardRotationPanel，AI 分析数据段同口径） */
 const rotationDirection = ref<RotationDirection>('inflow');
-/** 弹窗状态 */
-const modalOpen = ref(false);
-const activeRow = ref<BoardCalendarRow | null>(null);
-const activeCell = ref<BoardCalendarCell | null>(null);
-const activeDate = ref('');
-const activeProfileConsCount = ref(0);
-/** 赚钱效应气泡图聚焦交易日（null = 最新完整快照日；由板块日历明细弹窗「查看当日赚钱效应」设置） */
-const bubbleFocusDate = ref<string | null>(null);
+/**
+ * 展开的扩展行（2026-10-31 王总指定：点击单元格展开替代明细弹窗）
+ *
+ * key = `<boardCode>|<tradeDate>`（null = 无展开；同一时刻至多一条），
+ * 内容随展开状态持有（行 / 单元格 / 档案成分股数），点击同格收起、点其它格切换。
+ */
+const expandedKey = ref<string | null>(null);
+const expanded = ref<{
+  row: BoardCalendarRow;
+  cell: BoardCalendarCell;
+  tradeDate: string;
+  profileConsCount: number;
+} | null>(null);
 
 // 会话缓存播种：切页回来立即有内容，随后由轮询任务覆盖刷新
 const cachedRows = dataCache.get<BoardDailyRow[]>(DATA_CACHE_KEY.BOARD_CALENDAR_MATRIX);
@@ -403,17 +406,13 @@ const rangeLabel = computed<string>(
 );
 
 /**
- * 赚钱效应气泡图的数据源：最新一个「完整快照」交易日
+ * 最新一个「完整快照」交易日（AI 分析「赚钱效应排行」数据段的默认口径）
  *
  * 优先取有涨跌家数的完整快照日（回补日得分只由涨跌停推导，口径不可比），
- * 一个都没有时才退回最新一天并标记为非完整，由弹窗给出提示。
- * 这里**不受页面「板块过滤器」影响**：气泡图看的是全市场当日赚钱效应。
+ * 一个都没有时才退回最新一天。赚钱效应气泡图本体已迁入右侧停靠面板
+ * （2026-10-31），页面内只保留本计算供 AI 数据段消费。
  */
-const profitSnapshot = computed<{
-  tradeDate: string;
-  rows: BoardDailyRow[];
-  isFullSnapshot: boolean;
-}>(() => {
+const latestSnapshotDate = computed<string>(() => {
   const byDate = new Map<string, BoardDailyRow[]>();
   for (const row of weightedDailyRows.value) {
     const list = byDate.get(row.tradeDate);
@@ -424,76 +423,50 @@ const profitSnapshot = computed<{
     }
   }
   const dates = [...byDate.keys()].sort();
-  let picked = '';
   for (let index = dates.length - 1; index >= 0; index -= 1) {
-    const dayRows = byDate.get(dates[index]) ?? [];
+    const dayRows = byDate.get(dates[index] ?? '') ?? [];
     if (dayRows.some((row) => row.dataLevel === BOARD_DATA_LEVEL.FULL)) {
-      picked = dates[index];
-      break;
+      return dates[index] ?? '';
     }
   }
-  if (picked === '') {
-    picked = dates[dates.length - 1] ?? '';
-  }
-  const rows = picked === '' ? [] : (byDate.get(picked) ?? []);
-  return {
-    tradeDate: picked,
-    rows,
-    isFullSnapshot: rows.length > 0 && rows.every((row) => row.dataLevel === BOARD_DATA_LEVEL.FULL),
-  };
+  return dates[dates.length - 1] ?? '';
 });
 
-/** 本地有日聚合数据的交易日集合（气泡图日期选择器的可用项判定；不在集合内的日期置灰） */
-const datesWithData = computed<Set<string>>(
-  () => new Set(dailyRows.value.map((row) => row.tradeDate)),
-);
+/**
+ * 指定交易日的全部板块日聚合行（AI「赚钱效应排行」数据段用）
+ * @param tradeDate 交易日（空串返回空数组）
+ * @param rows 日聚合（调用方传入 weightedDailyRows，避免重复建 computed）
+ * @returns 该日行列表
+ */
+const rowsOfDate = (tradeDate: string, rows: BoardDailyRow[]): BoardDailyRow[] =>
+  tradeDate === '' ? [] : rows.filter((row) => row.tradeDate === tradeDate);
 
 /**
- * 赚钱效应气泡图实际渲染的数据：聚焦日优先，未聚焦回落最新完整快照日
- *
- * 聚焦日由气泡图日期选择器或板块日历明细弹窗的「查看当日赚钱效应」设置
- * （矩阵 cell → 弹窗 → 气泡图），让「板块 × 单日」明细与「全市场 × 当日」
- * 可视化连成一条叙事；聚焦仅在本会话内有效，选回最新快照或点「回到最新快照」清除。
- * 聚焦日不在当前读取窗口时 rows 为空数组，气泡图自身兜底空态。
+ * 点击单元格：展开 / 收起扩展行（同格收起、点其它格切换，同一时刻至多一条）
+ * @param row 行
+ * @param cell 单元格（null 表示该日无快照，不响应）
+ * @param tradeDate 交易日
  */
-const profitView = computed<{ tradeDate: string; rows: BoardDailyRow[]; isFullSnapshot: boolean }>(
-  () => {
-    const focus = bubbleFocusDate.value;
-    if (focus === null) {
-      return profitSnapshot.value;
-    }
-    const rows = weightedDailyRows.value.filter((row) => row.tradeDate === focus);
-    return {
-      tradeDate: focus,
-      rows,
-      isFullSnapshot: rows.length > 0 && rows.every((row) => row.dataLevel === BOARD_DATA_LEVEL.FULL),
-    };
-  },
-);
-
-/**
- * 明细弹窗「查看当日赚钱效应」：记录聚焦日 → 切到赚钱效应视图 → 关弹窗
- * @param tradeDate 弹窗对应的交易日
- */
-const onCellProfitClick = (tradeDate: string): void => {
-  bubbleFocusDate.value = tradeDate;
-  calendarView.value = BOARD_CALENDAR_VIEW.BUBBLE;
-  modalOpen.value = false;
-};
-
-/**
- * 清除气泡图聚焦日，回到最新完整快照日
- */
-const onBubbleFocusReset = (): void => {
-  bubbleFocusDate.value = null;
-};
-
-/**
- * 气泡图日期选择器：切换聚焦交易日
- * @param event select change 事件
- */
-const onBubbleDateSelect = (event: Event): void => {
-  bubbleFocusDate.value = (event.target as HTMLSelectElement).value;
+const onCellClick = (
+  row: BoardCalendarRow,
+  cell: BoardCalendarCell | null,
+  tradeDate: string,
+): void => {
+  if (!cell) return;
+  const key = `${row.code}|${tradeDate}`;
+  if (expandedKey.value === key) {
+    expandedKey.value = null;
+    expanded.value = null;
+    return;
+  }
+  expandedKey.value = key;
+  expanded.value = {
+    row,
+    cell,
+    tradeDate,
+    profileConsCount:
+      profiles.value.find((item) => item.code === row.code)?.consCount ?? 0,
+  };
 };
 
 /**
@@ -647,12 +620,19 @@ const buildMatrixDataset = (): RankDataset => ({
 
 /**
  * 赚钱效应数据段（AI 分析口径）：聚焦日全板块得分降序排行
+ *
+ * 聚焦日取扩展行当前展开的交易日（「板块 × 单日」上下文优先），
+ * 未展开时回落最新完整快照日；气泡图本体已迁入右侧停靠面板，
+ * 分析能力随数据段保留在板块日历视图（2026-10-31 王总指定删 tab 不删分析）。
  * @returns 数据段
  */
 const buildProfitDataset = (): RankDataset => {
-  const rows = [...profitView.value.rows].sort((a, b) => b.score - a.score);
+  const tradeDate = expanded.value?.tradeDate ?? latestSnapshotDate.value;
+  const dayRows = rowsOfDate(tradeDate, weightedDailyRows.value);
+  const isFull = dayRows.length > 0 && dayRows.every((row) => row.dataLevel === BOARD_DATA_LEVEL.FULL);
+  const rows = [...dayRows].sort((a, b) => b.score - a.score);
   return {
-    title: `赚钱效应排行（${profitView.value.tradeDate}${profitView.value.isFullSnapshot ? '' : '，回补日口径不可比'}）`,
+    title: `赚钱效应排行（${tradeDate}${isFull ? '' : '，回补日口径不可比'}）`,
     columns: [
       { label: '板块', key: 'board' },
       { label: '得分', key: 'score' },
@@ -691,9 +671,8 @@ const collectAiDatasets = (): RankDataset[] => {
     case BOARD_CALENDAR_VIEW.ROTATION:
       return [buildOverviewDataset(), buildSegmentDataset(), buildMainlineDataset()];
     case BOARD_CALENDAR_VIEW.LIST:
-      return [buildMatrixDataset()];
-    case BOARD_CALENDAR_VIEW.BUBBLE:
-      return [buildProfitDataset()];
+      // 板块日历视图并入赚钱效应排行（tab 删除后分析能力保留，2026-10-31）
+      return [buildMatrixDataset(), buildProfitDataset()];
     case BOARD_CALENDAR_VIEW.SEESAW:
       return buildSeesawDatasets();
     default:
@@ -845,30 +824,19 @@ const onSyncApplied = (): void => {
 };
 
 /**
- * 打开单元格详情弹窗
- * @param row 行
- * @param cell 单元格
- * @param tradeDate 交易日
- */
-const onCellClick = (
-  row: BoardCalendarRow,
-  cell: BoardCalendarCell | null,
-  tradeDate: string,
-): void => {
-  if (!cell) return;
-  activeRow.value = row;
-  activeCell.value = cell;
-  activeDate.value = tradeDate;
-  activeProfileConsCount.value = profiles.value.find((item) => item.code === row.code)?.consCount ?? 0;
-  modalOpen.value = true;
-};
-
-/**
  * 点击板块名称：进入板块详情页（成分股 × 交易日 涨跌幅矩阵）
  * @param row 被点击的板块行
  */
 const onBoardClick = (row: BoardCalendarRow): void => {
   void router.push(`${ROUTE_PATH.BOARD_DETAIL}/${row.code}`);
+};
+
+/**
+ * 扩展行【查看赚钱效应】：打开右侧停靠面板（可拖宽）并聚焦该交易日
+ * @param tradeDate 扩展行对应的交易日
+ */
+const onExpandProfitClick = (tradeDate: string): void => {
+  dockPanelStore.openProfitBubble(tradeDate);
 };
 
 /**
@@ -1090,10 +1058,15 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
         :matrix="matrix"
         :sort-date="columnSort?.date ?? null"
         :sort-dir="columnSort?.dir ?? 'desc'"
+        :expanded-key="expandedKey"
+        :expanded="expanded"
         scroll-class="board-calendar-fill"
         @cell-click="onCellClick"
         @board-click="onBoardClick"
         @sort-click="onColumnSortClick"
+        @expand-profit-click="onExpandProfitClick"
+        @expand-board-click="onRotationBoardClick"
+        @expand-stock-click="onRotationStockClick"
       />
     </BaseCard>
 
@@ -1146,44 +1119,8 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
       </div>
     </template>
 
-    <!-- 赚钱效应气泡图卡片（原「查看赚钱效应」弹窗内容内嵌为主区视图）；
-         extra 槽 = 日期选择器（本地无数据的交易日置灰不可选）+ 聚焦时「回到最新快照」 -->
-    <BaseCard
-      v-else
-      fill
-      class="min-h-0 flex-1"
-      :title="`赚钱效应 · ${profitView.tradeDate}`"
-    >
-      <template #extra>
-        <div class="flex items-center gap-2">
-          <select
-            :value="bubbleFocusDate ?? profitSnapshot.tradeDate"
-            class="h-7 rounded-lg border border-flat-weak bg-surface px-2 text-xs text-text"
-            aria-label="选择交易日"
-            @change="onBubbleDateSelect"
-          >
-            <option
-              v-for="date in selectedDates"
-              :key="date"
-              :value="date"
-              :disabled="!datesWithData.has(date)"
-            >
-              {{ date }}{{ datesWithData.has(date) ? '' : '（无数据）' }}
-            </option>
-          </select>
-          <BaseButton v-if="bubbleFocusDate !== null" variant="ghost" @click="onBubbleFocusReset">
-            回到最新快照
-          </BaseButton>
-        </div>
-      </template>
-      <div class="min-h-0 flex-1">
-        <BoardProfitBubblePanel
-          :rows="profitView.rows"
-          :trade-date="profitView.tradeDate"
-          :is-full-snapshot="profitView.isFullSnapshot"
-        />
-      </div>
-    </BaseCard>
+    <!-- 赚钱效应气泡图已迁入右侧停靠面板（2026-10-31 王总指定删除主区 tab）：
+         入口 = 板块日历扩展行「查看赚钱效应」，经 dockPanel.openProfitBubble 打开 -->
 
     <BoardFilterModal
       v-model:open="filterOpen"
@@ -1192,15 +1129,6 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
       :heat-values="heatValues"
       :heat-label="heatLabel"
       @confirm="onConfirmFilter"
-    />
-
-    <BoardCellDetailModal
-      v-model:open="modalOpen"
-      :board="activeRow"
-      :cell="activeCell"
-      :trade-date="activeDate"
-      :profile-cons-count="activeProfileConsCount"
-      @profit-click="onCellProfitClick"
     />
   </div>
 </template>

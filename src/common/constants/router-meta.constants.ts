@@ -85,7 +85,7 @@ export const MENU_ITEMS: readonly SidebarMenuEntry[] = [
   // 大盘云图侧栏入口已移除（2026-10-22 王总指定），改为市场总览页头「大盘云图」按钮进入（同宽基ETF入口位）；
   // 页面 2026-10-29 起转插件分发（dsh-dapanyuntu 注册 /heatmap，不入菜单）
   // 板块日历紧跟行情全景：同为「板块维度的行情视角」
-  { path: ROUTE_PATH.BOARD_CALENDAR, title: "题材轮动", icon: MENU_ICON.CALENDAR, group: SIDEBAR_MENU_GROUP.MARKET },
+  { path: ROUTE_PATH.BOARD_CALENDAR, title: "板块分析", icon: MENU_ICON.CALENDAR, group: SIDEBAR_MENU_GROUP.MARKET },
   // 市场广度指标：五大广度副图（ADL/ADR/OBOS/ARMS/MCO），市场总览宽度卡的深化页
   // 市场宽度（2026-10-29 起转插件分发：菜单与 /market-breadth 路由由 dsh-market-breadth 注册）
   { path: ROUTE_PATH.FUTURES_OVERVIEW, title: "期货总览", icon: MENU_ICON.DASHBOARD, group: SIDEBAR_MENU_GROUP.MARKET },

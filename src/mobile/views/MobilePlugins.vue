@@ -259,9 +259,15 @@ const goPluginPage = (id: string): void => {
 </template>
 
 <style scoped>
-/* 空态（居中引导） */
+/* 空态：在 navbar 以下剩余空间内垂直水平居中（2026-10-31 真机反馈顶在上方；
+   min-height 扣 navbar 占位高与安全区，内容超一屏时自然回落为顶部排布） */
 .m-plug-empty {
-  margin: 48px 24px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100dvh - var(--van-nav-bar-height) - var(--m-inset-top));
+  margin: 0 24px;
   text-align: center;
 }
 .m-plug-empty__t {

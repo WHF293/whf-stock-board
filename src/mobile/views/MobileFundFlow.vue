@@ -37,9 +37,19 @@ import {
   FUND_FLOW_CHART_HEIGHT_MAIN,
   FUND_FLOW_CHART_HEIGHT_SECTOR,
   FUND_FLOW_HISTORY_CARD_HEIGHT,
+  FUND_FLOW_LOAD_TIMEOUT_MS,
   FUND_FLOW_HISTORY_DAYS,
   FUND_FLOW_MARKET_DAYS,
 } from '../constants';
+import { withTimeout } from '../utils/with-timeout';
+import { useBreakpoint } from '../composables/use-breakpoint';
+import { useStockPane } from '../composables/use-stock-pane';
+import StockDetailPane from '../components/StockDetailPane.vue';
+
+/* lg 档主从布局（稿：Pad横屏主从布局改造 S4）：「选择板块」弹窗常驻化为左栏
+ * 清单（勾选即生效），榜单行点击领涨股落右栏窗格；md / 竖屏保留弹窗不变 */
+const { lg } = useBreakpoint();
+const { paneSymbol, paneOpen, openStock, closePane } = useStockPane();
 
 /**
  * 资金流向（移动端，v4.3 主 Tab）
@@ -76,7 +86,13 @@ const loadMarketFlow = async (): Promise<void> => {
   marketLoading.value = true;
   marketError.value = false;
   try {
-    const flows = await fetchMarketFundFlow();
+    // 超时竞速兜底：弱网 TCP 挂起不落地时 reject → 错误态带重试出口，
+    // 避免图表区骨架无限等待（2026-10-30 真机反馈，同新闻频道口径）
+    const flows = await withTimeout(
+      fetchMarketFundFlow(),
+      FUND_FLOW_LOAD_TIMEOUT_MS,
+      '主力净流入加载超时',
+    );
     marketFlow.value = flows.slice(-FUND_FLOW_MARKET_DAYS);
   } catch (error) {
     marketError.value = true;
@@ -202,7 +218,11 @@ const loadSectorRank = (): Promise<void> => {
       rankLoading.value = true;
       rankError.value = false;
       try {
-        sectorRank.value = await fetchCalendarBoardFundFlow();
+        sectorRank.value = await withTimeout(
+          fetchCalendarBoardFundFlow(),
+          FUND_FLOW_LOAD_TIMEOUT_MS,
+          '板块榜单加载超时',
+        );
       } catch (error) {
         rankError.value = true;
         rankErrorDetail.value = error instanceof Error ? error.message : String(error);
@@ -287,16 +307,21 @@ const loadSectorCurves = async (codes: readonly string[]): Promise<void> => {
   curveErrorDetail.value = '';
   curveProgress.value = { done: 0, total: targets.length };
   try {
-    await fetchSectorFlowCurves(targets, {
-      onCurve: (curve) => {
-        mergeCurveView(curve);
-        curveProgress.value.done += 1;
-      },
-      onError: (_code, error) => {
-        // 批量接口按条吞错不 reject；记下真实错误，全军覆没时透出（真机排障用）
-        curveErrorDetail.value = error instanceof Error ? error.message : String(error);
-      },
-    });
+    // 超时竞速兜底（同上：弱网挂起时批量接口可能整批不落地，曲线区骨架无出口）
+    await withTimeout(
+      fetchSectorFlowCurves(targets, {
+        onCurve: (curve) => {
+          mergeCurveView(curve);
+          curveProgress.value.done += 1;
+        },
+        onError: (_code, error) => {
+          // 批量接口按条吞错不 reject；记下真实错误，全军覆没时透出（真机排障用）
+          curveErrorDetail.value = error instanceof Error ? error.message : String(error);
+        },
+      }),
+      FUND_FLOW_LOAD_TIMEOUT_MS,
+      '板块资金曲线加载超时',
+    );
     // 全部失败（批量接口不抛错，以产出为判据）
     curveError.value = targets.length > 0 && curveViews.value.length === 0;
   } catch (error) {
@@ -506,10 +531,15 @@ const ensureFlowHistory = (): void => {
     return;
   }
   historyEnsuring.value = true;
-  void ensureSectorFlowHistories(selectedCodes.value, {
-    isTradingDay: marketStatus.isTradingDay === true,
-    inPollingWindow: marketStatus.isASharePollingWindow,
-  })
+  // 超时竞速兜底（同上）：历史拉取挂起时 historyEnsuring 永真 → 翻页卡无出口
+  void withTimeout(
+    ensureSectorFlowHistories(selectedCodes.value, {
+      isTradingDay: marketStatus.isTradingDay === true,
+      inPollingWindow: marketStatus.isASharePollingWindow,
+    }),
+    FUND_FLOW_LOAD_TIMEOUT_MS,
+    '板块历史净流入加载超时',
+  )
     .then((map) => {
       historyMap.value = map;
     })
@@ -623,12 +653,19 @@ const toggleRankCode = (code: string): void => {
 };
 
 /**
- * 行点击：进领涨股个股页（沿用原全景-资金行为；无领涨股不跳转）
+ * 行点击：进领涨股（lg 档写右栏窗格就地阅读，窄档 / 竖屏整页跳转；
+ * 无领涨股不响应，沿用原全景-资金行为）
  * @param item 榜单行
  */
 const goRankRow = (item: SectorFundFlowItem): void => {
   if (!item.topStockCode) return;
-  void router.push(`/stock/${toFullSymbol(item.topStockCode)}`);
+  const symbol = toFullSymbol(item.topStockCode);
+  if (!symbol) return;
+  if (lg.value) {
+    openStock(symbol);
+    return;
+  }
+  void router.push(`/stock/${symbol}`);
 };
 
 // ---------- 初始化：三模块并行就绪 ----------
@@ -662,198 +699,240 @@ onMounted(() => {
       @click-left="router.back()"
     />
 
-    <div class="m-ff-scroll">
-      <!-- 模块一：主力净流入（近 10 日，每点标注 + tooltip + crosshair） -->
-      <section class="m-ff-card">
-        <header class="m-ff-head">
-          <h2 class="m-ff-head__title">主力净流入</h2>
-          <span class="m-ff-head__sub">近 {{ FUND_FLOW_MARKET_DAYS }} 日 · 单位亿</span>
-          <button class="m-ff-head__btn" :disabled="marketLoading" @click="loadMarketFlow">↻</button>
-        </header>
-        <div v-if="marketLoading && marketFlow.length === 0" class="m-ff-skeleton">
-          <div v-for="i in 3" :key="i" class="m-ff-skel-bar"></div>
+    <!-- lg 主从布局（稿 S4）：左板块清单常驻（勾选即生效）· 中曲线与榜单 · 右领涨股窗格；
+         窄档 / 竖屏 m-duo 退化为纵向、rail 不渲染，「选择板块」弹窗保留 -->
+    <div class="m-duo">
+      <!-- 常驻板块清单（弹窗常驻化）：复用弹窗同款 pickerBoards 数据与已选集，
+           勾选直接写 selectedCodes（watch 自动拉曲线 / 清历史，无暂存确认两步） -->
+      <aside v-if="lg" class="m-ff-rail">
+        <div class="m-ff-rail__head">
+          <b>板块清单</b>
+          <span>已选 {{ selectedCodes.length }}/{{ CALENDAR_BOARDS.length }}</span>
         </div>
-        <div v-else-if="marketError && marketFlow.length === 0" class="m-ff-error">
-          <span>加载失败，请检查网络后重试</span>
-          <span v-if="marketErrorDetail" class="m-ff-error__detail">{{ marketErrorDetail }}</span>
-          <button class="m-ff-error__retry" @click="loadMarketFlow">↻ 重新加载</button>
-        </div>
-        <MobileEChart
-          v-else-if="marketFlow.length > 0"
-          :options="marketOption"
-          :style="{ height: `${FUND_FLOW_CHART_HEIGHT_MAIN}px` }"
-        />
-        <div v-else class="m-ff-empty">暂无数据</div>
-      </section>
-
-      <!-- 模块二：板块资金（板块池与 PC 一致，最多选 8，弹窗选择） -->
-      <section class="m-ff-card">
-        <header class="m-ff-head">
-          <h2 class="m-ff-head__title">板块资金</h2>
-          <span class="m-ff-head__sub">
-            <template v-if="curveAsOfText">截至 {{ curveAsOfText }}</template>
-            <template v-if="curveLoading">
-              · 加载 {{ curveProgress.done }}/{{ curveProgress.total }}
-            </template>
-          </span>
-          <button class="m-ff-head__btn" :disabled="curveLoading" @click="refreshCurves">↻</button>
-          <button class="m-ff-head__btn m-ff-head__btn--pick" @click="openPicker">
-            选择板块 {{ selectedCodes.length }}
-          </button>
-        </header>
-        <div v-if="curveLoading && curveViews.length === 0" class="m-ff-skeleton">
-          <div v-for="i in 3" :key="i" class="m-ff-skel-bar"></div>
-        </div>
-        <div v-else-if="curveError && curveViews.length === 0" class="m-ff-error">
-          <span>板块资金曲线加载失败</span>
-          <span v-if="curveErrorDetail" class="m-ff-error__detail">{{ curveErrorDetail }}</span>
-          <button class="m-ff-error__retry" @click="refreshCurves">↻ 重新加载</button>
-        </div>
-        <MobileEChart
-          v-else-if="curveViews.length > 0"
-          not-merge
-          :options="sectorOption"
-          :style="{ height: `${FUND_FLOW_CHART_HEIGHT_SECTOR}px` }"
-        />
-        <div v-else class="m-ff-empty">暂无曲线数据，请点击「选择板块」添加</div>
-      </section>
-
-      <!-- 模块三：板块历史净流入（一页一板块，手势翻页 + 底部指示条） -->
-      <section class="m-ff-card">
-        <header class="m-ff-head">
-          <h2 class="m-ff-head__title">板块历史净流入</h2>
-          <span class="m-ff-head__sub">
-            {{ displayBoards.length }} 个板块<template v-if="historyEnsuring"> · 更新中…</template>
-          </span>
-          <button
-            class="m-ff-head__btn"
-            :disabled="historyEnsuring || selectedCodes.length === 0"
-            @click="ensureFlowHistory()"
+        <label v-for="board in pickerBoards" :key="board.code" class="m-ff-rail__row">
+          <input
+            type="checkbox"
+            class="m-ff-rail__check"
+            :checked="isPicked(board.code)"
+            @change="toggleRankCode(board.code)"
+          />
+          <span class="m-ff-rail__name">{{ board.name }}</span>
+          <span
+            class="m-ff-rail__val"
+            :class="(board.mainNetInflow ?? 0) >= 0 ? 'is-up' : 'is-down'"
           >
-            ↻
-          </button>
-        </header>
+            {{ formatYuanWithSign(board.mainNetInflow) }}
+          </span>
+        </label>
+      </aside>
 
-        <div
-          v-if="historyEnsuring && displayBoards.every((board) => board.missing)"
-          class="m-ff-skeleton"
-        >
-          <div v-for="i in 3" :key="i" class="m-ff-skel-bar"></div>
-        </div>
-        <MobileGesturePager
-          v-else-if="displayBoards.length > 0"
-          v-model:current="pagerCurrent"
-          :total="displayBoards.length"
-          class="m-ff-history"
-          :style="{ height: `${FUND_FLOW_HISTORY_CARD_HEIGHT}px` }"
-        >
-          <!-- 单页：板块逐日双向条形卡（PC BoardFlowDailyCard 样式复刻） -->
-          <section v-if="currentBoard" class="m-ff-hcard">
-            <header class="m-ff-hcard__head">
-              <h3 class="m-ff-hcard__name">{{ currentBoard.name }}（{{ currentBoard.code }}）</h3>
-              <span v-if="currentBoard.missing" class="m-ff-hcard__sum is-missing">--</span>
-              <span
-                v-else
-                class="m-ff-hcard__sum"
-                :class="currentNetSum >= 0 ? 'is-up' : 'is-down'"
-              >
-                {{ currentNetSumText }}亿
-              </span>
+      <div class="m-duo__l">
+        <div class="m-ff-scroll">
+          <!-- 模块一：主力净流入（近 10 日，每点标注 + tooltip + crosshair） -->
+          <section class="m-ff-card">
+            <header class="m-ff-head">
+              <h2 class="m-ff-head__title">主力净流入</h2>
+              <span class="m-ff-head__sub">近 {{ FUND_FLOW_MARKET_DAYS }} 日 · 单位亿</span>
+              <button class="m-ff-head__btn" :disabled="marketLoading" @click="loadMarketFlow">↻</button>
             </header>
-            <div v-if="currentBoard.missing" class="m-ff-hcard__missing">
-              <span>历史拉取失败</span>
-              <span>稍后点「↻」重试</span>
+            <div v-if="marketLoading && marketFlow.length === 0" class="m-ff-skeleton">
+              <div v-for="i in 3" :key="i" class="m-ff-skel-bar"></div>
             </div>
-            <div v-else class="m-ff-hcard__rows">
-              <div v-for="row in currentDescPoints" :key="row.date" class="m-ff-hcard__row">
-                <span class="m-ff-hcard__date">{{ row.date.slice(5) }}</span>
-                <div class="m-ff-hcard__track">
-                  <div class="m-ff-hcard__zero"></div>
-                  <div
-                    v-if="row.net > 0"
-                    class="m-ff-hcard__bar is-up"
-                    :style="{ width: barWidthOf(row.net, currentDescPoints) }"
-                  ></div>
-                  <div
-                    v-else-if="row.net < 0"
-                    class="m-ff-hcard__bar is-down"
-                    :style="{ width: barWidthOf(row.net, currentDescPoints) }"
-                  ></div>
+            <div v-else-if="marketError && marketFlow.length === 0" class="m-ff-error">
+              <span>加载失败，请检查网络后重试</span>
+              <span v-if="marketErrorDetail" class="m-ff-error__detail">{{ marketErrorDetail }}</span>
+              <button class="m-ff-error__retry" @click="loadMarketFlow">↻ 重新加载</button>
+            </div>
+            <MobileEChart
+              v-else-if="marketFlow.length > 0"
+              :options="marketOption"
+              :style="{ height: `${FUND_FLOW_CHART_HEIGHT_MAIN}px` }"
+            />
+            <div v-else class="m-ff-empty">暂无数据</div>
+          </section>
+
+          <!-- 模块二：板块资金（板块池与 PC 一致，最多选 8，弹窗选择） -->
+          <section class="m-ff-card">
+            <header class="m-ff-head">
+              <h2 class="m-ff-head__title">板块资金</h2>
+              <span class="m-ff-head__sub">
+                <template v-if="curveAsOfText">截至 {{ curveAsOfText }}</template>
+                <template v-if="curveLoading">
+                  · 加载 {{ curveProgress.done }}/{{ curveProgress.total }}
+                </template>
+              </span>
+              <button class="m-ff-head__btn" :disabled="curveLoading" @click="refreshCurves">↻</button>
+              <button
+                v-if="!lg"
+                class="m-ff-head__btn m-ff-head__btn--pick"
+                @click="openPicker"
+              >
+                选择板块 {{ selectedCodes.length }}
+              </button>
+            </header>
+            <div v-if="curveLoading && curveViews.length === 0" class="m-ff-skeleton">
+              <div v-for="i in 3" :key="i" class="m-ff-skel-bar"></div>
+            </div>
+            <div v-else-if="curveError && curveViews.length === 0" class="m-ff-error">
+              <span>板块资金曲线加载失败</span>
+              <span v-if="curveErrorDetail" class="m-ff-error__detail">{{ curveErrorDetail }}</span>
+              <button class="m-ff-error__retry" @click="refreshCurves">↻ 重新加载</button>
+            </div>
+            <MobileEChart
+              v-else-if="curveViews.length > 0"
+              not-merge
+              :options="sectorOption"
+              :style="{ height: `${FUND_FLOW_CHART_HEIGHT_SECTOR}px` }"
+            />
+            <div v-else class="m-ff-empty">暂无曲线数据，请点击「选择板块」添加</div>
+          </section>
+
+          <!-- 模块三：板块历史净流入（一页一板块，手势翻页 + 底部指示条） -->
+          <section class="m-ff-card">
+            <header class="m-ff-head">
+              <h2 class="m-ff-head__title">板块历史净流入</h2>
+              <span class="m-ff-head__sub">
+                {{ displayBoards.length }} 个板块<template v-if="historyEnsuring"> · 更新中…</template>
+              </span>
+              <button
+                class="m-ff-head__btn"
+                :disabled="historyEnsuring || selectedCodes.length === 0"
+                @click="ensureFlowHistory()"
+              >
+                ↻
+              </button>
+            </header>
+
+            <div
+              v-if="historyEnsuring && displayBoards.every((board) => board.missing)"
+              class="m-ff-skeleton"
+            >
+              <div v-for="i in 3" :key="i" class="m-ff-skel-bar"></div>
+            </div>
+            <MobileGesturePager
+              v-else-if="displayBoards.length > 0"
+              v-model:current="pagerCurrent"
+              :total="displayBoards.length"
+              class="m-ff-history"
+              :style="{ height: `${FUND_FLOW_HISTORY_CARD_HEIGHT}px` }"
+            >
+              <!-- 单页：板块逐日双向条形卡（PC BoardFlowDailyCard 样式复刻） -->
+              <section v-if="currentBoard" class="m-ff-hcard">
+                <header class="m-ff-hcard__head">
+                  <h3 class="m-ff-hcard__name">{{ currentBoard.name }}（{{ currentBoard.code }}）</h3>
+                  <span v-if="currentBoard.missing" class="m-ff-hcard__sum is-missing">--</span>
+                  <span
+                    v-else
+                    class="m-ff-hcard__sum"
+                    :class="currentNetSum >= 0 ? 'is-up' : 'is-down'"
+                  >
+                    {{ currentNetSumText }}亿
+                  </span>
+                </header>
+                <div v-if="currentBoard.missing" class="m-ff-hcard__missing">
+                  <span>历史拉取失败</span>
+                  <span>稍后点「↻」重试</span>
                 </div>
-              </div>
-              <div v-if="currentBoard.points.length === 0" class="m-ff-hcard__missing">
-                <span>暂无历史数据</span>
-              </div>
+                <div v-else class="m-ff-hcard__rows">
+                  <div v-for="row in currentDescPoints" :key="row.date" class="m-ff-hcard__row">
+                    <span class="m-ff-hcard__date">{{ row.date.slice(5) }}</span>
+                    <div class="m-ff-hcard__track">
+                      <div class="m-ff-hcard__zero"></div>
+                      <div
+                        v-if="row.net > 0"
+                        class="m-ff-hcard__bar is-up"
+                        :style="{ width: barWidthOf(row.net, currentDescPoints) }"
+                      ></div>
+                      <div
+                        v-else-if="row.net < 0"
+                        class="m-ff-hcard__bar is-down"
+                        :style="{ width: barWidthOf(row.net, currentDescPoints) }"
+                      ></div>
+                    </div>
+                  </div>
+                  <div v-if="currentBoard.points.length === 0" class="m-ff-hcard__missing">
+                    <span>暂无历史数据</span>
+                  </div>
+                </div>
+              </section>
+            </MobileGesturePager>
+            <div v-else class="m-ff-empty">
+              在「板块资金」的「选择板块」勾选后，这里展示逐日净流入历史
             </div>
           </section>
-        </MobileGesturePager>
-        <div v-else class="m-ff-empty">
-          在「板块资金」的「选择板块」勾选后，这里展示逐日净流入历史
-        </div>
-      </section>
 
-      <!-- 模块四：板块主力净流入榜（2026-10-13 自行情全景-资金迁入） -->
-      <section class="m-ff-card">
-        <header class="m-ff-head">
-          <h2 class="m-ff-head__title">板块主力净流入</h2>
-          <span class="m-ff-head__sub">当日 · 前 30</span>
-          <button
-            class="m-ff-head__btn"
-            :disabled="rankLoading"
-            @click="loadSectorRank"
-          >
-            ↻
-          </button>
-        </header>
-        <div v-if="rankLoading && sectorRank.length === 0" class="m-ff-skeleton">
-          <div v-for="i in 3" :key="i" class="m-ff-skel-bar"></div>
-        </div>
-        <div v-else-if="rankError && sectorRank.length === 0" class="m-ff-error">
-          <span>板块榜单加载失败</span>
-          <span v-if="rankErrorDetail" class="m-ff-error__detail">{{ rankErrorDetail }}</span>
-          <button class="m-ff-error__retry" :disabled="rankLoading" @click="loadSectorRank">
-            ↻ 重新加载
-          </button>
-        </div>
-        <div v-else-if="rankTop30.length > 0" class="m-ff-rank">
-          <div
-            v-for="(item, idx) in rankTop30"
-            :key="item.code"
-            class="m-ff-rank__row"
-            @click="goRankRow(item)"
-          >
-            <span class="m-ff-rank__idx" :class="{ 'is-top': idx < 3 }">{{ idx + 1 }}</span>
-            <div class="m-ff-rank__main">
-              <div class="m-ff-rank__name">{{ item.name }}</div>
-              <div v-if="item.topStockName" class="m-ff-rank__lead">
-                领涨 {{ item.topStockName }}
-              </div>
+          <!-- 模块四：板块主力净流入榜（2026-10-13 自行情全景-资金迁入） -->
+          <section class="m-ff-card">
+            <header class="m-ff-head">
+              <h2 class="m-ff-head__title">板块主力净流入</h2>
+              <span class="m-ff-head__sub">当日 · 前 30</span>
+              <button
+                class="m-ff-head__btn"
+                :disabled="rankLoading"
+                @click="loadSectorRank"
+              >
+                ↻
+              </button>
+            </header>
+            <div v-if="rankLoading && sectorRank.length === 0" class="m-ff-skeleton">
+              <div v-for="i in 3" :key="i" class="m-ff-skel-bar"></div>
             </div>
-            <span
-              class="m-ff-rank__val"
-              :class="(item.mainNetInflow ?? 0) >= 0 ? 'is-up' : 'is-down'"
-            >
-              {{ formatYuanWithSign(item.mainNetInflow) }}
-            </span>
-            <span class="m-row__pct pill" :class="pctClass(item.changePercent)">
-              {{ formatPct(item.changePercent) }}
-            </span>
-            <button
-              class="m-ff-rank__add"
-              :class="{ 'is-on': isPicked(item.code) }"
-              :title="isPicked(item.code) ? '已加入曲线与历史，点击移除' : '加入曲线与历史已选集'"
-              @click.stop="toggleRankCode(item.code)"
-            >
-              {{ isPicked(item.code) ? '✓' : '＋' }}
-            </button>
-          </div>
-          <div class="m-ff-rank__foot">行点击看领涨股 · 行尾「＋」加入上方曲线与历史已选集</div>
+            <div v-else-if="rankError && sectorRank.length === 0" class="m-ff-error">
+              <span>板块榜单加载失败</span>
+              <span v-if="rankErrorDetail" class="m-ff-error__detail">{{ rankErrorDetail }}</span>
+              <button class="m-ff-error__retry" :disabled="rankLoading" @click="loadSectorRank">
+                ↻ 重新加载
+              </button>
+            </div>
+            <div v-else-if="rankTop30.length > 0" class="m-ff-rank">
+              <div
+                v-for="(item, idx) in rankTop30"
+                :key="item.code"
+                class="m-ff-rank__row"
+                @click="goRankRow(item)"
+              >
+                <span class="m-ff-rank__idx" :class="{ 'is-top': idx < 3 }">{{ idx + 1 }}</span>
+                <div class="m-ff-rank__main">
+                  <div class="m-ff-rank__name">{{ item.name }}</div>
+                  <div v-if="item.topStockName" class="m-ff-rank__lead">
+                    领涨 {{ item.topStockName }}
+                  </div>
+                </div>
+                <span
+                  class="m-ff-rank__val"
+                  :class="(item.mainNetInflow ?? 0) >= 0 ? 'is-up' : 'is-down'"
+                >
+                  {{ formatYuanWithSign(item.mainNetInflow) }}
+                </span>
+                <span class="m-row__pct pill" :class="pctClass(item.changePercent)">
+                  {{ formatPct(item.changePercent) }}
+                </span>
+                <button
+                  class="m-ff-rank__add"
+                  :class="{ 'is-on': isPicked(item.code) }"
+                  :title="isPicked(item.code) ? '已加入曲线与历史，点击移除' : '加入曲线与历史已选集'"
+                  @click.stop="toggleRankCode(item.code)"
+                >
+                  {{ isPicked(item.code) ? '✓' : '＋' }}
+                </button>
+              </div>
+              <div class="m-ff-rank__foot">行点击看领涨股 · 行尾「＋」加入上方曲线与历史已选集</div>
+            </div>
+            <div v-else class="m-ff-empty">暂无数据</div>
+          </section>
         </div>
-        <div v-else class="m-ff-empty">暂无数据</div>
-      </section>
+      </div>
+      <aside v-if="lg" class="m-duo__r">
+        <StockDetailPane v-if="paneOpen" :symbol="paneSymbol" @close="closePane" />
+        <div v-else class="m-duo-ph">
+          <span class="m-duo-ph__ic">▤</span>
+          <p>点击榜单行看领涨股<br />右栏就地查看个股详情</p>
+        </div>
+      </aside>
     </div>
 
-    <!-- 选择板块弹层（36 板块固定清单，与板块日历 / PC 同池；勾选不设上限） -->
+    <!-- 选择板块弹层（36 板块固定清单，与板块日历 / PC 同池；勾选不设上限；
+         lg 档入口按钮隐藏，清单常驻左栏） -->
     <van-popup v-model:show="pickerOpen" position="bottom" round style="height: 75dvh">
       <div class="m-ff-picker">
         <div class="m-ff-picker__head">
@@ -1290,5 +1369,65 @@ onMounted(() => {
 }
 .m-ff-picker__val.is-down {
   color: var(--color-down);
+}
+
+/* lg 档常驻板块清单 rail（稿：Pad横屏主从布局改造 S4）：
+   「选择板块」弹窗常驻化——36 板块池全量列出，勾选直接写已选集（无暂存/确认） */
+@media (min-width: 840px) and (orientation: landscape) {
+  .m-ff-rail {
+    flex: 0 0 192px;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    padding: 6px 0 8px;
+  }
+  .m-ff-rail__head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--color-border);
+    font-size: 10.5px;
+    color: var(--color-text-3);
+  }
+  .m-ff-rail__head b {
+    font-size: 12.5px;
+    color: var(--color-text-1);
+  }
+  .m-ff-rail__row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 12px;
+    cursor: pointer;
+  }
+  .m-ff-rail__row:hover {
+    background: var(--color-flat-weak);
+  }
+  .m-ff-rail__check {
+    flex: 0 0 auto;
+  }
+  .m-ff-rail__name {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    color: var(--color-text-1);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .m-ff-rail__val {
+    font-size: 10.5px;
+    font-family: var(--font-num);
+  }
+  .m-ff-rail .is-up {
+    color: var(--color-up);
+  }
+  .m-ff-rail .is-down {
+    color: var(--color-down);
+  }
 }
 </style>
