@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
+import dayjs from 'dayjs';
 import BaseCard from '../ui/BaseCard.vue';
 import BaseEmpty from '../ui/BaseEmpty.vue';
 import BaseSkeleton from '../ui/BaseSkeleton.vue';
@@ -23,6 +24,7 @@ import {
 } from '../../../common/constants/dock-panel.constants.ts';
 import { ROUTE_PATH } from '../../../common/constants/router-meta.constants.ts';
 import { usePolling } from '../../../common/composables/use-polling';
+import { useKlineLive } from '../../../common/composables/use-kline-live';
 import { useChartPeriod } from '../../../common/composables/use-chart-period';
 import { useCrosshairQuote } from '../../../common/composables/use-crosshair-quote';
 import { POLLING_INTERVAL } from '../../../common/constants/polling.constants.ts';
@@ -33,6 +35,8 @@ import { useDataCacheStore } from '../../../common/stores/data-cache';
 import { useDockPanelStore } from '../../../common/stores/dock-panel';
 import { DATA_CACHE_KEY } from '../../../common/constants/data-cache.constants.ts';
 import { isHkSymbol } from '../../../common/utils/is-hk-symbol';
+import { spliceTodayBar } from '../../../common/utils/splice-today-bar';
+import { mergeKlineBars } from '../../../common/utils/merge-kline-bars';
 import { pluginKernel } from '../../../common/plugin/index';
 
 /**
@@ -42,6 +46,8 @@ import { pluginKernel } from '../../../common/plugin/index';
  *
  * K 线走新浪源（不复权），为重接口，仅在打开面板或切换周期时拉取一次，不参与轮询；
  * 全部数据有内存快照：同标的重复打开先展示快照，接口返回后刷新；
+ * 切股 / 切周期图表原地更新（不带 :key 重挂，2026-11-02 王总反馈切换闪烁）：
+ * 有旧图先保留旧图轻微变暗，数据就位后原地刷新；骨架屏仅首次无数据时出现；
  * 成交 BS/T 标注与详情整页同口径（分钟级吸附分时/五日、按日聚合到蜡烛），
  * 分时/五日的延伸方向按「成交价 vs 昨收」判定
  */
@@ -103,6 +109,22 @@ const chartMode = computed<'timeline' | 'candle'>(() =>
   chartPeriod.value === 'minute' || chartPeriod.value === 'fiveDay' ? 'timeline' : 'candle',
 );
 
+// ---------- 盘中实时最后一根柱（2026-11-02 王总指定：轮询分时接口构建，
+// 经图表 subscribeBar 通道原地更新最后一根柱，不整图重载） ----------
+const liveBar = useKlineLive({
+  symbol,
+  market: () => symbolMarket.value,
+  period: () => chartPeriod.value,
+});
+
+// 单日分时（全天固定占位轴）无法走 subscribeBar 增量：轴尾占位格时间戳大于实时分钟，
+// 图表按「小于最后一根」忽略推送 ⇒ 走父级序列合并 + 整图刷新
+// （分时默认铺满全轴，刷新视觉无感，仅十字光标瞬时清除）
+watch(liveBar, (bar) => {
+  if (!bar || chartPeriod.value !== 'minute') return;
+  klines.value = mergeKlineBars(klines.value, [bar]);
+});
+
 /** K 线快照键（符号 + 周期，不复权无口径差异） */
 const klineCacheKey = computed(
   () => `${DATA_CACHE_KEY.DETAIL_KLINE_PREFIX}${symbol.value}.${chartPeriod.value}`,
@@ -125,6 +147,7 @@ const loadKline = async (): Promise<void> => {
     // 日 K 走本地缓存（首次全量落库，之后只补缺口）；分时等周期退回纯网络取数
     const bars = await fetchKlineCached(symbol.value, chartPeriod.value);
     klines.value = bars;
+    applyTodayBar();
     dataCache.set(klineCacheKey.value, bars);
   } catch (error) {
     // 失败保留上一次成功数据（首次失败则展示空态）
@@ -134,6 +157,30 @@ const loadKline = async (): Promise<void> => {
     isKlineLoading.value = false;
   }
 };
+
+/**
+ * 用实时报价向日 K 序列拼接当日柱（2026-11-02 王总反馈日K缺当日柱：
+ * 新浪日K盘中不含当日未走完的 bar，量纲换算与拼接规则见 spliceTodayBar 注释）。
+ * 仅日 K + A 股；拼接结果不写缓存 / 快照（缓存只存上游真数据）
+ */
+const applyTodayBar = (): void => {
+  if (chartPeriod.value !== 'daily' || symbolMarket.value !== 'cn') return;
+  const next = spliceTodayBar(klines.value, quoteRef.value);
+  if (next !== klines.value) {
+    klines.value = next;
+  }
+};
+
+// 日K先于报价就位（冷启动无快照）⇒ 报价首次到达补拼当日柱；
+// 当日柱已在（拼接过 / 收盘后上游已含）时 todayKey == lastKey，守卫使其不再触发，
+// 避免盘中每次报价轮询都整图重载（klinecharts v10 无单柱更新 API）
+watch(quoteRef, (quote) => {
+  if (!quote || klines.value.length === 0) return;
+  const lastKey = dayjs(klines.value[klines.value.length - 1].timestamp).format('YYYY-MM-DD');
+  if (dayjs(quote.timestamp ?? Date.now()).format('YYYY-MM-DD') > lastKey) {
+    applyTodayBar();
+  }
+});
 
 // ---------- 十字光标联动（K 线悬停 bar -> 行情头临时展示该根 OHLCV） ----------
 // 与个股详情整页（StockDetailView）共用同一组合式函数；悬停时价格 / 涨跌幅
@@ -169,6 +216,12 @@ const chartTradeMarks = computed<TradeMark[]>(() =>
 watch(
   symbol,
   () => {
+    // 报价快照播种：该股先前拉过则报价头立即展示正确数据，
+    // 避免网络返回前短暂残留上一只股票的报价（无缓存时保留旧值，不发骨架屏）
+    const cachedQuote = dataCache.get<FullQuote>(
+      DATA_CACHE_KEY.DETAIL_QUOTE_PREFIX + symbol.value,
+    );
+    if (cachedQuote) quoteRef.value = cachedQuote;
     void loadKline();
     void fetchQuote();
     void loadTradeRecords();
@@ -226,23 +279,37 @@ const detailSections = computed(() => pluginKernel.contributions.stockDetail.sec
             aria-label="K 线周期"
           />
         </template>
-        <div v-if="klineError" class="py-10">
+        <!-- 有数据就始终原地渲染图表（KlineChart 内部 watch displayBars/mode 原地换数据，
+             不带 :key 强制重挂——2026-11-02 王总反馈切股闪烁，重挂会导致 canvas 清空重建）；
+             切股/切周期加载中只轻微变暗 + 角落 spinner，骨架屏仅留给首次无数据的场景 -->
+        <div
+          v-if="klines.length > 0"
+          class="relative transition-opacity duration-200"
+          :class="{ 'opacity-50': isKlineLoading }"
+        >
+          <KlineChart
+            :bars="klines"
+            :live-bar="liveBar"
+            :mode="chartMode"
+            :pre-close="quoteRef?.prevClose ?? null"
+            :symbol="symbol"
+            :intraday-axis="chartPeriod === 'minute'"
+            :market="symbolMarket"
+            :trade-marks="chartTradeMarks"
+            sub-volume-only
+            :resize-tick="chartResizeTick"
+            @crosshair-bar="onCrosshairBar"
+          />
+          <span
+            v-if="isKlineLoading"
+            class="absolute right-2 top-2 h-3 w-3 animate-spin rounded-full border-2 border-flat-weak border-t-primary"
+            role="status"
+            aria-label="K 线加载中"
+          />
+        </div>
+        <div v-else-if="klineError" class="py-10">
           <BaseEmpty text="K 线数据加载失败，请稍后重试（上游可能限频，稍后自动恢复）" />
         </div>
-        <KlineChart
-          v-else-if="!isKlineLoading && klines.length > 0"
-          :key="`${symbol}-${chartMode}`"
-          :bars="klines"
-          :mode="chartMode"
-          :pre-close="quoteRef?.prevClose ?? null"
-          :symbol="symbol"
-          :intraday-axis="chartPeriod === 'minute'"
-          :market="symbolMarket"
-          :trade-marks="chartTradeMarks"
-          sub-volume-only
-          :resize-tick="chartResizeTick"
-          @crosshair-bar="onCrosshairBar"
-        />
         <BaseSkeleton v-else />
       </BaseCard>
     </div>

@@ -53,6 +53,9 @@ const ICON_PATHS: Record<string, string> = {
     '<path d="M19 12H5M11 18l-6-6 6-6"/>',
   info:
     '<circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v5h1"/>',
+  // 三角警示（lucide triangle-alert）：风险/封禁类提醒
+  warn:
+    '<path d="M10.3 4.2 2.9 17a2 2 0 0 0 1.7 3h14.8a2 2 0 0 0 1.7-3L13.7 4.2a2 2 0 0 0-3.4 0z"/><path d="M12 9.5v3.5"/><path d="M12 17h.01"/>',
   chevronLeft:
     '<path d="M15 6l-6 6 6 6"/>',
   chevronRight:

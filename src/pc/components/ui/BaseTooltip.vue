@@ -18,6 +18,11 @@ const props = defineProps<{
   text: string;
   /** 弹出方位：right（默认，侧栏用）/ bottom（顶栏用） */
   placement?: "right" | "bottom";
+  /**
+   * 换行宽度（px）：设置后文本可折行（卡片标题问号说明等长文案用）；
+   * 不传保持单行 nowrap（图标菜单等短文案，宽度自适应）
+   */
+  wrapWidth?: number;
 }>();
 
 /** 锚点占位（零尺寸 span；parentElement 即挂目标元素） */
@@ -63,14 +68,18 @@ onBeforeUnmount(() => {
   <span ref="anchor" class="hidden"></span>
   <Teleport to="body">
     <span
-      class="pointer-events-none fixed z-50 whitespace-nowrap rounded-md bg-text px-2 py-1 text-xs text-surface shadow-md transition-opacity"
-      :class="visible ? 'opacity-100' : 'opacity-0'"
+      class="pointer-events-none fixed z-50 rounded-md bg-text px-2 py-1 text-xs text-surface shadow-md transition-opacity"
+      :class="[
+        visible ? 'opacity-100' : 'opacity-0',
+        wrapWidth ? 'whitespace-normal text-left leading-relaxed' : 'whitespace-nowrap',
+      ]"
       role="tooltip"
-      :style="
-        placement === 'bottom'
+      :style="{
+        ...(wrapWidth ? { width: `${wrapWidth}px` } : {}),
+        ...(placement === 'bottom'
           ? { left: `${pos.x}px`, top: `${pos.y}px`, transform: 'translateX(-50%)' }
-          : { left: `${pos.x}px`, top: `${pos.y}px`, transform: 'translateY(-50%)' }
-      "
+          : { left: `${pos.x}px`, top: `${pos.y}px`, transform: 'translateY(-50%)' }),
+      }"
     >
       {{ text }}
     </span>

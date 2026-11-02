@@ -33,8 +33,24 @@ export const KLINE_CACHE_PERIODS: readonly SinaKlinePeriod[] = ['daily'];
  *
  * 与库中水位记录不一致时整票作废重取 —— 避免换源 / 换复权口径后，
  * 新旧价格混在同一条 K 线序列里（那种图看起来正常，但全是错的）。
+ *
+ * 2026-11-02 起 A 股日 K 切换腾讯源前复权（tencent-kline.api.ts）：
+ * 由 'sina-none' 改此常量即触发存量新浪不复权缓存全量作废，无需手动清库。
  */
-export const KLINE_CACHE_SOURCE = 'sina-none';
+export const KLINE_CACHE_SOURCE = 'tencent-qfq';
+
+/**
+ * 前复权口径漂移检测的相对阈值（重叠日收盘价相对差）
+ *
+ * 前复权序列在每次除权除息后整条历史重新缩放，「历史不变、只补尾部」的缓存
+ * 前提被打破 —— 补尾部时对重叠交易日比对收盘价，任一日相对差超阈值即判定
+ * 口径漂移，整票作废全量重取。0.1% 覆盖除权缩放（幅度远大于 0.1%），
+ * 同时容忍上游对历史 bar 的微小数值修订。
+ */
+export const KLINE_ADJUST_DRIFT_REL_EPSILON = 0.001;
+
+/** 漂移检测的绝对兜底阈值（低价股 / 舍入误差，元） */
+export const KLINE_ADJUST_DRIFT_ABS_EPSILON = 0.001;
 
 /** 日期展示 / 落库格式（本地时区，与 A 股交易日口径一致） */
 export const KLINE_CACHE_DATE_FORMAT = 'YYYY-MM-DD';

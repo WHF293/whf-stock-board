@@ -179,7 +179,8 @@ export const listCachedKlineBars = async (
 /**
  * upsert 一批 K 线（同票同周期同交易日覆盖）
  *
- * 只写「本次新取回」的条目即可：历史条目已在库里、且不复权行情不会被上游修订。
+ * 只写「本次新取回」的条目即可：历史条目已在库里；前复权行情在上游除权时会整条
+ * 重缩放，该场景由编排层漂移检测（detectKlineAdjustDrift）作废整票重取兜底。
  * @param symbol 完整符号（`sh600519` 形态）
  * @param period K 线周期
  * @param bars 本次取回的条目（时间升序）

@@ -7,7 +7,11 @@ import { proxyFetch } from './proxy-fetch';
  * 新浪财经 K 线数据源（quotes.sina.cn，免 Token；接口文档见 .ai/项目资源/新浪接口文档.md）
  *
  * stock-sdk 的东财日K/周K 实测无数据，统一改走新浪源；
- * 返回价格均为不复权，K 线图侧不再提供复权切换
+ * 返回价格均为不复权。
+ *
+ * 职责（2026-11-02 收窄）：仅剩**分钟级**（minute / fiveDay / min5）——
+ * 日 / 周 / 月 K 已切腾讯源前复权（tencent-kline.api.ts，行为分析模块要求
+ * 前复权口径 + 与港股源统一）；分钟级无复权概念，保留新浪。
  */
 
 /**

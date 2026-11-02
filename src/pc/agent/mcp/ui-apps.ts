@@ -239,7 +239,7 @@ export const SERIES_CHART_APP: { uri: string; name: string; html: string } = {
       '<span class="sub" id="sub"></span><span class="spacer"></span>' +
       '<span class="readout" id="readout"></span></div>' +
       '<div id="chart"></div>' +
-      '<div class="foot" id="foot">不复权数据 · 仅作信息参考，不构成投资建议</div>',
+      '<div class="foot" id="foot">前复权数据 · 仅作信息参考，不构成投资建议</div>',
     renderJs: `
 var CHART_W = 620;
 var view = { series: [], bars: [], rows: [], mode: 'kline', hover: -1 };
@@ -390,7 +390,7 @@ window.__render = function (payload) {
   view.series = payload.series || [];
   document.getElementById('title').textContent = payload.title || '行情图';
   document.getElementById('sub').textContent = payload.subtitle || '';
-  document.getElementById('foot').textContent = (payload.note || '不复权数据') + ' · 仅作信息参考，不构成投资建议';
+  document.getElementById('foot').textContent = (payload.note || '前复权数据') + ' · 仅作信息参考，不构成投资建议';
   var count = view.mode === 'kline' ? view.bars.length : view.rows.length;
   var last = count - 1;
   var output = view.mode === 'kline' ? buildKline() : buildIndicator();

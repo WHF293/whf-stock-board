@@ -796,6 +796,12 @@ const onProbeProxy = async (): Promise<void> => {
           aria-label="刷新间隔"
           data-track="REFRESH_INTERVAL_CHANGE"
         />
+        <!-- 封禁风险警示（2026-11-02 王总指定）：间隔过短会顶到上游频率红线 -->
+        <NoticeBar
+          tone="warn"
+          text="轮询时间过短，容易被上游数据源封禁 IP，请选择适当的轮询间隔。"
+          class="mt-3"
+        />
       </div>
 
       <div class="mt-3 flex items-center justify-between">

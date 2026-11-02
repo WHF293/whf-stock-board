@@ -108,7 +108,7 @@ export const buildKlinePayload = (params: {
   mode: 'kline',
   title: (params.name ? params.name + ' ' : '') + params.symbol,
   subtitle: (PERIOD_LABEL[params.period] ?? params.period) + ' · ' + params.bars.length + ' 根',
-  note: '不复权（新浪源）',
+  note: '前复权（腾讯源）',
   bars: params.bars,
 });
 
@@ -185,7 +185,7 @@ export const buildIndicatorPayload = (params: {
     mode: 'indicator',
     title: (params.name ? params.name + ' ' : '') + params.symbol,
     subtitle: (INDICATOR_TITLE[params.kind] ?? params.kind.toUpperCase()) + ' · ' + rows.length + ' 根',
-    note: '基于不复权日K收盘价',
+    note: '基于前复权日K收盘价',
     rows,
     series,
   };
