@@ -118,3 +118,33 @@ export const INTRADAY_MACD_INDICATOR: IndicatorCreate = {
   name: 'MACD',
   calc: calcIntradayMacd,
 };
+
+/**
+ * 分时双轴（2026-11-02 王总指定：左轴实时价格 / 右轴涨跌幅）的价格数据源
+ *
+ * 透明折线（不绘制可见内容），绑定 timeline_price 轴为该轴提供指标身份；
+ * price 取 displayBars 派生的原始价格字段（KlineChart transformTimelineBar 写入，
+ * 图表库数据管道里含实时推送柱，轴范围因此随最新价即时扩张），
+ * 占位分钟（未发生）为 null 不参与极值。图例 / tooltip 由分时自定义模板整体接管，
+ * 不会透出本指标的空标题行
+ */
+export const TIMELINE_PRICE_INDICATOR: IndicatorCreate = {
+  name: 'TIMELINE_PRICE',
+  shortName: '',
+  figures: [
+    {
+      key: 'price',
+      title: '',
+      type: 'line',
+      styles: () => ({ color: 'rgba(0,0,0,0)' }),
+    },
+  ],
+  calc: (dataList) =>
+    dataList.map((bar) => {
+      const price = (bar as KLineData & { price?: number }).price;
+      return {
+        price:
+          typeof price === 'number' && Number.isFinite(price) ? price : null,
+      };
+    }),
+};

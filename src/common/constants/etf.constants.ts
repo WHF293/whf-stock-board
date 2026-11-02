@@ -11,8 +11,23 @@ export const ETF_JJCC_REFERER = 'https://fundf10.eastmoney.com/ccmx.html';
 /** 单表持仓行数上限（指数 ETF 全量披露常超 100 行，100 一次拿全） */
 export const ETF_JJCC_TOPLINE = 100;
 
-/** 场内基金代码前缀（沪市 5 开头：ETF/LOF/封基；深市 15/16/18：ETF/LOF/分级） */
-export const ETF_CODE_PREFIXES = ['5', '15', '16', '18'] as const;
+/**
+ * 场内基金代码前缀（A 股完整方案，2026-11-02 王总提供）：
+ *
+ * - 沪市：50x 封基/LOF、51x ETF（含 511 货币 / 513 跨境）、52x ETF、
+ *   56x ETF、58x 科创 ETF（588 主段 + 589 扩展段）
+ * - 深市：15x ETF、16x LOF/封基、18x 封基/分级
+ */
+export const ETF_CODE_PREFIXES = [
+  '50',
+  '51',
+  '52',
+  '56',
+  '58',
+  '15',
+  '16',
+  '18',
+] as const;
 
 /** 本地缓存自动刷新阈值（毫秒）：持仓按季度披露，超过约一个季度才自动重新抓取 */
 export const ETF_HOLDINGS_TTL_MS = 100 * 24 * 60 * 60 * 1000;

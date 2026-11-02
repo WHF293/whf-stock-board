@@ -181,7 +181,7 @@ export const STOCK_SDK_MCP_SERVER: BuiltinMcpServer = {
     entry({
       name: 'get_kline',
       description:
-        '获取 K 线。A 股不复权（新浪源）；港股（hk00700 形态）为腾讯源前复权（上游不提供不复权）。period: daily=日K / weekly=周K / monthly=月K / min5=5分钟线；返回 OHLCV 序列（按时间升序）',
+        '获取 K 线。A 股与港股均为腾讯源前复权（qfq，2026-11-02 起 A 股由新浪不复权切换）；period: daily=日K / weekly=周K / monthly=月K / min5=5分钟线（分钟级不复权）；返回 OHLCV 序列（按时间升序）',
       schema: z.object({
         symbol: z.string().describe('股票代码（600519 / sh600519 等形态）'),
         period: z.enum(['daily', 'weekly', 'monthly', 'min5']).default('daily').describe('K 线周期'),

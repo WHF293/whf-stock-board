@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onActivated, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { useEventListener } from '@vueuse/core';
+import dayjs from 'dayjs';
+import { onClickOutside, useEventListener } from '@vueuse/core';
 import type { KLineData } from 'klinecharts';
 import { toFullSymbol } from '../../common/utils/to-full-symbol';
 import { buildStockAnalysisPrompt } from '../../common/utils/build-stock-analysis-prompt';
@@ -22,7 +23,9 @@ import { formatPercent } from '../../common/utils/format-percent';
 import { formatPrice } from '../../common/utils/format-price';
 import KlineChart from '../../common/components/charts/KlineChart.vue';
 import { useKlineDrawing } from '../../common/composables/use-kline-drawing';
+import { useKlineLive } from '../../common/composables/use-kline-live';
 import { KLINE_DRAWING_SHAPES } from '../../common/constants/kline-drawing.constants.ts';
+import type { KlineDrawingShape } from '../../common/types/kline-drawing.types.ts';
 import StockQuoteHeader from '../components/business/StockQuoteHeader.vue';
 import StockOrderBook from '../components/business/StockOrderBook.vue';
 import ChipDistributionCard from '../components/business/ChipDistributionCard.vue';
@@ -53,12 +56,15 @@ import { DEFAULT_GROUP_ID } from '../../common/constants/watchlist.constants.ts'
 import { getTrendByChangePercent } from '../../common/constants/trend.constants.ts';
 import { TREND_TEXT_CLASS } from '../../common/constants/stock-colors.constants.ts';
 import { isHkSymbol } from '../../common/utils/is-hk-symbol';
+import { spliceTodayBar } from '../../common/utils/splice-today-bar';
+import { mergeKlineBars } from '../../common/utils/merge-kline-bars';
 
 /**
  * 股票详情整页（/stock-detail/:symbol，全站双击个股进入）：
  *
- * 顶栏（标的 + 报价摘要 + 指标/画线工具）+ 主图 K 线（撑满整列高度，
- * 周期按钮组在卡头部）+ 右侧信息栏（报价头 + 五档盘口固定展示，≥1280px）。
+ * 顶栏（标的 + 报价摘要 + 指标网格 + 画线/指标/信息栏工具）+ 主图 K 线（撑满整列高度，
+ * 周期按钮组在卡头部，最小宽 400px、整体放不下时主区横向滚动，2026-11-02）+
+ * 右侧信息栏（筹码分布 + 五档盘口，2026-11-02 王总指定换位；报价指标已整合进顶栏）。
  * 十字光标悬停 K 线时，顶栏摘要与右侧报价头临时展示该根的开高低收 /
  * 成交量 / 成交额（与侧栏面板同款联动），光标离开回落实时报价。
  * 底部页签 2026-10-24 起整体撤销：交易记录 / 成分股与财务 / 资讯 / 基金概况
@@ -148,6 +154,22 @@ const chartMode = computed<'timeline' | 'candle'>(() =>
   chartPeriod.value === 'minute' || chartPeriod.value === 'fiveDay' ? 'timeline' : 'candle',
 );
 
+// ---------- 盘中实时最后一根柱（2026-11-02 王总指定：轮询分时接口构建，
+// 经图表 subscribeBar 通道原地更新最后一根柱，不整图重载） ----------
+const liveBar = useKlineLive({
+  symbol,
+  market: () => symbolMarket.value,
+  period: () => chartPeriod.value,
+});
+
+// 单日分时（全天固定占位轴）无法走 subscribeBar 增量：轴尾占位格时间戳大于实时分钟，
+// 图表按「小于最后一根」忽略推送 ⇒ 走父级序列合并 + 整图刷新
+// （分时默认铺满全轴，刷新视觉无感，仅十字光标瞬时清除）
+watch(liveBar, (bar) => {
+  if (!bar || chartPeriod.value !== 'minute') return;
+  klines.value = mergeKlineBars(klines.value, [bar]);
+});
+
 // ---------- 画线工具（K 线卡头部工具条；蜡烛模式可用，分时/五日置灰） ----------
 /** KlineChart 组件实例引用（经 defineExpose 拿 chart 实例） */
 const klineChartRef = ref<InstanceType<typeof KlineChart> | null>(null);
@@ -162,7 +184,34 @@ const drawing = useKlineDrawing(
   drawingEnabled,
 );
 
-/** K 线快照键（符号 + 周期，不复权无口径差异；与侧栏互通） */
+// ---------- 画线工具气泡（2026-11-02 王总指定：原按钮工具条收纳为 pencil icon +
+// 点击弹出 menu 气泡，可选项即原工具条全部功能：各形状 + 删除/清空/显隐） ----------
+const drawingMenuOpen = ref(false);
+const drawingMenuRef = ref<HTMLElement | null>(null);
+onClickOutside(drawingMenuRef, () => {
+  drawingMenuOpen.value = false;
+});
+
+/**
+ * 气泡内点选画线形状：激活画线并收起气泡
+ * （再次点同形状 = 取消，startDrawing 自带 toggle 语义）
+ * @param shape 形状名
+ */
+const onPickShape = (shape: KlineDrawingShape): void => {
+  drawing.startDrawing(shape);
+  drawingMenuOpen.value = false;
+};
+
+/**
+ * 气泡内动作项（删除选中 / 清空 / 显隐切换）：执行后收起气泡
+ * @param action 动作回调
+ */
+const onDrawingAction = (action: () => void): void => {
+  action();
+  drawingMenuOpen.value = false;
+};
+
+/** K 线快照键（符号 + 周期；前复权口径下盘中同票同周期数据一致，与侧栏互通） */
 const klineCacheKey = computed(
   () => `${DATA_CACHE_KEY.DETAIL_KLINE_PREFIX}${symbol.value}.${chartPeriod.value}`,
 );
@@ -184,6 +233,7 @@ const loadKline = async (): Promise<void> => {
     // 日 K 走本地缓存（首次全量落库，之后只补缺口）；分时等周期退回纯网络取数
     const bars = await fetchKlineCached(symbol.value, chartPeriod.value);
     klines.value = bars;
+    applyTodayBar();
     dataCache.set(klineCacheKey.value, bars);
   } catch (error) {
     // 失败保留上一次成功数据（首次失败则展示空态）
@@ -193,6 +243,30 @@ const loadKline = async (): Promise<void> => {
     isKlineLoading.value = false;
   }
 };
+
+/**
+ * 用实时报价向日 K 序列拼接当日柱（2026-11-02 王总反馈日K缺当日柱：
+ * 新浪日K盘中不含当日未走完的 bar，量纲换算与拼接规则见 spliceTodayBar 注释）。
+ * 仅日 K + A 股；拼接结果不写缓存 / 快照（缓存只存上游真数据）
+ */
+const applyTodayBar = (): void => {
+  if (chartPeriod.value !== 'daily' || symbolMarket.value !== 'cn') return;
+  const next = spliceTodayBar(klines.value, quoteRef.value);
+  if (next !== klines.value) {
+    klines.value = next;
+  }
+};
+
+// 日K先于报价就位（冷启动无快照）⇒ 报价首次到达补拼当日柱；
+// 当日柱已在（拼接过 / 收盘后上游已含）时 todayKey == lastKey，守卫使其不再触发，
+// 避免盘中每次报价轮询都整图重载（klinecharts v10 无单柱更新 API）
+watch(quoteRef, (quote) => {
+  if (!quote || klines.value.length === 0) return;
+  const lastKey = dayjs(klines.value[klines.value.length - 1].timestamp).format('YYYY-MM-DD');
+  if (dayjs(quote.timestamp ?? Date.now()).format('YYYY-MM-DD') > lastKey) {
+    applyTodayBar();
+  }
+});
 
 // ---------- 十字光标联动（K 线悬停 bar -> 顶栏摘要与报价头临时展示该根 OHLCV） ----------
 // 与侧栏详情面板（StockDetailPanel）共用同一组合式函数；悬停时价格 / 涨跌幅
@@ -300,9 +374,10 @@ const onStockSwitchKeydown = (event: KeyboardEvent): void => {
 };
 useEventListener(window, 'keydown', onStockSwitchKeydown);
 
-// 收起态由 useDetailPanelCollapse 模块级共享：KeepAlive 按 path（含 symbol）缓存页面实例，
-// 组件内 ref 会按股票各存一份（股票 A 收起、切 B 变展开），故提升到组件实例之外
-const { isListCollapsed, isInfoCollapsed } = useDetailPanelCollapse();
+// 左列表收起态由 useDetailPanelCollapse 模块级共享：KeepAlive 按 path（含 symbol）缓存页面实例，
+// 组件内 ref 会按股票各存一份（股票 A 收起、切 B 变展开），故提升到组件实例之外；
+// 右侧信息栏 2026-11-02 起固定不收起（王总指定），不再走该 composable
+const { isListCollapsed } = useDetailPanelCollapse();
 
 // ---------- 加自选 / 删自选弹窗（顶栏按钮触发） ----------
 /** 弹窗类型：null 关闭 / add 加自选 / remove 删自选 */
@@ -417,76 +492,108 @@ const pctClass = (value: number | null): string =>
     <!-- 顶栏：返回 + 标的报价摘要 + 周期按钮组（参考 pro period-bar 横条） -->
     <BaseCard class="shrink-0">
       <div class="flex flex-wrap items-center justify-between gap-3">
-        <div class="flex items-center gap-3">
-          <div class="flex items-baseline gap-2">
-            <span class="text-base font-semibold text-text">{{ quoteRef?.name ?? symbol }}</span>
-            <span class="text-xs text-text-tertiary">{{ symbol }}</span>
+        <!-- 左块（名称行 + 现价/涨跌行）与右块（指标网格）顶部对齐（2026-11-02
+             王总指定图二版式：网格顶与名称行齐平，不是与价格行齐平） -->
+        <div class="flex min-w-0 flex-1 items-start gap-6">
+          <!-- 左块：名称 + 代码 / 现价 + 涨跌（悬停 K 线时临时展示该根数值，十字光标联动） -->
+          <div class="flex shrink-0 flex-col gap-1.5">
+            <div class="flex items-baseline gap-2 whitespace-nowrap">
+              <span class="text-base font-semibold text-text">{{ quoteRef?.name ?? symbol }}</span>
+              <span class="text-xs text-text-tertiary">{{ symbol }}</span>
+            </div>
+            <div
+              v-if="displayQuote"
+              class="flex items-baseline gap-2 whitespace-nowrap tabular-nums"
+            >
+              <span class="text-base font-semibold" :class="quoteTrendClass">
+                {{ displayQuote.price.toFixed(2) }}
+              </span>
+              <span class="text-xs" :class="quoteTrendClass">
+                {{ displayQuote.change >= 0 ? '+' : '' }}{{ displayQuote.change.toFixed(2) }}
+                {{ displayQuote.changePercent >= 0 ? '+' : '' }}{{ displayQuote.changePercent.toFixed(2) }}%
+              </span>
+            </div>
           </div>
-          <!-- 报价摘要：悬停 K 线时临时展示该根 close 与相对自身昨收的涨跌（十字光标联动） -->
-          <div v-if="displayQuote" class="flex items-baseline gap-2 tabular-nums">
-            <span class="text-base font-semibold" :class="quoteTrendClass">
-              {{ displayQuote.price.toFixed(2) }}
-            </span>
-            <span class="text-xs" :class="quoteTrendClass">
-              {{ displayQuote.change >= 0 ? '+' : '' }}{{ displayQuote.change.toFixed(2) }}
-              {{ displayQuote.changePercent >= 0 ? '+' : '' }}{{ displayQuote.changePercent.toFixed(2) }}%
-            </span>
-          </div>
+          <!-- 右块：报价指标网格（原右栏指标卡整合进顶栏，顶部与名称行对齐） -->
+          <StockQuoteHeader
+            v-if="displayQuote"
+            :quote="displayQuote"
+            metrics-only
+            class="min-w-0 flex-1"
+          />
         </div>
-        <!-- 图表工具：画线工具条（周期按钮组已移入 K 线卡头部）；
-             指标设置按钮置于画线工具条之后（2026-10-24 王总指定移回此处，页头不再保留） -->
+        <!-- 图表工具：画线 icon 气泡（2026-11-02 王总指定收纳）+ 指标设置 + 编辑自选 -->
         <div class="flex items-center gap-2">
-          <!-- 画线工具条（K 线卡头部；分时/五日置灰，见 use-kline-drawing） -->
-          <div
-            class="flex items-center gap-1 rounded-xl bg-flat-weak/60 p-1"
-            :class="drawingEnabled ? '' : 'opacity-40'"
-          >
-            <button
-              v-for="shape in KLINE_DRAWING_SHAPES"
-              :key="shape.name"
-              type="button"
-              class="rounded-lg px-2 py-1 text-xs transition-colors"
-              :class="drawing.activeShape.value === shape.name ? 'bg-primary-weak font-semibold text-primary' : 'text-text-secondary hover:text-text'"
-              :disabled="!drawingEnabled"
-              :title="shape.label"
-              :aria-pressed="drawing.activeShape.value === shape.name"
-              @click="drawing.startDrawing(shape.name)"
-            >
-              {{ shape.label }}
-            </button>
+          <!-- 画线工具：icon + menu 气泡（可选项 = 原工具条全部功能；分时/五日置灰） -->
+          <div ref="drawingMenuRef" class="relative">
             <button
               type="button"
-              class="rounded-lg px-2 py-1 text-xs text-text-secondary transition-colors hover:text-text disabled:cursor-not-allowed disabled:opacity-40"
-              :disabled="!drawingEnabled || !drawing.hasSelection.value"
-              title="删除选中画线"
-              @click="drawing.removeSelected()"
+              class="pressable flex items-center justify-center rounded-lg p-1.5 transition-colors"
+              :class="[
+                drawingMenuOpen ? 'bg-flat-weak text-text' : 'text-text-secondary hover:bg-flat-weak hover:text-text',
+                drawing.activeShape.value ? 'text-primary' : '',
+                drawingEnabled ? '' : 'pointer-events-none opacity-40',
+              ]"
+              :aria-label="'画线工具'"
+              :aria-expanded="drawingMenuOpen"
+              :title="drawingEnabled ? '画线工具' : '分时/五日不支持画线'"
+              @click="drawingMenuOpen = !drawingMenuOpen"
             >
-              删除
+              <MenuIcon name="pencil" :size="14" />
             </button>
-            <button
-              type="button"
-              class="rounded-lg px-2 py-1 text-xs text-text-secondary transition-colors hover:text-text disabled:cursor-not-allowed disabled:opacity-40"
-              :disabled="!drawingEnabled || drawing.shapeCount.value === 0"
-              title="清空当前票当前周期的全部画线"
-              @click="drawing.clearAll()"
+            <div
+              v-if="drawingMenuOpen"
+              class="absolute right-0 top-full z-50 mt-2 w-32 rounded-card bg-surface p-1.5 shadow-lg"
+              role="menu"
+              aria-label="画线工具"
             >
-              清空
-            </button>
-            <button
-              type="button"
-              class="rounded-lg px-2 py-1 text-xs transition-colors"
-              :class="drawing.drawingVisible.value ? 'text-text-secondary hover:text-text' : 'text-primary'"
-              :disabled="!drawingEnabled"
-              :title="drawing.drawingVisible.value ? '隐藏全部画线' : '显示全部画线'"
-              @click="drawing.toggleVisible()"
-            >
-              {{ drawing.drawingVisible.value ? '隐藏' : '显示' }}
-            </button>
+              <button
+                v-for="shape in KLINE_DRAWING_SHAPES"
+                :key="shape.name"
+                type="button"
+                role="menuitem"
+                class="w-full rounded-lg px-2 py-1.5 text-left text-xs transition-colors"
+                :class="drawing.activeShape.value === shape.name ? 'bg-primary-weak font-semibold text-primary' : 'text-text-secondary hover:bg-flat-weak hover:text-text'"
+                @click="onPickShape(shape.name)"
+              >
+                {{ shape.label }}
+              </button>
+              <div class="my-1 border-t border-flat-weak" role="separator" />
+              <button
+                type="button"
+                role="menuitem"
+                class="w-full rounded-lg px-2 py-1.5 text-left text-xs text-text-secondary transition-colors hover:bg-flat-weak hover:text-text disabled:cursor-not-allowed disabled:opacity-40"
+                :disabled="!drawing.hasSelection.value"
+                title="删除选中画线"
+                @click="onDrawingAction(drawing.removeSelected)"
+              >
+                删除选中
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                class="w-full rounded-lg px-2 py-1.5 text-left text-xs text-text-secondary transition-colors hover:bg-flat-weak hover:text-text disabled:cursor-not-allowed disabled:opacity-40"
+                :disabled="drawing.shapeCount.value === 0"
+                title="清空当前票当前周期的全部画线"
+                @click="onDrawingAction(drawing.clearAll)"
+              >
+                清空画线
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                class="w-full rounded-lg px-2 py-1.5 text-left text-xs transition-colors"
+                :class="drawing.drawingVisible.value ? 'text-text-secondary hover:bg-flat-weak hover:text-text' : 'text-primary hover:bg-flat-weak'"
+                :title="drawing.drawingVisible.value ? '隐藏全部画线' : '显示全部画线'"
+                @click="onDrawingAction(drawing.toggleVisible)"
+              >
+                {{ drawing.drawingVisible.value ? '隐藏画线' : '显示画线' }}
+              </button>
+            </div>
           </div>
-          <!-- 指标设置（画线工具条之后；分时/五日指标固定时置灰，2026-10-24 王总指定位置） -->
+          <!-- 指标设置（分时/五日指标固定时置灰，2026-10-24 王总指定位置） -->
           <ChartIndicatorConfigButton :disabled="chartMode === 'timeline'" />
-          <!-- 编辑自选（原页头「自选」移入，2026-10-24 王总指定改名「编辑自选」；
-               未加自选 = primary 绿、已加 = ghost，点击分别弹加/删自选弹窗） -->
+          <!-- 编辑自选（未加自选 = primary 绿、已加 = ghost，点击分别弹加/删自选弹窗） -->
           <BaseButton
             v-if="quoteRef"
             :variant="isInWatchlist ? 'ghost' : 'primary'"
@@ -509,9 +616,10 @@ const pctClass = (value: number | null): string =>
       </div>
     </BaseCard>
 
-    <!-- 主区：左（来源列表）/ 中（K 线占满整列）/ 右（报价头 + 五档盘口）。
-         flex-1 吃满顶栏卡以外的剩余高度（常规 / 全屏两模式同构，见根节点注释） -->
-    <div class="flex min-h-0 flex-1 gap-3">
+    <!-- 主区：左（来源列表）/ 中（K 线占满整列）/ 右（筹码分布 + 五档盘口）。
+         flex-1 吃满顶栏卡以外的剩余高度（常规 / 全屏两模式同构，见根节点注释）。
+         2026-11-02 王总指定：K 线卡最小宽 400px，整体放不下时主区横向滚动 -->
+    <div class="flex min-h-0 flex-1 gap-3 overflow-x-auto">
       <!-- 左侧来源股票列表：跳转入口写入上下文后展示；为空（如直链进入）不渲染。
            支持展开/收起：收起时仅显示股票名称窄条 -->
       <BaseCard
@@ -580,7 +688,7 @@ const pctClass = (value: number | null): string =>
       <!-- K 线主图：撑满整列高度（min-w-0 允许随窗口收缩，canvas 不撑破行）。
            头部 #extra 为周期按钮组（2026-10-24 王总指定从顶栏移入，与侧栏面板同款）。
            全屏入口已上移至应用顶栏（全局，任意页面可用），此处不再放页内按钮 -->
-      <BaseCard title="K 线图" class="flex min-h-0 min-w-0 flex-1 flex-col">
+      <BaseCard title="K 线图" class="flex min-h-0 min-w-[400px] flex-1 flex-col">
         <template #extra>
           <div class="flex items-center gap-1 rounded-xl bg-flat-weak/60 p-1">
             <button
@@ -609,6 +717,7 @@ const pctClass = (value: number | null): string =>
             ref="klineChartRef"
             :key="`${symbol}-${chartMode}`"
             :bars="klines"
+            :live-bar="liveBar"
             :mode="chartMode"
             :pre-close="quoteRef?.prevClose ?? null"
             :main-indicators="settingsStore.chartMainIndicators"
@@ -624,42 +733,22 @@ const pctClass = (value: number | null): string =>
         </div>
       </BaseCard>
 
-      <!-- 右侧信息栏：报价头 + 五档盘口（不随图表周期切换），两卡白底实色（王总 2026-10-22
-           指定，替代 2026-10-16 的高光玻璃——玻璃半透明底在红色主题下泛粉）。
-           支持展开/收起（与左侧列表同款交互，会话级）：收起时列宽减半（w-[5.5rem]，
-           2026-10-24 王总指定），报价头切 compact（全部指标单列一行一条）、
-           五档盘口切 vertical（只显示价格/手数，悬停显档位，见 StockOrderBook） -->
-      <div
-        class="flex shrink-0 flex-col gap-3 overflow-y-auto transition-all duration-200"
-        :class="isInfoCollapsed ? 'w-[5.5rem]' : 'w-80'"
-      >
-        <BaseCard class="shrink-0">
-          <!-- 展开/收起按钮（extra 槽，卡片头部右侧）：panelRight 面板形状（panelLeft 镜像，
-               竖线靠右对应右栏位置） -->
-          <template #extra>
-            <button
-              type="button"
-              class="pressable flex shrink-0 items-center justify-center rounded-lg p-1 text-text-tertiary hover:bg-flat-weak hover:text-text active:scale-90"
-              :aria-label="isInfoCollapsed ? '展开信息栏' : '收起信息栏'"
-              :title="isInfoCollapsed ? '展开信息栏' : '收起信息栏'"
-              @click="isInfoCollapsed = !isInfoCollapsed"
-            >
-              <MenuIcon name="panelRight" :size="14" />
-            </button>
-          </template>
-          <StockQuoteHeader
-            :quote="displayQuote"
-            metrics-only
-            :compact="isInfoCollapsed"
-          />
+      <!-- 右侧信息栏：筹码分布（2026-11-02 王总指定与五档盘口换位并加高：fill 撑满
+           右栏剩余高度）+ 五档盘口，两卡白底实色（王总 2026-10-22 指定）。
+           报价指标 2026-11-02 起整合进顶栏；本栏固定不收起（2026-11-02 王总指定） -->
+      <div class="flex w-80 shrink-0 flex-col gap-3 overflow-y-auto">
+        <!-- 筹码分布：重接口不轮询，东财 CYQ 算法本地推演；
+             说明改为标题旁问号 hover（2026-11-02 王总指定），不再放正文底部 -->
+        <BaseCard
+          title="筹码分布"
+          fill
+          class="min-h-0 flex-1"
+          tip="红 = 现价下方获利筹码，绿 = 上方套牢筹码；90 / 70 成本为筹码占比 90% / 70% 的价格区间，集中度越小筹码越集中"
+        >
+          <ChipDistributionCard :symbol="symbol" :current-price="quoteRef?.price ?? null" />
         </BaseCard>
         <BaseCard title="五档盘口" class="shrink-0">
-          <StockOrderBook :quote="quoteRef" :vertical="isInfoCollapsed" />
-        </BaseCard>
-        <!-- 筹码分布（2026-11-02 王总指定新增）：仅展开态渲染（收起时连数据一起卸载，
-             重新展开重拉）；重接口不轮询，东财 CYQ 算法本地推演 -->
-        <BaseCard v-if="!isInfoCollapsed" title="筹码分布" class="shrink-0">
-          <ChipDistributionCard :symbol="symbol" :current-price="quoteRef?.price ?? null" />
+          <StockOrderBook :quote="quoteRef" />
         </BaseCard>
       </div>
     </div>

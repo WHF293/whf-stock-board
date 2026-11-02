@@ -13,8 +13,11 @@ import {
   TZZB_RANGE_LABEL,
   TZZB_RANGE_OPTIONS,
   type TzzbPnlSummary,
+  type TzzbStockTrade,
 } from '../../../../common/types/tzzb.types.ts';
 import { useSettingsStore } from '../../../../common/stores/settings';
+import { computeUnderwater } from '../../../../common/utils/compute-underwater';
+import { DOWN_COLOR } from '../../../../common/constants/stock-colors.constants.ts';
 import BaseChart from '../../charts/BaseChart.vue';
 import BaseTabs from '../../ui/BaseTabs.vue';
 
@@ -34,6 +37,8 @@ const props = defineProps<{
   pnl: TzzbPnlSummary | null;
   /** 当前区间（父级持有；TZZB_RANGE_OPTIONS value） */
   range: string;
+  /** 可选全量股票流水（回撤段「期间操作」列统计用；缺省时该列显示 —） */
+  trades?: TzzbStockTrade[] | null;
 }>();
 
 const emit = defineEmits<{
@@ -71,6 +76,9 @@ const posOn = ref(true);
 /** 最大回撤开关 */
 const ddOn = ref(false);
 
+/** 回撤水下开关（操作复盘阶段 2 新增：净值曲线之外的水下视角，纯本地计算） */
+const uwOn = ref(false);
+
 /** 曲线数据（空态兜底） */
 const trend = computed(() => props.pnl?.assetTrend ?? []);
 const idxTrend = computed(() => props.pnl?.indexTrend ?? []);
@@ -101,6 +109,80 @@ const trend0 = computed(() => {
     posVals,
   };
 });
+
+/** 水下计算（trend 为空时 underwater 为空数组，消费侧短路） */
+const uw = computed(() => computeUnderwater(trend.value, props.trades ?? null));
+
+/** 水下子图数据（百分比口径，-3.2 = 水下 3.2%） */
+const uwPct = computed(() =>
+  uw.value.underwater.length >= 2
+    ? uw.value.underwater.map((v) => Number((v * 100).toFixed(2)))
+    : [],
+);
+
+/** 水下子图配置（主图下方独立小图，绿色=亏损语义，红涨绿跌口径） */
+const uwOption = computed<EChartsCoreOption>(() => {
+  void settingsStore.trendTheme;
+  return {
+    grid: { left: 44, right: 12, top: 8, bottom: 20 },
+    tooltip: {
+      trigger: 'axis',
+      formatter: (params: unknown) => {
+        const list = Array.isArray(params) ? params : [params];
+        const p = list[0] as { axisValue?: string; data?: number } | undefined;
+        const v = p?.data ?? 0;
+        return `<b>${p?.axisValue ?? ''}</b><br/>水下 ${Math.abs(v).toFixed(2)}%`;
+      },
+    },
+    xAxis: {
+      type: 'category',
+      data: trend0.value.dates,
+      boundaryGap: false,
+      axisLine: { lineStyle: { color: CHART_AXIS_LINE_COLOR } },
+      axisLabel: { color: CHART_TEXT_COLOR, fontSize: 10 },
+      axisTick: { show: false },
+    },
+    yAxis: {
+      type: 'value',
+      max: 0,
+      splitLine: { lineStyle: { color: CHART_SPLIT_LINE_COLOR } },
+      axisLabel: { color: CHART_TEXT_COLOR, fontSize: 10, formatter: (v: number) => `${v}%` },
+    },
+    series: [
+      {
+        name: '回撤水下',
+        type: 'line',
+        data: uwPct.value,
+        symbol: 'none',
+        lineStyle: { color: DOWN_COLOR, width: 1.2 },
+        itemStyle: { color: DOWN_COLOR },
+        areaStyle: { color: DOWN_COLOR, opacity: 0.22 },
+      },
+    ],
+  };
+});
+
+/**
+ * 千分位金额（回撤段操作列，整数元）
+ * @param v 金额
+ * @returns 千分位整数文案
+ */
+const yuan = (v: number): string => v.toLocaleString('zh-CN', { maximumFractionDigits: 0 });
+
+/**
+ * 回撤段操作列文案（无流水输入返回 —）
+ * @param i 段下标
+ * @returns 操作文案（买/卖笔数与金额；未操作 / —）
+ */
+const activityText = (i: number): string => {
+  const a = uw.value.segments[i]?.activity;
+  if (!a) return '—';
+  if (a.buys === 0 && a.sells === 0) return '未操作';
+  const parts: string[] = [];
+  if (a.buys > 0) parts.push(`买 ${a.buys} 笔 ¥${yuan(a.buyAmount)}`);
+  if (a.sells > 0) parts.push(`卖 ${a.sells} 笔 ¥${yuan(a.sellAmount)}`);
+  return parts.join(' · ');
+};
 
 const option = computed<EChartsCoreOption>(() => {
   void settingsStore.trendTheme;
@@ -230,6 +312,10 @@ const option = computed<EChartsCoreOption>(() => {
         <input v-model="ddOn" type="checkbox" class="accent-primary" />
         最大回撤
       </label>
+      <label class="flex cursor-pointer items-center gap-1.5 text-xs text-text-secondary">
+        <input v-model="uwOn" type="checkbox" class="accent-primary" />
+        回撤水下
+      </label>
     </div>
 
     <!-- 自定义区间行 -->
@@ -244,6 +330,54 @@ const option = computed<EChartsCoreOption>(() => {
     <div class="relative min-h-0 flex-1">
       <BaseChart :options="option" not-merge />
     </div>
+
+    <!-- 回撤水下子图 + 回撤段明细（操作复盘阶段 2 新增；方案 §4.4） -->
+    <template v-if="uwOn && uwPct.length > 0">
+      <div class="mt-1 h-24 shrink-0">
+        <BaseChart :options="uwOption" not-merge />
+      </div>
+      <div
+        v-if="uw.segments.length > 0"
+        class="mt-1 max-h-32 shrink-0 overflow-y-auto rounded-lg bg-flat-weak/40 p-2"
+      >
+        <table class="w-full text-left text-xs">
+          <thead>
+            <tr class="text-text-tertiary">
+              <th class="py-0.5 pr-2 font-normal">回撤段（峰值 → 谷底）</th>
+              <th class="py-0.5 pr-2 text-right font-normal">深度</th>
+              <th class="py-0.5 pr-2 text-right font-normal">下行</th>
+              <th class="py-0.5 pr-2 text-right font-normal">修复</th>
+              <th class="py-0.5 text-right font-normal">回撤期间操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="(seg, i) in uw.segments"
+              :key="seg.peakDate"
+              class="border-t border-flat-weak"
+              :class="i === uw.maxSegmentIndex ? 'bg-flat-weak/70' : ''"
+            >
+              <td class="py-0.5 pr-2 font-mono text-text-secondary">
+                {{ seg.peakDate.slice(5) }} → {{ seg.troughDate.slice(5) }}
+                <span v-if="i === uw.maxSegmentIndex" class="ml-1 text-text-tertiary">最深</span>
+              </td>
+              <td class="py-0.5 pr-2 text-right font-mono tabular-nums text-down">
+                -{{ (seg.depth * 100).toFixed(2) }}%
+              </td>
+              <td class="py-0.5 pr-2 text-right font-mono tabular-nums text-text-secondary">
+                {{ seg.durationDays }} 天
+              </td>
+              <td class="py-0.5 pr-2 text-right font-mono tabular-nums" :class="seg.recoveryDays === null ? 'text-down' : 'text-text-secondary'">
+                {{ seg.recoveryDays === null ? '未修复' : `${seg.recoveryDays} 天` }}
+              </td>
+              <td class="py-0.5 text-right font-mono tabular-nums text-text-secondary">
+                {{ activityText(i) }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </template>
     <p class="mt-1 shrink-0 text-xs text-text-tertiary">
       左轴净值指数（基点 1000）{{ posOn ? ' · 右轴仓位 %' : '' }} · {{ rangeLabel }}
     </p>

@@ -238,3 +238,6 @@ export const TZZB_RANGE_OPTIONS = [
 export const TZZB_RANGE_LABEL: Record<string, string> = Object.fromEntries(
   TZZB_RANGE_OPTIONS.map((o) => [o.value, o.label]),
 );
+
+/** 摩擦账本全量流水分页上限（防御：异常 maxPage 时止损，按 20 条/页即 1000 笔） */
+export const TZZB_TRADE_FETCH_MAX_PAGES = 50;

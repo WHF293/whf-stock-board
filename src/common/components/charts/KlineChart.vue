@@ -14,6 +14,8 @@ import {
   type KLineData,
   type Styles,
   type TooltipLegend,
+  type YAxis,
+  type YAxisOverride,
   type YAxisTemplate,
 } from 'klinecharts';
 import {
@@ -24,6 +26,10 @@ import {
   CHART_SPLIT_LINE_COLOR,
   CHART_TEXT_COLOR,
 } from '../../constants/chart.constants.ts';
+import {
+  startYAxisTextOverlay,
+  type YAxisTextOverlayColors,
+} from './axis-text-overlay';
 import {
   MINUTE_AXIS_CONFIG,
   TIMELINE_PCT_AXIS_HEADROOM,
@@ -39,6 +45,7 @@ import type { TradeMark } from '../../utils/trade-marks';
 import {
   INTRADAY_MACD_INDICATOR,
   INTRADAY_VOL_INDICATOR,
+  TIMELINE_PRICE_INDICATOR,
 } from './indicators/intraday-indicators';
 import {
   TRADE_POINT_OVERLAY,
@@ -53,7 +60,9 @@ import './indicators/custom-indicators';
  * - candle 模式（5分 / 日K / 周K / 月K）：主图蜡烛 + MA[5,10,30]，副图按配置清单（默认 VOL + MACD&KDJ）
  * - subVolumeOnly：副图强制只留成交量（详情侧栏用），两种模式下均忽略其他副图指标
  *
- * 轴规格：Y 轴显示在左侧（3 等分刻度），X 轴 5 等分；副图不显示 Y 轴刻度线；
+ * 轴规格：分时/五日为双 Y 轴（2026-11-02 王总指定）——左 = 实时价格、右 = 涨跌幅，
+ * 两轴刻度坐标一致（左右网格线标签严格对应）；蜡烛模式 Y 轴在左（4 等分刻度）；
+ * X 轴 5 等分；副图不显示 Y 轴刻度线；
  * 十字光标 / X 轴日期：分时/五日为 MM/DD HH:mm，其余为 YYYY/MM/DD
  *
  * 单日分时（intradayAxis）额外把序列补齐到全天固定时间轴，X 轴恒为 09:30~15:00，
@@ -105,6 +114,12 @@ const props = defineProps<{
   market?: MinuteAxisMarket;
   /** 成交 BS/T 标注点（时间升序）；数据或标注变化时吸附最近 bar 重建覆盖物 */
   tradeMarks?: TradeMark[];
+  /**
+   * 盘中实时最后一根柱（2026-11-02 王总指定：轮询分时接口构建，见 use-kline-live）。
+   * 经 loader subscribeBar 通道推送：时间戳相同覆盖最后一根 / 更大追加，
+   * 不整图重载、不重置视口与十字光标；父级序列下次全量加载时自然并轨
+   */
+  liveBar?: KLineData | null;
 }>();
 
 const emit = defineEmits<{
@@ -118,11 +133,29 @@ const settingsStore = useSettingsStore();
 const containerRef = ref<HTMLDivElement>();
 /** klinecharts 实例 */
 const chartRef = ref<Chart | null>(null);
+/** Y 轴刻度文字着色覆盖层画布（原生刻度文字置透明，由覆盖层重绘，见模板注释） */
+const axisTextCanvasRef = ref<HTMLCanvasElement>();
+/** 覆盖层 rAF 循环停止句柄（onMounted 启动 / onBeforeUnmount 取消） */
+let stopAxisTextOverlay: (() => void) | null = null;
+
+/**
+ * loader subscribeBar 通道句柄：图表 init 完成后注册推送回调，
+ * setSymbol / setPeriod / resetData / dispose 时注销（v10 增量更新唯一通道——
+ * 同时间戳覆盖最后一根 / 更大时间戳追加，不重置视口与十字光标）
+ */
+let liveBarPush: ((bar: KLineData) => void) | null = null;
 /** 触发 loader 重新加载的自增序号（setSymbol 仅在变化时触发 init 加载） */
 let loadSeq = 0;
 
 /** 图表默认高度（px）：定高模式未传 height 时的兜底，与历史模板行为一致 */
 const DEFAULT_CHART_HEIGHT_PX = 420;
+
+/**
+ * 轴刻度距面板上/下边缘的内缩（px）：刻度文本以 coord 为中心绘制，
+ * 贴边刻度会有一半被面板边缘裁掉（2026-11-02 王总反馈「y 轴最上/最下数值遮挡」）；
+ * 自定义 createTicks 按此值内缩，副图默认刻度由 filterEdgeAxisTicks 过滤
+ */
+const AXIS_TICK_EDGE_GAP_PX = 12;
 
 /**
  * 容器高度样式：autoHeight 走 h-full + min-height（父级 flex 决定实际高）；
@@ -183,7 +216,8 @@ const TIMELINE_PCT_YAXIS: YAxisTemplate = {
   },
   /**
    * 固定三条刻度（上界 / 0% / 下界），像素坐标按线性轴自行换算
-   * （库内 defaultTicks 只含 nice interval 落点，不含轴上下界）
+   * （库内 defaultTicks 只含 nice interval 落点，不含轴上下界）；
+   * 上下刻度内缩 AXIS_TICK_EDGE_GAP_PX，值随内缩坐标反推（避免文本被面板边缘裁半）
    * @param params 轴刻度创建参数
    * @param params.range 轴范围（displayFrom / displayTo / displayRange）
    * @param params.bounding 轴区域尺寸（height 为像素换算基准）
@@ -191,15 +225,21 @@ const TIMELINE_PCT_YAXIS: YAxisTemplate = {
    * @returns 三条刻度（上界 / 0% / 下界）
    */
   createTicks: ({ range, bounding, defaultTicks }) => {
-    const { displayFrom, displayTo, displayRange } = range;
-    if (displayRange <= 0 || bounding.height <= 0) return defaultTicks;
-    const toCoord = (value: number): number =>
-      ((displayTo - value) / displayRange) * bounding.height;
+    const { displayTo, displayRange } = range;
+    const height = bounding.height;
+    if (displayRange <= 0 || height <= 0) return defaultTicks;
+    const gap = AXIS_TICK_EDGE_GAP_PX;
+    const valueAt = (coord: number): number =>
+      displayTo - (coord / height) * displayRange;
     const toText = (value: number): string => `${(value * 100).toFixed(2)}%`;
     return [
-      { coord: toCoord(displayTo), value: displayTo, text: toText(displayTo) },
-      { coord: toCoord(0), value: 0, text: toText(0) },
-      { coord: toCoord(displayFrom), value: displayFrom, text: toText(displayFrom) },
+      { coord: gap, value: valueAt(gap), text: toText(valueAt(gap)) },
+      { coord: height / 2, value: 0, text: toText(0) },
+      {
+        coord: height - gap,
+        value: valueAt(height - gap),
+        text: toText(valueAt(height - gap)),
+      },
     ];
   },
 };
@@ -222,6 +262,29 @@ const minuteAxisConfig = computed(() => MINUTE_AXIS_CONFIG[props.market ?? 'cn']
  *
  * 占位 bar 的 close / avgPrice 均为 NaN：面积线与均价线的绘制会被图表库跳过
  */
+/**
+ * 分时涨跌幅轴的单 bar 转换（displayBars 全量派生与实时柱推送共用，避免口径漂移）：
+ * price = 原始价格；close = 涨跌幅小数 = (price - pre) / pre（保留 3 位）；
+ * avgPrice 同步转为涨跌幅小数（与 close 同轴），原始均价存 avgPriceRaw
+ * @param bar 原始 bar（close = 价格）
+ * @param pre 昨收基准
+ * @returns 转换后 bar
+ */
+const transformTimelineBar = (bar: KLineData, pre: number): KLineData => {
+  const round3 = (value: number): number => Number(value.toFixed(3));
+  const price = bar.close;
+  const avgPriceRaw = typeof bar.avgPrice === 'number' ? bar.avgPrice : null;
+  return {
+    ...bar,
+    price,
+    pre,
+    close: round3((price - pre) / pre),
+    avgPrice:
+      avgPriceRaw === null ? bar.avgPrice : round3((avgPriceRaw - pre) / pre),
+    avgPriceRaw,
+  };
+};
+
 const displayBars = computed<KLineData[]>(() => {
   if (props.mode !== 'timeline') return props.bars;
   const bars = props.intradayAxis
@@ -229,20 +292,7 @@ const displayBars = computed<KLineData[]>(() => {
     : props.bars;
   const pre = props.preClose ?? props.bars[0]?.close ?? null;
   if (!pre) return bars;
-  const round3 = (value: number): number => Number(value.toFixed(3));
-  return bars.map((bar) => {
-    const price = bar.close;
-    const avgPriceRaw = typeof bar.avgPrice === 'number' ? bar.avgPrice : null;
-    return {
-      ...bar,
-      price,
-      pre,
-      close: round3((price - pre) / pre),
-      avgPrice:
-        avgPriceRaw === null ? bar.avgPrice : round3((avgPriceRaw - pre) / pre),
-      avgPriceRaw,
-    };
-  });
+  return bars.map((bar) => transformTimelineBar(bar, pre));
 });
 
 /**
@@ -351,7 +401,9 @@ const buildStyles = (): DeepPartial<Styles> => {
     },
     yAxis: {
       axisLine: { color: CHART_AXIS_LINE_COLOR },
-      tickText: { color: CHART_TEXT_COLOR },
+      // 刻度文字置透明（show 保持 true，轴自动宽度照常计算）：
+      // 实际显示由轴文字覆盖层按涨跌着色重绘（红涨绿跌，见 axis-text-overlay.ts）
+      tickText: { color: 'transparent' },
       tickLine: { color: CHART_AXIS_LINE_COLOR },
     },
     separator: { color: CHART_SPLIT_LINE_COLOR },
@@ -471,8 +523,119 @@ const buildXAxisTicks = (params: AxisCreateTicksParams): AxisTick[] => {
 /** 分时/五日是否绘制均价线：指数无均价概念，仅个股绘制 */
 const showAvgLine = computed(() => !props.symbol || !isIndexSymbol(props.symbol));
 
+/**
+ * 分时实时价格轴的实例 id（createYAxis 返回值）
+ *
+ * ⚠️ 轴的一切后续定位（overrideYAxis 精确命中 / removeYAxis 清理）必须用 id——
+ * 模板类构造时 name 已被烧死为 'normal'（YAxisImp.override 的 name 只在首次为空时
+ * 生效），传入的 name: 'timeline_price' 不会留在实例上；按 name 找不到、按 paneId
+ * 过滤又会命中面板里全部轴（把价格轴一起覆盖成涨跌幅轴，左轴消失）
+ */
+let timelinePriceAxisId: string | null = null;
+
+/**
+ * 分时实时价格轴锚点（昨收 + 对称边界）
+ *
+ * 与涨跌幅轴同口径：pre 取 preClose（快照未就绪回退首根真实收盘），
+ * bound = 价格相对昨收的最大偏差 × 同一 HEADROOM 系数——价格 = 昨收 × (1 + 涨跌幅)
+ * 与涨跌幅同为线性映射，两轴刻度坐标一致时左右网格线标签严格对应。
+ * 盘中实时柱（props.liveBar，close = 价格）一并计入，轴范围随最新价即时扩张
+ *
+ * @returns 锚点；无有效数据（盘前全占位 / 无昨收）时为 null
+ */
+const timelinePriceAnchor = (): { pre: number; bound: number } | null => {
+  const pre =
+    props.preClose ??
+    props.bars.find((bar) => Number.isFinite(bar.close))?.close ??
+    Number.NaN;
+  if (!Number.isFinite(pre) || pre <= 0) return null;
+  let maxPct = 0;
+  const consider = (price: number): void => {
+    if (Number.isFinite(price)) {
+      maxPct = Math.max(maxPct, Math.abs(price / pre - 1));
+    }
+  };
+  for (const bar of displayBars.value) {
+    consider((bar as KLineData & { price?: number }).price ?? Number.NaN);
+  }
+  consider(props.liveBar?.close ?? Number.NaN);
+  if (maxPct <= 0) return null;
+  return { pre, bound: pre * maxPct * TIMELINE_PCT_AXIS_HEADROOM };
+};
+
+/**
+ * 分时实时价格轴创建参数（双轴左轴，2026-11-02 王总指定：左 = 实时价格 / 右 = 涨跌幅）
+ *
+ * 直接以 override 对象传给 createYAxis（含闭包，不注册全局模板——pre 随组件实例走，
+ * 详情页与侧栏面板可同时展示不同标的）。范围以锚点对称展开，涨跌幅轴的 gap 已归零，
+ * 两轴刻度坐标（上/中/下同内缩）对应同一像素位置。
+ * name 仅文档用途——模板类构造时已把 name 烧死为 'normal'，实例上不生效，
+ * 后续定位全靠 createYAxis 返回的 id（见 timelinePriceAxisId 注释）
+ *
+ * @returns 价格轴创建参数（YAxisOverride）
+ */
+const buildTimelinePriceAxis = (): YAxisOverride => ({
+  name: 'timeline_price',
+  position: 'left',
+  gap: { top: 0, bottom: 0 },
+  createRange: ({ defaultRange }): AxisRange => {
+    const anchor = timelinePriceAnchor();
+    if (!anchor) return defaultRange;
+    const { pre, bound } = anchor;
+    const range = bound * 2;
+    return {
+      from: pre - bound,
+      to: pre + bound,
+      range,
+      realFrom: pre - bound,
+      realTo: pre + bound,
+      realRange: range,
+      displayFrom: pre - bound,
+      displayTo: pre + bound,
+      displayRange: range,
+    };
+  },
+  createTicks: ({ range, bounding, defaultTicks }) => {
+    const { displayTo, displayRange } = range;
+    const height = bounding.height;
+    if (displayRange <= 0 || height <= 0) return defaultTicks;
+    const gap = AXIS_TICK_EDGE_GAP_PX;
+    const valueAt = (coord: number): number =>
+      displayTo - (coord / height) * displayRange;
+    return [
+      { coord: gap, value: valueAt(gap), text: valueAt(gap).toFixed(2) },
+      {
+        coord: height / 2,
+        value: valueAt(height / 2),
+        text: valueAt(height / 2).toFixed(2),
+      },
+      {
+        coord: height - gap,
+        value: valueAt(height - gap),
+        text: valueAt(height - gap).toFixed(2),
+      },
+    ];
+  },
+});
+
 const setupIndicators = (chart: Chart): void => {
   if (props.mode === 'timeline') {
+    // 双 y 轴：左 = 实时价格（透明价格线 TIMELINE_PRICE 撑轴数据源），
+    // 右 = 涨跌幅（原左轴迁右，见 applyAxisOptions）。
+    // 重建路径先按 id 删旧轴（幂等；name 已被模板烧死为 'normal'，按 name 删不中）
+    if (timelinePriceAxisId) {
+      chart.removeYAxis({ id: timelinePriceAxisId });
+    }
+    const priceAxisId = chart.createYAxis(buildTimelinePriceAxis());
+    timelinePriceAxisId = priceAxisId;
+    chart.createIndicator(
+      {
+        ...TIMELINE_PRICE_INDICATOR,
+        paneId: CANDLE_PANE_ID,
+        ...(priceAxisId ? { yAxisId: priceAxisId } : {}),
+      },
+      true,
+    );
     // 分时均价线叠加主图（仅个股）；副图成交量 + MACD（subVolumeOnly 时只留成交量）
     if (showAvgLine.value) {
       chart.createIndicator({ name: 'AVG_PRICE', paneId: CANDLE_PANE_ID }, true);
@@ -524,7 +687,8 @@ const setupIndicators = (chart: Chart): void => {
 const buildCandleYAxisTicks = (params: AxisCreateTicksParams): AxisTick[] => {
   const { displayTo, displayRange } = params.range;
   const height = params.bounding.height;
-  if (displayRange <= 0 || height <= 0 || params.defaultTicks.length === 0) {
+  const gap = AXIS_TICK_EDGE_GAP_PX;
+  if (displayRange <= 0 || height <= gap * 2 || params.defaultTicks.length === 0) {
     return params.defaultTicks;
   }
   const decimals = Math.max(
@@ -533,33 +697,67 @@ const buildCandleYAxisTicks = (params: AxisCreateTicksParams): AxisTick[] => {
   );
   return Array.from({ length: CANDLE_Y_AXIS_TICK_COUNT }, (_, k) => {
     const value = displayTo - (displayRange * k) / (CANDLE_Y_AXIS_TICK_COUNT - 1);
+    // 刻度坐标内缩 AXIS_TICK_EDGE_GAP_PX：贴边刻度文本会被面板边缘裁半
+    const coord = gap + ((height - gap * 2) * k) / (CANDLE_Y_AXIS_TICK_COUNT - 1);
     return {
-      coord: (height * k) / (CANDLE_Y_AXIS_TICK_COUNT - 1),
+      coord,
       value,
       text: value.toFixed(decimals),
     };
   });
 };
 
+/**
+ * 副图轴刻度过滤：剔除贴边刻度（库内默认刻度含上下界，矮面板上首末刻度
+ * 文本会被面板边缘裁掉一半，2026-11-02 王总反馈 VOL「21M」/ MACD「0.0000」被遮挡）
+ * @param params 轴刻度创建参数
+ * @returns 过滤后的刻度
+ */
+const filterEdgeAxisTicks = (params: AxisCreateTicksParams): AxisTick[] => {
+  const height = params.bounding.height;
+  const gap = AXIS_TICK_EDGE_GAP_PX;
+  if (height <= 0) return params.defaultTicks;
+  return params.defaultTicks.filter(
+    (tick) => tick.coord >= gap && tick.coord <= height - gap,
+  );
+};
+
 const applyAxisOptions = (chart: Chart): void => {
   const isTimeline = props.mode === 'timeline';
-  // 主图 Y 轴：左；分时/五日切换到涨跌幅百分比轴（价格空间换算的自定义模板，
-  // 固定三条刻度）；蜡烛模式用默认轴但固定四条刻度（buildCandleYAxisTicks）。
+  // 主图 Y 轴：分时/五日为双轴——左 = 实时价格（setupIndicators 里 createYAxis），
+  // 右 = 涨跌幅百分比轴（价格空间换算的自定义模板，固定三条刻度）；
+  // 蜡烛模式用默认轴（左）但固定四条刻度（buildCandleYAxisTicks）。
   // ⚠️ timeline 分支不能显式传 createTicks: undefined——库内 merge 会把 undefined
   // 覆盖到轴实例上，打掉 timeline_pct 模板自带的 createTicks
+  // ⚠️ 必须按 id 精确命中默认轴：不带 id 的 override 按 paneId 匹配面板里**全部**轴，
+  // 会把价格轴一起重建为右置涨跌幅轴（左轴消失，右侧两列百分比，2026-11-02 实测翻车）
+  const defaultAxis = chart
+    .getYAxes({ paneId: CANDLE_PANE_ID })
+    .find((axis) => axis.id !== timelinePriceAxisId);
   chart.overrideYAxis({
     paneId: CANDLE_PANE_ID,
-    position: 'left',
+    id: defaultAxis?.id,
+    position: isTimeline ? 'right' : 'left',
     name: isTimeline ? 'timeline_pct' : 'normal',
     ...(isTimeline ? {} : { createTicks: buildCandleYAxisTicks }),
   });
-  // 副图（成交量 / MACD / MACD&KDJ）：保留轴标但隐藏刻度线
+  if (!isTimeline) {
+    // 蜡烛模式不保留分时价格轴（指标已随 removeIndicator 清掉，此处按 id 删轴；
+    // name 被模板烧死为 'normal'，按 name 删不中）
+    if (timelinePriceAxisId) {
+      chart.removeYAxis({ id: timelinePriceAxisId });
+      timelinePriceAxisId = null;
+    }
+  }
+  // 副图（成交量 / MACD / MACD&KDJ）：保留轴标但隐藏刻度线；
+  // 默认刻度过滤贴边项（矮面板首末刻度文本会被面板边缘裁半）
   chart.getIndicators().forEach((indicator) => {
     if (indicator.paneId === CANDLE_PANE_ID) return;
     chart.overrideYAxis({
       paneId: indicator.paneId,
       position: 'left',
       needWidget: true,
+      createTicks: filterEdgeAxisTicks,
     });
   });
   // X 轴刻度：单日分时为全天固定时刻，其余为可见区 5 等分（见 buildXAxisTicks）
@@ -707,6 +905,13 @@ const applyData = (): void => {
         });
       }
     },
+    // 盘中实时柱通道（父级经 liveBar prop 驱动）：push 单根，图表按 ts 原地合并
+    subscribeBar: ({ callback }) => {
+      liveBarPush = callback;
+    },
+    unsubscribeBar: () => {
+      liveBarPush = null;
+    },
   });
   chart.setSymbol({
     ticker: `${props.mode}-${loadSeq++}`,
@@ -750,6 +955,41 @@ const formatCrosshairDate = (
 const formatDateByMode = (params: { timestamp: number }): string =>
   formatCrosshairDate(params.timestamp, props.mode);
 
+/**
+ * Y 轴刻度文字着色基准（上方涨色 / 下方跌色 / 相等中性，2026-11-02 王总需求）：
+ * - 主图（蜡烛面板）轴有基准：分时价格轴 = 昨收（与涨跌幅口径一致）、
+ *   分时涨跌幅轴 = 0；蜡烛模式价格轴 = 最新一根柱收盘（现价，随 liveBar 走）
+ * - 副图（VOL / MACD 等）轴无涨跌语义，返回 null → 全部中性色
+ * @param paneId 面板 id
+ * @param axis 轴实例
+ * @returns 基准值；null 表示不着色
+ */
+const resolveAxisBaseline = (paneId: string, axis: YAxis): number | null => {
+  if (paneId !== CANDLE_PANE_ID) return null;
+  if (props.mode === 'timeline') {
+    if (timelinePriceAxisId && axis.id === timelinePriceAxisId) {
+      return props.preClose ?? props.bars[0]?.close ?? null;
+    }
+    return 0;
+  }
+  // 蜡烛模式取图表实时序列最后一根收盘（liveBar 增量推送后即最新价）
+  const dataList = chartRef.value?.getDataList() ?? [];
+  const last = dataList[dataList.length - 1]?.close;
+  if (Number.isFinite(last)) return last as number;
+  const fallback = props.bars[props.bars.length - 1]?.close;
+  return Number.isFinite(fallback) ? (fallback as number) : null;
+};
+
+/**
+ * 覆盖层三色：跟随涨跌色阶主题（切主题经签名比对自动重绘）
+ * @returns 涨/跌/中性色
+ */
+const buildAxisTextColors = (): YAxisTextOverlayColors => ({
+  up: trendSet.value.up,
+  down: trendSet.value.down,
+  neutral: CHART_TEXT_COLOR,
+});
+
 onMounted(() => {
   if (!containerRef.value) return;
   const chart = init(containerRef.value, { locale: 'zh-CN' });
@@ -768,9 +1008,19 @@ onMounted(() => {
     emit('crosshairBar', bar && !isEmptyBar(bar) ? bar : null);
   });
   applyData();
+
+  // Y 轴刻度文字着色覆盖层（图表实例就绪前后启动均可，未就绪时循环空转）
+  stopAxisTextOverlay = startYAxisTextOverlay({
+    getChart: () => chartRef.value,
+    getCanvas: () => axisTextCanvasRef.value ?? null,
+    resolveBaseline: resolveAxisBaseline,
+    getColors: buildAxisTextColors,
+  });
 });
 
 onBeforeUnmount(() => {
+  stopAxisTextOverlay?.();
+  stopAxisTextOverlay = null;
   if (chartRef.value) {
     dispose(chartRef.value);
     chartRef.value = null;
@@ -864,6 +1114,23 @@ watch(
   },
 );
 
+// 盘中实时柱（2026-11-02 王总指定，轮询分时接口构建）：经 subscribeBar 原地合并——
+// 同时间戳覆盖最后一根 / 更大追加；timeline 模式先做涨跌幅轴转换（与 displayBars 同口径，
+// 分时固定轴上占位分钟按相同时间戳被真值替换）。init 回调完成前推送会被丢弃，无需处理
+watch(
+  () => props.liveBar,
+  (bar) => {
+    if (!bar || !liveBarPush) return;
+    if (props.mode !== 'timeline') {
+      liveBarPush(bar);
+      return;
+    }
+    const pre = props.preClose ?? props.bars[0]?.close ?? null;
+    if (!pre) return;
+    liveBarPush(transformTimelineBar(bar, pre));
+  },
+);
+
 // 涨跌配色主题 / 明暗主题变化时重设样式（网格线颜色取自 CSS 变量，需重新解析）
 watch([trendSet, isDark], () => {
   chartRef.value?.setStyles(buildStyles());
@@ -882,5 +1149,15 @@ defineExpose({
 
 <template>
   <!-- KLineChart canvas 内部会铺满父级可见区域；高度由 containerStyle 决定（默认 420px） -->
-  <div ref="containerRef" class="w-full" :style="containerStyle" />
+  <div ref="containerRef" class="relative w-full" :style="containerStyle">
+    <!--
+      Y 轴刻度文字着色覆盖层（红涨绿跌，2026-11-02 王总需求）：
+      原生刻度文字被样式置透明，由该画布按刻度值相对基准重绘着色文字；
+      原理与几何来源见 axis-text-overlay.ts 顶部注释
+    -->
+    <canvas
+      ref="axisTextCanvasRef"
+      class="pointer-events-none absolute inset-0 z-10 h-full w-full"
+    />
+  </div>
 </template>
