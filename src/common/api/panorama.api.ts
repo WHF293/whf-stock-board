@@ -7,6 +7,7 @@ import {
   PANORAMA_GLOBAL_INDEX_FS,
   PANORAMA_GLOBAL_INDEX_SECIDS,
   PANORAMA_US_SECIDS,
+  PANORAMA_US_TECH_SECIDS,
 } from '../constants/panorama.constants.ts';
 import type { GlobalIndexQuote, PanoramaItem } from '../types/panorama.types.ts';
 import type { FullQuote } from '../types/stock-quote.types.ts';
@@ -100,24 +101,41 @@ const fetchClist = async (fs: string): Promise<PanoramaItem[]> => {
 };
 
 /**
- * 拉取美股全景（SPDR 行业 ETF 系列，ulist 接口按 secids 精确查询）
- * @returns 美股行业 ETF 列表（名称 + 涨跌幅，按涨跌幅降序）
+ * 东财 ulist 精确 secid 查询全景条目（push2delay 域，经同源代理转发）
+ * @param secids 东财 secid 序列（`107.XLK` / `105.NVDA` 形态）
+ * @returns 条目列表（顺序与 secids 一致；上游缺行的标的自动缺省）
  */
-export const fetchUsSectorPanorama = async (): Promise<PanoramaItem[]> => {
+const fetchUlistPanorama = async (secids: readonly string[]): Promise<PanoramaItem[]> => {
   const query = [
     'fltt=2',
     `fields=${QUOTE_FIELDS}`,
-    `secids=${PANORAMA_US_SECIDS.join(',')}`,
+    `secids=${secids.join(',')}`,
   ].join('&');
   const response = await push2Fetch(`${ULIST_URL_BASE}?${query}`);
   if (!response.ok) {
     throw new Error(`ulist 请求失败：HTTP ${response.status}`);
   }
   const body = (await response.json()) as EastmoneyListResponse;
-  const items = (body.data?.diff ?? []).map(toPanoramaItem);
+  return (body.data?.diff ?? []).map(toPanoramaItem);
+};
+
+/**
+ * 拉取美股全景（SPDR 行业 ETF 系列，ulist 接口按 secids 精确查询）
+ * @returns 美股行业 ETF 列表（名称 + 涨跌幅，按涨跌幅降序）
+ */
+export const fetchUsSectorPanorama = async (): Promise<PanoramaItem[]> => {
+  const items = await fetchUlistPanorama(PANORAMA_US_SECIDS);
   // ulist 按传入 secids 顺序返回，按涨跌幅降序对齐全景展示口径
   return items.sort((a, b) => (b.changePercent ?? 0) - (a.changePercent ?? 0));
 };
+
+/**
+ * 拉取美股科技巨头全景（2026-11-02 王总指定新增模块，ulist 按 secids 精确查询）
+ * @returns 科技巨头列表（名称 + 涨跌幅；顺序 = 配置清单顺序，不做涨跌幅重排，
+ *          上游缺行的标的自动缺省）
+ */
+export const fetchUsTechGiantsPanorama = async (): Promise<PanoramaItem[]> =>
+  fetchUlistPanorama(PANORAMA_US_TECH_SECIDS);
 
 /**
  * 拉取全球指数全景（东财源）

@@ -1,18 +1,23 @@
 <script setup lang="ts">
 import { computed, onActivated, ref } from 'vue';
+import { useRoute } from 'vue-router';
+import BaseButton from '../components/ui/BaseButton.vue';
 import BaseCard from '../components/ui/BaseCard.vue';
 import BaseEmpty from '../components/ui/BaseEmpty.vue';
 import BaseTabs from '../components/ui/BaseTabs.vue';
+import MenuIcon from '../components/ui/MenuIcon.vue';
 import TabConfigButton from '../components/ui/TabConfigButton.vue';
 import { useTabConfig } from '../../common/composables/use-tab-config';
 import PanoramaCnBoard from '../components/business/PanoramaCnBoard.vue';
 import PanoramaLeadersBoard from '../components/business/PanoramaLeadersBoard.vue';
+import PanoramaMarginBoard from '../components/business/PanoramaMarginBoard.vue';
 import StockMarketView from './StockMarketView.vue';
 import HongKongMarketView from './HongKongMarketView.vue';
 import {
   fetchGlobalFuturesPanorama,
   fetchGlobalIndexPanorama,
   fetchUsSectorPanorama,
+  fetchUsTechGiantsPanorama,
 } from '../../common/api/panorama.api.ts';
 import { PANORAMA_MACRO_GROUPS } from '../../common/constants/panorama.constants.ts';
 import { DATA_CACHE_KEY } from '../../common/constants/data-cache.constants.ts';
@@ -24,10 +29,12 @@ import { delay } from '../../common/utils/delay';
 import { useDataCacheStore } from '../../common/stores/data-cache';
 import { usePolling } from '../../common/composables/use-polling';
 import { POLLING_INTERVAL } from '../../common/constants/polling.constants.ts';
+import { PAGE_HEADER_ACTIONS_TARGET, usePageHeaderSlot } from '../../common/composables/use-page-header-slot';
 
 /**
- * 行情全景（2026-10-29 王总指定整合）：全景（A股 36 板块平铺 + 美股行业 ETF + 全球宏观
- * 三组卡片竖向分布，原三个独立 tab 合并）/ 行业龙头（板块 / 细分赛道静态清单卡片流）/
+ * 行情全景（2026-10-29 王总指定整合）：全景（A股 36 板块平铺 + 美股行业 ETF +
+ * 美股科技巨头（2026-11-02 新增）+ 全球宏观 四组卡片竖向分布，原三个独立 tab 合并）/
+ * 行业龙头（板块 / 细分赛道静态清单卡片流）/
  * 大A个股（原侧栏「个股行情」页并入，2026-10-22 王总指定；2026-10-30 更名）/
  * 港股个股（2026-10-30 王总指定新增，同花顺港股板块）
  *
@@ -42,12 +49,13 @@ import { POLLING_INTERVAL } from '../../common/constants/polling.constants.ts';
  * A股全景 / 全部个股由各自组件自管数据
  */
 
-/** 模块 tab 选项 */
+/** 模块 tab 选项（margin = 融资融券，2026-11-02 王总指定新增，入口 = 市场总览两融卡标题） */
 const MODULE_TABS = [
   { label: '全景', value: 'overview' },
   { label: '行业龙头', value: 'leaders' },
   { label: '大A个股', value: 'stocks' },
   { label: '港股个股', value: 'hkStocks' },
+  { label: '融资融券', value: 'margin' },
 ] as const;
 
 /** 各接口请求间隔（毫秒）：对同一上游串行错峰 */
@@ -59,22 +67,35 @@ const { visibleOptions: moduleTabOptions, activeValue: activeModule } = useTabCo
   MODULE_TABS,
 );
 
-/** 是否处于组件自管数据的模块（行业龙头 / 大A个股 / 港股个股：宿主不拉数据，无骨架 / 空态逻辑） */
+// 深链支持（2026-11-02）：`/panorama?tab=margin` 直开指定 tab（市场总览融资融券卡标题跳入）
+const route = useRoute();
+{
+  const queryTab = typeof route.query.tab === 'string' ? route.query.tab : '';
+  if ((MODULE_TABS as readonly { value: string }[]).some((tab) => tab.value === queryTab)) {
+    activeModule.value = queryTab as typeof activeModule.value;
+  }
+}
+
+/** 是否处于组件自管数据的模块（行业龙头 / 大A个股 / 港股个股 / 融资融券：宿主不拉数据） */
 const isSelfManagedModule = computed(
   () =>
     activeModule.value === 'leaders' ||
     activeModule.value === 'stocks' ||
-    activeModule.value === 'hkStocks',
+    activeModule.value === 'hkStocks' ||
+    activeModule.value === 'margin',
 );
 
 const dataCache = useDataCacheStore();
 
 // 快照播种：切换回本页先展示上次数据
 const cachedUs = dataCache.get<PanoramaItem[]>(DATA_CACHE_KEY.PANORAMA_US_BOARDS);
+const cachedUsTech = dataCache.get<PanoramaItem[]>(DATA_CACHE_KEY.PANORAMA_US_TECH);
 const cachedMacro = dataCache.get<PanoramaMacroGroup[]>(DATA_CACHE_KEY.PANORAMA_MACRO);
 
 /** 美股行业 ETF 全景 */
 const usBoards = ref<PanoramaItem[]>(cachedUs ?? []);
+/** 美股科技巨头（2026-11-02 王总指定新增模块） */
+const usTechGiants = ref<PanoramaItem[]>(cachedUsTech ?? []);
 /** 全球宏观分组 */
 const macroGroups = ref<PanoramaMacroGroup[]>(cachedMacro ?? []);
 /** 当前模块是否拉取中（有快照则不进骨架） */
@@ -120,6 +141,12 @@ const fetchUsBoards = async (): Promise<void> => {
   dataCache.set(DATA_CACHE_KEY.PANORAMA_US_BOARDS, usBoards.value);
 };
 
+/** 拉取美股科技巨头（成功后写快照；与行业 ETF 同一 ulist 通道，共用轮询窗口） */
+const fetchUsTech = async (): Promise<void> => {
+  usTechGiants.value = await fetchUsTechGiantsPanorama();
+  dataCache.set(DATA_CACHE_KEY.PANORAMA_US_TECH, usTechGiants.value);
+};
+
 /** 拉取当前模块数据（成功后写快照；全景 tab = 美股 + 宏观串行错峰，其余由组件自管） */
 const loadActiveModule = async (): Promise<void> => {
   if (isSelfManagedModule.value) return;
@@ -127,11 +154,17 @@ const loadActiveModule = async (): Promise<void> => {
   isError.value = false;
   try {
     if (activeModule.value === 'overview') {
-      // 美股 → 宏观串行错峰（同一 push2delay 上游），任一失败不清空已有快照
+      // 美股 → 科技巨头 → 宏观串行错峰（同一 push2delay 上游），任一失败不清空已有快照
       try {
         await fetchUsBoards();
       } catch (error) {
         console.error('[panorama] us', error);
+      }
+      await delay(REQUEST_GAP_MS);
+      try {
+        await fetchUsTech();
+      } catch (error) {
+        console.error('[panorama] us tech', error);
       }
       await delay(REQUEST_GAP_MS);
       macroGroups.value = await fetchMacro();
@@ -164,11 +197,13 @@ onActivated(() => {
 });
 
 // 美股全景轮询：仅在美股轮询窗口（21:30-24:00 与 00:00-04:00）内按间隔刷新，
-// 窗口外与非全景 tab 自动跳过
+// 窗口外与非全景 tab 自动跳过；科技巨头与行业 ETF 同窗口错峰刷新
 usePolling({
   task: async () => {
     if (activeModule.value === 'overview') {
       await fetchUsBoards();
+      await delay(REQUEST_GAP_MS);
+      await fetchUsTech();
     }
   },
   intervalMs: POLLING_INTERVAL.US_BOARDS,
@@ -186,7 +221,7 @@ const onSelectModule = (): void => {
     isLoading.value = false;
     return;
   }
-  if (usBoards.value.length > 0 || macroGroups.value.length > 0) {
+  if (usBoards.value.length > 0 || usTechGiants.value.length > 0 || macroGroups.value.length > 0) {
     isLoading.value = false;
     return;
   }
@@ -195,8 +230,55 @@ const onSelectModule = (): void => {
 
 /** 全景 tab 是否无数据（失败 / 空集且无快照） */
 const isEmpty = computed(
-  () => !isLoading.value && usBoards.value.length === 0 && macroGroups.value.length === 0,
+  () =>
+    !isLoading.value &&
+    usBoards.value.length === 0 &&
+    usTechGiants.value.length === 0 &&
+    macroGroups.value.length === 0,
 );
+
+// ---------- 手动刷新（2026-11-02 王总指定：各 tab 补刷新按钮） ----------
+
+/** 行业龙头面板实例（调用其暴露的 refresh / loading） */
+const leadersRef = ref<InstanceType<typeof PanoramaLeadersBoard> | null>(null);
+/** 大A个股面板实例 */
+const stocksRef = ref<InstanceType<typeof StockMarketView> | null>(null);
+/** 港股个股面板实例 */
+const hkStocksRef = ref<InstanceType<typeof HongKongMarketView> | null>(null);
+/** 融资融券面板实例 */
+const marginRef = ref<InstanceType<typeof PanoramaMarginBoard> | null>(null);
+
+/** 自管 tab 当前的拉取中状态（无实例时 false，按钮旋转动画用） */
+const selfManagedLoading = computed(() => {
+  if (activeModule.value === 'leaders') return leadersRef.value?.loading ?? false;
+  if (activeModule.value === 'stocks') return stocksRef.value?.loading ?? false;
+  if (activeModule.value === 'hkStocks') return hkStocksRef.value?.loading ?? false;
+  if (activeModule.value === 'margin') return marginRef.value?.loading ?? false;
+  return false;
+});
+
+/** 刷新按钮是否旋转中（全景 tab 复用 isLoading；自管 tab 读组件暴露的 loading） */
+const isRefreshing = computed(() =>
+  activeModule.value === 'overview' ? isLoading.value : selfManagedLoading.value,
+);
+
+/**
+ * 点刷新按钮：重拉当前 tab 全部模块数据
+ * （全景 = A股板块 + 美股 ETF + 科技巨头 + 全球宏观；其余 tab 调组件暴露的 refresh）
+ */
+const onManualRefresh = (): void => {
+  if (activeModule.value === 'overview') {
+    void loadActiveModule();
+    return;
+  }
+  if (activeModule.value === 'leaders') leadersRef.value?.refresh();
+  else if (activeModule.value === 'stocks') stocksRef.value?.refresh();
+  else if (activeModule.value === 'hkStocks') hkStocksRef.value?.refresh();
+  else if (activeModule.value === 'margin') void marginRef.value?.refresh();
+};
+
+/** 页头挂载守卫（KeepAlive 缓存页：激活才投射，防按钮残留）——刷新按钮上移页头用 */
+const { active: headerSlotActive } = usePageHeaderSlot();
 </script>
 
 <template>
@@ -215,21 +297,39 @@ const isEmpty = computed(
       <span class="hidden shrink-0 text-xs text-text-tertiary @4xl:block">未开盘时展示最近交易日收盘数据</span>
     </div>
 
+    <!-- 手动刷新上移 MainLayout 页头（2026-11-02 王总指定，「插件设置」左侧）：
+         重拉当前 tab 全部模块数据，拉取中图标旋转 -->
+    <Teleport v-if="headerSlotActive" :to="PAGE_HEADER_ACTIONS_TARGET">
+      <BaseButton
+        variant="ghost"
+        :disabled="isRefreshing"
+        @click="onManualRefresh"
+      >
+        <MenuIcon name="refresh" :size="14" :class="{ 'animate-spin': isRefreshing }" />
+        {{ isRefreshing ? '刷新中…' : '刷新' }}
+      </BaseButton>
+    </Teleport>
+
     <!-- 模块内容统一滚动容器：页签行固定不动（2026-10-26 王总指定），
          全景三卡等多内容模块在此滚动，不再把整页撑出去带动页签滚走 -->
     <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
-      <!-- 行业龙头：板块 / 细分赛道静态清单卡片流（数据自管） -->
-      <PanoramaLeadersBoard v-if="activeModule === 'leaders'" class="min-h-0 flex-1" />
+      <!-- 行业龙头：板块 / 细分赛道静态清单卡片流（数据自管，ref 供刷新按钮调用） -->
+      <PanoramaLeadersBoard ref="leadersRef" v-if="activeModule === 'leaders'" class="min-h-0 flex-1" />
 
       <!-- 大A个股：原侧栏「个股行情」页整卡并入（数据 / 轮询 / 翻页自管，v-if 挂载即启停轮询）；
            外层滚动容器兜底卡内容超高（.table-scroll 自带 560px 内滚） -->
       <div v-else-if="activeModule === 'stocks'" class="min-h-0 flex-1 overflow-y-auto">
-        <StockMarketView />
+        <StockMarketView ref="stocksRef" />
       </div>
 
       <!-- 港股个股：同花顺港股板块分页表（数据 / 轮询 / 翻页自管，挂载结构与大A个股同款） -->
       <div v-else-if="activeModule === 'hkStocks'" class="min-h-0 flex-1 overflow-y-auto">
-        <HongKongMarketView />
+        <HongKongMarketView ref="hkStocksRef" />
+      </div>
+
+      <!-- 融资融券：两融标的明细表（数据自管，日期切换；2026-11-02 王总指定新增 tab） -->
+      <div v-else-if="activeModule === 'margin'" class="min-h-0 flex-1 overflow-y-auto">
+        <PanoramaMarginBoard ref="marginRef" />
       </div>
 
       <!-- 加载骨架（全景：美股 / 宏观首载） -->
@@ -244,7 +344,7 @@ const isEmpty = computed(
         <BaseEmpty text="数据加载失败或暂无数据，请稍后重试（上游可能限频）" />
       </BaseCard>
 
-      <!-- 全景：三组卡片竖向分布（A股 36 板块平铺 / 美股行业 ETF / 全球宏观） -->
+      <!-- 全景：四组卡片竖向分布（A股 36 板块平铺 / 美股行业 ETF / 美股科技巨头 / 全球宏观） -->
       <template v-else-if="activeModule === 'overview'">
         <PanoramaCnBoard class="shrink-0" />
 
@@ -253,6 +353,25 @@ const isEmpty = computed(
           <div class="grid grid-cols-4 gap-2">
             <div
               v-for="item in usBoards"
+              :key="item.name"
+              class="flex items-center justify-between gap-2 rounded-lg bg-flat-weak px-3 py-2.5"
+            >
+              <span class="truncate text-sm text-text">{{ item.name }}</span>
+              <span
+                class="shrink-0 text-sm font-semibold tabular-nums"
+                :class="TREND_TEXT_CLASS[getTrendByChangePercent(item.changePercent ?? 0)]"
+              >
+                {{ formatPercent(item.changePercent) }}
+              </span>
+            </div>
+          </div>
+        </BaseCard>
+
+        <!-- 美股科技巨头（2026-11-02 王总指定新增）：顺序 = 配置清单顺序，不按涨跌幅重排 -->
+        <BaseCard title="美股科技巨头" class="shrink-0">
+          <div class="grid grid-cols-4 gap-2">
+            <div
+              v-for="item in usTechGiants"
               :key="item.name"
               class="flex items-center justify-between gap-2 rounded-lg bg-flat-weak px-3 py-2.5"
             >

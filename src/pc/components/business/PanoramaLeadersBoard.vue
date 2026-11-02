@@ -149,6 +149,14 @@ usePolling({
 // 挂载即拉一次
 void fetchQuotes();
 
+// 供宿主（行情全景页）「刷新」按钮调用：重拉当前维度全部分组报价
+defineExpose({
+  /** 手动刷新（进行中调用共享同一任务，fetchQuotes 内部有防重入） */
+  refresh: fetchQuotes,
+  /** 拉取中状态（宿主用于按钮旋转动画） */
+  loading: isLoading,
+});
+
 // ---------- 行数自适应：容器高度 → 卡片流行数（2~5 行） ----------
 
 /** 横向滚动容器引用 */

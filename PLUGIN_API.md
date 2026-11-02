@@ -543,6 +543,30 @@ http.allowedHosts;                       // 当前白名单（['eastmoney.com', 
 - 代理有 3 秒短缓存与 12 秒超时，别的红线见 §10；
 - 别用它打应用自身的接口 —— 应用能力一律走 `ctx.storage` / `ctx.db` 与各项服务。
 
+### 5.5.1 东财域 JSONP 桥（`app:http` 的东财专用逃生通道，2026-10-31 起）
+
+东财 push2 系 WAF 按「浏览器 TLS 指纹 + 东财域 Referer」双条件放行（2026-10-31 实测：
+reqwest / curl / undici 指纹一律连接层拒连），`app:http` 的 reqwest 通道打东财行情 API
+可能整批失败。宿主因此在**东财页面**内注入了一座 JSONP 桥（`EM_JSONP_BRIDGE_INIT_SCRIPT`，
+与大盘云图主题桥同机制：`initialization_script_for_all_frames` + hostname 门控），插件
+在页面里放一个隐藏 iframe（src 任一 `eastmoney.com` 页面，建议轻量的
+`https://push2his.eastmoney.com/`）即可经它代发请求 —— 该上下文内 TLS 指纹与 Referer
+天然满足 WAF 条件。**这不是 `ctx.consume` 服务**：纯 postMessage 协议、零新 capability。
+
+| 消息 | 方向 | 格式 |
+| --- | --- | --- |
+| 桥就绪 | iframe → 插件页 | `{ source: 'whf-stock-board-em-bridge', type: 'em-bridge-ready' }` |
+| 代发请求 | 插件页 → iframe | `{ source, type: 'em-jsonp', id, url }`（url 须为 `https://*.eastmoney.com/api/…`，桥内白名单校验） |
+| 回传结果 | iframe → 插件页 | `{ source, type: 'em-jsonp-result', id, ok, text?/error? }`（text = JSONP payload 的 JSON 字符串） |
+
+- 两侧信源常量 `'whf-stock-board-em-bridge'` 现存**两端**（`src-tauri/src/lib.rs` 与
+  tauri-plugin 仓库 dsh-sentiment-index 的 constants），任一改动必须同步；
+- 接收侧以 `event.source === iframe.contentWindow` 对账，发送 targetOrigin 用 `'*'`
+  （与 dapanyuntu 桥同惯例；远程 iframe 无 Tauri IPC capability，桥只做 DOM + postMessage）；
+- 桥不可用（宿主过旧 / 纯浏览器 dev / 移动端未注入）时插件必须**回退 `app:http`**：
+  老宿主、无 DOM 的调用场景不应因此崩溃，只是失去东财行情域的高频通道；
+- 现成参考实现：tauri-plugin 仓库 `plugins/dsh-sentiment-index/em-bridge.ts`。
+
 ### 5.6 `app:quotes` — 行情报价
 
 ```ts

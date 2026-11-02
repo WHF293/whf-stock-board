@@ -56,7 +56,44 @@ const emit = defineEmits<{
 }>();
 
 const watchlistStore = useWatchlistStore();
-const { openSidebar } = useStockOpen();
+const { openSidebar, openPage, toContextList } = useStockOpen();
+
+// ---------- 单击 / 双击合并派发（与 BaseTable enableDblclickNav 同窗口） ----------
+// 单击 = 右侧个股侧栏；双击 = 个股详情整页（携带该分组全部股票，详情页左侧可切换同批股票）
+// 卡片拖拽换分组与双击互不干扰：拖拽走 Sortable 指针模拟，不产生 dblclick
+
+/** 单击合并窗口（毫秒），与 BaseTable 口径一致 */
+const DBLCLICK_MERGE_MS = 250;
+/** 挂起的单击定时器（null = 无待派发单击） */
+let pendingClickTimer: number | null = null;
+
+/**
+ * 卡片单击：延迟派发开侧栏，窗口内收到双击则取消
+ * @param symbol 股票符号
+ * @param group 所属分组（来源列表口径）
+ */
+const onCardClick = (symbol: string, group: WatchlistGroup): void => {
+  if (pendingClickTimer !== null) {
+    window.clearTimeout(pendingClickTimer);
+  }
+  pendingClickTimer = window.setTimeout(() => {
+    pendingClickTimer = null;
+    openSidebar(symbol, toContextList(group.stocks, (stock) => stock.symbol));
+  }, DBLCLICK_MERGE_MS);
+};
+
+/**
+ * 卡片双击：取消未派发的单击，跳详情整页（携带该分组全部股票）
+ * @param symbol 股票符号
+ * @param group 所属分组（来源列表口径）
+ */
+const onCardDblclick = (symbol: string, group: WatchlistGroup): void => {
+  if (pendingClickTimer !== null) {
+    window.clearTimeout(pendingClickTimer);
+    pendingClickTimer = null;
+  }
+  openPage(symbol, toContextList(group.stocks, (stock) => stock.symbol));
+};
 
 /**
  * 双形态兼容查找报价：watchlist 存 sh600519 完整形态，上游 `FullQuote.code`
@@ -76,13 +113,8 @@ const trendOf = (symbol: string): Trend =>
   getTrendByChangePercent(findQuote(symbol)?.changePercent ?? 0);
 
 /**
- * 点击卡片 → 右侧个股详情侧栏
- * @param symbol 股票符号
+ * 点击卡片 → 右侧个股详情侧栏（见上方合并派发注释）
  */
-const openDetail = (symbol: string): void => {
-  openSidebar(symbol);
-};
-
 // ---------- 插件贡献的行操作（ctx.stockRow，如自选盯盘的「盯盘」开关） ----------
 //
 // v4.22.0 平铺看板重构时丢了旧表格的行操作渲染，2026-10-30 恢复；
@@ -293,7 +325,8 @@ const onStocksReorder = (group: WatchlistGroup, stocks: WatchlistStock[]): void 
           :data-symbol="stock.symbol"
           class="group cursor-grab rounded-xl border border-flat-weak bg-flat-weak/40 p-2 transition-colors hover:bg-flat-weak active:cursor-grabbing"
           :aria-label="`拖拽 ${stock.name} 到其他分组`"
-          @click="openDetail(stock.symbol)"
+          @click="onCardClick(stock.symbol, group)"
+          @dblclick="onCardDblclick(stock.symbol, group)"
         >
           <!-- 默认三列：名称 / 现价 / 涨跌幅 -->
           <div class="flex items-center gap-2">

@@ -75,8 +75,8 @@ importers:
         specifier: ^4.7.1
         version: 4.7.1(pinia@4.0.3(@vue/devtools-api@8.2.1)(typescript@6.0.3)(vue@3.5.42(typescript@6.0.3)))
       stock-sdk:
-        specifier: ^2.4.3
-        version: 2.4.3
+        specifier: ^2.4.6
+        version: 2.4.6
       vant:
         specifier: ^4.10.2
         version: 4.10.2(vue@3.5.42(typescript@6.0.3))
@@ -1966,8 +1966,8 @@ packages:
     resolution: {integrity: sha512-DvEy55V3DB7uknRo+4iOGT5fP1slR8wQohVdknigZPMpMstaKJQWhwiYBACJE3Ul2pTnATihhBYnRhZQHGBiRw==}
     engines: {node: '>= 0.8'}
 
-  stock-sdk@2.4.3:
-    resolution: {integrity: sha512-dVSt4XcX4PkjM3bMRue6rX6i+GggeKBcWX1NgDAPH+cc6UgYu87puAt2oeYlO8HXsX8q/M1P5GqJ+2kfd7T9VA==}
+  stock-sdk@2.4.6:
+    resolution: {integrity: sha512-jue679Q8V5m4LXR2zqSEYp62b2/myN/+PIduXOoOLkRRxY7U5Zmas1hoZuj51M2IraXowxewYLsfLyEM6nnRFQ==}
     engines: {node: '>=18.0.0'}
     hasBin: true
 
@@ -3962,7 +3962,7 @@ snapshots:
 
   statuses@2.0.2: {}
 
-  stock-sdk@2.4.3: {}
+  stock-sdk@2.4.6: {}
 
   tailwindcss@4.3.3: {}
 

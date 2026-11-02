@@ -11,6 +11,7 @@ import MenuIcon from '../ui/MenuIcon.vue';
 import NoticeBar from '../ui/NoticeBar.vue';
 import { useTheme } from '../../../common/composables/use-theme';
 import { useSettingsStore } from '../../../common/stores/settings';
+import { useStockOpen } from '../../../common/composables/use-stock-open';
 import {
   ROTATION_CHART_HEIGHT,
   ROTATION_COL_WIDTH,
@@ -46,7 +47,9 @@ import { buildBoardRotation } from '../../../common/utils/build-board-rotation';
  * 下栏 = 详情区（无弹窗）：默认渲染最新交易日的单日构成，
  * 点图上日期列（x 轴标签）原地切换单日，点线 / 端点题材名切换题材段生命周期。
  *
- * 组件只吃 props 不直连数据层；跳转通过事件上抛（stockClick / boardClick），页面负责路由与停靠面板。
+ * 组件只吃 props 不直连数据层；板块跳转通过事件上抛（boardClick），页面负责路由。
+ * 成员股 / 龙头 2026-11-02 起改组件内直开（useStockOpen 全站统一口径：单击 = 侧栏、
+ * 双击 = 详情整页，携带当日 / 段内成员列表作为详情页左侧来源列表）。
  * 口径与交互定论见 .ai/开发方案/2026-10-21-前端-题材轮动页面开发方案.md。
  */
 
@@ -62,14 +65,56 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  /** 成员股 / 龙头点击：打开右侧停靠面板（全站口径，页面处理） */
-  stockClick: [symbol: string];
   /** 板块点击：跳板块详情页（页面处理路由） */
   boardClick: [boardCode: string];
 }>();
 
 const { isDark } = useTheme();
 const settingsStore = useSettingsStore();
+
+// ---------- 成员股 / 龙头 单击 / 双击合并派发（与 BaseTable enableDblclickNav 同窗口） ----------
+// 单击 = 右侧个股侧栏；双击 = 个股详情整页（携带成员列表，详情页左侧可切换同批股票）
+
+const { openSidebar, openPage, toContextList } = useStockOpen();
+
+/** 可点击成员的最小形态（板块Top 龙头 / 段内成员股共用） */
+interface RotationStockRef {
+  symbol: string;
+  name: string;
+}
+
+/** 单击合并窗口（毫秒），与 BaseTable 口径一致 */
+const DBLCLICK_MERGE_MS = 250;
+/** 挂起的单击定时器（null = 无待派发单击） */
+let pendingStockTimer: number | null = null;
+
+/**
+ * 成员股单击：延迟派发开侧栏，窗口内收到双击则取消
+ * @param symbol 个股符号（6 位形态）
+ * @param list 来源成员列表（详情页左侧列表口径）
+ */
+const onStockClick = (symbol: string, list: readonly RotationStockRef[]): void => {
+  if (pendingStockTimer !== null) {
+    window.clearTimeout(pendingStockTimer);
+  }
+  pendingStockTimer = window.setTimeout(() => {
+    pendingStockTimer = null;
+    openSidebar(symbol, toContextList(list, (item) => item.symbol));
+  }, DBLCLICK_MERGE_MS);
+};
+
+/**
+ * 成员股双击：取消未派发的单击，跳详情整页（携带成员列表）
+ * @param symbol 个股符号（6 位形态）
+ * @param list 来源成员列表
+ */
+const onStockDblclick = (symbol: string, list: readonly RotationStockRef[]): void => {
+  if (pendingStockTimer !== null) {
+    window.clearTimeout(pendingStockTimer);
+    pendingStockTimer = null;
+  }
+  openPage(symbol, toContextList(list, (item) => item.symbol));
+};
 
 /* --------------------------------- 视图状态 --------------------------------- */
 
@@ -414,12 +459,20 @@ const onBoardClick = (boardCode: string): void => {
 };
 
 /**
- * 点击个股：停靠面板
- * @param symbol 个股代码
+ * 成员股 / 龙头点击（单击开侧栏 / 双击进详情，见 script 顶部合并派发注释）
+ * @param symbol 个股符号
+ * @param list 来源成员列表
  */
-const onStockClick = (symbol: string): void => {
-  emit('stockClick', symbol);
+const openStockNav = (symbol: string, list: readonly RotationStockRef[]): void => {
+  onStockClick(symbol, list);
 };
+
+/** 当日板块Top 榜单的龙头列表（详情页左侧来源列表口径） */
+const topLeaders = computed<RotationStockRef[]>(() =>
+  (currentDay.value?.top ?? []).flatMap((point) =>
+    point.leader ? [{ symbol: point.leader.symbol, name: point.leader.name }] : [],
+  ),
+);
 
 /* --------------------------------- 展示辅助 --------------------------------- */
 
@@ -596,8 +649,9 @@ const segmentStatus = (segment: RotationSegment): string => {
                       <button
                         type="button"
                         class="pressable hover:underline"
-                        :title="`${point.leader.name} · 打开个股详情`"
-                        @click="onStockClick(point.leader!.symbol)"
+                        :title="`${point.leader.name} · 单击看侧栏 / 双击进详情`"
+                        @click="openStockNav(point.leader!.symbol, topLeaders)"
+                        @dblclick="onStockDblclick(point.leader!.symbol, topLeaders)"
                       >
                         {{ point.leader.name }} {{ point.leader.limitStreak }}板
                       </button>
@@ -660,7 +714,8 @@ const segmentStatus = (segment: RotationSegment): string => {
                   <button
                     type="button"
                     class="pressable hover:underline"
-                    @click="onStockClick(activeSegment.topLeader.symbol)"
+                    @click="openStockNav(activeSegment.topLeader.symbol, activeSegment.members)"
+                    @dblclick="onStockDblclick(activeSegment.topLeader.symbol, activeSegment.members)"
                   >
                     {{ activeSegment.topLeader.name }} {{ activeSegment.topLeader.limitStreak }}板
                   </button>
@@ -694,7 +749,8 @@ const segmentStatus = (segment: RotationSegment): string => {
                     <button
                       type="button"
                       class="pressable font-semibold hover:underline"
-                      @click="onStockClick(point.leader.symbol)"
+                      @click="openStockNav(point.leader.symbol, activeSegment.members)"
+                      @dblclick="onStockDblclick(point.leader.symbol, activeSegment.members)"
                     >
                       {{ point.leader.name }} {{ point.leader.limitStreak }}板
                     </button>
@@ -726,7 +782,8 @@ const segmentStatus = (segment: RotationSegment): string => {
                       <button
                         type="button"
                         class="pressable font-semibold text-primary hover:underline"
-                        @click="onStockClick(member.symbol)"
+                        @click="openStockNav(member.symbol, activeSegment.members)"
+                        @dblclick="onStockDblclick(member.symbol, activeSegment.members)"
                       >
                         {{ member.name }}
                       </button>

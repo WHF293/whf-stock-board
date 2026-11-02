@@ -59,5 +59,8 @@ export const CHART_LINE_GREEN = '#22c55e';
 /** 固定曲线色 · 紫（深证成交额） */
 export const CHART_LINE_PURPLE = '#a855f7';
 
+/** 固定曲线色 · 红（上证指数涨跌幅等指数对比线） */
+export const CHART_LINE_RED = '#ef4444';
+
 /** 固定曲线色：青绿（主题色系，不随主题色变化；市场宽度 ARMS 曲线） */
 export const CHART_LINE_TEAL = '#0e9488';

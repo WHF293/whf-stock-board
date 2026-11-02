@@ -18,8 +18,10 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  /** 点击行打开个股详情 */
+  /** 单击行：打开个股详情侧栏（2026-11-02 起全站统一口径） */
   open: [code: string];
+  /** 双击行：跳个股详情整页 */
+  openPage: [code: string];
 }>();
 
 /**
@@ -70,8 +72,10 @@ const clearedCount = computed(() => props.rows.filter((r) => r.closeDate).length
     :min-width="'860px'"
     :scroll-class="fill ? 'table-scroll-fill' : 'table-scroll'"
     row-clickable
-    :footer-text="`共 ${rows.length} 条（已清仓 ${clearedCount} · 持有中 ${rows.length - clearedCount}）· 点击行打开个股详情`"
+    enable-dblclick-nav
+    :footer-text="`共 ${rows.length} 条（已清仓 ${clearedCount} · 持有中 ${rows.length - clearedCount}）· 单击开侧栏 / 双击进详情`"
     @row-click="(r) => emit('open', r.code)"
+    @row-dblclick="(r) => emit('openPage', r.code)"
   >
     <template #name="{ row }">
       <span class="font-medium text-text">{{ row.name }}</span>

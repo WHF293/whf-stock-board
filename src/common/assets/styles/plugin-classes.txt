@@ -323,6 +323,7 @@ plugins/dsh-quick-note/constants.ts
 plugins/dsh-quick-note/plugin.ts
 plugins/dsh-quick-note/service.ts
 plugins/dsh-sentiment-index/constants.ts
+plugins/dsh-sentiment-index/em-bridge.ts
 plugins/dsh-sentiment-index/em-data.ts
 plugins/dsh-sentiment-index/judge.ts
 plugins/dsh-sentiment-index/plugin.ts

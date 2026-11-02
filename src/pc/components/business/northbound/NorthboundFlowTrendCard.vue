@@ -15,7 +15,7 @@ import { formatNorthboundAmount } from '../../../../common/utils/format-northbou
 import { readTrendColors } from '../../../../common/utils/trend-colors';
 import { toFullSymbol } from '../../../../common/utils/to-full-symbol';
 import { useSettingsStore } from '../../../../common/stores/settings';
-import { useDockPanelStore } from '../../../../common/stores/dock-panel';
+import { useStockOpen } from '../../../../common/composables/use-stock-open';
 import type {
   NorthboundHistoryRange,
   NorthboundHistoryRow,
@@ -43,7 +43,6 @@ const DETAIL_ROW_COUNT = 6;
 const CHART_HEIGHT_PX = 200;
 
 const settingsStore = useSettingsStore();
-const dockPanel = useDockPanelStore();
 
 /** 当前范围 */
 const range = ref<NorthboundHistoryRange>('30d');
@@ -188,12 +187,55 @@ const option = computed<EChartsCoreOption>(() => {
 const detailRows = computed(() => rows.value.slice(-DETAIL_ROW_COUNT).reverse());
 
 /**
- * 点击领涨股 → 停靠面板个股详情（全站规范；港股代码经 toFullSymbol 归一）
+ * 领涨股单击 / 双击（2026-11-02 全站统一口径）：单击 = 右侧个股侧栏，
+ * 双击 = 个股详情整页（携带明细表行内出现的领涨股作为来源列表）。
+ * 单击 / 双击合并派发窗口与 BaseTable enableDblclickNav 同口径
+ */
+const { openSidebar, openPage, toContextList } = useStockOpen();
+
+/** 明细行内出现过的领涨股（来源列表口径；代码 600592.SH / 02656.HK → 完整符号） */
+const leadStockList = computed(() =>
+  rows.value.flatMap((row) =>
+    row.topStockCode
+      ? [{ symbol: toFullSymbol(row.topStockCode), name: row.topStockName ?? '' }]
+      : [],
+  ),
+);
+
+/** 单击合并窗口（毫秒） */
+const DBLCLICK_MERGE_MS = 250;
+/** 挂起的单击定时器（null = 无待派发单击） */
+let pendingLeadTimer: number | null = null;
+
+/**
+ * 领涨股单击：延迟派发开侧栏，窗口内收到双击则取消
  * @param code 领涨股代码（600592.SH / 02656.HK 形态）
  */
 const openLeadStock = (code: string | null): void => {
   if (!code) return;
-  dockPanel.openStock(toFullSymbol(code));
+  if (pendingLeadTimer !== null) {
+    window.clearTimeout(pendingLeadTimer);
+  }
+  pendingLeadTimer = window.setTimeout(() => {
+    pendingLeadTimer = null;
+    openSidebar(
+      toFullSymbol(code),
+      toContextList(leadStockList.value, (item) => item.symbol),
+    );
+  }, DBLCLICK_MERGE_MS);
+};
+
+/**
+ * 领涨股双击：取消未派发的单击，跳详情整页
+ * @param code 领涨股代码
+ */
+const openLeadStockPage = (code: string | null): void => {
+  if (!code) return;
+  if (pendingLeadTimer !== null) {
+    window.clearTimeout(pendingLeadTimer);
+    pendingLeadTimer = null;
+  }
+  openPage(toFullSymbol(code), toContextList(leadStockList.value, (item) => item.symbol));
 };
 </script>
 
@@ -243,7 +285,9 @@ const openLeadStock = (code: string | null): void => {
                   <button
                     type="button"
                     class="pressable text-text-secondary hover:text-primary"
+                    title="单击开侧栏 / 双击进详情"
                     @click="openLeadStock(row.topStockCode)"
+                    @dblclick="openLeadStockPage(row.topStockCode)"
                   >
                     {{ row.topStockName }}
                   </button>

@@ -105,7 +105,7 @@ export const useDockPanelStore = defineStore('dock-panel', {
   },
 
   /**
-   * 打开赚钱效应气泡图面板（板块分析页扩展行「查看赚钱效应」发起）
+   * 打开赚钱效应气泡图面板（板块分析页扩展行「赚钱效应」发起）
    * @param tradeDate 聚焦交易日（YYYY-MM-DD；空串 = 最新完整快照日）
    */
   openProfitBubble(tradeDate: string): void {

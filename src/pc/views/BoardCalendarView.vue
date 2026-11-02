@@ -832,7 +832,7 @@ const onBoardClick = (row: BoardCalendarRow): void => {
 };
 
 /**
- * 扩展行【查看赚钱效应】：打开右侧停靠面板（可拖宽）并聚焦该交易日
+ * 扩展行【赚钱效应】：打开右侧停靠面板（可拖宽）并聚焦该交易日
  * @param tradeDate 扩展行对应的交易日
  */
 const onExpandProfitClick = (tradeDate: string): void => {
@@ -848,11 +848,11 @@ const onMainlineCellClick = (cell: BoardMainlineCell): void => {
 };
 
 /**
- * 题材轮动 · 点击成员股 / 龙头：打开右侧停靠面板（全站唯一入口口径）
- * @param symbol 个股代码（6 位形态）
+ * 扩展行【收起】按钮：清空展开态（与同格再点收起同口径）
  */
-const onRotationStockClick = (symbol: string): void => {
-  dockPanelStore.openStock(symbol);
+const onExpandCollapse = (): void => {
+  expandedKey.value = null;
+  expanded.value = null;
 };
 
 /**
@@ -932,7 +932,7 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
           {{ tradingDayLabel }} · {{ rangeLabel }}
         </span>
         <BaseButton variant="ghost" :disabled="isForcing || !isDbAvailable" @click="onForceRefresh">
-          <MenuIcon name="refresh" :size="14" />
+          <MenuIcon name="refresh" :size="14" :class="{ 'animate-spin': isForcing }" />
           {{ isForcing ? '采集中…' : '刷新' }}
         </BaseButton>
       </div>
@@ -1066,7 +1066,7 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
         @sort-click="onColumnSortClick"
         @expand-profit-click="onExpandProfitClick"
         @expand-board-click="onRotationBoardClick"
-        @expand-stock-click="onRotationStockClick"
+        @expand-collapse="onExpandCollapse"
       />
     </BaseCard>
 
@@ -1088,7 +1088,6 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
             :daily-rows="weightedDailyRows"
             :limit-rows="limitRows"
             :meta-rows="metaRows"
-            @stock-click="onRotationStockClick"
             @board-click="onRotationBoardClick"
           />
 
@@ -1120,7 +1119,7 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
     </template>
 
     <!-- 赚钱效应气泡图已迁入右侧停靠面板（2026-10-31 王总指定删除主区 tab）：
-         入口 = 板块日历扩展行「查看赚钱效应」，经 dockPanel.openProfitBubble 打开 -->
+         入口 = 板块日历扩展行「赚钱效应」，经 dockPanel.openProfitBubble 打开 -->
 
     <BoardFilterModal
       v-model:open="filterOpen"

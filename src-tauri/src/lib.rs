@@ -930,6 +930,89 @@ const HEATMAP_THEME_INIT_SCRIPT: &str = r#"
 })();
 "#;
 
+/// 东财行情域 JSONP 桥注入脚本
+///
+/// 背景（2026-10-31 实测）：东财 push2 系 WAF 按「浏览器 TLS 指纹 + 东财域 Referer」
+/// 双条件放行，宿主 reqwest（tauri-plugin-http）的指纹被连接层拒连 —— 插件经
+/// `app:http` 直连东财 API 全灭。本脚本注入到**东财页面**（宿主/插件页内嵌的
+/// eastmoney.com iframe）里，在该上下文内代发 JSONP（`<script cb=…>`，不受 CORS
+/// 限制、Referer 为东财页自身），结果 postMessage 回给父页面。与主题跟随脚本
+/// （HEATMAP_THEME_INIT_SCRIPT）同机制同姿态：按域名门控、不感知页面由谁承载。
+///
+/// 同步协议（信源常量 `'whf-stock-board-em-bridge'` 现存**两端**——本脚本与插件仓库
+/// dsh-sentiment-index 的 constants，任一改动必须同步）：
+/// - iframe → 宿主 `{ source, type: 'em-bridge-ready' }`：桥就绪，插件收到才开始发请求；
+/// - 插件 → iframe `{ source, type: 'em-jsonp', id, url }`：代发 JSONP（url 必须是
+///   `https://*.eastmoney.com/api/…`，脚本内白名单校验，防止桥被滥用为开放代理）；
+/// - iframe → 插件 `{ source, type: 'em-jsonp-result', id, ok, text?/error? }`：
+///   text 为 JSONP payload 的 JSON 字符串（插件解析层与 http 通道同构）。
+///
+/// 安全姿态：只认 `event.source === window.parent`（不校验固定 origin——dev 与
+/// 生产、PC 与移动端 origin 不同，沿用 dapanyuntu 桥的 source 常量 + source 对账
+/// 惯例）；不触碰 Tauri IPC（远程 iframe 无 capability，也不需要）。
+/// 纯浏览器 dev / 移动端不注入（无此机制），插件侧桥不可用即回退 app:http 通道。
+const EM_JSONP_BRIDGE_INIT_SCRIPT: &str = r#"
+(function () {
+  if (!/(^|\.)eastmoney\.com$/.test(location.hostname)) return;
+  var BRIDGE_SOURCE = 'whf-stock-board-em-bridge';
+  var JSONP_TIMEOUT_MS = 15000;
+  var seq = 0;
+  var post = function (message) {
+    try { window.parent.postMessage(message, '*'); } catch (e) { /* 防御性忽略 */ }
+  };
+  var allowedUrl = function (raw) {
+    try {
+      var u = new URL(raw, location.href);
+      if (u.protocol !== 'https:') return null;
+      if (!/(^|\.)eastmoney\.com$/.test(u.hostname)) return null;
+      if (u.pathname.indexOf('/api/') !== 0) return null;
+      return u.toString();
+    } catch (e) { return null; }
+  };
+  var runJsonp = function (id, rawUrl) {
+    var url = allowedUrl(rawUrl);
+    if (!url) {
+      post({ source: BRIDGE_SOURCE, type: 'em-jsonp-result', id: id, ok: false, error: 'url not allowed' });
+      return;
+    }
+    var cbName = '__emBridgeCb_' + String(id).replace(/[^A-Za-z0-9_]/g, '_');
+    var script = null;
+    var cleanup = function () {
+      clearTimeout(timer);
+      try { delete window[cbName]; } catch (e) { /* 不可配置时忽略 */ }
+      if (script && script.parentNode) script.parentNode.removeChild(script);
+    };
+    var timer = setTimeout(function () {
+      cleanup();
+      post({ source: BRIDGE_SOURCE, type: 'em-jsonp-result', id: id, ok: false, error: 'jsonp timeout' });
+    }, JSONP_TIMEOUT_MS);
+    var reply = function (ok, text, error) {
+      cleanup();
+      post({ source: BRIDGE_SOURCE, type: 'em-jsonp-result', id: id, ok: ok, text: text, error: error });
+    };
+    window[cbName] = function (payload) {
+      var text = '';
+      try { text = JSON.stringify(payload); } catch (e) { /* 循环引用等场景给空串 */ }
+      reply(true, text, '');
+    };
+    script = document.createElement('script');
+    script.onerror = function () { reply(false, '', 'script error'); };
+    // 插件侧 url 不带 cb；若未来带了，重复参数会破坏 JSONP —— 这里末位覆盖语义靠追加保证
+    script.src = url + (url.indexOf('?') >= 0 ? '&' : '?') + 'cb=' + cbName;
+    (document.head || document.documentElement).appendChild(script);
+  };
+  window.addEventListener('message', function (event) {
+    if (event.source !== window.parent) return;
+    var data = event.data;
+    if (!data || data.source !== BRIDGE_SOURCE || data.type !== 'em-jsonp') return;
+    seq += 1;
+    var id = data.id == null ? String(seq) : String(data.id);
+    runJsonp(id, String(data.url || ''));
+  });
+  post({ source: BRIDGE_SOURCE, type: 'em-bridge-ready' });
+})();
+"#;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   let builder = tauri::Builder::default()
@@ -984,8 +1067,10 @@ pub fn run() {
       }
       // 主窗口改为 Rust 侧构建（tauri.conf.json 声明 create:false）：只有构建期
       // 才能挂 initialization_script_for_all_frames——这是跨域 iframe（大盘云图
-      // 插件页，见 plugins 仓库 dsh-dapanyuntu）内执行脚本的唯一通道，
-      // 用于把宿主明暗主题同步给第三方站点。
+      // 插件页，见 plugins 仓库 dsh-dapanyuntu）内执行脚本的唯一通道：
+      // ① HEATMAP_THEME_INIT_SCRIPT：宿主明暗主题同步给第三方云图站点；
+      // ② EM_JSONP_BRIDGE_INIT_SCRIPT：东财域 JSONP 桥（插件散户情绪指数的
+      //    东财通道，2026-10-31 起 reqwest 指纹被东财 WAF 拒连后的代发层）。
       // 窗口几何 / 装饰等仍以 tauri.conf.json 为唯一事实源（from_config 原样取用）。
       let window_config = app
         .config()
@@ -996,6 +1081,7 @@ pub fn run() {
         .expect("tauri.conf.json 缺少主窗口配置");
       let main_window = tauri::WebviewWindowBuilder::from_config(app.handle(), &window_config)?
         .initialization_script_for_all_frames(HEATMAP_THEME_INIT_SCRIPT)
+        .initialization_script_for_all_frames(EM_JSONP_BRIDGE_INIT_SCRIPT)
         .build()?;
       // 无边框主窗口补系统命令支持：decorations:false 后触控板三指手势投递的
       // WM_SYSCOMMAND（最大化 / 最小化）无人处理，见 window_syscmd.rs。

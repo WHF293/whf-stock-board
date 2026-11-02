@@ -23,7 +23,41 @@ import type { ThsHkStockRow } from '../../common/types/ths-market.types.ts';
  * - 行点击 → 右侧停靠面板个股详情（代码已归一化为 hk02715 形态，全站统一落点）
  * - 30s 前台轮询当前页（tradingAware，港股窗口 09:30-16:00；失败 → 错误态手动重试）
  */
-const { openSidebar } = useStockOpen();
+const { openSidebar, openPage, toContextList } = useStockOpen();
+
+// ---------- 单击 / 双击合并派发（与 BaseTable enableDblclickNav 同窗口） ----------
+// 单击 = 右侧个股侧栏；双击 = 个股详情整页（携带当前页行列表）。hk02715 形态符号原样透传
+
+/** 单击合并窗口（毫秒），与 BaseTable 口径一致 */
+const DBLCLICK_MERGE_MS = 250;
+/** 挂起的单击定时器（null = 无待派发单击） */
+let pendingClickTimer: number | null = null;
+
+/**
+ * 行单击：延迟派发开侧栏，窗口内收到双击则取消
+ * @param row 行数据
+ */
+const onRowClick = (row: ThsHkStockRow): void => {
+  if (pendingClickTimer !== null) {
+    window.clearTimeout(pendingClickTimer);
+  }
+  pendingClickTimer = window.setTimeout(() => {
+    pendingClickTimer = null;
+    openSidebar(row.code, toContextList(rows.value, (item) => item.code));
+  }, DBLCLICK_MERGE_MS);
+};
+
+/**
+ * 行双击：取消未派发的单击，跳详情整页（携带当前页行列表）
+ * @param row 行数据
+ */
+const onRowDblclick = (row: ThsHkStockRow): void => {
+  if (pendingClickTimer !== null) {
+    window.clearTimeout(pendingClickTimer);
+    pendingClickTimer = null;
+  }
+  openPage(row.code, toContextList(rows.value, (item) => item.code));
+};
 
 /** 当前排序字段（默认涨跌幅降序，与 A 股全部个股视图一致） */
 const sortField = ref<ThsHkStockBoardField>('changePercent');
@@ -71,6 +105,14 @@ usePolling({
 });
 onMounted(() => {
   void load();
+});
+
+// 供宿主（行情全景页）「刷新」按钮调用：重拉当前排序 / 页码
+defineExpose({
+  /** 手动刷新（load 内部有防重入） */
+  refresh: load,
+  /** 拉取中状态（宿主用于按钮旋转动画） */
+  loading,
 });
 
 // 排序变化：重置回第 1 页并立即拉取
@@ -128,13 +170,8 @@ const goNext = (): void => {
 };
 
 /**
- * 行点击 → 停靠面板个股详情（hk02715 形态符号，openSidebar 原样透传）
- * @param row 行数据
+ * 行点击 → 停靠面板个股详情（hk02715 形态符号，openSidebar 原样透传；见上方合并派发注释）
  */
-const onRowClick = (row: ThsHkStockRow): void => {
-  openSidebar(row.code);
-};
-
 /* === 列定义（服务端排序；label 与同花顺港股页 13 列对齐） === */
 interface ColumnDef {
   key: keyof ThsHkStockRow;
@@ -227,6 +264,7 @@ const cellCls = (col: ColumnDef, row: ThsHkStockRow): string => {
               :key="row.code"
               class="cursor-pointer border-b border-flat-weak last:border-0 hover:bg-flat-weak/50"
               @click="onRowClick(row)"
+              @dblclick="onRowDblclick(row)"
             >
               <td
                 v-for="col in COLUMNS"

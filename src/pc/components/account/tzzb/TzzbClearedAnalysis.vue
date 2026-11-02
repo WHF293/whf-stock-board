@@ -27,8 +27,10 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  /** 点击行打开个股 / 基金详情 */
+  /** 单击行打开个股 / 基金详情（2026-11-02 起个股行统一为侧栏口径，基金行保持跳详情） */
   open: [code: string];
+  /** 双击个股行：跳个股详情整页 */
+  openPage: [code: string];
 }>();
 
 const KIND_OPTIONS = [
@@ -249,8 +251,10 @@ const fundColumns: TableColumn<TzzbHoldingReturn>[] = [
         :min-width="'780px'"
         scroll-class="table-scroll-sm"
         row-clickable
-        footer-text="点击行打开个股详情"
+        enable-dblclick-nav
+        footer-text="单击开侧栏 / 双击进详情"
         @row-click="(r) => emit('open', r.code)"
+        @row-dblclick="(r) => emit('openPage', r.code)"
       >
         <template #name="{ row }">
           <span class="font-medium text-text">{{ row.name }}</span>

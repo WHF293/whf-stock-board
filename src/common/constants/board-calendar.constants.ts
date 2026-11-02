@@ -463,7 +463,7 @@ export const BOARD_CALENDAR_VIEW_DEFAULT = BOARD_CALENDAR_VIEW.ROTATION;
  *
  * 2026-10-22 王总指定：板块Top 不再作为独立 Tab，移入题材轮动 Tab 下方作子模块；
  * 2026-10-31 王总指定：赚钱效应 Tab 删除，气泡图迁入右侧停靠面板（扩展行
- * 「查看赚钱效应」按钮打开），选项随之移除；MAINLINE key 保留（类型与持久化兼容）。
+ * 「赚钱效应」按钮打开），选项随之移除；MAINLINE key 保留（类型与持久化兼容）。
  */
 export const BOARD_CALENDAR_VIEW_OPTIONS = [
   { label: '题材轮动', value: BOARD_CALENDAR_VIEW.ROTATION },
@@ -472,10 +472,9 @@ export const BOARD_CALENDAR_VIEW_OPTIONS = [
 ] as const;
 
 /**
- * 板块日历扩展行（2026-10-31 王总指定：点击单元格展开扩展行替代明细弹窗）
+ * 板块日历扩展行（2026-10-31 王总指定：点击单元格展开扩展行替代明细弹窗；
+ * 2026-11-02 王总指定：改上下布局，汇总条固定宽度常量随之删除）
  */
-/** 扩展行左栏（汇总条 + 按钮）固定宽度（px） */
-export const BOARD_EXPAND_SUMMARY_WIDTH = 300;
 /** 扩展行整体最大高度（px，一屏语义：不超过主区可视高度） */
 export const BOARD_EXPAND_MAX_HEIGHT = 640;
 
