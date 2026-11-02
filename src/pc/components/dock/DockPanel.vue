@@ -176,7 +176,7 @@ onBeforeUnmount(() => {
           :symbol="dockPanel.f10Symbol"
           :name="dockPanel.f10Name"
         />
-        <!-- 赚钱效应气泡图（板块分析页扩展行「查看赚钱效应」发起，2026-10-31 王总指定）：
+        <!-- 赚钱效应气泡图（板块分析页扩展行「赚钱效应」发起，2026-10-31 王总指定）：
              拖宽 / 持久化复用容器能力，气泡布局随实测宽防抖重排 -->
         <BoardProfitDockPanel
           v-else-if="dockPanel.content === DOCK_PANEL_CONTENT.PROFIT_BUBBLE"

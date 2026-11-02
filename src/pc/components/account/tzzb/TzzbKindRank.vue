@@ -33,8 +33,10 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  /** 点击行 / 格子打开个股详情（父级统一跳转） */
+  /** 单击行 / 格子打开个股侧栏（2026-11-02 起统一口径；基金行父级跳基金详情） */
   open: [code: string];
+  /** 双击个股行：跳个股详情整页 */
+  openPage: [code: string];
 }>();
 
 const settingsStore = useSettingsStore();
@@ -151,11 +153,23 @@ const plClass = (v: number): string => (v > 0 ? 'text-up' : v < 0 ? 'text-down' 
 const fillClass = (v: number): string => (v >= 0 ? 'bg-up' : 'bg-down');
 
 /**
- * 点击行打开详情（ emit 给父级统一跳转，与建清仓记录行为一致）
+ * 单击行（emit 给父级统一落点，与建清仓记录行为一致）
  * @param row 排行行
  */
 const openDetail = (row: RankRow): void => {
   emit('open', row.code);
+};
+
+/**
+ * 双击行：个股跳详情整页；基金无个股详情页，回落为与单击一致
+ * @param row 排行行
+ */
+const openDetailPage = (row: RankRow): void => {
+  if (row.type === 'fund') {
+    openDetail(row);
+    return;
+  }
+  emit('openPage', row.code);
 };
 
 /* ---------------- 热力视图（treemap，同市场总览板块热力口径） ---------------- */
@@ -234,8 +248,9 @@ const onHeatClick = (params: unknown): void => {
         :key="`${row.type}-${row.code}`"
         type="button"
         class="pressable flex w-full items-center gap-2 rounded-lg px-1.5 py-1.5 text-left hover:bg-flat-weak/60"
-        :title="`${row.type === 'fund' ? '基金' : '个股'} · 点击打开详情`"
+        :title="`${row.type === 'fund' ? '基金' : '个股'} · 单击开侧栏 / 双击进详情`"
         @click="openDetail(row)"
+        @dblclick="openDetailPage(row)"
       >
         <span class="w-5 shrink-0 text-center font-mono text-xs text-text-tertiary">{{ i + 1 }}</span>
         <span class="w-28 shrink-0 truncate text-[13px] font-medium text-text">

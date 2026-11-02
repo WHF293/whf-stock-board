@@ -63,12 +63,12 @@ const emit = defineEmits<{
   boardClick: [row: BoardCalendarRow];
   /** 点击日期列头：请求按该列得分排序（页面负责 升/降/默认 循环） */
   sortClick: [tradeDate: string];
-  /** 扩展行【查看赚钱效应】：打开右侧停靠面板并聚焦该交易日 */
+  /** 扩展行【赚钱效应】：打开右侧停靠面板并聚焦该交易日 */
   expandProfitClick: [tradeDate: string];
-  /** 扩展行【查看板块详情】：进入板块详情页 */
+  /** 扩展行【板块详情】：进入板块详情页 */
   expandBoardClick: [boardCode: string];
-  /** 扩展行成分股行点击：打开个股详情侧边栏 */
-  expandStockClick: [symbol: string];
+  /** 扩展行【收起】：收起扩展行（页面清空 expandedKey） */
+  expandCollapse: [];
 }>();
 
 /** 横向滚动容器（虚拟化测量可视宽度用） */
@@ -242,7 +242,7 @@ const cellTitle = (
           :profile-cons-count="expandView.profileConsCount"
           @profit-click="emit('expandProfitClick', $event)"
           @board-click="emit('expandBoardClick', $event)"
-          @stock-click="emit('expandStockClick', $event)"
+          @collapse="emit('expandCollapse')"
         />
       </div>
     </template>

@@ -31,6 +31,7 @@ import {
   getTzzbYearPoints,
 } from '../../../../common/api/tzzb.api.ts';
 import { useRouter } from 'vue-router';
+import { useStockOpen } from '../../../../common/composables/use-stock-open';
 import type {
   TzzbAccount,
   TzzbAssetChange,
@@ -64,6 +65,7 @@ import TzzbTradeRecords from './TzzbTradeRecords.vue';
  * 切换其他账户时展示空态（正式接入后按账户维度重拉）。
  */
 const router = useRouter();
+const { openSidebar } = useStockOpen();
 
 /* ---------------- 状态 ---------------- */
 
@@ -505,10 +507,23 @@ const onTradePage = (page: number): void => {
 };
 
 /**
- * 点击品种打开个股 / 基金详情
+ * 点击品种打开个股 / 基金详情（2026-11-02 起统一口径：单击 = 右侧个股侧栏；
+ * 基金无个股详情侧栏，回落跳详情整页）
  * @param code 证券代码
  */
 const openStockDetail = (code: string): void => {
+  if (/^\d{6}$/.test(code)) {
+    openSidebar(code);
+    return;
+  }
+  void router.push(`${ROUTE_PATH.STOCK_DETAIL}/${code}`);
+};
+
+/**
+ * 双击品种：跳个股详情整页（携带建清仓行作为来源列表）
+ * @param code 证券代码
+ */
+const openStockDetailPage = (code: string): void => {
   void router.push(`${ROUTE_PATH.STOCK_DETAIL}/${code}`);
 };
 </script>
@@ -600,10 +615,10 @@ const openStockDetail = (code: string): void => {
       <!-- ④ 建清仓 + ⑤ 品种总盈亏（xl 定高等高，两侧各自内部滚动） -->
       <div class="grid shrink-0 gap-3 xl:h-[30rem] xl:grid-cols-5">
         <BaseCard title="建清仓记录" fill class="min-h-0 xl:col-span-3">
-          <TzzbClearedPanel :rows="cleared" fill @open="openStockDetail" />
+          <TzzbClearedPanel :rows="cleared" fill @open="openStockDetail" @open-page="openStockDetailPage" />
         </BaseCard>
         <BaseCard title="品种总盈亏" fill class="min-h-0 xl:col-span-2">
-          <TzzbKindRank :cleared="cleared" :fund-returns="fundReturns" @open="openStockDetail" />
+          <TzzbKindRank :cleared="cleared" :fund-returns="fundReturns" @open="openStockDetail" @open-page="openStockDetailPage" />
         </BaseCard>
       </div>
 
@@ -622,7 +637,7 @@ const openStockDetail = (code: string): void => {
             <MenuIcon name="agent" :size="14" />
           </button>
         </template>
-        <TzzbClearedAnalysis :cleared="cleared" :fund-returns="fundReturns" @open="openStockDetail" />
+        <TzzbClearedAnalysis :cleared="cleared" :fund-returns="fundReturns" @open="openStockDetail" @open-page="openStockDetailPage" />
       </BaseCard>
 
       <!-- ⑦ 交易记录（页签在标题行右侧；历史导入页签已删） -->

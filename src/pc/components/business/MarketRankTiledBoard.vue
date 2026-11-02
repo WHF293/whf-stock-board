@@ -77,17 +77,56 @@ const props = defineProps<{
 }>();
 
 const dataCache = useDataCacheStore();
-const { openSidebar } = useStockOpen();
+const { openSidebar, openPage, toContextList } = useStockOpen();
 
 /** 各接口请求间隔（毫秒）：对同一上游串行错峰 */
 const REQUEST_GAP_MS = 500;
 
+// ---------- 单击 / 双击合并派发（与 BaseTable enableDblclickNav 同窗口） ----------
+// 单击 = 右侧个股侧栏；双击 = 个股详情整页（携带该列榜单行列表，详情页左侧可切换同批股票）。
+// 六类榜单行（报价排序 / 连板股池 / 盘口异动 / 龙虎榜 / 大宗 / 新股）同走这一套窗口
+
+/** 单击合并窗口（毫秒），与 BaseTable 口径一致 */
+const DBLCLICK_MERGE_MS = 250;
+/** 挂起的单击定时器（null = 无待派发单击） */
+let pendingClickTimer: number | null = null;
+
 /**
- * 个股跳详情（6 位纯代码 -> 右侧详情侧栏）
+ * 行单击（通用）：延迟派发开侧栏，窗口内收到双击则取消
  * @param code 个股 6 位代码
+ * @param list 来源榜单行（写上下文，详情页左侧列表用）
+ * @param pickSymbol 行 -> 代码
  */
-const openDetail = (code: string): void => {
-  openSidebar(code);
+const scheduleClick = <T,>(
+  code: string,
+  list: readonly T[],
+  pickSymbol: (row: T) => string,
+): void => {
+  if (pendingClickTimer !== null) {
+    window.clearTimeout(pendingClickTimer);
+  }
+  pendingClickTimer = window.setTimeout(() => {
+    pendingClickTimer = null;
+    openSidebar(code, toContextList(list, pickSymbol));
+  }, DBLCLICK_MERGE_MS);
+};
+
+/**
+ * 行双击（通用）：取消未派发的单击，跳详情整页（携带来源榜单行列表）
+ * @param code 个股 6 位代码
+ * @param list 来源榜单行
+ * @param pickSymbol 行 -> 代码
+ */
+const openPageWithList = <T,>(
+  code: string,
+  list: readonly T[],
+  pickSymbol: (row: T) => string,
+): void => {
+  if (pendingClickTimer !== null) {
+    window.clearTimeout(pendingClickTimer);
+    pendingClickTimer = null;
+  }
+  openPage(code, toContextList(list, pickSymbol));
 };
 
 /**
@@ -467,6 +506,106 @@ const stockChangeRows = computed(() =>
   stockChanges.value.slice(0, STOCK_CHANGE_MAX_ITEMS),
 );
 
+/* === 各榜单行的单击 / 双击处理（来源列表口径见上方合并派发注释） === */
+
+/**
+ * 报价排序榜行单击（取当前页签的排序结果作来源列表）
+ * @param quote 行数据
+ * @param tabValue 页签值
+ */
+const onQuoteClick = (quote: FullQuote, tabValue: string): void => {
+  scheduleClick(quote.code, quoteRankRows(tabValue), (item) => item.code);
+};
+
+/**
+ * 报价排序榜行双击
+ * @param quote 行数据
+ * @param tabValue 页签值
+ */
+const onQuoteDblclick = (quote: FullQuote, tabValue: string): void => {
+  openPageWithList(quote.code, quoteRankRows(tabValue), (item) => item.code);
+};
+
+/**
+ * 连板股池行单击
+ * @param item 行数据
+ */
+const onPoolClick = (item: ZTPoolItem): void => {
+  scheduleClick(item.code, poolItems.value, (row) => row.code);
+};
+
+/**
+ * 连板股池行双击
+ * @param item 行数据
+ */
+const onPoolDblclick = (item: ZTPoolItem): void => {
+  openPageWithList(item.code, poolItems.value, (row) => row.code);
+};
+
+/**
+ * 盘口异动行单击
+ * @param change 行数据
+ */
+const onStockChangeClick = (change: StockChangeItem): void => {
+  scheduleClick(change.code, stockChangeRows.value, (row) => row.code);
+};
+
+/**
+ * 盘口异动行双击
+ * @param change 行数据
+ */
+const onStockChangeDblclick = (change: StockChangeItem): void => {
+  openPageWithList(change.code, stockChangeRows.value, (row) => row.code);
+};
+
+/**
+ * 龙虎榜行单击
+ * @param item 行数据
+ */
+const onDragonClick = (item: DragonTigerDetailItem): void => {
+  scheduleClick(item.code, dragonRows.value, (row) => row.code);
+};
+
+/**
+ * 龙虎榜行双击
+ * @param item 行数据
+ */
+const onDragonDblclick = (item: DragonTigerDetailItem): void => {
+  openPageWithList(item.code, dragonRows.value, (row) => row.code);
+};
+
+/**
+ * 大宗交易行单击
+ * @param item 行数据
+ */
+const onBlockClick = (item: BlockTradeDetailItem): void => {
+  scheduleClick(item.code, blockRows.value, (row) => row.code);
+};
+
+/**
+ * 大宗交易行双击
+ * @param item 行数据
+ */
+const onBlockDblclick = (item: BlockTradeDetailItem): void => {
+  openPageWithList(item.code, blockRows.value, (row) => row.code);
+};
+
+/**
+ * 新股次新行单击
+ * @param item 行数据
+ */
+const onIpoClick = (item: IpoBoardItem): void => {
+  scheduleClick(item.code, ipoRows.value, (row) => row.code);
+};
+
+/**
+ * 新股次新行双击
+ * @param item 行数据
+ */
+const onIpoDblclick = (item: IpoBoardItem): void => {
+  openPageWithList(item.code, ipoRows.value, (row) => row.code);
+};
+
 // ---------- 榜单数据出口（父级页面 AI 分析 / 导出 Excel 经 defineExpose 消费） ----------
 
 /** 报价排序榜导出列（与原页签模式同列，含代码） */
@@ -720,7 +859,8 @@ defineExpose({ getRankDatasets });
             v-for="quote in quoteRankRows(tab.value)"
             :key="quote.code"
             class="group cursor-pointer rounded-xl border border-flat-weak bg-flat-weak/40 p-2 transition-colors hover:bg-flat-weak"
-            @click="openDetail(quote.code)"
+            @click="onQuoteClick(quote, tab.value)"
+            @dblclick="onQuoteDblclick(quote, tab.value)"
           >
             <div class="flex items-center gap-2">
               <span class="min-w-0 flex-1 truncate text-sm font-medium text-text">
@@ -780,7 +920,8 @@ defineExpose({ getRankDatasets });
             v-for="item in poolItems.slice(0, TILED_LIST_MAX_COUNT)"
             :key="item.code"
             class="group cursor-pointer rounded-xl border border-flat-weak bg-flat-weak/40 p-2 transition-colors hover:bg-flat-weak"
-            @click="openDetail(item.code)"
+            @click="onPoolClick(item)"
+            @dblclick="onPoolDblclick(item)"
           >
             <div class="flex items-center gap-2">
               <span class="min-w-0 flex-1 truncate text-sm font-medium text-text">
@@ -840,7 +981,8 @@ defineExpose({ getRankDatasets });
             v-for="(change, index) in stockChangeRows"
             :key="`${change.time}-${change.code}-${index}`"
             class="group cursor-pointer rounded-xl border border-flat-weak bg-flat-weak/40 p-2 transition-colors hover:bg-flat-weak"
-            @click="openDetail(change.code)"
+            @click="onStockChangeClick(change)"
+            @dblclick="onStockChangeDblclick(change)"
           >
             <div class="flex items-center gap-2">
               <span class="shrink-0 text-xs tabular-nums text-text-tertiary">
@@ -930,7 +1072,8 @@ defineExpose({ getRankDatasets });
             v-for="item in dragonRows"
             :key="`${item.date}-${item.code}`"
             class="group cursor-pointer rounded-xl border border-flat-weak bg-flat-weak/40 p-2 transition-colors hover:bg-flat-weak"
-            @click="openDetail(item.code)"
+            @click="onDragonClick(item)"
+            @dblclick="onDragonDblclick(item)"
           >
             <div class="flex items-center gap-2">
               <span class="min-w-0 flex-1 truncate text-sm font-medium text-text">
@@ -988,7 +1131,8 @@ defineExpose({ getRankDatasets });
             v-for="item in blockRows"
             :key="`${item.date}-${item.code}-${item.dealPrice}`"
             class="group cursor-pointer rounded-xl border border-flat-weak bg-flat-weak/40 p-2 transition-colors hover:bg-flat-weak"
-            @click="openDetail(item.code)"
+            @click="onBlockClick(item)"
+            @dblclick="onBlockDblclick(item)"
           >
             <div class="flex items-center gap-2">
               <span class="min-w-0 flex-1 truncate text-sm font-medium text-text">
@@ -1041,7 +1185,8 @@ defineExpose({ getRankDatasets });
             v-for="item in ipoRows.slice(0, TILED_LIST_MAX_COUNT)"
             :key="item.code"
             class="group cursor-pointer rounded-xl border border-flat-weak bg-flat-weak/40 p-2 transition-colors hover:bg-flat-weak"
-            @click="openDetail(item.code)"
+            @click="onIpoClick(item)"
+            @dblclick="onIpoDblclick(item)"
           >
             <div class="flex items-center gap-2">
               <span class="min-w-0 flex-1 truncate text-sm font-medium text-text">

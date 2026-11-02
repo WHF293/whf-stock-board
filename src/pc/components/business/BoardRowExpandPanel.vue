@@ -9,7 +9,6 @@ import { fetchBoardConstituentQuotes } from '../../../common/api/board-calendar.
 import { isBoardDbAvailable } from '../../../common/api/board-calendar-db.api.ts';
 import {
   BOARD_EXPAND_MAX_HEIGHT,
-  BOARD_EXPAND_SUMMARY_WIDTH,
   BOARD_SCORE_LEGEND,
 } from '../../../common/constants/board-calendar.constants.ts';
 import { NUMBER_PLACEHOLDER } from '../../../common/constants/format.constants.ts';
@@ -25,13 +24,17 @@ import type { TableColumn } from '../../../common/types/table.types.ts';
 import { formatPercent, formatPercentUnsigned } from '../../../common/utils/format-percent';
 import { formatYuan } from '../../../common/utils/format-yuan';
 import { handleSdkError } from '../../../common/utils/handle-sdk-error';
+import { useStockOpen } from '../../../common/composables/use-stock-open';
+import { requestAgentAnalysis } from '../../agent/agent-bridge';
+import { buildBoardExpandAnalysisPrompt } from '../../../common/utils/build-board-expand-analysis-prompt';
 
 /**
  * 板块日历 · 扩展行内容（2026-10-31 王总指定：点击单元格展开，替代明细弹窗）
  *
- * 左栏 = 当日汇总条（全部来自 board_daily 落库值，零取数；回补日涨跌家数 `--`）
- * +【查看赚钱效应】【查看板块详情】两个动作；右栏 = 成分股表（仅一张表，不再
+ * 顶部 = 当日汇总条（全部来自 board_daily 落库值，零取数；回补日涨跌家数 `--`）
+ * +【赚钱效应】【板块详情】【Agent 分析】【收起】动作；下方 = 成分股表（仅一张表，不再
  * 区分涨跌停分类页签），涨跌幅可排序、最大高度一屏内滚。
+ * （2026-11-02 王总指定：左栏 + 右栏改为上下布局，汇总在上；按钮文案缩短）
  *
  * 成分股口径：
  * - 清单 = 本地 board_constituent（实时成分，零上游）；
@@ -52,13 +55,55 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  /** 点击【查看赚钱效应】：打开右侧赚钱效应停靠面板并聚焦该交易日 */
+  /** 点击【赚钱效应】：打开右侧赚钱效应停靠面板并聚焦该交易日 */
   profitClick: [tradeDate: string];
-  /** 点击【查看板块详情】：进入板块详情页 */
+  /** 点击【板块详情】：进入板块详情页 */
   boardClick: [boardCode: string];
-  /** 点击成分股行：打开个股详情侧边栏 */
-  stockClick: [symbol: string];
+  /** 点击【收起】：收起扩展行（2026-11-02 王总指定新增） */
+  collapse: [];
 }>();
+
+// 成分股行交互（2026-11-02 王总指定全站统一口径）：单击 = 右侧个股侧栏，双击 = 个股详情
+// 整页。BaseTable 开 enable-dblclick-nav 合并派发（单击延迟 250ms，双击取消）；
+// 打开时携带成分股行列表，详情页左侧来源列表与当前扩展行成分股一致
+const { openSidebar, openPage, toContextList } = useStockOpen();
+
+/**
+ * 成分股行单击：开右侧个股侧栏（携带成分股列表）
+ * @param row 行数据
+ */
+const onStockRowClick = (row: ExpandConsRow): void => {
+  openSidebar(row.symbol, toContextList(rows.value, (item) => item.symbol));
+};
+
+/**
+ * 成分股行双击：跳个股详情整页（携带成分股列表）
+ * @param row 行数据
+ */
+const onStockRowDblclick = (row: ExpandConsRow): void => {
+  openPage(row.symbol, toContextList(rows.value, (item) => item.symbol));
+};
+
+/**
+ * 【Agent 分析】（2026-11-02 王总指定新增）：把扩展行当前展示的全部信息
+ * （板块 + 交易日 + 当日汇总 + 成分股明细）发给 Agent，结合消息面、基本面
+ * 分析该板块当天大涨 / 大跌的原因
+ */
+const onAgentAnalysis = (): void => {
+  const scope = isBackfill.value
+    ? '历史回补数据，当日仅涨跌停家数可信'
+    : isToday.value
+      ? '当日实时行情'
+      : '历史日，仅涨跌停成员有当日涨跌数据';
+  const prompt = buildBoardExpandAnalysisPrompt(
+    props.board,
+    props.tradeDate,
+    scope,
+    summaryItems.value,
+    rows.value,
+  );
+  void requestAgentAnalysis(prompt);
+};
 
 /** 该日是否为完整快照（回补日无涨跌家数与成交额） */
 const isFullSnapshot = computed(() => props.cell.dataLevel === 1);
@@ -219,33 +264,43 @@ watch(
 
 <template>
   <div class="bc-expand" :style="{ maxHeight: `${BOARD_EXPAND_MAX_HEIGHT}px` }">
-    <!-- 左栏：汇总条 + 动作按钮 -->
-    <div
-      class="flex shrink-0 flex-col gap-3 overflow-y-auto border-r border-flat-weak pr-3"
-      :style="{ width: `${BOARD_EXPAND_SUMMARY_WIDTH}px` }"
-    >
-      <p class="text-xs text-text-secondary">
-        <b class="text-text">{{ board.name }}</b>
-        <span class="ml-1 text-text-tertiary">{{ tradeDate }}</span>
-        <span v-if="isBackfill" class="ml-2 text-text-tertiary">（历史回补，仅涨跌停数据）</span>
-      </p>
-      <dl class="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
-        <div v-for="item in summaryItems" :key="item.label" class="flex items-baseline justify-between gap-2">
+    <!-- 顶部：标题行（板块 + 交易日 + 动作按钮） + 汇总条（2026-11-02 王总指定：上下布局，汇总在上） -->
+    <div class="flex shrink-0 flex-col gap-2 border-b border-flat-weak pb-2">
+      <div class="flex flex-wrap items-center gap-2">
+        <p class="text-xs text-text-secondary">
+          <b class="text-text">{{ board.name }}</b>
+          <span class="ml-1 text-text-tertiary">{{ tradeDate }}</span>
+          <span v-if="isBackfill" class="ml-2 text-text-tertiary">（历史回补，仅涨跌停数据）</span>
+        </p>
+        <div class="ml-auto flex flex-wrap gap-2">
+          <BaseButton variant="primary" @click="emit('profitClick', tradeDate)">
+            赚钱效应
+          </BaseButton>
+          <BaseButton variant="ghost" @click="emit('boardClick', board.code)">
+            板块详情
+          </BaseButton>
+          <BaseButton
+            variant="ghost"
+            :disabled="rows.length === 0"
+            title="把扩展行信息发给 Agent，结合消息面、基本面分析当天大涨大跌"
+            @click="onAgentAnalysis"
+          >
+            Agent 分析
+          </BaseButton>
+          <BaseButton variant="ghost" @click="emit('collapse')">
+            收起
+          </BaseButton>
+        </div>
+      </div>
+      <dl class="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs">
+        <div v-for="item in summaryItems" :key="item.label" class="flex items-baseline gap-1.5">
           <dt class="text-text-tertiary">{{ item.label }}</dt>
           <dd class="font-medium tabular-nums text-text">{{ item.value }}</dd>
         </div>
       </dl>
-      <div class="mt-auto flex flex-wrap gap-2">
-        <BaseButton variant="primary" @click="emit('profitClick', tradeDate)">
-          查看赚钱效应
-        </BaseButton>
-        <BaseButton variant="ghost" @click="emit('boardClick', board.code)">
-          查看板块详情
-        </BaseButton>
-      </div>
     </div>
 
-    <!-- 右栏：成分股表（单表，无涨跌停分类页签） -->
+    <!-- 下方：成分股表（单表，无涨跌停分类页签） -->
     <div class="flex min-w-0 flex-1 flex-col">
       <BaseSkeleton v-if="isLoading && constituents.length === 0" class="flex-1" />
       <BaseEmpty
@@ -259,9 +314,11 @@ watch(
         :rows="rows"
         :row-key="rowKey"
         row-clickable
+        enable-dblclick-nav
         scroll-class="table-scroll-sm bc-expand__scroll"
-        :footer-text="`共 ${rows.length} 只 · ${isToday ? '实时行情（腾讯通道）' : '历史日：仅涨跌停成员有当日涨跌数据（名单为当前实时成分）'}`"
-        @row-click="emit('stockClick', $event.symbol)"
+        :footer-text="`共 ${rows.length} 只 · ${isToday ? '实时行情（腾讯通道）' : '历史日：仅涨跌停成员有当日涨跌数据（名单为当前实时成分）'} · 单击开侧栏 / 双击进详情`"
+        @row-click="onStockRowClick"
+        @row-dblclick="onStockRowDblclick"
       >
         <template #header-changePercent>
           <button
@@ -299,10 +356,11 @@ watch(
 </template>
 
 <style scoped>
-/* 扩展行整体：左汇总 + 右表格；最大高度由常量注入（一屏语义），超出内滚 */
+/* 扩展行整体：顶部汇总 + 下方表格（上下布局）；最大高度由常量注入（一屏语义），超出内滚 */
 .bc-expand {
   display: flex;
-  gap: 12px;
+  flex-direction: column;
+  gap: 10px;
   padding: 10px 12px;
   background: var(--color-flat-weak);
   border-bottom: 1px solid var(--color-border);

@@ -8,7 +8,7 @@ import {
 import { fetchNorthboundHoldingRank } from '../../../../common/api/northbound.api.ts';
 import { formatNorthboundAmount } from '../../../../common/utils/format-northbound-amount.ts';
 import { useLazyRows } from '../../../../common/composables/use-lazy-rows';
-import { useDockPanelStore } from '../../../../common/stores/dock-panel';
+import { useStockOpen } from '../../../../common/composables/use-stock-open';
 import type { NorthboundRankMarket, NorthboundRankRow } from '../../../../common/types/northbound.types.ts';
 import type { TableColumn } from '../../../../common/types/table.types.ts';
 import BaseCard from '../../ui/BaseCard.vue';
@@ -22,11 +22,9 @@ import BaseTable from '../../ui/BaseTable.vue';
  *
  * 上游已改**季度披露**（RPT_MUTUAL_HOLDSTOCKNORTH_STA），进页拉一次最新一期
  * 快照（不轮询、不随筛选重拉）；市场筛选（全部/沪市/深市）为本地过滤；
- * 懒加载每批 NORTHBOUND_RANK_PAGE_SIZE 行。行点击 → 停靠面板个股详情，
- * 行尾「持仓」→ 个股北向持仓历史抽屉（两者并存互不抢占）
+ * 懒加载每批 NORTHBOUND_RANK_PAGE_SIZE 行。行单击 → 停靠面板个股详情、
+ * 双击 → 个股详情整页（全站统一口径），行尾「持仓」→ 个股北向持仓历史抽屉
  */
-
-const dockPanel = useDockPanelStore();
 
 /** 市场筛选（本地过滤，不触发请求） */
 const market = ref<NorthboundRankMarket>('all');
@@ -94,12 +92,24 @@ const emit = defineEmits<{
   openIndividual: [row: NorthboundRankRow];
 }>();
 
+// 个股行交互（2026-11-02 王总指定全站统一口径）：单击 = 右侧个股侧栏，双击 = 详情整页
+// （BaseTable enable-dblclick-nav 合并派发；双击携带已加载排行行作为来源列表）
+const { openSidebar, openPage, toContextList } = useStockOpen();
+
 /**
- * 行点击 → 停靠面板个股详情（6 位纯代码由 openStock 内部归一化）
+ * 行单击 → 停靠面板个股详情（6 位纯代码内部归一化；携带来源列表）
  * @param row 排行行
  */
 const openStock = (row: NorthboundRankRow): void => {
-  dockPanel.openStock(row.code);
+  openSidebar(row.code, toContextList(rows.value, (item) => item.code));
+};
+
+/**
+ * 行双击 → 个股详情整页（携带已加载排行行）
+ * @param row 排行行
+ */
+const openStockPage = (row: NorthboundRankRow): void => {
+  openPage(row.code, toContextList(rows.value, (item) => item.code));
 };
 
 /**
@@ -133,8 +143,10 @@ const trendClass = (value: number | null): string =>
         :rows="rows"
         :row-key="(row) => row.code"
         row-clickable
+        enable-dblclick-nav
         :footer-text="hasMore ? `已展示 ${rows.length} / ${total} 只，滚动加载更多` : `共 ${total} 只`"
         @row-click="openStock"
+        @row-dblclick="openStockPage"
       >
         <template #close="{ row }">
           <span class="num text-text">{{ row.close ?? '--' }}</span>

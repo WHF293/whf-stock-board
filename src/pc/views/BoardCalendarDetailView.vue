@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { useRoute } from 'vue-router';
 import BoardDetailMatrix from '../components/business/BoardDetailMatrix.vue';
 import BaseButton from '../components/ui/BaseButton.vue';
 import BaseCard from '../components/ui/BaseCard.vue';
@@ -20,7 +20,6 @@ import {
 } from '../../common/constants/board-detail.constants.ts';
 import { CALENDAR_BOARDS } from '../../common/constants/board-calendar.constants.ts';
 import { DATA_CACHE_KEY } from '../../common/constants/data-cache.constants.ts';
-import { ROUTE_PATH } from '../../common/constants/router-meta.constants.ts';
 import { useDataCacheStore } from '../../common/stores/data-cache';
 import { useSettingsStore } from '../../common/stores/settings';
 import type {
@@ -50,7 +49,6 @@ import { useStockOpen } from '../../common/composables/use-stock-open';
  */
 
 const route = useRoute();
-const router = useRouter();
 const settingsStore = useSettingsStore();
 const dataCache = useDataCacheStore();
 const { openSidebar, openPage } = useStockOpen();
@@ -272,11 +270,6 @@ const onStockDblclick = (row: BoardDetailRow): void => {
   );
 };
 
-/** 返回板块日历看板（用 push 而非 back：直接打开本页 / 刷新后 back 会退出应用） */
-const goBack = (): void => {
-  void router.push(ROUTE_PATH.BOARD_CALENDAR);
-};
-
 /**
  * 图例色块样式（背景取档位色，随主题级联自动变化）
  * @param bucket 色阶档位
@@ -323,13 +316,9 @@ const NOTICE_TEXT =
 
 <template>
   <div class="flex h-full min-h-0 flex-col gap-4">
-    <!-- 控制条：返回 / 板块标识 / 排序基准 / 范围 -->
+    <!-- 控制条：板块标识 / 排序基准 / 范围（2026-11-02 王总指定：删除「← 板块日历」返回按钮） -->
     <div class="flex shrink-0 flex-wrap items-center justify-between gap-2">
       <div class="flex flex-wrap items-center gap-2">
-        <BaseButton variant="ghost" title="返回板块日历" @click="goBack">
-          <MenuIcon name="arrowLeft" :size="14" />
-          板块日历
-        </BaseButton>
         <span class="text-sm font-semibold text-text">{{ boardName }}</span>
         <span class="text-xs text-text-tertiary">{{ boardCode }}</span>
         <BaseTabs

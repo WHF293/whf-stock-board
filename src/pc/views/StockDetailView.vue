@@ -25,6 +25,7 @@ import { useKlineDrawing } from '../../common/composables/use-kline-drawing';
 import { KLINE_DRAWING_SHAPES } from '../../common/constants/kline-drawing.constants.ts';
 import StockQuoteHeader from '../components/business/StockQuoteHeader.vue';
 import StockOrderBook from '../components/business/StockOrderBook.vue';
+import ChipDistributionCard from '../components/business/ChipDistributionCard.vue';
 import { useDockPanelStore } from '../../common/stores/dock-panel';
 import { fetchFullQuotes } from '../../common/api/quotes.api.ts';
 import { fetchKlineCached } from '../../common/api/kline-cache.api.ts';
@@ -654,6 +655,11 @@ const pctClass = (value: number | null): string =>
         </BaseCard>
         <BaseCard title="五档盘口" class="shrink-0">
           <StockOrderBook :quote="quoteRef" :vertical="isInfoCollapsed" />
+        </BaseCard>
+        <!-- 筹码分布（2026-11-02 王总指定新增）：仅展开态渲染（收起时连数据一起卸载，
+             重新展开重拉）；重接口不轮询，东财 CYQ 算法本地推演 -->
+        <BaseCard v-if="!isInfoCollapsed" title="筹码分布" class="shrink-0">
+          <ChipDistributionCard :symbol="symbol" :current-price="quoteRef?.price ?? null" />
         </BaseCard>
       </div>
     </div>

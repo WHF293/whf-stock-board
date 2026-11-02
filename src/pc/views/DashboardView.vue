@@ -53,6 +53,8 @@ import { formatPercent, formatPercentUnsigned } from '../../common/utils/format-
 import { formatAmount } from '../../common/utils/format-amount';
 import { computeMarketSentiment } from '../../common/utils/compute-market-sentiment';
 import { formatYuanWithSign } from '../../common/utils/format-yuan';
+import { fetchMarginAccount } from '../../common/api/margin.api.ts';
+import type { MarginAccountItem } from 'stock-sdk';
 import { countDistribution } from '../../common/utils/count-distribution';
 import { delay } from '../../common/utils/delay';
 import { useRouter } from 'vue-router';
@@ -113,12 +115,17 @@ const goPanorama = (): void => {
   void router.push(ROUTE_PATH.PANORAMA);
 };
 
+/** 跳行情全景-融资融券 tab（融资融券卡片标题入口，2026-11-02 王总指定；?tab= 深链直开页签） */
+const goPanoramaMargin = (): void => {
+  void router.push(`${ROUTE_PATH.PANORAMA}?tab=margin`);
+};
+
 /** 跳宽基ETF页（页头按钮入口，国家队/汇金系宽基监控） */
 const goWideBaseEtf = (): void => {
   void router.push(ROUTE_PATH.WIDE_BASE_ETF);
 };
 
-/** 跳大盘云图（页头按钮入口；侧栏入口 2026-10-22 移除，与本页宽基ETF按钮同位） */
+/** 跳大盘云图（「板块热力」卡标题入口；页头按钮 2026-10-31 移除，入口迁侧栏「插件」分组 dsh-dapanyuntu） */
 const goHeatmap = (): void => {
   void router.push(ROUTE_PATH.HEATMAP);
 };
@@ -311,6 +318,60 @@ usePolling({
   tradingAware: true,
 });
 
+// ---------- 融资融券卡（2026-11-02 王总指定新增；数据源 stock-sdk margin.accountInfo） ----------
+
+/**
+ * 融资融券账户统计（按日倒序，最新在前）。两融数据交易所**次一交易日**公布，
+ * 最新一期通常是上一交易日 —— 重接口只拉一次不轮询，快照秒出
+ */
+const marginAccount = ref<MarginAccountItem[]>(
+  dataCache.get<MarginAccountItem[]>(DATA_CACHE_KEY.MARGIN_ACCOUNT) ?? [],
+);
+
+/** 最新一期（卡片展示行） */
+const marginLatest = computed<MarginAccountItem | null>(() => marginAccount.value[0] ?? null);
+/** 上一期（融资余额环比） */
+const marginPrev = computed<MarginAccountItem | null>(() => marginAccount.value[1] ?? null);
+
+/** 融资余额较上一交易日变化（亿；无上一期时 null） */
+const marginFinBalanceDelta = computed<number | null>(() => {
+  if (marginLatest.value?.finBalance === null || marginLatest.value?.finBalance === undefined) {
+    return null;
+  }
+  if (marginPrev.value?.finBalance === null || marginPrev.value?.finBalance === undefined) {
+    return null;
+  }
+  return marginLatest.value.finBalance - marginPrev.value.finBalance;
+});
+
+/**
+ * 两融金额展示（accountInfo 金额单位实为**亿元**，直接按亿读；见 margin.api.ts 单位口径）
+ * @param value 金额（亿元；null / undefined → 「--」）
+ * @returns 形如 `23152.77亿` 的文案
+ */
+const fmtYi = (value: number | null | undefined): string =>
+  value === null || value === undefined ? '--' : `${value.toFixed(2)}亿`;
+
+/**
+ * 两融金额环比文案（带符号亿）
+ * @param value 变化量（亿元；null → 「--」）
+ * @returns 形如 `+12.34亿` 的文案
+ */
+const fmtYiWithSign = (value: number | null): string =>
+  value === null ? '--' : `${value >= 0 ? '+' : ''}${value.toFixed(2)}亿`;
+
+/** 拉取融资融券账户统计（成功写快照；失败静默，卡片由骨架兜底） */
+const fetchMarginAccountOnce = async (): Promise<void> => {
+  try {
+    marginAccount.value = await fetchMarginAccount();
+    dataCache.set(DATA_CACHE_KEY.MARGIN_ACCOUNT, marginAccount.value);
+  } catch (error) {
+    console.error('[dashboard] margin', error);
+  }
+};
+
+void fetchMarginAccountOnce();
+
 // ---------- 成交额卡（2026-10-27 王总指定：只保留当日成交额曲线 RealtimeTurnoverCard；
 // 历史成交量 / 相对成交量两量纲移除 —— 资金流向页已有完整图表（fetchMarketTurnover 链路随之移除，
 // 该页数据快照键 DASHBOARD_TURNOVER 仍由资金流向页自己读写） ----------
@@ -407,13 +468,9 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
 
 <template>
   <div class="space-y-6">
-    <!-- 页头快捷入口：大盘云图（侧栏入口已移除，2026-10-22 王总指定）+ 宽基ETF
-        （Teleport 投射，本页激活时才挂载） -->
+    <!-- 页头快捷入口：宽基ETF（大盘云图按钮 2026-10-31 移除，入口迁侧栏「插件」分组
+        dsh-dapanyuntu；「板块热力」卡标题入口保留。Teleport 投射，本页激活时才挂载） -->
     <Teleport v-if="headerSlotActive" :to="PAGE_HEADER_ACTIONS_TARGET">
-      <BaseButton variant="ghost" data-track="DASHBOARD_OPEN_HEATMAP" @click="goHeatmap">
-        <MenuIcon name="cloud" :size="14" />
-        大盘云图
-      </BaseButton>
       <BaseButton variant="ghost" data-track="DASHBOARD_OPEN_WIDE_BASE_ETF" @click="goWideBaseEtf">
         <MenuIcon name="chartBars" :size="14" />
         宽基ETF
@@ -478,90 +535,169 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
     </div>
 
     <!--
-      市场情绪 + 大盘评级（等宽 flex 左右分布，gap 20px；2026-10-13 实时成交额并入下方成交额卡后，
-      本行左侧由市场情绪补位）：四池数据与市场宽度同上游（东财），每轮串行错峰 4 请求；
-      梯队口径与盘面雷达-连板页签一致；大盘评级数据源同花顺 q 域 indexflash
+      市场情绪 · 融资融券（左卡，上下两段） + 大盘评级（右卡）：
+      2026-11-02 王总指定布局——左卡上段 = 情绪速览（涨停 / 跌停 / 炸板 / 连板高度 /
+      昨涨停均涨一行式 + 连板梯队药丸），下段 = 两融指标（融资余额环比 / 融券余额 /
+      买入卖出额 / 担保比例 / 参与投资者；stock-sdk margin.accountInfo，
+      次一交易日公布 → 只拉一次）；右卡 = 同花顺 dppj 环形仪表 + 投资建议 + 近 5 日柱
     -->
     <div class="flex flex-wrap gap-5">
       <BaseCard
         title="市场情绪"
         clickable-title
-        class="min-w-[320px] flex-1"
+        class="min-w-[420px] flex-1"
         @title-click="goMarketRank"
       >
-        <div v-if="isSentimentError" class="py-8">
-          <BaseEmpty text="情绪数据加载失败，请稍后重试" />
-        </div>
-        <BaseSkeleton v-else-if="!sentiment" />
-        <template v-else>
-          <!-- 速览六格：窄容器 3×2，宽容器（≥1024px）6×1（主区已开 @container；
-               2026-10-24 抽屉挤窄主区时六格单格仅 ~55px，标签逐字竖排，故收窄切六列的档位，
-               标签 nowrap 防一字一行） -->
-          <div class="grid grid-cols-3 gap-4 @5xl:grid-cols-6">
-            <div>
-              <p class="whitespace-nowrap text-xs text-text-tertiary">涨停</p>
-              <p class="mt-1 text-xl font-semibold tabular-nums text-up">
-                {{ sentiment.limitUpCount }}
-              </p>
-            </div>
-            <div>
-              <p class="whitespace-nowrap text-xs text-text-tertiary">跌停</p>
-              <p class="mt-1 text-xl font-semibold tabular-nums text-down">
-                {{ sentiment.limitDownCount }}
-              </p>
-            </div>
-            <div>
-              <p class="whitespace-nowrap text-xs text-text-tertiary">炸板</p>
-              <p class="mt-1 text-xl font-semibold tabular-nums text-text">
-                {{ sentiment.brokenCount }}
-              </p>
-            </div>
-            <div>
-              <p class="whitespace-nowrap text-xs text-text-tertiary">炸板率</p>
-              <p class="mt-1 text-xl font-semibold tabular-nums text-text">
-                {{ sentiment.brokenRate === null ? '--' : formatPercentUnsigned(sentiment.brokenRate) }}
-              </p>
-            </div>
-            <div>
-              <p class="whitespace-nowrap text-xs text-text-tertiary">连板高度</p>
-              <p
-                class="mt-1 text-xl font-semibold tabular-nums"
-                :class="sentiment.maxLadder >= 3 ? 'text-up' : 'text-text'"
-              >
-                {{ sentiment.maxLadder > 0 ? `${sentiment.maxLadder} 板` : '--' }}
-              </p>
-            </div>
-            <div>
-              <p class="whitespace-nowrap text-xs text-text-tertiary">昨日涨停均涨</p>
-              <p
-                class="mt-1 text-xl font-semibold tabular-nums"
-                :class="
-                  sentiment.yesterdayZtAvgPct === null
-                    ? 'text-text'
-                    : sentiment.yesterdayZtAvgPct >= 0
-                      ? 'text-up'
-                      : 'text-down'
-                "
-              >
-                {{ sentiment.yesterdayZtAvgPct === null ? '--' : formatPercent(sentiment.yesterdayZtAvgPct) }}
-              </p>
-            </div>
+        <template #extra>
+          <span v-if="marginLatest" class="text-xs text-text-tertiary">
+            两融 {{ marginLatest.date }} · 数据滞后一个交易日
+          </span>
+        </template>
+        <!-- 上段：市场情绪速览 + 连板梯队药丸 -->
+        <div>
+          <div v-if="isSentimentError" class="py-8">
+            <BaseEmpty text="情绪数据加载失败，请稍后重试" />
           </div>
-          <!-- 连板梯队药丸：与盘面雷达-连板页签同款样式（≥3 板红色高亮） -->
-          <div v-if="sentiment.ladder.length > 0" class="mt-4 flex flex-wrap items-center gap-2">
-            <span
-              v-for="tier in sentiment.ladder"
-              :key="tier.board"
-              class="rounded-full px-3 py-1 text-xs font-medium"
-              :class="tier.board >= 3 ? 'bg-up-weak text-up' : 'bg-flat-weak text-text-secondary'"
+          <BaseSkeleton v-else-if="!sentiment" />
+          <template v-else>
+            <!-- 速览行（mobile 同款一行式：窄容器折行、标签 nowrap 防一字一行） -->
+            <div class="flex flex-wrap items-baseline gap-x-5 gap-y-2 text-sm">
+              <span class="whitespace-nowrap">
+                <span class="text-xs text-text-tertiary">涨停</span>
+                <b class="ml-1.5 text-lg tabular-nums text-up">{{ sentiment.limitUpCount }}</b>
+              </span>
+              <i class="text-text-tertiary" aria-hidden="true">/</i>
+              <span class="whitespace-nowrap">
+                <span class="text-xs text-text-tertiary">跌停</span>
+                <b class="ml-1.5 text-lg tabular-nums text-down">{{ sentiment.limitDownCount }}</b>
+              </span>
+              <i class="text-text-tertiary" aria-hidden="true">/</i>
+              <span class="whitespace-nowrap">
+                <span class="text-xs text-text-tertiary">炸板</span>
+                <b class="ml-1.5 text-lg tabular-nums text-text">
+                  {{ sentiment.brokenCount }}{{ sentiment.brokenRate === null ? '' : `（${formatPercentUnsigned(sentiment.brokenRate)}）` }}
+                </b>
+              </span>
+              <i class="text-text-tertiary" aria-hidden="true">/</i>
+              <span class="whitespace-nowrap">
+                <span class="text-xs text-text-tertiary">最高连板</span>
+                <b
+                  class="ml-1.5 text-lg tabular-nums"
+                  :class="sentiment.maxLadder >= 3 ? 'text-up' : 'text-text'"
+                >
+                  {{ sentiment.maxLadder > 0 ? `${sentiment.maxLadder} 板` : '--' }}
+                </b>
+              </span>
+              <i class="text-text-tertiary" aria-hidden="true">/</i>
+              <span class="whitespace-nowrap">
+                <span class="text-xs text-text-tertiary">昨涨停均涨</span>
+                <b
+                  class="ml-1.5 text-lg tabular-nums"
+                  :class="
+                    sentiment.yesterdayZtAvgPct === null
+                      ? 'text-text'
+                      : sentiment.yesterdayZtAvgPct >= 0
+                        ? 'text-up'
+                        : 'text-down'
+                  "
+                >
+                  {{ sentiment.yesterdayZtAvgPct === null ? '--' : formatPercent(sentiment.yesterdayZtAvgPct) }}
+                </b>
+              </span>
+            </div>
+            <!-- 连板梯队药丸：与盘面雷达-连板页签同款样式（≥3 板红色高亮） -->
+            <div v-if="sentiment.ladder.length > 0" class="mt-4 flex flex-wrap items-center gap-2">
+              <span
+                v-for="tier in sentiment.ladder"
+                :key="tier.board"
+                class="rounded-full px-3 py-1 text-xs font-medium"
+                :class="tier.board >= 3 ? 'bg-up-weak text-up' : 'bg-flat-weak text-text-secondary'"
+              >
+                {{ tier.board >= 2 ? `${tier.board}板` : '首板' }} · {{ tier.count }} 家
+              </span>
+            </div>
+            <p v-else class="mt-4 text-xs text-text-tertiary">今日暂无涨停个股</p>
+          </template>
+        </div>
+
+        <!-- 下段：两融指标（小标题点击跳行情全景-融资融券 tab） -->
+        <div class="mt-4 border-t border-flat-weak pt-3">
+          <div class="mb-2 flex items-center justify-between gap-2">
+            <button
+              type="button"
+              class="pressable text-sm font-semibold text-text hover:text-primary"
+              title="查看两融标的明细"
+              @click="goPanoramaMargin"
             >
-              {{ tier.board >= 2 ? `${tier.board}板` : '首板' }} · {{ tier.count }} 家
+              融资融券
+              <span class="ml-1 text-xs text-text-tertiary">›</span>
+            </button>
+            <span v-if="marginLatest" class="text-xs tabular-nums text-text-tertiary">
+              {{ marginLatest.date }}
             </span>
           </div>
-          <p v-else class="mt-4 text-xs text-text-tertiary">今日暂无涨停个股</p>
-        </template>
+          <!-- 两融指标 3×2 固定网格（左卡宽度内一行 6 格会挤压换行，王总 2026-11-02 反馈）：
+               数值 text-lg + nowrap，标签短文案防折行 -->
+          <div class="grid grid-cols-3 gap-x-4 gap-y-3">
+            <div class="min-w-0">
+              <p class="whitespace-nowrap text-xs text-text-tertiary">融资余额</p>
+              <p class="mt-1 whitespace-nowrap text-lg font-semibold tabular-nums text-text">
+                {{ fmtYi(marginLatest?.finBalance) }}
+              </p>
+              <p
+                v-if="marginFinBalanceDelta !== null"
+                class="mt-0.5 whitespace-nowrap text-xs tabular-nums"
+                :class="marginFinBalanceDelta >= 0 ? 'text-up' : 'text-down'"
+              >
+                较上日 {{ fmtYiWithSign(marginFinBalanceDelta) }}
+              </p>
+            </div>
+            <div class="min-w-0">
+              <p class="whitespace-nowrap text-xs text-text-tertiary">融券余额</p>
+              <p class="mt-1 whitespace-nowrap text-lg font-semibold tabular-nums text-text">
+                {{ fmtYi(marginLatest?.loanBalance) }}
+              </p>
+            </div>
+            <div class="min-w-0">
+              <p class="whitespace-nowrap text-xs text-text-tertiary">融资买入额</p>
+              <p class="mt-1 whitespace-nowrap text-lg font-semibold tabular-nums text-text">
+                {{ fmtYi(marginLatest?.finBuyAmount) }}
+              </p>
+            </div>
+            <div class="min-w-0">
+              <p class="whitespace-nowrap text-xs text-text-tertiary">融券卖出额</p>
+              <p class="mt-1 whitespace-nowrap text-lg font-semibold tabular-nums text-text">
+                {{ fmtYi(marginLatest?.loanSellAmount) }}
+              </p>
+            </div>
+            <div class="min-w-0">
+              <p class="whitespace-nowrap text-xs text-text-tertiary">担保比例</p>
+              <p class="mt-1 whitespace-nowrap text-lg font-semibold tabular-nums text-text">
+                {{
+                  marginLatest?.avgGuaranteeRatio === null || marginLatest?.avgGuaranteeRatio === undefined
+                    ? '--'
+                    : `${marginLatest.avgGuaranteeRatio.toFixed(2)}%`
+                }}
+              </p>
+            </div>
+            <div class="min-w-0">
+              <p class="whitespace-nowrap text-xs text-text-tertiary">参与投资者</p>
+              <p class="mt-1 whitespace-nowrap text-lg font-semibold tabular-nums text-text">
+                {{
+                  marginLatest?.investorCount === null || marginLatest?.investorCount === undefined
+                    ? '--'
+                    : `${(marginLatest.investorCount / 10_000).toFixed(2)} 万`
+                }}
+              </p>
+            </div>
+          </div>
+        </div>
       </BaseCard>
-      <BaseCard title="大盘评级" class="min-w-[320px] flex-1">
+
+      <!-- 右卡：大盘评级（MarketRatingCard 自持轮询，等高与左卡并排）。
+           fill 让卡体变 flex 列：内容根 flex-1 min-h-0 精确等于标题以下剩余空间，
+           mt-auto 的折线块不会再把图表推出卡片底边（2026-11-02 王总反馈超出卡片） -->
+      <BaseCard title="大盘评级" fill class="min-w-[320px] flex-1">
         <MarketRatingCard />
       </BaseCard>
     </div>
