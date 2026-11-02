@@ -52,6 +52,9 @@ const editLoading = ref(false);
 /** 编辑弹窗保存态（防重入） */
 const editSaving = ref(false);
 
+/** 编辑弹窗重置态（防重入） */
+const editResetting = ref(false);
+
 /** 编辑弹窗草稿：上游 endpoint（空串 = 回落 .env.local） */
 const draftUrl = ref('');
 
@@ -131,15 +134,16 @@ const onResetAuth = (): void => {
   void runMcpAuth();
 };
 
-/** 菜单项：编辑 MCP（拉取当前配置回填草稿，打开弹窗） */
+/** 菜单项：编辑 MCP（拉取当前配置回填草稿，打开弹窗；读取失败保留上次已知配置，输入框不清空） */
 const onEditMcp = (): void => {
   mcpMenuOpen.value = false;
   editMcpOpen.value = true;
   editLoading.value = true;
   void fetchTzzbMcpConfig()
     .then((config) => {
-      mcpConfig.value = config;
-      draftUrl.value = config?.customUrl ?? '';
+      const next = config ?? mcpConfig.value;
+      if (next) mcpConfig.value = next;
+      draftUrl.value = next?.customUrl ?? '';
     })
     .finally(() => {
       editLoading.value = false;
@@ -174,6 +178,34 @@ const onSaveMcpConfig = async (): Promise<void> => {
     });
   } finally {
     editSaving.value = false;
+  }
+};
+
+/**
+ * 重置配置（弹窗底部「重置」按钮）：清空用户自定义的上游地址与静态 token 并落盘
+ * （tzzb-mcp.config.local.json 回到空结构），生效配置回落 .env.local 默认；
+ * 换源后旧 OAuth 凭据由 server 端自动作废。重置后弹窗保持打开，状态行即时刷新
+ */
+const onResetMcpConfig = async (): Promise<void> => {
+  if (editResetting.value || editSaving.value) return;
+  editResetting.value = true;
+  try {
+    const config = await saveTzzbMcpConfig('', null);
+    mcpConfig.value = config;
+    draftUrl.value = config.customUrl ?? '';
+    notifications.push({
+      title: '账本 MCP 配置已重置',
+      body: `已恢复默认配置，生效地址：${config.effectiveUrl ?? '未配置'}`,
+      tone: NOTIFY_TONE.UP,
+    });
+  } catch (err) {
+    notifications.push({
+      title: '账本 MCP 配置重置失败',
+      body: err instanceof Error ? err.message : String(err),
+      tone: NOTIFY_TONE.DOWN,
+    });
+  } finally {
+    editResetting.value = false;
   }
 };
 </script>
@@ -235,8 +267,9 @@ const onSaveMcpConfig = async (): Promise<void> => {
     <BaseModal v-model:open="editMcpOpen" title="编辑账本 MCP" max-width-class="max-w-md">
       <p class="mb-3 text-xs leading-relaxed text-text-tertiary">
         投资账本 MCP 上游地址（同源代理 /tzzb-mcp 转发）。保存写入
-        tzzb-mcp.config.local.json 并立即生效，无需重启；留空保存则回落 .env.local。
-        更换地址后旧授权自动作废，请重新「鉴权重置」。
+        tzzb-mcp.config.local.json 并立即生效，无需重启，下次打开回显已保存地址；
+        留空保存则回落 .env.local。更换地址后旧授权自动作废，请重新「鉴权重置」。
+        「重置」清空自定义地址与 token，恢复默认配置。
       </p>
       <div v-if="editLoading" class="py-2 text-xs text-text-tertiary">读取当前配置…</div>
       <div v-else class="space-y-2">
@@ -245,10 +278,23 @@ const onSaveMcpConfig = async (): Promise<void> => {
         <p v-if="effectiveText" class="text-xs text-text-tertiary">{{ effectiveText }}</p>
       </div>
       <template #footer>
-        <BaseButton variant="ghost" @click="editMcpOpen = false">取消</BaseButton>
-        <BaseButton :disabled="editLoading || editSaving || !!draftUrlError" @click="void onSaveMcpConfig()">
-          保存
-        </BaseButton>
+        <div class="flex w-full items-center justify-between gap-2">
+          <!-- 重置：清空用户输入并落盘默认配置（王总 2026-11-02 指定） -->
+          <BaseButton
+            variant="ghost"
+            :disabled="editLoading || editResetting || editSaving"
+            @click="void onResetMcpConfig()"
+          >
+            <MenuIcon name="refresh" :size="14" class="shrink-0 text-text-secondary" />
+            {{ editResetting ? '重置中…' : '重置' }}
+          </BaseButton>
+          <div class="flex items-center gap-2">
+            <BaseButton variant="ghost" @click="editMcpOpen = false">取消</BaseButton>
+            <BaseButton :disabled="editLoading || editSaving || !!draftUrlError" @click="void onSaveMcpConfig()">
+              保存
+            </BaseButton>
+          </div>
+        </div>
       </template>
     </BaseModal>
   </Teleport>
