@@ -66,6 +66,44 @@ interface TencentKlineResponse {
 }
 
 /**
+ * 拉取 A 股日 K **不复权**收盘价表（fq 参数留空 = 原始价，响应键 `day`）
+ *
+ * 供买卖点评分的复权折算用（方案 §4.2）：成交价是真实价、评分窗口是 qfq 序列，
+ * 折算系数 c = qfqClose(成交日) ÷ rawClose(成交日)（窗口内无除权日时 c = 1）。
+ * 不复权历史不会被上游修订，调用方（tzzb-analysis store）做会话级缓存。
+ * @param symbol 完整符号（sh600519 形态）
+ * @returns yyyy-MM-dd → 不复权收盘价（仅保留正值）
+ * @throws 上游请求失败 / 响应 code 非 0 / 数据为空时抛错
+ */
+export const fetchTencentRawDailyCloses = async (symbol: string): Promise<Map<string, number>> => {
+  // 与 fetchTencentKline 同一 endpoint，仅 fq 段留空、响应键为 day（2026-11-02 curl 实测）
+  const url = `${TENCENT_KLINE_URL}?param=${symbol},day,,,${TENCENT_KLINE_BAR_COUNT.daily},`;
+  const response = await proxyFetch(url);
+  if (!response.ok) {
+    throw new Error(`腾讯 K 线请求失败：HTTP ${response.status}`);
+  }
+  const text = await response.text();
+  const jsonStart = text.indexOf('{');
+  if (jsonStart === -1) {
+    throw new Error(`腾讯 K 线响应解析失败：${text.slice(0, 80)}`);
+  }
+  const parsed = JSON.parse(text.slice(jsonStart)) as TencentKlineResponse;
+  if (parsed.code !== 0) {
+    throw new Error(`腾讯 K 线上游返回异常：${parsed.msg || parsed.code}`);
+  }
+  const rows = parsed.data[symbol]?.day ?? [];
+  if (rows.length === 0) {
+    throw new Error(`腾讯 K 线无数据（${symbol} day 不复权，上游 200 但序列为空）`);
+  }
+  const closes = new Map<string, number>();
+  for (const row of rows) {
+    const close = Number(row[2]);
+    if (Number.isFinite(close) && close > 0) closes.set(row[0], close);
+  }
+  return closes;
+};
+
+/**
  * 拉取 A 股日 / 周 / 月 K（腾讯 qfq 前复权）
  *
  * barLimit 与新浪源共用调用约定：仅用于收窄单次请求根数（缓存层补尾部场景），

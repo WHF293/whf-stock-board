@@ -1,11 +1,16 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
+import type { EChartsCoreOption } from 'echarts/core';
+import { CHART_AXIS_LINE_COLOR, CHART_SPLIT_LINE_COLOR, CHART_TEXT_COLOR } from '../../../../common/constants/chart.constants.ts';
+import { DOWN_COLOR, UP_COLOR } from '../../../../common/constants/stock-colors.constants.ts';
+import BaseChart from '../../charts/BaseChart.vue';
 import BaseEmpty from '../../ui/BaseEmpty.vue';
 import BaseTable from '../../ui/BaseTable.vue';
 import BaseTabs from '../../ui/BaseTabs.vue';
 import type { TableColumn } from '../../../../common/types/table.types.ts';
 import type {
   TzzbClearedPosition,
+  TzzbDayCalendar,
   TzzbHoldingReturn,
 } from '../../../../common/types/tzzb.types.ts';
 
@@ -18,12 +23,16 @@ import type {
  * - 个基：15 工具无基金清仓周期（queryClearedPosition 仅覆盖股票），
  *   当前以 queryFundHoldingReturns 累计持仓收益口径展示，费用字段缺失显示 —；
  *   正式版如有基金清仓工具再对齐周期口径
+ * - 盈亏质量条（操作复盘阶段 2 新增，方案 §4.5，纯本地计算）：
+ *   胜率×盈亏比组合（官方裸胜率不回答「赚得稳不稳」）、最长连亏天数、单日盈亏分布直方图
  */
 const props = defineProps<{
   /** 清仓记录（个股周期） */
   cleared: TzzbClearedPosition[];
   /** 个基累计持仓收益 */
   fundReturns: TzzbHoldingReturn[];
+  /** 可选盈亏日历（当前月；单日盈亏分布与连亏统计的数据源，缺省时对应项显示 —） */
+  dayCalendar?: TzzbDayCalendar | null;
 }>();
 
 const emit = defineEmits<{
@@ -117,9 +126,128 @@ const buckets = computed(() =>
   }),
 );
 
+/* ---------------- 盈亏质量（操作复盘阶段 2 新增，方案 §4.5，纯本地） ---------------- */
+
+/**
+ * 胜率 × 盈亏比：盈利单平均盈 ÷ 亏损单平均亏
+ * 胜率相同下盈亏比越高越「值」；全胜 / 全亏（盈亏比无定义）或无已清仓周期时为 null
+ */
+const quality = computed(() => {
+  const closed = closedCycles.value;
+  if (closed.length === 0) return null;
+  const wins = closed.filter((r) => r.profit > 0);
+  const losses = closed.filter((r) => r.profit < 0);
+  if (wins.length === 0 || losses.length === 0) return null;
+  const avgWin = wins.reduce((s, r) => s + r.profit, 0) / wins.length;
+  const avgLoss = Math.abs(losses.reduce((s, r) => s + r.profit, 0) / losses.length);
+  return { winRate: wins.length / closed.length, plRatio: avgWin / avgLoss };
+});
+
+/**
+ * 最长连亏天数（dayCalendar.days 按日期升序后连续 profit<0）
+ * @returns 最长连亏天数；未提供日历时为 null
+ */
+const maxLosingStreak = computed<number | null>(() => {
+  if (!props.dayCalendar) return null;
+  const days = [...props.dayCalendar.days].sort((a, b) => a.date.localeCompare(b.date));
+  let max = 0;
+  let cur = 0;
+  for (const d of days) {
+    cur = d.profit < 0 ? cur + 1 : 0;
+    if (cur > max) max = cur;
+  }
+  return max;
+});
+
+/** 分布直方图桶 */
+interface DistBin {
+  label: string;
+  count: number;
+  /** 桶中值是否为盈利（决定红/绿） */
+  positive: boolean;
+}
+
+/** 分布桶数（奇数保证「0 附近」桶存在） */
+const DIST_BINS = 9;
+
+/**
+ * 金额缩写（-1234 → -1.2k / 15600 → 1.6万）
+ * @param v 金额
+ * @returns 缩写文案
+ */
+const fmtK = (v: number): string => {
+  const abs = Math.abs(v);
+  const body =
+    abs >= 10000 ? `${(abs / 10000).toFixed(1)}万` : abs >= 1000 ? `${(abs / 1000).toFixed(1)}k` : abs.toFixed(0);
+  return v < 0 ? `-${body}` : body;
+};
+
+/** 单日盈亏分布（等宽 9 桶，min/max 锚定 0；无日历或全为 0 时为 null） */
+const dailyDist = computed<DistBin[] | null>(() => {
+  if (!props.dayCalendar) return null;
+  const profits = props.dayCalendar.days.map((d) => d.profit);
+  if (profits.length === 0) return null;
+  const min = Math.min(...profits, 0);
+  const max = Math.max(...profits, 0);
+  if (min === max) return [{ label: '0', count: profits.length, positive: min >= 0 }];
+  const step = (max - min) / DIST_BINS;
+  return Array.from({ length: DIST_BINS }, (_, i) => {
+    const lo = min + step * i;
+    const hi = lo + step;
+    const inBin = (v: number): boolean => (i === DIST_BINS - 1 ? v >= lo && v <= hi : v >= lo && v < hi);
+    return {
+      label: `${fmtK(lo)}~${fmtK(hi)}`,
+      count: profits.filter(inBin).length,
+      positive: (lo + hi) / 2 >= 0,
+    };
+  });
+});
+
+/** 分布直方图配置（红涨绿跌；无数据时为 null 走隐藏） */
+const distOption = computed<EChartsCoreOption | null>(() => {
+  const bins = dailyDist.value;
+  if (!bins) return null;
+  return {
+    grid: { left: 8, right: 8, top: 6, bottom: 18 },
+    tooltip: {
+      trigger: 'axis',
+      formatter: (params: unknown) => {
+        const list = Array.isArray(params) ? params : [params];
+        const p = list[0] as { dataIndex?: number } | undefined;
+        const bin = p?.dataIndex !== undefined ? bins[p.dataIndex] : undefined;
+        return bin ? `${bin.label}：${bin.count} 天` : '';
+      },
+    },
+    xAxis: {
+      type: 'category',
+      data: bins.map((b) => b.label),
+      axisLabel: { color: CHART_TEXT_COLOR, fontSize: 9, interval: 2 },
+      axisLine: { lineStyle: { color: CHART_AXIS_LINE_COLOR } },
+      axisTick: { show: false },
+    },
+    yAxis: {
+      type: 'value',
+      splitLine: { lineStyle: { color: CHART_SPLIT_LINE_COLOR } },
+      axisLabel: { show: false },
+    },
+    series: [
+      {
+        type: 'bar',
+        barCategoryGap: '20%',
+        data: bins.map((b) => ({
+          value: b.count,
+          itemStyle: { color: b.positive ? UP_COLOR : DOWN_COLOR, opacity: 0.85, borderRadius: [2, 2, 0, 0] },
+        })),
+      },
+    ],
+  };
+});
+
+/** 质量条是否可见（三项数据全缺时整条隐藏，不出空骨架） */
+const qualityVisible = computed(() => quality.value !== null || maxLosingStreak.value !== null || distOption.value !== null);
+
 /** 个股周期明细列 */
-const stockColumns: TableColumn<TzzbClearedPosition>[] = [
-  { key: 'name', label: '证券', sortable: true, sortValue: (r) => r.name },
+const stockColumns: TableColumn<TzzbClearedPosition>[] = [  { key: 'name', label: '证券', sortable: true, sortValue: (r) => r.name },
   {
     key: 'period',
     label: '周期（开 → 清）',
@@ -217,6 +345,32 @@ const fundColumns: TableColumn<TzzbHoldingReturn>[] = [
               {{ stockSummary.worst ? signYuan(stockSummary.worst.profit) : '—' }}
             </span>
           </p>
+        </div>
+      </div>
+
+      <!-- 盈亏质量条（阶段 2 新增：官方裸胜率之外的「赚得稳不稳」视角） -->
+      <div v-if="qualityVisible" class="grid grid-cols-2 gap-2 md:grid-cols-4">
+        <div class="rounded-lg bg-flat-weak/60 px-3 py-2">
+          <p class="text-xs text-text-tertiary">胜率 × 盈亏比</p>
+          <p class="mt-0.5 font-mono text-base font-semibold tabular-nums text-text">
+            {{ quality ? `${(quality.winRate * 100).toFixed(0)}% × ${quality.plRatio.toFixed(2)}` : '—' }}
+          </p>
+          <p class="mt-0.5 text-xs text-text-tertiary">盈利单均盈 ÷ 亏损单均亏，越高越「值」</p>
+        </div>
+        <div class="rounded-lg bg-flat-weak/60 px-3 py-2">
+          <p class="text-xs text-text-tertiary">最长连亏（{{ props.dayCalendar ? `${props.dayCalendar.month.slice(4)} 月` : '—' }}）</p>
+          <p class="mt-0.5 font-mono text-base font-semibold tabular-nums text-text">
+            {{ maxLosingStreak === null ? '—' : `${maxLosingStreak} 天` }}
+          </p>
+          <p class="mt-0.5 text-xs text-text-tertiary">连续单日亏损（当月日历口径）</p>
+        </div>
+        <div v-if="distOption" class="col-span-2 rounded-lg bg-flat-weak/60 px-3 py-2">
+          <p class="text-xs text-text-tertiary">
+            单日盈亏分布（{{ props.dayCalendar ? `${props.dayCalendar.month.slice(4)} 月 ` : '' }}{{ props.dayCalendar?.days.length ?? 0 }} 个自然日）
+          </p>
+          <div class="mt-1 h-20">
+            <BaseChart :options="distOption" />
+          </div>
         </div>
       </div>
 

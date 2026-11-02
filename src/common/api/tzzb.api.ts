@@ -591,16 +591,22 @@ export const getTzzbFundHoldingReturns = async (): Promise<TzzbHoldingReturn[]> 
 /**
  * 股票逐笔流水（queryMoneyHistory 分页）
  * @param page 页码（从 1 起）
+ * @param range 可选区间（缺省为近三个月，保持既有口径）
+ * @param range.startDate 区间起始日 yyyyMMdd
+ * @param range.endDate 区间结束日 yyyyMMdd
  * @returns 分页流水；未配置代理 / 调用失败时返回 null
  */
-export const getTzzbStockTrades = async (page: string): Promise<TzzbStockTradePage | null> => {
+export const getTzzbStockTrades = async (
+  page: string,
+  range?: { startDate?: string; endDate?: string },
+): Promise<TzzbStockTradePage | null> => {
   const keys = await ensureKeys();
   if (!keys) return null;
   const r = (await callTzzbTool('queryMoneyHistory', {
     page: String(page),
     count: '20',
-    startDate: dayjs().subtract(3, 'month').format('YYYYMMDD'),
-    endDate: dayjs().format('YYYYMMDD'),
+    startDate: range?.startDate ?? dayjs().subtract(3, 'month').format('YYYYMMDD'),
+    endDate: range?.endDate ?? dayjs().format('YYYYMMDD'),
     ...stockKeyArgs(keys),
   })) as Record<string, unknown> | undefined;
   if (!r) return null;
@@ -720,6 +726,53 @@ export const startTzzbMcpAuth = async (): Promise<string> => {
   if (!res.ok || json.error) throw new Error(json.error ?? `auth-start HTTP ${res.status}`);
   if (!json.authorizeUrl) throw new Error('auth-start 未返回授权地址');
   return json.authorizeUrl;
+};
+
+/** MCP 运行时配置响应形态（GET/POST /tzzb-mcp/config，dev server 本地端点） */
+export interface TzzbMcpConfig {
+  /** 用户自定义上游 endpoint（tzzb-mcp.config.local.json；未自定义时 null） */
+  customUrl: string | null;
+  /** .env.local 是否配置了兜底 endpoint（VITE_TZZB_MCP_URL） */
+  envConfigured: boolean;
+  /** 当前生效 endpoint（自定义优先，兜底 env；都未配置时 null） */
+  effectiveUrl: string | null;
+  /** 当前是否有生效的静态 Bearer token（配置文件或 .env.local） */
+  tokenSet: boolean;
+  /** 是否配置了 OAuth 凭据文件（TZZB_MCP_TOKEN_FILE / oauth.local.json） */
+  tokenFileSet: boolean;
+}
+
+/**
+ * 取 MCP 运行时配置（「编辑 MCP」弹窗回填与状态行展示用）
+ * @returns 配置对象；请求失败返回 null
+ */
+export const fetchTzzbMcpConfig = async (): Promise<TzzbMcpConfig | null> => {
+  try {
+    const res = await fetch(`${MCP_PROXY_PATH}/config`);
+    if (!res.ok) return null;
+    return (await res.json()) as TzzbMcpConfig;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * 保存 MCP 运行时配置（落盘 tzzb-mcp.config.local.json，立即生效无需重启 dev server）；
+ * url 置空 = 回落 .env.local；url 变更时 server 端自动作废旧上游的 OAuth 凭据
+ * @param url 上游 endpoint（空串 = 清除自定义，回退 .env.local）
+ * @param token 可选静态 Bearer token（undefined = 不修改；null/空串 = 清除）
+ * @returns 保存后的配置
+ * @throws 服务端校验失败（如非法 URL）或请求失败
+ */
+export const saveTzzbMcpConfig = async (url: string, token?: string | null): Promise<TzzbMcpConfig> => {
+  const res = await fetch(`${MCP_PROXY_PATH}/config`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url, token }),
+  });
+  const json = (await res.json().catch(() => ({}))) as TzzbMcpConfig & { error?: string };
+  if (!res.ok || json.error) throw new Error(json.error ?? `config HTTP ${res.status}`);
+  return json;
 };
 
 /**

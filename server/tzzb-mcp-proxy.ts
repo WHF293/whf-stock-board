@@ -1,6 +1,7 @@
 import { createServer as createHttpServer, type Server } from 'node:http';
 import crypto from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import type { Connect, Plugin } from 'vite';
 
 /** 同源代理路径（前端 MCP 客户端统一 POST 此路径） */
@@ -11,6 +12,39 @@ export const TZZB_MCP_AUTH_INFO_PATH = '/auth-info';
 
 /** 鉴权启动子路径（POST <TZZB_MCP_PROXY_PATH>/auth-start；仅本地 dev server 提供，不透传上游） */
 export const TZZB_MCP_AUTH_START_PATH = '/auth-start';
+
+/** MCP 配置子路径（GET/POST <TZZB_MCP_PROXY_PATH>/config；仅本地 dev server 提供，不透传上游） */
+export const TZZB_MCP_CONFIG_PATH = '/config';
+
+/**
+ * 用户运行时配置文件（项目根 tzzb-mcp.config.local.json；`*.local` 已被
+ * .gitignore 覆盖不入库）。「编辑 MCP」弹窗保存后立即生效，无需重启 dev server；
+ * 未配置的字段回落 .env.local（VITE_TZZB_MCP_URL / VITE_TZZB_MCP_TOKEN）
+ */
+const CONFIG_FILE = 'tzzb-mcp.config.local.json';
+
+/** 用户配置文件形态（POST <TZZB_MCP_PROXY_PATH>/config 落盘） */
+interface TzzbMcpConfigFile {
+  /** 上游 MCP endpoint（「编辑 MCP」弹窗保存；缺省回落 .env.local） */
+  url?: string;
+  /** 可选静态 Bearer Token（缺省回落 .env.local 与凭据文件 oauth.local.json） */
+  token?: string;
+}
+
+/**
+ * 读用户配置文件
+ * @returns 配置对象；文件缺失 / 损坏返回空结构（不抛错，回落 env）
+ */
+const loadConfigFile = (): TzzbMcpConfigFile => {
+  try {
+    return JSON.parse(readFileSync(resolve(process.cwd(), CONFIG_FILE), 'utf-8')) as TzzbMcpConfigFile;
+  } catch {
+    return {};
+  }
+};
+
+/** 生效 target / token 的惰性解析器（每次调用读配置文件，弹窗保存即生效） */
+type ValueGetter = () => string | undefined;
 
 /** 鉴权回调回环端口（与 tzzb-auth-helper.mjs 同一注册 redirect_uri，复用已有 registration） */
 const REDIRECT_PORT = 8791;
@@ -55,13 +89,18 @@ interface TzzbAuthFile {
 
 /**
  * 凭据读取与刷新（tokenFile 未配置时全部为 no-op）
- * @param target 上游 MCP endpoint（派生 token endpoint）
+ * @param getTarget 上游 MCP endpoint 惰性解析器（派生 token endpoint，编辑后即生效）
  * @param tokenFile 凭据文件路径（oauth.local.json）
  * @returns getAccessToken 取可用 token / refresh 强制续期
  */
-const createAuthProvider = (target: string | undefined, tokenFile: string | undefined) => {
-  /** token endpoint（上游 origin + /oauth2/token） */
-  const TOKEN_ENDPOINT = target ? new URL('/oauth2/token', target).toString() : '';
+const createAuthProvider = (getTarget: ValueGetter, tokenFile: string | undefined) => {
+  /** token endpoint（上游 origin + /oauth2/token；按当前生效 target 派生）
+   * @returns token endpoint 绝对地址；target 未配置时 null
+   */
+  const tokenEndpoint = (): string | null => {
+    const target = getTarget();
+    return target ? new URL('/oauth2/token', target).toString() : null;
+  };
 
   /**
    * 读凭据文件
@@ -85,9 +124,10 @@ const createAuthProvider = (target: string | undefined, tokenFile: string | unde
     const refreshToken = store?.tokens?.refresh_token;
     const clientId = store?.registration?.client_id;
     const clientSecret = store?.registration?.client_secret;
-    if (!tokenFile || !refreshToken || !clientId || !clientSecret || !TOKEN_ENDPOINT) return null;
+    const endpoint = tokenEndpoint();
+    if (!tokenFile || !refreshToken || !clientId || !clientSecret || !endpoint) return null;
     try {
-      const res = await fetch(TOKEN_ENDPOINT, {
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'Mozilla/5.0' },
         body: new URLSearchParams({
@@ -161,13 +201,11 @@ interface TzzbAuthStartResult {
  * code 交换在后台进行；凭据（含 authorized_at）落盘同一份 oauth.local.json，
  * 完成后 auth-info 的 authorizedAt 前进、前端轮询即感知。
  *
- * @param target 上游 MCP endpoint（派生 origin 与 oauth2 端点）
+ * @param getTarget 上游 MCP endpoint 惰性解析器（派生 origin 与 oauth2 端点）
  * @param tokenFile 凭据文件路径（oauth.local.json；未配置时 start 直接报错）
  * @returns start 启动一次鉴权流（进行中重复调用报 AUTH_FLOW_IN_PROGRESS）
  */
-const createAuthFlowStarter = (target: string | undefined, tokenFile: string | undefined) => {
-  /** 上游 origin（oauth2 端点根） */
-  const ORIGIN = target ? new URL(target).origin : '';
+const createAuthFlowStarter = (getTarget: ValueGetter, tokenFile: string | undefined) => {
   /** 是否有进行中的鉴权流（单飞：重复点击不重复占回调端口） */
   let active = false;
   /** 最近一次鉴权流失败原因（成功 / 重新发起时清空；auth-info 透出给前端快速失败） */
@@ -202,14 +240,18 @@ const createAuthFlowStarter = (target: string | undefined, tokenFile: string | u
     return json;
   };
 
-  /**
-   * 动态注册授权码客户端（已有 registration 则跳过）
-   * @param store 凭据对象（注册成功后回写并落盘）
-   * @returns 客户端注册信息
-   */
-  const ensureRegistration = async (store: TzzbAuthFile): Promise<NonNullable<TzzbAuthFile['registration']>> => {
-    if (store.registration) return store.registration;
-    const res = await fetch(`${ORIGIN}/oauth2/register`, {
+/**
+ * 动态注册授权码客户端（已有 registration 则跳过）
+ * @param store 凭据对象（注册成功后回写并落盘）
+ * @param origin 上游 origin（oauth2 端点根，按当前生效 target 派生）
+ * @returns 客户端注册信息
+ */
+const ensureRegistration = async (
+  store: TzzbAuthFile,
+  origin: string,
+): Promise<NonNullable<TzzbAuthFile['registration']>> => {
+  if (store.registration) return store.registration;
+  const res = await fetch(`${origin}/oauth2/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0' },
       body: JSON.stringify({
@@ -260,18 +302,21 @@ const createAuthFlowStarter = (target: string | undefined, tokenFile: string | u
    * @throws TZZB_MCP_NOT_CONFIGURED / AUTH_FLOW_IN_PROGRESS / 注册失败等
    */
   const start = async (): Promise<TzzbAuthStartResult> => {
+    const target = getTarget();
     if (!target || !tokenFile) throw new Error('TZZB_MCP_NOT_CONFIGURED');
     if (active) throw new Error('AUTH_FLOW_IN_PROGRESS');
     active = true;
     lastAuthError = null;
+    /** 上游 origin（oauth2 端点根，按本次发起时的生效 target 派生） */
+    const origin = new URL(target).origin;
     const server = createHttpServer();
     try {
       const store = loadStore();
-      const reg = await ensureRegistration(store);
+      const reg = await ensureRegistration(store, origin);
       const verifier = Buffer.from(crypto.randomBytes(48)).toString('base64url');
       const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
       const state = crypto.randomBytes(12).toString('hex');
-      const authorizeUrl = new URL(`${ORIGIN}/oauth2/authorize`);
+      const authorizeUrl = new URL(`${origin}/oauth2/authorize`);
       authorizeUrl.searchParams.set('response_type', 'code');
       authorizeUrl.searchParams.set('client_id', String(reg.client_id));
       authorizeUrl.searchParams.set('redirect_uri', REDIRECT_URI);
@@ -290,7 +335,7 @@ const createAuthFlowStarter = (target: string | undefined, tokenFile: string | u
           if (callbackUrl.searchParams.get('state') !== state) {
             throw new Error('state 不匹配，疑似 CSRF，中止');
           }
-          const json = await postForm(`${ORIGIN}/oauth2/token`, {
+          const json = await postForm(`${origin}/oauth2/token`, {
             grant_type: 'authorization_code',
             code: callbackUrl.searchParams.get('code') ?? '',
             redirect_uri: REDIRECT_URI,
@@ -351,17 +396,20 @@ const readRequestBody = (req: Connect.IncomingMessage): Promise<Buffer> =>
  *
  * 浏览器直连外部 MCP 会被 CORS 拦（Streamable HTTP 要求自定义头 + OPTIONS 预检），
  * dev/preview server 以同源路径反向代理到上游 MCP endpoint：
- * - 目标地址来自 .env.local 的 VITE_TZZB_MCP_URL（经 vite.config loadEnv 注入，
- *   **上游域名绝不写进入库源码**，构建产物只含同源路径）；
+ * - 目标地址运行时解析：用户配置文件 tzzb-mcp.config.local.json 优先，
+ *   缺省回落 .env.local 的 VITE_TZZB_MCP_URL（**上游域名绝不写进入库源码**，
+ *   构建产物只含同源路径）；「编辑 MCP」弹窗保存后立即生效，无需重启；
  * - 鉴权：优先凭据文件（TZZB_MCP_TOKEN_FILE，oauth.local.json，由
  *   tzzb-auth-helper.mjs 维护，401 自动 refresh_token 续期重试），其次静态 token；
  * - 方法固定透传 POST（MCP Streamable HTTP 仅用 POST + 可选 GET 流）；
- *   例外：GET <同源路径>/auth-info 与 POST <同源路径>/auth-start 为本地端点
- *   （授权时间 / 发起浏览器鉴权，不透传上游）；
+ *   例外：GET <同源路径>/auth-info、POST <同源路径>/auth-start、
+ *   GET/POST <同源路径>/config 为本地端点（授权时间 / 发起浏览器鉴权 /
+ *   读写运行时配置，不透传上游）；
  * - MCP 会话头双向透传（client → upstream 的 Mcp-Session-Id，upstream → client 的
  *   下发头）；响应体流式回写，SSE 渐进输出不被缓冲卡死
- * @param target 上游 MCP endpoint（未配置时中间件返回 503）
- * @param token 可选静态 Bearer token（.env.local 的 VITE_TZZB_MCP_TOKEN）
+ * @param envTarget .env.local 的上游 endpoint（兜底；用户配置文件优先，config 端点状态行用）
+ * @param getTarget 生效 target 惰性解析器
+ * @param getToken 生效静态 token 惰性解析器
  * @param tokenFile 可选凭据文件路径（.env.local 的 TZZB_MCP_TOKEN_FILE）
  * @param auth 凭据提供器（取 token / 续期）
  * @param authFlow 浏览器鉴权流启动器（auth-start 用）
@@ -369,16 +417,18 @@ const readRequestBody = (req: Connect.IncomingMessage): Promise<Buffer> =>
  */
 const createTzzbMcpMiddleware =
   (
-    target: string | undefined,
-    token: string | undefined,
+    envTarget: string | undefined,
+    getTarget: ValueGetter,
+    getToken: ValueGetter,
     tokenFile: string | undefined,
     auth: ReturnType<typeof createAuthProvider>,
     authFlow: ReturnType<typeof createAuthFlowStarter>,
   ): Connect.NextHandleFunction =>
   async (req, res, _next) => {
+    const urlPath = (req.url ?? '').split('?')[0];
     // 本地元信息端点：GET /tzzb-mcp/auth-info 返回最近一次授权时间 + 鉴权流失败原因
     //（不透传上游；MCP Streamable HTTP 客户端仅用 POST，GET 分支空闲可用）
-    if (req.method === 'GET' && (req.url ?? '').split('?')[0] === TZZB_MCP_AUTH_INFO_PATH) {
+    if (req.method === 'GET' && urlPath === TZZB_MCP_AUTH_INFO_PATH) {
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({ authorizedAt: auth.getAuthorizedAt(), authError: authFlow.getLastError() }));
@@ -386,7 +436,7 @@ const createTzzbMcpMiddleware =
     }
     // 本地鉴权端点：POST /tzzb-mcp/auth-start 发起浏览器鉴权流（返回授权页地址，
     // 回调与 code 交换在 dev server 后台进行，前端轮询 auth-info 感知结果）
-    if (req.method === 'POST' && (req.url ?? '').split('?')[0] === TZZB_MCP_AUTH_START_PATH) {
+    if (req.method === 'POST' && urlPath === TZZB_MCP_AUTH_START_PATH) {
       try {
         const result = await authFlow.start();
         res.statusCode = 200;
@@ -401,6 +451,83 @@ const createTzzbMcpMiddleware =
       }
       return;
     }
+    // 本地配置端点：GET /tzzb-mcp/config 返回当前生效配置（供「编辑 MCP」弹窗回填）
+    if (req.method === 'GET' && urlPath === TZZB_MCP_CONFIG_PATH) {
+      const custom = loadConfigFile();
+      const customUrl = custom.url?.trim() || null;
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(
+        JSON.stringify({
+          customUrl,
+          envConfigured: Boolean(envTarget?.trim()),
+          effectiveUrl: getTarget() ?? null,
+          tokenSet: Boolean(getToken()),
+          tokenFileSet: Boolean(tokenFile),
+        }),
+      );
+      return;
+    }
+    // 本地配置端点：POST /tzzb-mcp/config 保存用户配置（落盘即生效，无需重启）。
+    // url 置空 = 回落 .env.local；token 传 null/'' = 清除自定义 token；
+    // url 变更时旧上游的 OAuth registration/tokens 一并作废（绑定旧 origin，留着必 401）
+    if (req.method === 'POST' && urlPath === TZZB_MCP_CONFIG_PATH) {
+      try {
+        const body = JSON.parse((await readRequestBody(req)).toString('utf-8') || '{}') as {
+          url?: string | null;
+          token?: string | null;
+        };
+        const prevTarget = getTarget();
+        const store = loadConfigFile();
+        let nextUrl: string | undefined;
+        if (typeof body.url === 'string' && body.url.trim()) {
+          const parsed = new URL(body.url.trim());
+          if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+            throw new Error('仅支持 http(s) 地址');
+          }
+          nextUrl = body.url.trim();
+        }
+        if (nextUrl) store.url = nextUrl;
+        else delete store.url;
+        if (body.token === null || (typeof body.token === 'string' && !body.token.trim())) {
+          delete store.token;
+        } else if (typeof body.token === 'string') {
+          store.token = body.token.trim();
+        }
+        writeFileSync(resolve(process.cwd(), CONFIG_FILE), JSON.stringify(store, null, 2));
+        // target 变更 → oauth.local.json 里的 registration/tokens 属于旧上游，作废防串用
+        const nowTarget = getTarget();
+        if (tokenFile && prevTarget && nowTarget && prevTarget !== nowTarget) {
+          try {
+            const oauth = JSON.parse(readFileSync(tokenFile, 'utf-8')) as TzzbAuthFile;
+            if (oauth.registration || oauth.tokens) {
+              delete oauth.registration;
+              delete oauth.tokens;
+              writeFileSync(tokenFile, JSON.stringify(oauth, null, 2));
+            }
+          } catch {
+            // 凭据文件缺失 / 损坏无需处理（鉴权流会重新注册）
+          }
+        }
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(
+          JSON.stringify({
+            customUrl: store.url ?? null,
+            envConfigured: Boolean(envTarget?.trim()),
+            effectiveUrl: getTarget() ?? null,
+            tokenSet: Boolean(getToken()),
+            tokenFileSet: Boolean(tokenFile),
+          }),
+        );
+      } catch (err) {
+        res.statusCode = 400;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
+      }
+      return;
+    }
+    const target = getTarget();
     if (!target) {
       res.statusCode = 503;
       res.end(JSON.stringify({ error: 'TZZB_MCP_NOT_CONFIGURED' }));
@@ -413,7 +540,7 @@ const createTzzbMcpMiddleware =
           'Content-Type': 'application/json',
           Accept: 'application/json, text/event-stream',
         };
-        const bearer = (await auth.getAccessToken()) ?? token;
+        const bearer = (await auth.getAccessToken()) ?? getToken();
         if (bearer) headers.Authorization = `Bearer ${bearer}`;
         for (const name of PASSTHROUGH_HEADERS) {
           const value = req.headers[name];
@@ -461,15 +588,23 @@ const createTzzbMcpMiddleware =
 
 /**
  * Vite 插件：dev / preview server 挂载投资账本 MCP 同源代理
- * @param target 上游 MCP endpoint（来自 .env.local；未配置时不挂载）
- * @param token 可选静态 Bearer token
- * @param tokenFile 可选凭据文件路径（优先于静态 token）
+ * @param envTarget .env.local 的上游 MCP endpoint（兜底；用户配置文件 tzzb-mcp.config.local.json 优先）
+ * @param envToken 可选静态 Bearer token（.env.local 兜底）
+ * @param tokenFile 可选凭据文件路径（.env.local 的 TZZB_MCP_TOKEN_FILE，优先于静态 token）
  * @returns Vite 插件对象
  */
-export const tzzbMcpProxyPlugin = (target?: string, token?: string, tokenFile?: string): Plugin => {
-  const auth = createAuthProvider(target, tokenFile);
-  const authFlow = createAuthFlowStarter(target, tokenFile);
-  const middleware = createTzzbMcpMiddleware(target, token, tokenFile, auth, authFlow);
+export const tzzbMcpProxyPlugin = (envTarget?: string, envToken?: string, tokenFile?: string): Plugin => {
+  /** 生效 target：用户配置文件优先，.env.local 兜底（每次请求时解析，编辑即生效）
+   * @returns 生效的上游 endpoint；都未配置时 undefined
+   */
+  const getTarget: ValueGetter = () => loadConfigFile().url?.trim() || envTarget?.trim() || undefined;
+  /** 生效静态 token：用户配置文件优先，.env.local 兜底
+   * @returns 生效的静态 Bearer token；都未配置时 undefined
+   */
+  const getToken: ValueGetter = () => loadConfigFile().token?.trim() || envToken?.trim() || undefined;
+  const auth = createAuthProvider(getTarget, tokenFile);
+  const authFlow = createAuthFlowStarter(getTarget, tokenFile);
+  const middleware = createTzzbMcpMiddleware(envTarget, getTarget, getToken, tokenFile, auth, authFlow);
   return {
     name: 'tzzb-mcp-proxy',
     configureServer(server) {

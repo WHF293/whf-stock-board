@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
+import dayjs from 'dayjs';
 import NoticeBar from '../../ui/NoticeBar.vue';
 import BaseCard from '../../ui/BaseCard.vue';
 import BaseSkeleton from '../../ui/BaseSkeleton.vue';
@@ -10,6 +11,7 @@ import { HOST_HEADER_ITEM } from '../../../../common/constants/header.constants.
 import { NOTIFY_TONE } from '../../../../common/constants/notify.constants.ts';
 import { useSettingsStore } from '../../../../common/stores/settings';
 import { useNotificationsStore } from '../../../../common/stores/notifications';
+import { useTzzbAnalysisStore } from '../../../../common/stores/tzzb-analysis';
 import { requestAgentAnalysis } from '../../../agent/agent-bridge';
 import { buildAssetCurveAnalysisPrompt } from '../../../../common/utils/build-asset-curve-analysis-prompt';
 import { buildClearedPositionAnalysisPrompt } from '../../../../common/utils/build-cleared-position-analysis-prompt';
@@ -42,11 +44,12 @@ import type {
   TzzbMonthCalendar,
   TzzbPnlSummary,
   TzzbPositionSummary,
+  TzzbStockTrade,
   TzzbStockTradePage,
   TzzbSyncMeta,
   TzzbYearPoint,
 } from '../../../../common/types/tzzb.types.ts';
-import { TZZB_RANGE_LABEL } from '../../../../common/types/tzzb.types.ts';
+import { TZZB_RANGE_LABEL, TZZB_TRADE_FETCH_MAX_PAGES } from '../../../../common/types/tzzb.types.ts';
 import TzzbTopbar from './TzzbTopbar.vue';
 import TzzbMetricRow from './TzzbMetricRow.vue';
 import TzzbAssetPanel from './TzzbAssetPanel.vue';
@@ -56,6 +59,8 @@ import TzzbClearedPanel from './TzzbClearedPanel.vue';
 import TzzbClearedAnalysis from './TzzbClearedAnalysis.vue';
 import TzzbKindRank from './TzzbKindRank.vue';
 import TzzbTradeRecords from './TzzbTradeRecords.vue';
+import TzzbFeeLedger from './TzzbFeeLedger.vue';
+import TzzbBehaviorDiag from './TzzbBehaviorDiag.vue';
 
 /**
  * 投资账本数据中心（账户分析页主体）
@@ -112,12 +117,83 @@ const fundReturns = ref<TzzbHoldingReturn[]>([]);
 const stockTrades = ref<TzzbStockTradePage | null>(null);
 const fundTrades = ref<TzzbFundTrade[]>([]);
 
+/** 摩擦账本全量流水（统计窗口内逐页合并，与交易记录首页共用一次首拉） */
+const allStockTrades = ref<TzzbStockTrade[] | null>(null);
+
+/**
+ * 拉取统计窗口内全量股票流水（摩擦账本口径；逐页串行，页数上限防御异常 maxPage）
+ * @returns 首页分页结构（list 已合并全量页）；未配置代理时返回 null
+ */
+const loadAllStockTrades = async (): Promise<TzzbStockTradePage | null> => {
+  const first = await getTzzbStockTrades('1');
+  if (!first) return null;
+  const list = [...first.list];
+  const maxPage = Math.min(first.maxPage, TZZB_TRADE_FETCH_MAX_PAGES);
+  for (let page = 2; page <= maxPage; page += 1) {
+    const next = await getTzzbStockTrades(String(page));
+    if (!next || next.list.length === 0) break;
+    list.push(...next.list);
+  }
+  return { page: first.page, maxPage: first.maxPage, list };
+};
+
 /** 沪深300 区间涨跌幅（指标卡超额对比用） */
 const hs300Rate = computed(() => {
   const list = pnl.value?.indexTrend ?? [];
   if (list.length < 2 || list[0].hs300 === 0) return 0;
   return list[list.length - 1].hs300 / list[0].hs300 - 1;
 });
+
+/** 区间平均总资产（摩擦账本换手率分母；无曲线数据为 null） */
+const avgTotalAsset = computed(() => {
+  const trend = pnl.value?.assetTrend ?? [];
+  if (trend.length === 0) return null;
+  return trend.reduce((sum, point) => sum + point.totalAsset, 0) / trend.length;
+});
+
+/* ---------------- 操作复盘生成分析（阶段 3：操作贡献 / 行为诊断共用一份 store 结果） ---------------- */
+
+const analysisStore = useTzzbAnalysisStore();
+
+/** 分析窗口（跟随页面级 range 联动；custom 用起止日期，「全部」不设界） */
+const analysisWindow = computed<{ from: string | null; to: string | null }>(() => {
+  const today = dayjs();
+  const fmt = (d: ReturnType<typeof dayjs>) => d.format('YYYY-MM-DD');
+  switch (range.value) {
+    case 'm1':
+      return { from: fmt(today.startOf('month')), to: fmt(today) };
+    case 'm3':
+      return { from: fmt(today.subtract(3, 'month')), to: fmt(today) };
+    case 'm6':
+      return { from: fmt(today.subtract(6, 'month')), to: fmt(today) };
+    case 'y1':
+      return { from: fmt(today.subtract(1, 'year')), to: fmt(today) };
+    case 'ytd':
+      return { from: fmt(today.startOf('year')), to: fmt(today) };
+    case 'custom':
+      return { from: customFrom.value, to: customTo.value };
+    default:
+      return { from: null, to: null };
+  }
+});
+
+/**
+ * 「生成分析」统一入口（行为诊断卡 / 操作贡献视角共用）
+ *
+ * store 内做同 key 命中短路（accountId|range|dataDate|流水条数），
+ * 重复点击 / 切卡重入不重拉
+ */
+const onGenerateAnalysis = (): void => {
+  void analysisStore.generate({
+    accountId: selectedId.value || 'all',
+    range: range.value,
+    dataDate: syncMeta.value?.dataDate ?? dayjs().format('YYYY-MM-DD'),
+    trades: allStockTrades.value ?? [],
+    cleared: cleared.value,
+    windowFrom: analysisWindow.value.from,
+    windowTo: analysisWindow.value.to,
+  });
+};
 
 /* ---------------- 模块级 AI 分析（资产曲线 / 清仓分析，图表头右侧 icon） ---------------- */
 
@@ -256,6 +332,13 @@ const buildAssetDatasets = (): RankDataset[] => {
 
 /** 已清仓周期（清仓非空的记录，Top 盈亏单只从这里挑） */
 const closedCycles = computed(() => cleared.value.filter((row) => row.closeDate !== null));
+
+/** 区间已实现盈亏（摩擦账本拖累比分母；无清仓记录为 null） */
+const realizedProfit = computed(() => {
+  const closed = closedCycles.value;
+  if (closed.length === 0) return null;
+  return closed.reduce((sum, row) => sum + row.profit, 0);
+});
 
 /** 持有天数分桶边界（天）：短线 / 波段 / 中线 / 长线 */
 const HOLD_BUCKETS: { label: string; min: number; max: number }[] = [
@@ -433,7 +516,7 @@ const loadAll = async (): Promise<void> => {
     getTzzbYearPoints(['2026', '2025']),
     getTzzbClearedPositions(),
     getTzzbFundHoldingReturns(),
-    getTzzbStockTrades('1'),
+    loadAllStockTrades(),
     getTzzbFundTrades('2026-09'),
   ]);
   const [acc, meta, pnlR, posR, chgR, dayR, monR, yearR, clrR, fundRetR, tradeR, fundTradeR] =
@@ -448,7 +531,11 @@ const loadAll = async (): Promise<void> => {
   if (yearR.status === 'fulfilled') yearPoints.value = yearR.value;
   if (clrR.status === 'fulfilled') cleared.value = clrR.value;
   if (fundRetR.status === 'fulfilled') fundReturns.value = fundRetR.value;
-  if (tradeR.status === 'fulfilled') stockTrades.value = tradeR.value;
+  if (tradeR.status === 'fulfilled') {
+    stockTrades.value = tradeR.value;
+    // 摩擦账本口径：首页分页结构里的 list 已合并全量页
+    allStockTrades.value = tradeR.value?.list ?? null;
+  }
   if (fundTradeR.status === 'fulfilled') fundTrades.value = fundTradeR.value;
   loading.value = false;
 };
@@ -591,6 +678,7 @@ const openStockDetailPage = (code: string): void => {
             <TzzbAssetPanel
               :pnl="pnl"
               :range="range"
+              :trades="allStockTrades"
               @range-change="(r) => (range = r)"
               @custom-change="(f, t) => ((customFrom = f), (customTo = t))"
             />
@@ -618,7 +706,21 @@ const openStockDetailPage = (code: string): void => {
           <TzzbClearedPanel :rows="cleared" fill @open="openStockDetail" @open-page="openStockDetailPage" />
         </BaseCard>
         <BaseCard title="品种总盈亏" fill class="min-h-0 xl:col-span-2">
-          <TzzbKindRank :cleared="cleared" :fund-returns="fundReturns" @open="openStockDetail" @open-page="openStockDetailPage" />
+          <TzzbKindRank :cleared="cleared" :fund-returns="fundReturns" @open="openStockDetail" @open-page="openStockDetailPage" @generate="onGenerateAnalysis" />
+        </BaseCard>
+      </div>
+
+      <!-- 行为诊断（操作复盘阶段 3 新增）+ 交易摩擦账本（阶段 1）同行 2/3 + 1/3 -->
+      <div class="grid shrink-0 gap-3 xl:grid-cols-3">
+        <BaseCard title="行为诊断" fill class="min-h-0 xl:col-span-2">
+          <TzzbBehaviorDiag @generate="onGenerateAnalysis" />
+        </BaseCard>
+        <BaseCard title="交易摩擦账本" fill class="min-h-0">
+          <TzzbFeeLedger
+            :trades="allStockTrades"
+            :avg-total-asset="avgTotalAsset"
+            :realized-profit="realizedProfit"
+          />
         </BaseCard>
       </div>
 
@@ -637,7 +739,7 @@ const openStockDetailPage = (code: string): void => {
             <MenuIcon name="agent" :size="14" />
           </button>
         </template>
-        <TzzbClearedAnalysis :cleared="cleared" :fund-returns="fundReturns" @open="openStockDetail" @open-page="openStockDetailPage" />
+        <TzzbClearedAnalysis :cleared="cleared" :fund-returns="fundReturns" :day-calendar="dayCal" @open="openStockDetail" @open-page="openStockDetailPage" />
       </BaseCard>
 
       <!-- ⑦ 交易记录（页签在标题行右侧；历史导入页签已删） -->
