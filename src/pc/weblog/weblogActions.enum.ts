@@ -88,6 +88,7 @@ export const WEBLOG_ACTIONS = {
   THEME_SETUP_OPEN: { category: 'business', label: '打开主题设置' },
   APPEARANCE_MODE_CHANGE: { category: 'business', label: '切换明暗模式（主题设置内）' },
   WATERMARK_TOGGLE: { category: 'business', label: '水印开关' },
+  TREASURY_BAR_TOGGLE: { category: 'business', label: '大A宝典气泡开关' },
   MENU_ORDER_EDIT: { category: 'business', label: '侧栏顺序编排' },
   MENU_ORDER_RESET: { category: 'business', label: '侧栏顺序重置' },
   MENU_VISIBILITY_TOGGLE: { category: 'business', label: '侧栏页面显隐' },

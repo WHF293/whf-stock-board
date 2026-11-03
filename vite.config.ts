@@ -58,10 +58,12 @@ export default defineConfig(({ mode }) => {
       /**
        * 多页入口：主应用 + 任务栏盯盘小组件（独立轻量窗口，不装插件内核，
        * 数据经 Tauri 事件来自主窗口既有盯盘引擎；见 src/widget/watch-widget-main.ts）
+       * + 大A宝典独立窗口（纯静态文案轻量渲染端，见 src/widget/treasury-main.ts）
        */
       input: {
         main: fileURLToPath(new URL('./index.html', import.meta.url)),
         'watch-widget': fileURLToPath(new URL('./watch-widget.html', import.meta.url)),
+        treasury: fileURLToPath(new URL('./treasury.html', import.meta.url)),
       },
       output: {
         /**

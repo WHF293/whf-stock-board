@@ -7,6 +7,7 @@ import StockDetailPanel from './StockDetailPanel.vue';
 import FuturesChainPanel from './FuturesChainPanel.vue';
 import StockF10Drawer from '../business/stock-f10/StockF10Drawer.vue';
 import BoardProfitDockPanel from '../business/BoardProfitDockPanel.vue';
+import BoardScoreHistoryDockPanel from '../business/BoardScoreHistoryDockPanel.vue';
 import DockResizer from '../business/DockResizer.vue';
 import { pluginKernel } from '../../../common/plugin/index';
 import {
@@ -60,6 +61,7 @@ const panelTitle = computed(() => {
     return `更多信息 · ${dockPanel.f10Name || dockPanel.f10Symbol}`;
   if (dockPanel.content === DOCK_PANEL_CONTENT.PROFIT_BUBBLE)
     return `赚钱效应${dockPanel.profitDate ? ` · ${dockPanel.profitDate}` : ''}`;
+  if (dockPanel.content === DOCK_PANEL_CONTENT.SCORE_HISTORY) return '板块历史得分';
   if (dockPanel.content === DOCK_PANEL_CONTENT.PLUGIN) return pluginPanel.value?.title ?? '插件面板';
   return '';
 });
@@ -184,6 +186,9 @@ onBeforeUnmount(() => {
           @focus-change="(date: string) => (dockPanel.profitDate = date)"
           @focus-reset="dockPanel.profitDate = ''"
         />
+        <!-- 板块历史得分（题材轮动控制行「查看板块历史得分」发起，2026-11-03 王总指定 dock 化）：
+             拖宽 / 持久化复用容器能力，数据自取 data-cache 会话缓存与页面解耦 -->
+        <BoardScoreHistoryDockPanel v-else-if="dockPanel.content === DOCK_PANEL_CONTENT.SCORE_HISTORY" />
         <!-- 插件停靠面板：面板被卸载（插件禁用）时降级为空态，不留白屏 -->
         <component
           v-else-if="pluginPanel"

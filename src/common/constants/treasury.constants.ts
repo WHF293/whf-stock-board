@@ -1,9 +1,11 @@
 /**
  * 大A宝典内容（股民圈流传的经验口诀与段子，纯娱乐向）
  *
- * 全局固钉（MainLayout 右下角 TreasuryFab）弹窗的静态文案单源：
- * 弹窗为逐句轮播式（一次一句），序列 = 大A祖训 → 短线口诀 → 游资金句；
- * 底部固定免责提示。文案为王总 2026-10-26 指定版本，仅可整体替换，不做动态拼接
+ * 大A宝典独立窗口（treasury.html 轻量入口，src/widget/TreasuryWindow.vue）的
+ * 静态文案单源：顶部轮播区逐句轮播（序列 = 大A祖训 → 短线口诀 → 游资金句），
+ * 分组列表完整展示，底部免责提示。文案为王总 2026-10-26 指定版本，
+ * 仅可整体替换，不做动态拼接。
+ * 2026-11-03 王总指定：页内气泡 + 弹窗统一改为独立窗口（参考盯盘小组件模式）。
  */
 
 /** 祖训 / 口诀条目：主句 + 补充说明（说明弱色小字展示，可空） */
@@ -58,8 +60,8 @@ export const TREASURY_QUOTES_GROUP_TITLE = '游资大佬经典金句';
 /** 完整列表第三组标题备注（常被归入祖训） */
 export const TREASURY_QUOTES_GROUP_NOTE = '常被归入祖训';
 
-/** 轮播单页停留时长（毫秒） */
-export const TREASURY_CAROUSEL_INTERVAL_MS = 5000;
+/** 轮播单页停留时长（毫秒；2026-11-03 王总指定改 8s） */
+export const TREASURY_CAROUSEL_INTERVAL_MS = 8000;
 
 /** 轮播页来源文案（正文下方单独一行的分组名；金句附人物落款） */
 export const TREASURY_SLIDE_KIND_LABELS = {
@@ -113,30 +115,76 @@ export const TREASURY_SLIDES: readonly TreasurySlide[] = [
   ),
 ];
 
-/** 气泡轮播模式选项（弹窗顶部「轮播设置」按钮组） */
-export const TREASURY_BUBBLE_MODES = [
-  { value: 'auto', label: '自动' },
-  { value: 'hover', label: 'hover' },
-  { value: 'off', label: '关闭' },
-] as const;
+/**
+ * 弹窗平铺清单标题与附注（2026-11-03 王总指定移除分组概念：祖训 / 口诀 / 金句 /
+ * 我的祖训不再分节，合成一个连续编号的清单，我的祖训追加末尾、悬浮可删）
+ */
+export const TREASURY_FLAT_LIST_TITLE = '大A祖训';
 
-/** 气泡轮播模式：自动 = 气泡常驻轮播 / hover = 悬停出现 / 关闭 = 永不出现 */
-export type TreasuryBubbleMode = (typeof TREASURY_BUBBLE_MODES)[number]['value'];
+// ---------- 桌面横条窗口（2026-11-03 王总指定：固钉升级为独立桌面横条，参考盯盘条形态） ----------
 
-/** 气泡轮播默认模式（hover，王总 2026-10-26 指定） */
-export const TREASURY_BUBBLE_MODE_DEFAULT: TreasuryBubbleMode = 'hover';
+/** 宝典横条窗口 label（capabilities 按此授权；全局唯一） */
+export const TREASURY_BAR_WINDOW_LABEL = 'treasury-fab';
 
-/** appStorage 命名空间：气泡轮播模式持久化 */
-export const STORAGE_NS_TREASURY_BUBBLE_MODE = 'treasury.bubbleMode';
+/** 大A宝典气泡（桌面横条）默认开关（2026-11-03 王总指定默认关闭，设置页开启） */
+export const TREASURY_BAR_ENABLED_DEFAULT = false;
 
-/** appStorage 命名空间：固钉位置持久化（JSON {x,y} = 容器左上角视口坐标） */
-export const STORAGE_NS_TREASURY_POSITION = 'treasury.fabPosition';
+/** 宝典弹窗窗口 label（单例，横条点击打开） */
+export const TREASURY_POPUP_WINDOW_LABEL = 'treasury-bubble';
 
-/** 拖拽点击判定阈值（像素）：指针累计位移不超过该值视为点击（不触发拖拽与位置保存） */
-export const TREASURY_DRAG_THRESHOLD_PX = 4;
+/** 横条窗口加载地址（多页入口 + 视图参数；bar 视图与弹窗视图共用 treasury.html） */
+export const TREASURY_BAR_WINDOW_URL = 'treasury.html?view=bar';
 
-/** 气泡翻转判定比例：固钉位于视口该比例线以内时气泡向屏内翻转（上下 / 左右各取半屏） */
-export const TREASURY_BUBBLE_FLIP_RATIO = 0.5;
+/**
+ * 横条宽度（逻辑像素；单行一句，放不下跑马灯，点击开弹窗看全文；
+ * 2026-11-03 王总澄清：一行两个指弹窗列表，横条仍单句；后指定缩到 200）
+ */
+export const TREASURY_BAR_WIDTH = 200;
 
-/** 弹窗顶部轮播设置分组标签 */
-export const TREASURY_BUBBLE_SETTING_LABEL = '轮播设置';
+/** 横条高度（逻辑像素）= 图标 20 + 上下各 8 padding + 上下各 1 边框 */
+export const TREASURY_BAR_HEIGHT = 38;
+
+/** appStorage 命名空间：横条窗口位置持久化（JSON {x,y} = 物理像素，随屏幕缩放） */
+export const STORAGE_NS_TREASURY_BAR_POSITION = 'treasury.barPosition';
+
+/** 横条位置记忆的落点判定窗口（毫秒）：拖动停止该时长后才写存储，避免拖动期间高频写 */
+export const TREASURY_BAR_MOVE_SETTLE_MS = 300;
+
+/** 横条跑马灯滚动速度（像素 / 秒；单句超出可视宽时按此速度无缝循环，2026-11-03 王总指定） */
+export const TREASURY_MARQUEE_SPEED_PX_S = 30;
+
+/** 横条跑马灯内容副本间距（像素；无缝循环单程位移 = 单份文本宽 + 该间距） */
+export const TREASURY_MARQUEE_GAP_PX = 24;
+
+/** 横条跑马灯句尾停顿（毫秒）：长句滚完一轮后停留该时长再切下一句（短句仍按轮播间隔切） */
+export const TREASURY_MARQUEE_PAUSE_MS = 800;
+
+/** 跨窗口事件名（主窗口 → 横条/弹窗窗口的通信协议） */
+export const TREASURY_EVENTS = {
+  /** 主窗口 → 宝典窗口：主题三要素（明暗 / 主题色 / 涨跌配色）实时同步；不走 storage 事件（WebView2 跨窗口 storage 事件实测不可靠） */
+  THEME: 'treasury://theme',
+} as const satisfies Record<string, string>;
+
+// ---------- 我的祖训（2026-11-03 王总指定：自定义祖训，持久化记住） ----------
+
+/** 「我的祖训」分组标题（弹窗列表组标题） */
+export const TREASURY_CUSTOM_GROUP_TITLE = '我的祖训';
+
+/** 自定义祖训上限（防止无限膨胀拖慢横条轮播与列表渲染） */
+export const TREASURY_CUSTOM_RULES_MAX = 50;
+
+/** appStorage 命名空间：自定义祖训持久化（JSON TreasuryRule[]，跨窗口共享 localStorage） */
+export const STORAGE_NS_TREASURY_CUSTOM_RULES = 'treasury.customRules';
+
+/**
+ * 组装横条轮播序列：内置序列（祖训 → 口诀 → 金句）+ 自定义祖训（kind = rule，
+ * 追加到末尾）。自定义条目为空时即内置序列本身
+ * @param custom 自定义祖训列表
+ * @returns 轮播序列
+ */
+export const buildTreasurySlides = (
+  custom: readonly TreasuryRule[],
+): readonly TreasurySlide[] => [
+  ...TREASURY_SLIDES,
+  ...custom.map((rule): TreasurySlide => ({ kind: 'rule', title: rule.title, desc: rule.desc })),
+];

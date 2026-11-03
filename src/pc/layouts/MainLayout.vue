@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useIntervalFn } from "@vueuse/core";
 import { isTauri } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useDesktopChrome } from "../../common/composables/use-desktop-chrome";
@@ -32,6 +32,8 @@ import { useSlidingThumb } from "../../common/composables/use-sliding-thumb";
 import { MARKET_STATUS_REFRESH_INTERVAL_MS } from "../../common/constants/polling.constants.ts";
 import { HOST_HEADER_ITEM, HOST_HEADER_ITEMS, HEADER_PLUGIN_LEAD_KEY } from "../../common/constants/header.constants.ts";
 import { WATCH_WIDGET_EVENTS } from "../plugins/watch-widget/constants.ts";
+import { TREASURY_EVENTS } from "../../common/constants/treasury.constants.ts";
+import { ensureTreasuryBarWindow, closeTreasuryBarWindow } from "../../common/utils/treasury-window";
 import { openInNewWindow } from "../../common/utils/open-in-new-window";
 import { openSiteDocsInApp, openSiteDocsInBrowser } from "../../common/utils/open-site-docs";
 import { MENU_ITEMS, ROUTE_PATH } from "../../common/constants/router-meta.constants.ts";
@@ -609,6 +611,25 @@ onMounted(() => {
     }).then((unlisten) => {
       unlistenOpenUrl = unlisten;
     });
+    // 大A宝典桌面横条（独立置顶小窗，轮播祖训、点击开弹窗，2026-11-03 王总指定
+    // 参考盯盘条形态）：默认关闭，设置页开关控制（启动按持久化开关决定是否创建，
+    // 运行期切换即时创建 / 关闭）；主题变化实时推送给宝典窗口
+    // （WebView2 跨窗口 storage 事件不可靠，盯盘条同款走事件通道）
+    if (settingsStore.treasuryBarEnabled) void ensureTreasuryBarWindow();
+    watch(
+      () => settingsStore.treasuryBarEnabled,
+      (enabled) => {
+        if (enabled) void ensureTreasuryBarWindow();
+        else void closeTreasuryBarWindow();
+      },
+    );
+    watch([isDark, () => settingsStore.themeColor, () => settingsStore.trendTheme], () => {
+      void emit(TREASURY_EVENTS.THEME, {
+        dark: isDark.value,
+        theme: settingsStore.themeColor,
+        trend: settingsStore.trendTheme,
+      });
+    });
   }
 });
 
@@ -1006,8 +1027,10 @@ void marketStatusStore.refresh();
     <!-- 应用级浮窗（插件经 app:notify 服务发起，跨路由常驻） -->
     <NotificationHost />
 
-    <!-- 大A宝典固钉（右下角全局悬浮入口：icon 常驻、悬停展开字样，点击开口诀弹窗） -->
-    <TreasuryFab />
+    <!-- 大A宝典入口：桌面端 = 独立横条窗口（按设置页「大A宝典气泡」开关，MainLayout
+         挂载 / 运行期 watch 创建或关闭，见 onMounted）；浏览器开发态保留右下角圆钮兜底
+         （window.open 打开弹窗小窗），同样受开关控制 -->
+    <TreasuryFab v-if="!desktopChrome && settingsStore.treasuryBarEnabled" />
 
     <!-- 插件确认弹窗（经 app:ui 的 confirm 发起，宿主渲染、答复回到插件的 Promise） -->
     <PluginConfirmHost />

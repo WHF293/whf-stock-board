@@ -1,0 +1,17 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "treasury",
+  "description": "大A宝典两个窗口（桌面横条 treasury-fab / 弹窗 treasury-bubble）的最小权限：纯静态文案渲染端，横条需要拖拽（start-dragging）与点击打开/唤醒弹窗（create-webview-window + show + set-focus）；弹窗需要自收起（hide = 保活隐藏，2026-11-03 王总指定收起代替关闭）",
+  "windows": [
+    "treasury-fab",
+    "treasury-bubble"
+  ],
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "core:webview:allow-create-webview-window",
+    "core:window:allow-set-focus",
+    "core:window:allow-hide",
+    "core:window:allow-show"
+  ]
+}
