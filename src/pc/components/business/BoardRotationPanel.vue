@@ -7,6 +7,7 @@ import BaseEmpty from '../ui/BaseEmpty.vue';
 import BaseTabs from '../ui/BaseTabs.vue';
 import BoardScoreWeightModal from './BoardScoreWeightModal.vue';
 import BoardRotationSettingsModal from './BoardRotationSettingsModal.vue';
+import BoardScoreHistoryModal from './BoardScoreHistoryModal.vue';
 import MenuIcon from '../ui/MenuIcon.vue';
 import NoticeBar from '../ui/NoticeBar.vue';
 import { useTheme } from '../../../common/composables/use-theme';
@@ -38,14 +39,25 @@ import type {
   RotationSegment,
 } from '../../../common/types/board-rotation.types.ts';
 import { buildBoardRotation } from '../../../common/utils/build-board-rotation';
+import { buildStyleSeesaw } from '../../../common/utils/build-style-seesaw';
+import {
+  SEESAW_BUCKET_LABELS,
+  SEESAW_LINE_COLORS,
+} from '../../../common/constants/style-seesaw.constants.ts';
+import type { SeesawDayPoint } from '../../../common/types/style-seesaw.types.ts';
+import StyleSeesawSnapshot from './StyleSeesawSnapshot.vue';
 
 /**
- * 题材轮动面板（上下布局，2026-10-21 王总定稿）：
+ * 题材轮动面板（单卡布局，2026-11-03 王总定稿）：
  *
- * 上栏 = 题材名次 bump 图（x = 交易日升序左旧右新、y = 涨停榜名次第 1 名在顶，
- * 一条线一个题材：线爬顶 = 主线强化，断线 = 掉榜，隔日重现开新线新色）；
- * 下栏 = 详情区（无弹窗）：默认渲染最新交易日的单日构成，
- * 点图上日期列（x 轴标签）原地切换单日，点线 / 端点题材名切换题材段生命周期。
+ * 主卡 = 控制行 + 题材名次 bump 图（x = 交易日升序左旧右新，左 y 轴 = 涨停榜名次第 1 名在顶，
+ * 一条线一个题材：线爬顶 = 主线强化，断线 = 掉榜，隔日重现开新线新色）+
+ * 详情区（默认渲染最新交易日的单日构成，点图上日期列原地切换单日，点线 / 端点题材名切换
+ * 题材段生命周期）+ 风格跷跷板快照区（横幅 + 两端行业热度榜）。
+ *
+ * 双轴叠加（2026-11-03 王总指定深度合并）：右 y 轴 = 风格跷跷板两桶（进攻端抱团 /
+ * 防守端红利）的窗口累计涨跌幅（窗口首日归零），与 bump 图共用同一交易日 x 轴，
+ * 与左轴名次共证「市场当前炒作方向」——题材轮动看板块接力，跷跷板看风格切换。
  *
  * 组件只吃 props 不直连数据层；板块跳转通过事件上抛（boardClick），页面负责路由。
  * 成员股 / 龙头 2026-11-02 起改组件内直开（useStockOpen 全站统一口径：单击 = 侧栏、
@@ -139,6 +151,8 @@ const legendOpen = ref(false);
 const weightOpen = ref(false);
 /** 题材轮动设置弹窗开关（上榜最低得分率，王总 2026-10-23） */
 const settingsOpen = ref(false);
+/** 板块历史得分弹窗开关（单板块得分走势，王总 2026-11-03） */
+const historyOpen = ref(false);
 
 /** 范围切换选项 */
 const rangeOptions = ROTATION_RANGES.map((value) => ({ label: `近${value}日`, value: String(value) }));
@@ -187,6 +201,108 @@ watch([range, topN, () => props.dailyRows.length], () => {
   if (selectedDate.value !== '' && !windowDateSet.value.has(selectedDate.value)) {
     selectedDate.value = '';
   }
+});
+
+/* ----------------------- 风格跷跷板（bump 图右轴叠加） ----------------------- */
+
+/**
+ * 风格跷跷板模型（与 bump 图共用 dailyRows；抱团门槛接 rotationMinScoreRate
+ * settings 值——2026-11-03 起真正与题材轮动上榜门槛联动，原独立面板只用常量默认值）
+ */
+const seesawModel = computed(() =>
+  buildStyleSeesaw(props.dailyRows, { minScoreRate: settingsStore.rotationMinScoreRate }),
+);
+
+/** (交易日) → 跷跷板单日快照 */
+const seesawByDate = computed<Map<string, SeesawDayPoint>>(
+  () => new Map(seesawModel.value.days.map((day) => [day.tradeDate, day])),
+);
+
+/** 窗口内各交易日的跷跷板快照（与 bump 图窗口同日期轴；缺数日为 null） */
+const windowSeesawDays = computed<ReadonlyArray<SeesawDayPoint | null>>(() =>
+  windowDays.value.map((day) => seesawByDate.value.get(day.tradeDate) ?? null),
+);
+
+/** 最新交易日的跷跷板快照（快照区横幅数据源；窗口内全缺数则 null） */
+const latestSeesawDay = computed<SeesawDayPoint | null>(() => {
+  const days = windowSeesawDays.value;
+  for (let i = days.length - 1; i >= 0; i -= 1) {
+    const day = days[i];
+    if (day !== null) return day;
+  }
+  return null;
+});
+
+/**
+ * 窗口内重定基的两桶累计涨跌幅
+ *
+ * buildStyleSeesaw 的累计基期是全日期轴首日，切窗口后右轴曲线应从窗口首日归零
+ * （与「近 N 日」语义一致）：窗口首个有数日的全历史累计作为基值，其后逐日相减；
+ * 缺数日为 null（connectNulls 接线）。值保留两位小数防浮点噪声。
+ */
+const rebasedSeesaw = computed(() => {
+  const days = windowSeesawDays.value;
+  const first = days.find((day) => day !== null);
+  const aggBase = first?.aggressive.cumulativeChange ?? 0;
+  const defBase = first?.defensive.cumulativeChange ?? 0;
+  const rebase = (value: number, base: number): number => Math.round((value - base) * 100) / 100;
+  return {
+    aggressive: days.map((day) =>
+      day === null ? null : rebase(day.aggressive.cumulativeChange, aggBase),
+    ),
+    defensive: days.map((day) =>
+      day === null ? null : rebase(day.defensive.cumulativeChange, defBase),
+    ),
+  };
+});
+
+/**
+ * 右轴边界（对称含 0，跷跷板语义：0 居中 = 风格均衡线）
+ *
+ * 取两桶窗口累计的绝对值最大者外扩 15% 留白；窗口内全无数返回 null（右轴与叠加线整体隐藏）。
+ */
+const seesawExtent = computed<{ min: number; max: number } | null>(() => {
+  const values = [...rebasedSeesaw.value.aggressive, ...rebasedSeesaw.value.defensive].filter(
+    (value): value is number => value !== null,
+  );
+  if (values.length === 0) return null;
+  const bound = Math.max(...values.map((value) => Math.abs(value)), 1) * 1.15;
+  return { min: -bound, max: bound };
+});
+
+/** 右轴叠加线系列（进攻端 / 防守端；z 低于 bump 线，悬停 focus 同款） */
+const seesawSeries = computed(() => {
+  if (seesawExtent.value === null) return [];
+  const defs = [
+    {
+      bucket: 'aggressive' as const,
+      label: SEESAW_BUCKET_LABELS.AGGRESSIVE,
+      color: SEESAW_LINE_COLORS.AGGRESSIVE,
+      data: rebasedSeesaw.value.aggressive,
+    },
+    {
+      bucket: 'defensive' as const,
+      label: SEESAW_BUCKET_LABELS.DEFENSIVE,
+      color: SEESAW_LINE_COLORS.DEFENSIVE,
+      data: rebasedSeesaw.value.defensive,
+    },
+  ];
+  return defs.map((def) => ({
+    name: def.label,
+    type: 'line' as const,
+    yAxisIndex: 1,
+    smooth: 0.3,
+    showSymbol: false,
+    connectNulls: true,
+    lineStyle: { width: 2, color: def.color, type: 'dashed', opacity: 0.7 },
+    itemStyle: { color: def.color },
+    emphasis: { focus: 'series' },
+    z: 2,
+    data: def.data.map((value, index) => ({
+      value: [windowDays.value[index]?.tradeDate ?? '', value] as [string, number | null],
+      bucket: def.bucket,
+    })),
+  }));
 });
 
 /* --------------------------------- 涨停明细索引 --------------------------------- */
@@ -347,8 +463,9 @@ const chartOptions = computed<EChartsCoreOption>(() => {
 
   return {
     animation: false,
-    // 顶部留白 44：第 1 名线首的题材名 label 在轴线上方，太小会被容器裁掉一半
-    grid: { left: 46, right: 110, top: 44, bottom: 64 },
+    // 顶部留白 44：第 1 名线首的题材名 label 在轴线上方，太小会被容器裁掉一半；
+    // 右侧留白 150：bump 线 endLabel 题材名 + 右轴累计涨跌幅标签共用（2026-11-03 双轴叠加加宽）
+    grid: { left: 46, right: 150, top: 44, bottom: 64 },
     tooltip: {
       trigger: 'item',
       confine: true,
@@ -356,7 +473,14 @@ const chartOptions = computed<EChartsCoreOption>(() => {
       borderColor: colors.grid,
       textStyle: { color: colors.text, fontSize: 11 },
       formatter: (params: unknown) => {
-        const item = (params as { data?: { point?: RotationDayPoint } }).data;
+        const item = (params as { data?: { point?: RotationDayPoint; bucket?: string; value?: unknown } }).data;
+        // 跷跷板叠加线项（右轴累计涨跌幅）
+        if (item && item.bucket) {
+          const label = item.bucket === 'aggressive' ? SEESAW_BUCKET_LABELS.AGGRESSIVE : SEESAW_BUCKET_LABELS.DEFENSIVE;
+          const value = Array.isArray(item.value) ? Number(item.value[1]) : Number.NaN;
+          if (Number.isNaN(value)) return '';
+          return `<b>${label}</b><br/>${Array.isArray(item.value) ? item.value[0] : ''} 窗口累计 ${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
+        }
         const point = item?.point;
         if (!point) return '';
         const leader = point.leader;
@@ -385,16 +509,44 @@ const chartOptions = computed<EChartsCoreOption>(() => {
         },
       },
     },
-    yAxis: {
-      type: 'value',
-      inverse: true,
-      min: 1,
-      max: topN.value,
-      interval: 1,
-      axisLabel: { formatter: '第{value}名', fontSize: 10, color: colors.muted },
-      splitLine: { lineStyle: { color: colors.grid, type: 'dashed' } },
-    },
-    series,
+    yAxis:
+      seesawExtent.value === null
+        ? {
+            type: 'value',
+            inverse: true,
+            min: 1,
+            max: topN.value,
+            interval: 1,
+            axisLabel: { formatter: '第{value}名', fontSize: 10, color: colors.muted },
+            splitLine: { lineStyle: { color: colors.grid, type: 'dashed' } },
+          }
+        : [
+            {
+              // 左轴 = 题材名次（第 1 名在顶）
+              type: 'value',
+              inverse: true,
+              min: 1,
+              max: topN.value,
+              interval: 1,
+              axisLabel: { formatter: '第{value}名', fontSize: 10, color: colors.muted },
+              splitLine: { lineStyle: { color: colors.grid, type: 'dashed' } },
+            },
+            {
+              // 右轴 = 跷跷板两桶窗口累计涨跌幅（对称边界，0 居中 = 风格均衡线；标签取整百分比，
+              // 防边界外扩系数产生 4.875999…% 一类的浮点噪声，王总 2026-11-03 指定）
+              type: 'value',
+              position: 'right',
+              min: seesawExtent.value.min,
+              max: seesawExtent.value.max,
+              axisLabel: {
+                formatter: (value: number): string => `${Math.round(value)}%`,
+                fontSize: 10,
+                color: colors.muted,
+              },
+              splitLine: { show: false },
+            },
+          ],
+    series: [...series, ...seesawSeries.value],
   };
 });
 
@@ -511,10 +663,11 @@ const segmentStatus = (segment: RotationSegment): string => {
   <div class="flex flex-col gap-2">
     <NoticeBar
       class="shrink-0"
-      text="一条线一个题材的名次轨迹：线爬顶 = 主线强化，断线 = 掉榜退潮（隔日重现开新线新色）；悬停色点看当日龙头，点日期列看单日构成，点题材名看题材段生命周期。「权重」按钮可自定义板块得分的分桶权重，「设置」按钮可切换涌入 / 逃离方向并调整两条上榜得分率门槛（涌入 = 得分高的前 N，逃离 = 得分低的前 N）。"
+      text="一条线一个题材的名次轨迹（左轴）：线爬顶 = 主线强化，断线 = 掉榜退潮（隔日重现开新线新色）；悬停色点看当日龙头，点日期列看单日构成，点题材名看题材段生命周期。右轴 = 风格跷跷板两桶的窗口累计涨跌幅（窗口首日归零）：进攻端橙线与防守端蓝线张口 = 风格分化、交叉 = 风格切换，与名次曲线共证市场炒作方向。「权重」按钮可自定义板块得分的分桶权重，「设置」按钮可切换涌入 / 逃离方向并调整两条上榜得分率门槛（涌入 = 得分高的前 N，逃离 = 得分低的前 N）；「查看板块历史得分」弹窗可任选板块（最多 8 个）看窗口内逐日得分走势——未上榜日照常取数，用来回看看好板块中途掉榜那几天的得分。"
     />
 
-    <!-- 卡片一：控制行 + bump 图（默认撑满卡片宽度；窗口天数多到列宽不够时横向滚动） -->
+    <!-- 主卡：控制行 + bump 图（右轴叠跷跷板剪刀差）+ 详情区 + 跷跷板快照区
+         （2026-11-03 王总指定统一卡面；窗口天数多到列宽不够时横向滚动） -->
     <div class="shrink-0 rounded-card bg-surface p-4 shadow-card">
       <div class="mb-2 flex flex-wrap items-center gap-2">
         <BaseTabs v-model="range" :options="rangeOptions" />
@@ -537,6 +690,31 @@ const segmentStatus = (segment: RotationSegment): string => {
           <MenuIcon name="settings" :size="12" />
           设置
         </BaseButton>
+        <BaseButton
+          variant="ghost"
+          class="!px-2 !py-1 text-xs"
+          title="查看板块历史得分：任选板块（最多 8 个）看窗口内逐日得分走势（含未上榜日）"
+          @click="historyOpen = true"
+        >
+          <MenuIcon name="chartBars" :size="12" />
+          查看板块历史得分
+        </BaseButton>
+        <!-- 跷跷板右轴图例（无数据时随右轴整体隐藏） -->
+        <span v-if="seesawExtent" class="flex items-center gap-2 text-[10px] text-text-tertiary">
+          <span class="flex items-center gap-1">
+            <i
+              class="inline-block h-0.5 w-3 rounded-full"
+              :style="{ background: SEESAW_LINE_COLORS.AGGRESSIVE }"
+            />进攻端
+          </span>
+          <span class="flex items-center gap-1">
+            <i
+              class="inline-block h-0.5 w-3 rounded-full"
+              :style="{ background: SEESAW_LINE_COLORS.DEFENSIVE }"
+            />防守端
+          </span>
+          <span>右轴 · 窗口累计</span>
+        </span>
         <div class="relative ml-auto">
           <button
             type="button"
@@ -583,15 +761,15 @@ const segmentStatus = (segment: RotationSegment): string => {
           <BaseChart :options="chartOptions" not-merge @chart-click="onChartClick" />
         </div>
       </div>
-    </div>
 
-    <!-- 下栏：详情区（无弹窗，两个内容态；卡片样式包裹；自然高度随内容展开，滚动交给外层页面） -->
-    <div>
+      <!-- 详情区（2026-11-03 王总指定并入主卡统一卡面；无弹窗，两个内容态；
+           自然高度随内容展开，滚动交给外层页面） -->
       <BaseEmpty
         v-if="!currentDay"
+        class="mt-3 border-t border-flat-weak pt-3"
         text="当前窗口内暂无题材轮动数据，请先在其他视图同步板块数据"
       />
-      <div v-else class="flex flex-col gap-2 rounded-card bg-surface p-4 shadow-card">
+      <div v-else class="mt-3 flex flex-col gap-2 border-t border-flat-weak pt-3">
         <!-- 内容态一：单日构成 -->
         <div v-if="!activeSegment" class="flex flex-col gap-2">
           <div class="flex flex-wrap items-center gap-2">
@@ -808,6 +986,11 @@ const segmentStatus = (segment: RotationSegment): string => {
           </div>
         </div>
       </div>
+
+      <!-- 风格跷跷板快照区（2026-11-03 王总指定曲线并入 bump 图右轴；横幅 + 热度榜挂详情区下方） -->
+      <div v-if="latestSeesawDay" class="mt-3 border-t border-flat-weak pt-3">
+        <StyleSeesawSnapshot :day="latestSeesawDay" @board-click="onBoardClick" />
+      </div>
     </div>
 
     <!-- 板块得分权重管理器（保存需二次确认；权重持久化于 settings store，四路视图共用） -->
@@ -815,5 +998,11 @@ const segmentStatus = (segment: RotationSegment): string => {
     <!-- 题材轮动设置（涌入 / 逃离方向 + 两条上榜得分率门槛；保存需二次确认，门槛持久化于 settings store，
          方向经 confirm 事件回写 v-model:direction 由页面持有） -->
     <BoardRotationSettingsModal v-model:open="settingsOpen" v-model:direction="direction" />
+    <!-- 板块历史得分（36 板块多选 · 最多 8 个，画窗口内逐日得分曲线；未上榜日照常取数） -->
+    <BoardScoreHistoryModal
+      v-model:open="historyOpen"
+      :daily-rows="dailyRows"
+      :window-dates="windowDays.map((day) => day.tradeDate)"
+    />
   </div>
 </template>

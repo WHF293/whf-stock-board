@@ -6,7 +6,6 @@ import BoardDataSyncMenu from '../components/business/BoardDataSyncMenu.vue';
 import BoardFilterModal from '../components/business/BoardFilterModal.vue';
 import BoardMainlinePanel from '../components/business/BoardMainlinePanel.vue';
 import BoardRotationPanel from '../components/business/BoardRotationPanel.vue';
-import StyleSeesawPanel from '../components/business/StyleSeesawPanel.vue';
 import BaseButton from '../components/ui/BaseButton.vue';
 import BaseCard from '../components/ui/BaseCard.vue';
 import BaseEmpty from '../components/ui/BaseEmpty.vue';
@@ -88,8 +87,10 @@ import { handleSdkError } from '../../common/utils/handle-sdk-error';
 /**
  * 题材轮动（原板块日历 · 板块热点）
  *
- * 2026-10-21 王总指定页面改名「题材轮动」，主区四视图：题材轮动（bump 图，默认）/
- * 板块日历（涨跌停矩阵）/ 赚钱效应（气泡图）/ 板块Top（名次 × 日期矩阵）。
+ * 2026-10-21 王总指定页面改名「题材轮动」，主区视图：题材轮动（bump 图，默认）/
+ * 板块日历（涨跌停矩阵）；题材轮动视图下挂板块Top 子模块；风格跷跷板 2026-11-03 起
+ * 深度并入题材轮动面板（剪刀差曲线 = bump 图右轴、快照区挂详情区下方）——
+ * 三者同出板块日历采集数据，共同论证市场当前炒作的方向，范围档共用 rotationRange。
  *
  * 行为：板块池为行（31 个申万一级行业 + 追加的热门板块，按热门口径降序）×
  * 交易日为列（降序，最近在左）；
@@ -137,9 +138,12 @@ const legendOpen = ref(false);
 
 /** 页头动作挂载守卫：只有本页激活时按钮才出现在页头（KeepAlive 缓存页切走不残留） */
 const { active: headerSlotActive } = usePageHeaderSlot();
-/** 主区视图：题材轮动（bump 图，默认）/ 板块日历（涨跌停矩阵）/ 赚钱效应 */
+/** 主区视图：题材轮动（bump 图，默认）/ 板块日历（涨跌停矩阵） */
 const calendarView = ref<BoardCalendarViewMode>(BOARD_CALENDAR_VIEW_DEFAULT);
-/** 题材轮动展示范围（近 10/20/30 日，双向绑定给 BoardRotationPanel；同时驱动板块Top 子模块日期列） */
+/**
+ * 题材轮动展示范围（近 10/20/30 日，双向绑定给 BoardRotationPanel；同时驱动
+ * 板块Top 子模块日期列与跷跷板右轴窗口——三处共用同一范围档，2026-11-03 王总指定合并口径）
+ */
 const rotationRange = ref<string>(String(ROTATION_DEFAULT_RANGE));
 /** 题材轮动上榜方向（涌入 / 逃离，2026-10-29 王总指定；双向绑定给 BoardRotationPanel，AI 分析数据段同口径） */
 const rotationDirection = ref<RotationDirection>('inflow');
@@ -657,13 +661,10 @@ const buildProfitDataset = (): RankDataset => {
 };
 
 /**
- * 风格跷跷板数据段：交由 StyleSeesawPanel 自身口径，此处以每日概览兜底
- * @returns 数据段
- */
-const buildSeesawDatasets = (): RankDataset[] => [buildOverviewDataset()];
-
-/**
  * 收集当前激活视图的 AI 分析数据段
+ *
+ * 风格跷跷板已并入题材轮动视图（2026-11-03），其数据与「每日市场概览」同源，
+ * 不再单独出数据段；SEESAW key 为持久化兼容保留，运行期落到 default 分支。
  * @returns 数据段列表
  */
 const collectAiDatasets = (): RankDataset[] => {
@@ -673,8 +674,6 @@ const collectAiDatasets = (): RankDataset[] => {
     case BOARD_CALENDAR_VIEW.LIST:
       // 板块日历视图并入赚钱效应排行（tab 删除后分析能力保留，2026-10-31）
       return [buildMatrixDataset(), buildProfitDataset()];
-    case BOARD_CALENDAR_VIEW.SEESAW:
-      return buildSeesawDatasets();
     default:
       return [buildOverviewDataset()];
   }
@@ -1100,26 +1099,10 @@ const legendSwatchStyle = (bucket: BoardScoreBucket): Record<string, string> => 
       </div>
     </template>
 
-    <!-- 风格跷跷板：两桶（高情绪抱团 vs 高股息红利）逐日聚合，跷跷板横幅 +
-         剪刀差曲线 + 两端行业热度榜；数据复用 weightedDailyRows，零新增取数 -->
-    <template v-else-if="calendarView === BOARD_CALENDAR_VIEW.SEESAW">
-      <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
-        <BaseCard v-if="isLoading && dailyRows.length === 0" class="shrink-0">
-          <BaseSkeleton class="h-96" />
-        </BaseCard>
-        <BaseCard v-else-if="dailyRows.length === 0" class="shrink-0">
-          <BaseEmpty text="暂无板块日历数据，请点击右上角「刷新」采集" />
-        </BaseCard>
-        <StyleSeesawPanel
-          v-else
-          :daily-rows="weightedDailyRows"
-          @board-click="onRotationBoardClick"
-        />
-      </div>
-    </template>
-
     <!-- 赚钱效应气泡图已迁入右侧停靠面板（2026-10-31 王总指定删除主区 tab）：
          入口 = 板块日历扩展行「赚钱效应」，经 dockPanel.openProfitBubble 打开 -->
+    <!-- 风格跷跷板已深度并入题材轮动面板（2026-11-03 王总指定：剪刀差曲线并 bump 图右轴、
+         快照区挂详情区下方，独立 tab 与独立卡片均删除） -->
 
     <BoardFilterModal
       v-model:open="filterOpen"

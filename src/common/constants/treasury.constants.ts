@@ -129,5 +129,14 @@ export const TREASURY_BUBBLE_MODE_DEFAULT: TreasuryBubbleMode = 'hover';
 /** appStorage 命名空间：气泡轮播模式持久化 */
 export const STORAGE_NS_TREASURY_BUBBLE_MODE = 'treasury.bubbleMode';
 
+/** appStorage 命名空间：固钉位置持久化（JSON {x,y} = 容器左上角视口坐标） */
+export const STORAGE_NS_TREASURY_POSITION = 'treasury.fabPosition';
+
+/** 拖拽点击判定阈值（像素）：指针累计位移不超过该值视为点击（不触发拖拽与位置保存） */
+export const TREASURY_DRAG_THRESHOLD_PX = 4;
+
+/** 气泡翻转判定比例：固钉位于视口该比例线以内时气泡向屏内翻转（上下 / 左右各取半屏） */
+export const TREASURY_BUBBLE_FLIP_RATIO = 0.5;
+
 /** 弹窗顶部轮播设置分组标签 */
 export const TREASURY_BUBBLE_SETTING_LABEL = '轮播设置';

@@ -61,6 +61,9 @@ const draftUrl = ref('');
 /** 编辑弹窗回填的当前配置（状态行展示来源与生效值） */
 const mcpConfig = ref<TzzbMcpConfig | null>(null);
 
+/** 配置读取失败（当前页面不经 dev server 服务时保存/回显通道均不可用，弹窗内明示） */
+const editFetchFailed = ref(false);
+
 /**
  * 草稿 URL 校验（非空时必须能解析为 http/https；空 = 回落 env，合法）
  */
@@ -134,16 +137,19 @@ const onResetAuth = (): void => {
   void runMcpAuth();
 };
 
-/** 菜单项：编辑 MCP（拉取当前配置回填草稿，打开弹窗；读取失败保留上次已知配置，输入框不清空） */
+/** 菜单项：编辑 MCP（拉取当前配置回填草稿，打开弹窗；读取失败保留上次已知配置，输入框不清空，
+ * 首次打开且无已知配置时置 editFetchFailed 在弹窗内明示通道不可用） */
 const onEditMcp = (): void => {
   mcpMenuOpen.value = false;
   editMcpOpen.value = true;
   editLoading.value = true;
+  editFetchFailed.value = false;
   void fetchTzzbMcpConfig()
     .then((config) => {
       const next = config ?? mcpConfig.value;
       if (next) mcpConfig.value = next;
       draftUrl.value = next?.customUrl ?? '';
+      editFetchFailed.value = !next;
     })
     .finally(() => {
       editLoading.value = false;
@@ -273,6 +279,10 @@ const onResetMcpConfig = async (): Promise<void> => {
       </p>
       <div v-if="editLoading" class="py-2 text-xs text-text-tertiary">读取当前配置…</div>
       <div v-else class="space-y-2">
+        <p v-if="editFetchFailed" class="text-xs leading-relaxed text-down">
+          配置读取失败：/tzzb-mcp/config 由 vite dev/preview server 提供（pnpm dev / pnpm tauri dev），
+          当前页面未经其服务（如打包客户端），保存也不会生效。
+        </p>
         <BaseInput v-model="draftUrl" placeholder="https://tzzb.10jqka.com.cn/mcp" />
         <p v-if="draftUrlError" class="text-xs text-down">{{ draftUrlError }}</p>
         <p v-if="effectiveText" class="text-xs text-text-tertiary">{{ effectiveText }}</p>

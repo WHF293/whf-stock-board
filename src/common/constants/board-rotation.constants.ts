@@ -99,6 +99,12 @@ export const ROTATION_COL_WIDTH = 64;
 /** bump 图容器高度（像素） */
 export const ROTATION_CHART_HEIGHT = 340;
 
+/** 板块历史得分弹窗 · 最多可同时勾选的板块数（王总 2026-11-03 指定） */
+export const ROTATION_SCORE_HISTORY_MAX = 8;
+
+/** appStorage 命名空间：板块历史得分弹窗的板块勾选持久化 */
+export const STORAGE_NS_ROTATION_SCORE_HISTORY_BOARDS = 'rotation.scoreHistoryBoards';
+
 /** 涨停梯队统计的中军连板数（limitStreak = 2 计入中军） */
 export const ROTATION_TIER_MID_STREAK = 2;
 

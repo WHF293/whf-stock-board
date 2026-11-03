@@ -1,7 +1,8 @@
 /**
  * 风格跷跷板视图模型类型
  *
- * 由 `build-style-seesaw.ts` 纯函数产出，StyleSeesawPanel 只消费不再加工。
+ * 由 `build-style-seesaw.ts` 纯函数产出，BoardRotationPanel（右轴叠加线与快照窗口）
+ * 与 StyleSeesawSnapshot（横幅 + 热度榜）只消费不再加工。
  */
 
 /** 单日单桶的行业明细行（热度榜 / 领涨行业来源） */

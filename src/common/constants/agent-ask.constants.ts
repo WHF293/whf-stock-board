@@ -131,7 +131,7 @@ export const BOARD_ROTATION_ANALYSIS_PROMPT_TEMPLATE =
   '政策预期与地缘动态若无法查证到最新信息，须在结论中标注「基于既有认知，时效未经验证」，不得编造具体日期或事件。\n' +
   '页面数据（大额数值已换算为万 / 亿）：\n{data}';
 
-/** 题材轮动各视图的专属解读要点（key = BoardCalendarViewMode） */
+/** 题材轮动各视图的专属解读要点（key = BoardCalendarViewMode；seesaw 已并入 rotation，条目随 Tab 删除移除） */
 export const BOARD_ROTATION_VIEW_FOCUS: Record<string, string> = {
   rotation:
     '本视图数据含两部分——「题材段」为 bump 图的一条线（同一板块连续在榜的日子），' +
@@ -141,8 +141,6 @@ export const BOARD_ROTATION_VIEW_FOCUS: Record<string, string> = {
     '本视图含两部分——「板块日历矩阵」一行一个板块，列 = 交易日，单元格为「涨停x/跌停y（得分率%）」；' +
     '「赚钱效应排行」为聚焦日全板块按得分降序的明细（聚焦日取矩阵展开行，未展开时为最新完整快照日）。' +
     '重点解读：涨跌停扩散度与热度持续性、当日赚钱效应的量级与方向（得分为正 = 赚钱方向）、头部与尾部的极端程度。',
-  seesaw:
-    '本视图为风格跷跷板数据：重点解读大盘 / 小盘、红利 / 成长等风格两端的强弱切换与延续性。',
 };
 
 // ---------- 板块日历 · 扩展行 Agent 分析（当日汇总 + 成分股明细 → Agent） ----------

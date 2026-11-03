@@ -60,7 +60,9 @@ export const createPollingScheduler = (options: PollingOptions): PollingSchedule
       ? marketStatusStore.isUsPollingWindow
       : market === 'HK'
         ? marketStatusStore.isHkPollingWindow
-        : marketStatusStore.isASharePollingWindow;
+        : market === 'AP'
+          ? marketStatusStore.isApPollingWindow
+          : marketStatusStore.isASharePollingWindow;
   });
 
   /**

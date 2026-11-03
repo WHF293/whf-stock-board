@@ -78,6 +78,8 @@ interface SettingsState {
   heatmapViewMode: HeatmapViewMode;
   /** 行情全景 · A股板块排行展示形式：平铺网格 或 列表表格 */
   panoramaCnViewMode: PanoramaCnViewMode;
+  /** 行情全景 · 被收起的卡片 id（全景 tab 四组卡展开收起，2026-11-03 王总指定；空 = 全部展开） */
+  panoramaCollapsedCards: string[];
   /** 左侧导航栏是否收起 */
   sidebarCollapsed: boolean;
   /** 左侧导航顺序（存路由 path 数组；默认按 MENU_ITEMS 声明顺序，插件菜单追加末尾） */
@@ -152,6 +154,7 @@ export const useSettingsStore = defineStore('settings', {
     heatmapTopN: HEATMAP_TOP_DEFAULT,
     heatmapViewMode: HEATMAP_VIEW_MODE_DEFAULT,
     panoramaCnViewMode: PANORAMA_CN_VIEW_MODE_DEFAULT,
+    panoramaCollapsedCards: [],
     sidebarCollapsed: SIDEBAR_COLLAPSED_DEFAULT,
     menuOrder: [...MENU_DEFAULT_ORDER],
     menuGroupOrder: [...SIDEBAR_MENU_GROUP_DEFAULT_ORDER],
@@ -218,13 +221,26 @@ export const useSettingsStore = defineStore('settings', {
       this.heatmapViewMode = mode;
     },
 
-    /**
-     * 设置行情全景 · A股板块排行展示形式
-     * @param mode 展示形式（取值须为 PANORAMA_CN_VIEW_MODE 中的值）
-     */
-    setPanoramaCnViewMode(mode: PanoramaCnViewMode): void {
-      this.panoramaCnViewMode = mode;
-    },
+  /**
+   * 设置行情全景 · A股板块排行展示形式
+   * @param mode 展示形式（取值须为 PANORAMA_CN_VIEW_MODE 中的值）
+   */
+  setPanoramaCnViewMode(mode: PanoramaCnViewMode): void {
+    this.panoramaCnViewMode = mode;
+  },
+
+  /**
+   * 切换行情全景卡片收起状态（点卡头按钮收起 / 展开；持久化记住用户操作）
+   * @param cardId 卡片 id（`cn` / `globalTech` / `usBoards` / `macro`）
+   */
+  togglePanoramaCardCollapsed(cardId: string): void {
+    const index = this.panoramaCollapsedCards.indexOf(cardId);
+    if (index >= 0) {
+      this.panoramaCollapsedCards.splice(index, 1);
+    } else {
+      this.panoramaCollapsedCards.push(cardId);
+    }
+  },
 
     /**
      * 设置主题色（消费方 watch 后写 <html data-theme>）

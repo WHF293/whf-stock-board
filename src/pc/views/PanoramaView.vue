@@ -16,8 +16,8 @@ import HongKongMarketView from './HongKongMarketView.vue';
 import {
   fetchGlobalFuturesPanorama,
   fetchGlobalIndexPanorama,
+  fetchGlobalTechPanorama,
   fetchUsSectorPanorama,
-  fetchUsTechGiantsPanorama,
 } from '../../common/api/panorama.api.ts';
 import { PANORAMA_MACRO_GROUPS } from '../../common/constants/panorama.constants.ts';
 import { DATA_CACHE_KEY } from '../../common/constants/data-cache.constants.ts';
@@ -27,13 +27,15 @@ import { TREND_TEXT_CLASS } from '../../common/constants/stock-colors.constants.
 import { formatPercent } from '../../common/utils/format-percent';
 import { delay } from '../../common/utils/delay';
 import { useDataCacheStore } from '../../common/stores/data-cache';
+import { useSettingsStore } from '../../common/stores/settings';
 import { usePolling } from '../../common/composables/use-polling';
 import { POLLING_INTERVAL } from '../../common/constants/polling.constants.ts';
 import { PAGE_HEADER_ACTIONS_TARGET, usePageHeaderSlot } from '../../common/composables/use-page-header-slot';
 
 /**
- * 行情全景（2026-10-29 王总指定整合）：全景（A股 36 板块平铺 + 美股行业 ETF +
- * 美股科技巨头（2026-11-02 新增）+ 全球宏观 四组卡片竖向分布，原三个独立 tab 合并）/
+ * 行情全景（2026-10-29 王总指定整合）：全景（A股 36 板块平铺 + 国外科技巨头
+ * （2026-11-02 新增美股巨头，2026-11-03 扩为美/日/韩三市场，置于行业 ETF 卡上方）+
+ * 美股行业 ETF + 全球宏观 四组卡片竖向分布，原三个独立 tab 合并）/
  * 行业龙头（板块 / 细分赛道静态清单卡片流）/
  * 大A个股（原侧栏「个股行情」页并入，2026-10-22 王总指定；2026-10-30 更名）/
  * 港股个股（2026-10-30 王总指定新增，同花顺港股板块）
@@ -89,13 +91,13 @@ const dataCache = useDataCacheStore();
 
 // 快照播种：切换回本页先展示上次数据
 const cachedUs = dataCache.get<PanoramaItem[]>(DATA_CACHE_KEY.PANORAMA_US_BOARDS);
-const cachedUsTech = dataCache.get<PanoramaItem[]>(DATA_CACHE_KEY.PANORAMA_US_TECH);
+const cachedGlobalTech = dataCache.get<PanoramaMacroGroup[]>(DATA_CACHE_KEY.PANORAMA_GLOBAL_TECH);
 const cachedMacro = dataCache.get<PanoramaMacroGroup[]>(DATA_CACHE_KEY.PANORAMA_MACRO);
 
 /** 美股行业 ETF 全景 */
 const usBoards = ref<PanoramaItem[]>(cachedUs ?? []);
-/** 美股科技巨头（2026-11-02 王总指定新增模块） */
-const usTechGiants = ref<PanoramaItem[]>(cachedUsTech ?? []);
+/** 国外科技巨头（美/日/韩分组，2026-11-02 新增、2026-11-03 扩三市场并分组） */
+const globalTech = ref<PanoramaMacroGroup[]>(cachedGlobalTech ?? []);
 /** 全球宏观分组 */
 const macroGroups = ref<PanoramaMacroGroup[]>(cachedMacro ?? []);
 /** 当前模块是否拉取中（有快照则不进骨架） */
@@ -106,24 +108,25 @@ const isLoading = ref(
 const isError = ref(false);
 
 /**
- * 在条目列表内按关键词顺序匹配（名称包含即命中）：
+ * 按配置关键词顺序在数据池内逐项匹配（名称包含即命中）：
  * 优先名称与关键词完全一致的条目（指数 / 主力连续合约），否则取最后一个命中
- * （外盘合约按到期月升序排列，最后一个为最新主力）
+ * （外盘合约按到期月升序排列，最后一个为最新主力）；
+ * 未命中的关键词也保留占位（名称仍显示、涨跌幅 `--`，2026-11-03 王总指定）
  * @param items 上游条目
  * @param keywords 展示关键词
- * @returns 匹配到的条目（顺序与 keywords 一致，未命中跳过）
+ * @returns 匹配到的条目（顺序与 keywords 一致；缺行条目 changePercent = null）
  */
 const matchKeywords = (items: PanoramaItem[], keywords: readonly string[]): PanoramaItem[] =>
-  keywords.flatMap((keyword) => {
+  keywords.map((keyword) => {
     const hits = items.filter((item) => item.name.includes(keyword));
     const exact = hits.find((item) => item.name === keyword);
     const hit = exact ?? hits.at(-1);
-    return hit ? [hit] : [];
+    return hit ?? { name: keyword, changePercent: null };
   });
 
 /**
  * 拉取全球宏观（全球指数 → 外盘商品串行错峰，再按配置分组匹配）
- * @returns 分组后的宏观条目（无命中的分组剔除）
+ * @returns 分组后的宏观条目（配置的分组全量返回，缺行条目数值 `--`）
  */
 const fetchMacro = async (): Promise<PanoramaMacroGroup[]> => {
   const indexItems = await fetchGlobalIndexPanorama();
@@ -132,7 +135,7 @@ const fetchMacro = async (): Promise<PanoramaMacroGroup[]> => {
   return PANORAMA_MACRO_GROUPS.map((group) => {
     const pool = group.source === 'index' ? indexItems : futuresItems;
     return { label: group.label, items: matchKeywords(pool, group.keywords) };
-  }).filter((group) => group.items.length > 0);
+  });
 };
 
 /** 拉取美股全景（成功后写快照；供轮询与模块切换复用） */
@@ -141,13 +144,13 @@ const fetchUsBoards = async (): Promise<void> => {
   dataCache.set(DATA_CACHE_KEY.PANORAMA_US_BOARDS, usBoards.value);
 };
 
-/** 拉取美股科技巨头（成功后写快照；与行业 ETF 同一 ulist 通道，共用轮询窗口） */
-const fetchUsTech = async (): Promise<void> => {
-  usTechGiants.value = await fetchUsTechGiantsPanorama();
-  dataCache.set(DATA_CACHE_KEY.PANORAMA_US_TECH, usTechGiants.value);
+/** 拉取国外科技巨头（成功后写快照；与行业 ETF 同一 ulist 通道） */
+const fetchGlobalTech = async (): Promise<void> => {
+  globalTech.value = await fetchGlobalTechPanorama();
+  dataCache.set(DATA_CACHE_KEY.PANORAMA_GLOBAL_TECH, globalTech.value);
 };
 
-/** 拉取当前模块数据（成功后写快照；全景 tab = 美股 + 宏观串行错峰，其余由组件自管） */
+/** 拉取当前模块数据（成功后写快照；全景 tab = 美股 + 科技巨头 + 宏观串行错峰，其余由组件自管） */
 const loadActiveModule = async (): Promise<void> => {
   if (isSelfManagedModule.value) return;
   isLoading.value = true;
@@ -162,9 +165,9 @@ const loadActiveModule = async (): Promise<void> => {
       }
       await delay(REQUEST_GAP_MS);
       try {
-        await fetchUsTech();
+        await fetchGlobalTech();
       } catch (error) {
-        console.error('[panorama] us tech', error);
+        console.error('[panorama] global tech', error);
       }
       await delay(REQUEST_GAP_MS);
       macroGroups.value = await fetchMacro();
@@ -203,12 +206,27 @@ usePolling({
     if (activeModule.value === 'overview') {
       await fetchUsBoards();
       await delay(REQUEST_GAP_MS);
-      await fetchUsTech();
+      await fetchGlobalTech();
     }
   },
   intervalMs: POLLING_INTERVAL.US_BOARDS,
   tradingAware: true,
   market: 'US',
+  immediate: false,
+});
+
+// 亚太轮询（2026-11-03 随「国外科技巨头」扩日韩引入）：仅亚太窗口（周一~五 08:00-14:30
+// 北京时间）内刷新科技巨头清单——日股 176 / 韩股 177 的交易时段在 A 股盘中，美股窗口
+// 盖不住；与美股窗口（21:30-04:00）不重叠，两个轮询器不会并发打同一上游
+usePolling({
+  task: async () => {
+    if (activeModule.value === 'overview') {
+      await fetchGlobalTech();
+    }
+  },
+  intervalMs: POLLING_INTERVAL.US_BOARDS,
+  tradingAware: true,
+  market: 'AP',
   immediate: false,
 });
 
@@ -221,7 +239,7 @@ const onSelectModule = (): void => {
     isLoading.value = false;
     return;
   }
-  if (usBoards.value.length > 0 || usTechGiants.value.length > 0 || macroGroups.value.length > 0) {
+  if (usBoards.value.length > 0 || globalTech.value.length > 0 || macroGroups.value.length > 0) {
     isLoading.value = false;
     return;
   }
@@ -233,9 +251,30 @@ const isEmpty = computed(
   () =>
     !isLoading.value &&
     usBoards.value.length === 0 &&
-    usTechGiants.value.length === 0 &&
+    globalTech.value.length === 0 &&
     macroGroups.value.length === 0,
 );
+
+// ---------- 卡片展开收起（2026-11-03 王总指定：四组卡可折叠，默认展开，持久化） ----------
+
+const settingsStore = useSettingsStore();
+
+/**
+ * 卡片是否收起（settings.panoramaCollapsedCards 持久化，默认全部展开）
+ * @param cardId 卡片 id（`cn` / `globalTech` / `usBoards` / `macro`）
+ * @returns true 表示该卡当前收起
+ */
+const isCardCollapsed = (cardId: string): boolean =>
+  settingsStore.panoramaCollapsedCards.includes(cardId);
+
+/**
+ * 切换卡片收起状态（写回 settings 持久化）
+ * @param cardId 卡片 id（`cn` / `globalTech` / `usBoards` / `macro`）
+ * @returns void
+ */
+const toggleCard = (cardId: string): void => {
+  settingsStore.togglePanoramaCardCollapsed(cardId);
+};
 
 // ---------- 手动刷新（2026-11-02 王总指定：各 tab 补刷新按钮） ----------
 
@@ -317,13 +356,13 @@ const { active: headerSlotActive } = usePageHeaderSlot();
       <PanoramaLeadersBoard ref="leadersRef" v-if="activeModule === 'leaders'" class="min-h-0 flex-1" />
 
       <!-- 大A个股：原侧栏「个股行情」页整卡并入（数据 / 轮询 / 翻页自管，v-if 挂载即启停轮询）；
-           外层滚动容器兜底卡内容超高（.table-scroll 自带 560px 内滚） -->
-      <div v-else-if="activeModule === 'stocks'" class="min-h-0 flex-1 overflow-y-auto">
+           卡片吃满高度、仅表格内滚（.table-scroll-fill，2026-11-03 王总指定去外层滚动条） -->
+      <div v-else-if="activeModule === 'stocks'" class="flex min-h-0 flex-1 flex-col">
         <StockMarketView ref="stocksRef" />
       </div>
 
       <!-- 港股个股：同花顺港股板块分页表（数据 / 轮询 / 翻页自管，挂载结构与大A个股同款） -->
-      <div v-else-if="activeModule === 'hkStocks'" class="min-h-0 flex-1 overflow-y-auto">
+      <div v-else-if="activeModule === 'hkStocks'" class="flex min-h-0 flex-1 flex-col">
         <HongKongMarketView ref="hkStocksRef" />
       </div>
 
@@ -344,19 +383,65 @@ const { active: headerSlotActive } = usePageHeaderSlot();
         <BaseEmpty text="数据加载失败或暂无数据，请稍后重试（上游可能限频）" />
       </BaseCard>
 
-      <!-- 全景：四组卡片竖向分布（A股 36 板块平铺 / 美股行业 ETF / 美股科技巨头 / 全球宏观） -->
+      <!-- 全景：四组卡片竖向分布（A股 36 板块平铺 / 国外科技巨头 / 美股行业 ETF / 全球宏观），
+           均支持展开收起（默认展开，折叠态持久化） -->
       <template v-else-if="activeModule === 'overview'">
-        <PanoramaCnBoard class="shrink-0" />
+        <PanoramaCnBoard
+          class="shrink-0"
+          collapsible
+          :collapsed="isCardCollapsed('cn')"
+          @update:collapsed="toggleCard('cn')"
+        />
 
-        <!-- 美股：扁平网格 -->
-        <BaseCard title="美股行业 ETF" class="shrink-0">
+        <!-- 国外科技巨头（2026-11-02 新增美股巨头，2026-11-03 王总指定扩日韩、按市场分组并置顶）：
+             组顺序 = 美国 → 日本 → 韩国，组内 = 配置顺序不重排；缺行标的名称仍显示、数值 `--` -->
+        <BaseCard
+          title="国外科技巨头"
+          class="shrink-0"
+          collapsible
+          :collapsed="isCardCollapsed('globalTech')"
+          @update:collapsed="toggleCard('globalTech')"
+        >
+          <div class="flex flex-col gap-4">
+            <section v-for="group in globalTech" :key="group.label">
+              <p class="mb-1.5 flex items-baseline gap-2">
+                <span class="text-sm font-medium text-text">{{ group.label }}</span>
+                <span class="text-xs text-text-tertiary">{{ group.items.length }} 项</span>
+              </p>
+              <div class="grid grid-cols-4 gap-2">
+                <div
+                  v-for="item in group.items"
+                  :key="item.name"
+                  class="flex items-center justify-between gap-2 rounded-lg bg-flat-weak px-3 py-2.5"
+                >
+                  <span class="truncate text-sm text-text" :title="item.name">{{ item.name }}</span>
+                  <span
+                    class="shrink-0 text-sm font-semibold tabular-nums"
+                    :class="TREND_TEXT_CLASS[getTrendByChangePercent(item.changePercent ?? 0)]"
+                  >
+                    {{ formatPercent(item.changePercent) }}
+                  </span>
+                </div>
+              </div>
+            </section>
+          </div>
+        </BaseCard>
+
+        <!-- 美股行业 ETF：扁平网格（缺行 ETF 名称仍显示、数值 `--`） -->
+        <BaseCard
+          title="美股行业 ETF"
+          class="shrink-0"
+          collapsible
+          :collapsed="isCardCollapsed('usBoards')"
+          @update:collapsed="toggleCard('usBoards')"
+        >
           <div class="grid grid-cols-4 gap-2">
             <div
               v-for="item in usBoards"
               :key="item.name"
               class="flex items-center justify-between gap-2 rounded-lg bg-flat-weak px-3 py-2.5"
             >
-              <span class="truncate text-sm text-text">{{ item.name }}</span>
+              <span class="truncate text-sm text-text" :title="item.name">{{ item.name }}</span>
               <span
                 class="shrink-0 text-sm font-semibold tabular-nums"
                 :class="TREND_TEXT_CLASS[getTrendByChangePercent(item.changePercent ?? 0)]"
@@ -367,27 +452,14 @@ const { active: headerSlotActive } = usePageHeaderSlot();
           </div>
         </BaseCard>
 
-        <!-- 美股科技巨头（2026-11-02 王总指定新增）：顺序 = 配置清单顺序，不按涨跌幅重排 -->
-        <BaseCard title="美股科技巨头" class="shrink-0">
-          <div class="grid grid-cols-4 gap-2">
-            <div
-              v-for="item in usTechGiants"
-              :key="item.name"
-              class="flex items-center justify-between gap-2 rounded-lg bg-flat-weak px-3 py-2.5"
-            >
-              <span class="truncate text-sm text-text">{{ item.name }}</span>
-              <span
-                class="shrink-0 text-sm font-semibold tabular-nums"
-                :class="TREND_TEXT_CLASS[getTrendByChangePercent(item.changePercent ?? 0)]"
-              >
-                {{ formatPercent(item.changePercent) }}
-              </span>
-            </div>
-          </div>
-        </BaseCard>
-
-        <!-- 全球宏观：单卡内分组网格 -->
-        <BaseCard title="全球宏观" class="shrink-0">
+        <!-- 全球宏观：单卡内分组网格（缺行条目名称仍显示、数值 `--`） -->
+        <BaseCard
+          title="全球宏观"
+          class="shrink-0"
+          collapsible
+          :collapsed="isCardCollapsed('macro')"
+          @update:collapsed="toggleCard('macro')"
+        >
           <div class="flex flex-col gap-4">
             <section v-for="group in macroGroups" :key="group.label">
               <p class="mb-1.5 flex items-baseline gap-2">
