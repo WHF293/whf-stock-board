@@ -18,6 +18,8 @@ export const DOCK_PANEL_CONTENT = {
   F10: 'f10',
   /** 赚钱效应气泡图（板块分析页扩展行「赚钱效应」发起，2026-10-31 王总指定） */
   PROFIT_BUBBLE: 'profit-bubble',
+  /** 板块历史得分（题材轮动控制行「查看板块历史得分」发起，2026-11-03 王总指定 dock 化） */
+  SCORE_HISTORY: 'score-history',
 } as const;
 
 /** 面板内容类型 */

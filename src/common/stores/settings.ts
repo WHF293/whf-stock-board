@@ -20,6 +20,7 @@ import {
 import type { ThemeColor } from '../constants/theme-color.constants.ts';
 import { TREND_THEME_DEFAULT } from '../constants/trend-theme.constants.ts';
 import type { TrendTheme } from '../constants/trend-theme.constants.ts';
+import { TREASURY_BAR_ENABLED_DEFAULT } from '../constants/treasury.constants.ts';
 import { WATERMARK_ENABLED_DEFAULT } from '../constants/watermark.constants.ts';
 import {
   GLASS_HIGHLIGHT_DEFAULT,
@@ -52,7 +53,12 @@ import { migrateWatchWidgetSettings } from '../utils/migrate-watch-widget-settin
 import { mergeMenuGroupOrder } from '../utils/order-sidebar-menu.ts';
 import { normalizeBoardScoreWeights } from '../utils/normalize-board-score-weights';
 import { normalizeRotationMinScoreRate } from '../utils/normalize-rotation-min-score-rate';
-import { ROTATION_ESCAPE_SCORE_RATE_DEFAULT, ROTATION_MIN_SCORE_RATE_DEFAULT } from '../constants/board-rotation.constants.ts';
+import {
+  ROTATION_DEFAULT_RANGE,
+  ROTATION_ESCAPE_SCORE_RATE_DEFAULT,
+  ROTATION_MIN_SCORE_RATE_DEFAULT,
+  ROTATION_RANGES,
+} from '../constants/board-rotation.constants.ts';
 
 /**
  * 初始设置引导的默认完成态
@@ -122,6 +128,8 @@ interface SettingsState {
   rotationMinScoreRate: number;
   /** 题材轮动 · 逃离方向上榜最高得分率（高于该值的板块无逃离榜资格；[-10, 10]，默认 -5，王总 2026-10-30 定稿） */
   rotationEscapeScoreRate: number;
+  /** 题材轮动 · 展示范围档（近 10/20/30 日；页面 bump 图 / 板块Top / 历史得分停靠面板三处共用，王总 2026-11-03 指定与抽屉同步） */
+  rotationRange: number;
   /** 股票详情 · 蜡烛模式主图指标清单（如 ['MA']，klinecharts 指标名） */
   chartMainIndicators: string[];
   /** 股票详情 · 蜡烛模式副图指标清单（如 ['VOL', 'MACD_KDJ']，每项独立面板） */
@@ -140,6 +148,8 @@ interface SettingsState {
   launchAtStartup: boolean;
   /** 桌面端 · 任务栏盯盘小组件（三态电源 / 显示模式 / 拖动位置；浏览器模式无此行为） */
   watchWidget: WatchWidgetSettings;
+  /** 桌面端 · 大A宝典气泡（常驻桌面的祖训轮播横条；默认关闭，设置页开启；浏览器模式为右下角圆钮） */
+  treasuryBarEnabled: boolean;
   /** 更新检查代理地址（如 http://127.0.0.1:7890；空 = 直连。应用更新与插件更新的 GitHub 请求共用） */
   updateProxyUrl: string;
 }
@@ -176,6 +186,7 @@ export const useSettingsStore = defineStore('settings', {
     boardScoreWeights: { ...BOARD_SCORE_WEIGHTS_DEFAULT },
     rotationMinScoreRate: ROTATION_MIN_SCORE_RATE_DEFAULT,
     rotationEscapeScoreRate: ROTATION_ESCAPE_SCORE_RATE_DEFAULT,
+    rotationRange: ROTATION_DEFAULT_RANGE,
     chartMainIndicators: [...CHART_MAIN_INDICATORS_DEFAULT],
     chartSubIndicators: [...CHART_SUB_INDICATORS_DEFAULT],
     detailChartPeriod: CHART_PERIOD_DEFAULT,
@@ -185,6 +196,7 @@ export const useSettingsStore = defineStore('settings', {
     closeToTray: CLOSE_TO_TRAY_DEFAULT,
     launchAtStartup: LAUNCH_AT_STARTUP_DEFAULT,
     watchWidget: { ...WATCH_WIDGET_SETTINGS_DEFAULT },
+    treasuryBarEnabled: TREASURY_BAR_ENABLED_DEFAULT,
     updateProxyUrl: '',
   }),
 
@@ -324,6 +336,14 @@ export const useSettingsStore = defineStore('settings', {
     },
 
     /**
+     * 设置大A宝典气泡开关（消费方 MainLayout watch 后创建 / 关闭横条窗口）
+     * @param enabled true 显示桌面横条，false 关闭
+     */
+    setTreasuryBarEnabled(enabled: boolean): void {
+      this.treasuryBarEnabled = enabled;
+    },
+
+    /**
      * 设置侧栏收起状态
      * @param collapsed true 仅显示图标，false 显示完整菜单（仅桌面端生效）
      */
@@ -455,6 +475,15 @@ export const useSettingsStore = defineStore('settings', {
     },
 
     /**
+     * 设置题材轮动 · 展示范围档（页面范围 Tabs 与历史得分停靠面板共用；持久化）
+     * @param value 范围档（须为 ROTATION_RANGES 之一，非法值忽略）
+     */
+    setRotationRange(value: number): void {
+      if (!(ROTATION_RANGES as readonly number[]).includes(value)) return;
+      this.rotationRange = value;
+    },
+
+    /**
      * 设置板块日历 · 板块列（顺序 + 未勾选项）
      *
      * 顺序等于默认序时表示未自定义行序，表格回到「按热门口径自动排序」。
@@ -566,10 +595,18 @@ export const useSettingsStore = defineStore('settings', {
         context.store.rotationEscapeScoreRate,
         ROTATION_ESCAPE_SCORE_RATE_DEFAULT,
       );
+      // 题材轮动范围档坏数据兜底：非 ROTATION_RANGES 档位回落默认（否则 BaseTabs 无选中态）
+      if (!(ROTATION_RANGES as readonly number[]).includes(context.store.rotationRange)) {
+        context.store.rotationRange = ROTATION_DEFAULT_RANGE;
+      }
       // 板块日历展示范围缩编（10/20/60/180 → 15/30/全部，2026-10-17）：
       // 旧持久化值不在新值集合时回落默认，否则 BaseTabs 无选中态、范围文案为空
       if (!Object.values(BOARD_CALENDAR_RANGE).includes(context.store.boardCalendarRange)) {
         context.store.boardCalendarRange = BOARD_CALENDAR_RANGE_DEFAULT;
+      }
+      // 大A宝典气泡开关坏数据兜底：非布尔回落默认关闭（非法值会让横条创建判定失真）
+      if (typeof context.store.treasuryBarEnabled !== 'boolean') {
+        context.store.treasuryBarEnabled = TREASURY_BAR_ENABLED_DEFAULT;
       }
     },
   },

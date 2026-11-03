@@ -901,6 +901,19 @@ const onProbeProxy = async (): Promise<void> => {
           @update:model-value="settingsStore.setCloseToTray"
         />
       </div>
+      <div class="flex items-center justify-between gap-4 border-b border-flat-weak py-4">
+        <div>
+          <p class="text-sm text-text">大A宝典气泡</p>
+          <p class="mt-0.5 text-xs text-text-tertiary">
+            常驻桌面的置顶横条，轮播大A祖训（可拖动换位、点击打开宝典弹窗看全文）；默认关闭
+          </p>
+        </div>
+        <BaseSwitch
+          :model-value="settingsStore.treasuryBarEnabled"
+          data-track="TREASURY_BAR_TOGGLE"
+          @update:model-value="settingsStore.setTreasuryBarEnabled"
+        />
+      </div>
       <div class="flex items-center justify-between gap-4 pt-4">
         <div>
           <p class="text-sm text-text">开机自动启动</p>

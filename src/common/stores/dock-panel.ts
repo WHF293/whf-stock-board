@@ -114,6 +114,12 @@ export const useDockPanelStore = defineStore('dock-panel', {
     this.open = true;
   },
 
+  /** 打开板块历史得分面板（题材轮动控制行「查看板块历史得分」发起，2026-11-03 dock 化） */
+  openScoreHistory(): void {
+    this.content = DOCK_PANEL_CONTENT.SCORE_HISTORY;
+    this.open = true;
+  },
+
     /** 收起面板 */
     close(): void {
       this.open = false;

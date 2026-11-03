@@ -7,11 +7,11 @@ import BaseEmpty from '../ui/BaseEmpty.vue';
 import BaseTabs from '../ui/BaseTabs.vue';
 import BoardScoreWeightModal from './BoardScoreWeightModal.vue';
 import BoardRotationSettingsModal from './BoardRotationSettingsModal.vue';
-import BoardScoreHistoryModal from './BoardScoreHistoryModal.vue';
 import MenuIcon from '../ui/MenuIcon.vue';
 import NoticeBar from '../ui/NoticeBar.vue';
 import { useTheme } from '../../../common/composables/use-theme';
 import { useSettingsStore } from '../../../common/stores/settings';
+import { useDockPanelStore } from '../../../common/stores/dock-panel';
 import { useStockOpen } from '../../../common/composables/use-stock-open';
 import {
   ROTATION_CHART_HEIGHT,
@@ -83,6 +83,7 @@ const emit = defineEmits<{
 
 const { isDark } = useTheme();
 const settingsStore = useSettingsStore();
+const dockPanel = useDockPanelStore();
 
 // ---------- 成员股 / 龙头 单击 / 双击合并派发（与 BaseTable enableDblclickNav 同窗口） ----------
 // 单击 = 右侧个股侧栏；双击 = 个股详情整页（携带成员列表，详情页左侧可切换同批股票）
@@ -151,8 +152,6 @@ const legendOpen = ref(false);
 const weightOpen = ref(false);
 /** 题材轮动设置弹窗开关（上榜最低得分率，王总 2026-10-23） */
 const settingsOpen = ref(false);
-/** 板块历史得分弹窗开关（单板块得分走势，王总 2026-11-03） */
-const historyOpen = ref(false);
 
 /** 范围切换选项 */
 const rangeOptions = ROTATION_RANGES.map((value) => ({ label: `近${value}日`, value: String(value) }));
@@ -690,15 +689,6 @@ const segmentStatus = (segment: RotationSegment): string => {
           <MenuIcon name="settings" :size="12" />
           设置
         </BaseButton>
-        <BaseButton
-          variant="ghost"
-          class="!px-2 !py-1 text-xs"
-          title="查看板块历史得分：任选板块（最多 8 个）看窗口内逐日得分走势（含未上榜日）"
-          @click="historyOpen = true"
-        >
-          <MenuIcon name="chartBars" :size="12" />
-          查看板块历史得分
-        </BaseButton>
         <!-- 跷跷板右轴图例（无数据时随右轴整体隐藏） -->
         <span v-if="seesawExtent" class="flex items-center gap-2 text-[10px] text-text-tertiary">
           <span class="flex items-center gap-1">
@@ -715,7 +705,17 @@ const segmentStatus = (segment: RotationSegment): string => {
           </span>
           <span>右轴 · 窗口累计</span>
         </span>
-        <div class="relative ml-auto">
+        <!-- 历史得分入口贴图例 icon 左侧（2026-11-03 王总指定：ml-auto 推至行尾） -->
+        <BaseButton
+          variant="ghost"
+          class="ml-auto !px-2 !py-1 text-xs"
+          title="查看板块历史得分：任选板块（最多 8 个）看窗口内逐日得分走势（含未上榜日）"
+          @click="dockPanel.openScoreHistory()"
+        >
+          <MenuIcon name="chartBars" :size="12" />
+          历史得分
+        </BaseButton>
+        <div class="relative">
           <button
             type="button"
             class="pressable rounded p-1 text-text-tertiary hover:bg-flat-weak hover:text-text active:scale-90"
@@ -998,11 +998,5 @@ const segmentStatus = (segment: RotationSegment): string => {
     <!-- 题材轮动设置（涌入 / 逃离方向 + 两条上榜得分率门槛；保存需二次确认，门槛持久化于 settings store，
          方向经 confirm 事件回写 v-model:direction 由页面持有） -->
     <BoardRotationSettingsModal v-model:open="settingsOpen" v-model:direction="direction" />
-    <!-- 板块历史得分（36 板块多选 · 最多 8 个，画窗口内逐日得分曲线；未上榜日照常取数） -->
-    <BoardScoreHistoryModal
-      v-model:open="historyOpen"
-      :daily-rows="dailyRows"
-      :window-dates="windowDays.map((day) => day.tradeDate)"
-    />
   </div>
 </template>

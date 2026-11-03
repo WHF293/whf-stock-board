@@ -38,7 +38,6 @@ import {
   HEAT_STREAK_WINDOW,
 } from '../../common/constants/board-calendar.constants.ts';
 import {
-  ROTATION_DEFAULT_RANGE,
   ROTATION_RANGES,
   ROTATION_TOP_N,
 } from '../../common/constants/board-rotation.constants.ts';
@@ -142,9 +141,13 @@ const { active: headerSlotActive } = usePageHeaderSlot();
 const calendarView = ref<BoardCalendarViewMode>(BOARD_CALENDAR_VIEW_DEFAULT);
 /**
  * 题材轮动展示范围（近 10/20/30 日，双向绑定给 BoardRotationPanel；同时驱动
- * 板块Top 子模块日期列与跷跷板右轴窗口——三处共用同一范围档，2026-11-03 王总指定合并口径）
+ * 板块Top 子模块日期列、跷跷板右轴窗口与「板块历史得分」停靠面板——
+ * 真身收进 settings store（2026-11-03 王总指定与抽屉同步 + 持久化），此处仅作字符串桥接）
  */
-const rotationRange = ref<string>(String(ROTATION_DEFAULT_RANGE));
+const rotationRange = computed<string>({
+  get: () => String(settingsStore.rotationRange),
+  set: (value) => settingsStore.setRotationRange(Number(value)),
+});
 /** 题材轮动上榜方向（涌入 / 逃离，2026-10-29 王总指定；双向绑定给 BoardRotationPanel，AI 分析数据段同口径） */
 const rotationDirection = ref<RotationDirection>('inflow');
 /**
