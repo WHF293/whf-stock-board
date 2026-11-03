@@ -13,6 +13,27 @@ export interface PanoramaItem {
 }
 
 /**
+ * 全景 ulist 配置条目（secid + 展示名，2026-11-03 起缺行兜底用：
+ * 上游未返回时名称仍显示、涨跌幅渲染为 `--`，展示名以配置为准不再取上游 f14）
+ */
+export interface PanoramaSecidEntry {
+  /** 东财 secid（市场码.代码，如 `105.NVDA` / `176.8035`） */
+  secid: string;
+  /** 展示名（命中与缺行统一使用，保证显示稳定） */
+  name: string;
+}
+
+/**
+ * 国外科技巨头分组配置（按市场分组：美国 / 日本 / 韩国）
+ */
+export interface PanoramaTechGroupConfig {
+  /** 分组标题（市场名） */
+  label: string;
+  /** 组内标的（展示顺序 = 配置顺序） */
+  entries: readonly PanoramaSecidEntry[];
+}
+
+/**
  * 全球宏观分组（分组标题 + 该组条目）
  */
 export interface PanoramaMacroGroup {

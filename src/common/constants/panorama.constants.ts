@@ -1,3 +1,8 @@
+import type {
+  PanoramaSecidEntry,
+  PanoramaTechGroupConfig,
+} from '../types/panorama.types.ts';
+
 /**
  * 行情全景页常量集中管理
  *
@@ -71,52 +76,94 @@ export const PANORAMA_MACRO_GROUPS = [
 /** 宏观数据源类型（clist 全球指数与 SDK 全球期货） */
 export type PanoramaMacroSource = (typeof PANORAMA_MACRO_GROUPS)[number]['source'];
 
-/** 美股全景展示的行业 ETF 清单（secid 市场码 107 = NYSE Arca，SPDR 行业系列） */
-export const PANORAMA_US_SECIDS = [
-  '107.XLK',
-  '107.XLE',
-  '107.XLF',
-  '107.XLI',
-  '107.XLY',
-  '107.XLP',
-  '107.XLU',
-  '107.XLB',
-  '107.XLRE',
-  '107.XLC',
-  '107.XLV',
-  '107.SPY',
-  '107.DIA',
-] as const;
+/** 美股全景展示的行业 ETF 清单（secid 市场码 107 = NYSE Arca，SPDR 行业系列；名称为上游 f14 原文） */
+export const PANORAMA_US_SECIDS: readonly PanoramaSecidEntry[] = [
+  { secid: '107.XLK', name: '科技行业精选指数ETF-SPDR' },
+  { secid: '107.XLE', name: '能源指数ETF-SPDR' },
+  { secid: '107.XLF', name: '金融ETF-SPDR' },
+  { secid: '107.XLI', name: '工业ETF-SPDR' },
+  { secid: '107.XLY', name: '可选消费ETF-SPDR' },
+  { secid: '107.XLP', name: '日常消费ETF-SPDR' },
+  { secid: '107.XLU', name: '公用事业ETF-SPDR' },
+  { secid: '107.XLB', name: '基础材料ETF-SPDR' },
+  { secid: '107.XLRE', name: '房地产ETF-SPDR' },
+  { secid: '107.XLC', name: '通讯服务行业精选指数ETF-SPDR' },
+  { secid: '107.XLV', name: '医疗ETF-SPDR' },
+  { secid: '107.SPY', name: '标普500ETF-SPDR' },
+  { secid: '107.DIA', name: '道琼斯指数ETF-SPDR' },
+] as const satisfies readonly PanoramaSecidEntry[];
 
 /**
- * 美股科技巨头清单（2026-11-02 王总指定新增模块；secid 市场码 105 = 纳斯达克 / 106 = 纽交所）
+ * 国外科技巨头分组配置（2026-11-03 王总指定：由「美股科技巨头」扩为「国外科技巨头」，
+ * 补充日本 / 韩国与大 A 科技板块关联较大的半导体 / CPO / PCB / MLCC 公司，按市场分组展示）
  *
- * 王总点名：Meta / 美光 / 台积电 / 阿斯麦 / 高通 / 微软 / 甲骨文 / 谷歌 / 闪迪 / 英特尔；
- * 补充：英伟达 / 苹果 / 亚马逊 / 特斯拉 / 博通 / AMD / 应用材料 / 德州仪器 / 迈威尔。
- * 顺序即展示顺序（按市值 / 知名度排列，不做涨跌幅重排）；
- * 闪迪为 2025 年 2 月自西部数据拆分独立上市（SNDK），上游缺行时该标的自动缺省。
+ * secid 市场码：105 = 纳斯达克 / 106 = 纽交所 / 176 = 日股（东京东证）/ 177 = 韩股（KOSPI），
+ * 176/177 经东财 suggest 接口逐只解析、ulist 实测 36/36 全部有返回（2026-11-03）。
+ * TDK（东京 6808）上游不覆盖未收录；MLCC 已有村田 / 太阳诱电 / 三星电机。
+ * 组内顺序按产业链重要性排列（展示顺序 = 配置顺序，不做涨跌幅重排）；
+ * 上游缺行的标的名称仍显示、涨跌幅为 `--`。
  */
-export const PANORAMA_US_TECH_SECIDS = [
-  '105.NVDA', // 英伟达
-  '105.AAPL', // 苹果
-  '105.MSFT', // 微软
-  '105.GOOGL', // 谷歌
-  '105.AMZN', // 亚马逊
-  '105.META', // Meta
-  '105.TSLA', // 特斯拉
-  '105.AVGO', // 博通
-  '106.TSM', // 台积电（ADR）
-  '105.ASML', // 阿斯麦（ADR）
-  '105.AMD', // 超威半导体（AMD）
-  '106.ORCL', // 甲骨文
-  '105.QCOM', // 高通
-  '105.AMAT', // 应用材料
-  '105.MU', // 美光科技
-  '105.TXN', // 德州仪器
-  '105.INTC', // 英特尔
-  '105.SNDK', // 闪迪
-  '105.MRVL', // 迈威尔科技
-] as const;
+export const PANORAMA_GLOBAL_TECH_GROUPS: readonly PanoramaTechGroupConfig[] = [
+  {
+    label: '美国',
+    entries: [
+      { secid: '105.NVDA', name: '英伟达' },
+      { secid: '105.AAPL', name: '苹果' },
+      { secid: '105.MSFT', name: '微软' },
+      { secid: '105.GOOGL', name: '谷歌' },
+      { secid: '105.AMZN', name: '亚马逊' },
+      { secid: '105.META', name: 'Meta' },
+      { secid: '105.TSLA', name: '特斯拉' },
+      { secid: '105.AVGO', name: '博通' },
+      { secid: '106.TSM', name: '台积电' },
+      { secid: '105.ASML', name: '阿斯麦' },
+      { secid: '105.AMD', name: '超威半导体' },
+      { secid: '106.ORCL', name: '甲骨文' },
+      { secid: '105.QCOM', name: '高通' },
+      { secid: '105.AMAT', name: '应用材料' },
+      { secid: '105.MU', name: '美光科技' },
+      { secid: '105.TXN', name: '德州仪器' },
+      { secid: '105.INTC', name: '英特尔' },
+      { secid: '105.SNDK', name: '闪迪' },
+      { secid: '105.MRVL', name: '迈威尔科技' },
+    ],
+  },
+  {
+    label: '日本',
+    entries: [
+      // 半导体设备 / 硅片
+      { secid: '176.8035', name: '东京电子' },
+      { secid: '176.6857', name: '爱德万测试' },
+      { secid: '176.6146', name: '迪斯科' },
+      { secid: '176.6920', name: 'Lasertec' },
+      { secid: '176.7735', name: '斯库林集团' },
+      { secid: '176.4063', name: '信越化学工业' },
+      { secid: '176.3436', name: '胜高' },
+      // IC 载板（PCB 链）
+      { secid: '176.4062', name: '揖斐电电子' },
+      // 陶瓷封装 / 被动元件
+      { secid: '176.6971', name: '京瓷' },
+      // MLCC
+      { secid: '176.6981', name: '村田制作所' },
+      { secid: '176.6976', name: '太阳诱电' },
+      // 光纤光器件（CPO 链）
+      { secid: '176.5802', name: '住友电气工业' },
+    ],
+  },
+  {
+    label: '韩国',
+    entries: [
+      { secid: '177.005930', name: '三星电子' },
+      { secid: '177.000660', name: 'SK海力士' },
+      // FC-BGA 载板
+      { secid: '177.011070', name: 'LG Innotek' },
+      // MLCC / FC-BGA 载板
+      { secid: '177.009150', name: '三星电机' },
+      // AI 服务器 PCB
+      { secid: '177.007660', name: 'Isu Petasys' },
+    ],
+  },
+] as const satisfies readonly PanoramaTechGroupConfig[];
 
 /**
  * 行情全景 · A股板块排行展示形式

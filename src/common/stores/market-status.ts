@@ -33,6 +33,10 @@ const US_MORNING_END = 4 * 60;
 const HK_WINDOW_START = 9 * 60 + 30;
 const HK_WINDOW_END = 16 * 60;
 
+/** 亚太（日股 / 韩股）轮询窗口（本地时间 = 北京时间分钟数）：08:00 - 14:30 */
+const AP_WINDOW_START = 8 * 60;
+const AP_WINDOW_END = 14 * 60 + 30;
+
 /**
  * 本地时间当日分钟数
  * @param date 任意 Date 实例
@@ -147,6 +151,24 @@ export const useMarketStatusStore = defineStore('market-status', {
       const minutes = localMinutes(now);
       const day = localDay(now);
       return day >= 1 && day <= 5 && minutes >= HK_WINDOW_START && minutes <= HK_WINDOW_END;
+    },
+
+    /**
+     * 亚太（日股 / 韩股）行情轮询窗口（本地时间，SDK 日历不支持日韩假日，按星期近似）：
+     * 周一~周五 08:00 - 14:30（北京时间）
+     *
+     * 依据：日股 9:00-11:30 / 12:30-15:00 JST、韩股 9:00-15:30 KST，均为 UTC+9，
+     * 对应北京时间 08:00-10:30 / 11:30-14:00 与 08:00-14:30；并集取 08:00-14:30。
+     * 2026-11-03 随「国外科技巨头」模块（日股 176 / 韩股 177）引入。
+     * @param state store 状态
+     * @returns true 表示处于亚太轮询窗口
+     */
+    isApPollingWindow: (state: MarketStatusState): boolean => {
+      void state.clockTick;
+      const now = new Date();
+      const minutes = localMinutes(now);
+      const day = localDay(now);
+      return day >= 1 && day <= 5 && minutes >= AP_WINDOW_START && minutes <= AP_WINDOW_END;
     },
   },
 

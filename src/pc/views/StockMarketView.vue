@@ -224,7 +224,9 @@ const cellCls = (col: ColumnDef, row: ThsStockRow): string => {
 </script>
 
 <template>
-  <BaseCard title="全部个股">
+  <!-- fill + table-scroll-fill 高度链（2026-11-03 王总指定去外层滚动条）：
+       卡片吃满宿主剩余高度，表格吃掉「卡高 - 头部/分页」，只有表格滚动 -->
+  <BaseCard title="全部个股" fill class="min-h-0 flex-1">
     <template #extra>
       <div class="flex items-center gap-3">
         <span class="text-xs text-text-tertiary">共 {{ THS_STOCK_BOARD_PAGE_SIZE }} 条/页 · 30s 轮询</span>
@@ -247,7 +249,7 @@ const cellCls = (col: ColumnDef, row: ThsStockRow): string => {
     <BaseSkeleton v-else-if="rows.length === 0" />
 
     <template v-else>
-      <div class="table-scroll">
+      <div class="table-scroll-fill">
         <table class="w-full text-sm tabular-nums" style="min-width: 960px">
           <thead>
             <tr class="border-b border-flat-weak text-left text-xs text-text-tertiary">
@@ -301,7 +303,7 @@ const cellCls = (col: ColumnDef, row: ThsStockRow): string => {
       </div>
 
       <!-- 分页器：服务端翻页（每页 20 条，与上游单页条数一致） -->
-      <div class="mt-3 flex items-center justify-end gap-3 text-sm">
+      <div class="mt-3 flex shrink-0 items-center justify-end gap-3 text-sm">
         <span class="text-xs text-text-tertiary">{{ pageText }}</span>
         <button
           type="button"

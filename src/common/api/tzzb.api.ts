@@ -743,14 +743,29 @@ export interface TzzbMcpConfig {
 }
 
 /**
+ * 配置响应形态守卫：真实端点恒返回含 customUrl / effectiveUrl / envConfigured 的对象。
+ * 打包客户端（无 vite dev server）里请求会被 SPA 兜底接走返回 200 + HTML，解析
+ * JSON 失败被吞成空对象 —— 不加守卫会把这种假 200 当成保存成功（v4.33.1 后仍
+ * 复现的「保存后重开弹窗地址不回显」根因）
+ * @param json 待校验的已解析响应
+ * @returns 是否为真实配置端点的响应
+ */
+const isTzzbMcpConfig = (json: unknown): json is TzzbMcpConfig => {
+  if (!json || typeof json !== 'object') return false;
+  const record = json as Record<string, unknown>;
+  return 'customUrl' in record && 'effectiveUrl' in record && 'envConfigured' in record;
+};
+
+/**
  * 取 MCP 运行时配置（「编辑 MCP」弹窗回填与状态行展示用）
- * @returns 配置对象；请求失败返回 null
+ * @returns 配置对象；请求失败 / 响应非配置端点形态（SPA 兜底）返回 null
  */
 export const fetchTzzbMcpConfig = async (): Promise<TzzbMcpConfig | null> => {
   try {
     const res = await fetch(`${MCP_PROXY_PATH}/config`);
     if (!res.ok) return null;
-    return (await res.json()) as TzzbMcpConfig;
+    const json: unknown = await res.json();
+    return isTzzbMcpConfig(json) ? json : null;
   } catch {
     return null;
   }
@@ -762,7 +777,7 @@ export const fetchTzzbMcpConfig = async (): Promise<TzzbMcpConfig | null> => {
  * @param url 上游 endpoint（空串 = 清除自定义，回退 .env.local）
  * @param token 可选静态 Bearer token（undefined = 不修改；null/空串 = 清除）
  * @returns 保存后的配置
- * @throws 服务端校验失败（如非法 URL）或请求失败
+ * @throws 服务端校验失败（如非法 URL）/ 请求失败 / 端点未挂载（SPA 兜底假 200，保存通道不可用）
  */
 export const saveTzzbMcpConfig = async (url: string, token?: string | null): Promise<TzzbMcpConfig> => {
   const res = await fetch(`${MCP_PROXY_PATH}/config`, {
@@ -770,8 +785,14 @@ export const saveTzzbMcpConfig = async (url: string, token?: string | null): Pro
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ url, token }),
   });
-  const json = (await res.json().catch(() => ({}))) as TzzbMcpConfig & { error?: string };
-  if (!res.ok || json.error) throw new Error(json.error ?? `config HTTP ${res.status}`);
+  const json = (await res.json().catch(() => null)) as (TzzbMcpConfig & { error?: string }) | null;
+  if (json?.error) throw new Error(json.error);
+  if (!res.ok) throw new Error(`config HTTP ${res.status}`);
+  // 端点未挂载（打包客户端等 SPA 兜底场景）时返回 200 + HTML，解析不出配置形态：
+  // 此处必须显式报错，否则会误报「保存成功」而实际什么都没落盘
+  if (!json || !isTzzbMcpConfig(json)) {
+    throw new Error('保存未生效：/tzzb-mcp/config 是 vite dev/preview server 的本地端点，当前页面未经其服务（打包客户端暂不支持「编辑MCP」）');
+  }
   return json;
 };
 

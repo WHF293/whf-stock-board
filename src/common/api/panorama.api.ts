@@ -6,10 +6,15 @@ import {
   PANORAMA_CLIST_PAGE_SIZE,
   PANORAMA_GLOBAL_INDEX_FS,
   PANORAMA_GLOBAL_INDEX_SECIDS,
+  PANORAMA_GLOBAL_TECH_GROUPS,
   PANORAMA_US_SECIDS,
-  PANORAMA_US_TECH_SECIDS,
 } from '../constants/panorama.constants.ts';
-import type { GlobalIndexQuote, PanoramaItem } from '../types/panorama.types.ts';
+import type {
+  GlobalIndexQuote,
+  PanoramaItem,
+  PanoramaMacroGroup,
+  PanoramaSecidEntry,
+} from '../types/panorama.types.ts';
 import type { FullQuote } from '../types/stock-quote.types.ts';
 
 /**
@@ -28,17 +33,18 @@ const CLIST_URL_BASE = 'https://push2delay.eastmoney.com/api/qt/clist/get';
 /** 东财 ulist 批量标的请求地址（secids 精确查询） */
 const ULIST_URL_BASE = 'https://push2delay.eastmoney.com/api/qt/ulist.np/get';
 
-/** 行情取值字段：f12 代码 / f14 名称 / f3 涨跌幅（fltt=2 已归一为百分数数值） */
-const QUOTE_FIELDS = 'f12,f14,f3';
+/** 行情取值字段：f12 代码 / f13 市场码 / f14 名称 / f3 涨跌幅（fltt=2 已归一为百分数数值） */
+const QUOTE_FIELDS = 'f12,f13,f14,f3';
 
 /** 全球指数取值字段：f2 最新价 / f12 代码 / f14 名称 / f3 涨跌幅 */
 const GLOBAL_INDEX_FIELDS = 'f2,f12,f14,f3';
 
-/** 上游列表响应体（仅取本页所需字段） */
+/** 上游列表响应体（仅取本页所需字段；f13 市场码用于拼回完整 secid 匹配配置） */
 interface EastmoneyListResponse {
   data: {
     diff: {
       f12: string;
+      f13: number | string;
       f14: string;
       f3: number | string;
     }[];
@@ -102,40 +108,66 @@ const fetchClist = async (fs: string): Promise<PanoramaItem[]> => {
 
 /**
  * 东财 ulist 精确 secid 查询全景条目（push2delay 域，经同源代理转发）
- * @param secids 东财 secid 序列（`107.XLK` / `105.NVDA` 形态）
- * @returns 条目列表（顺序与 secids 一致；上游缺行的标的自动缺省）
+ *
+ * 2026-11-03 起按配置清单对齐返回：上游缺行的标的不跳过，名称仍显示、
+ * 涨跌幅为 null（渲染 `--`）；展示名以配置为准（不再取上游 f14，保证显示稳定）。
+ * @param entries secid + 展示名配置条目
+ * @returns 条目列表（顺序与配置一致；缺行条目 changePercent = null）
  */
-const fetchUlistPanorama = async (secids: readonly string[]): Promise<PanoramaItem[]> => {
+const fetchUlistPanorama = async (entries: readonly PanoramaSecidEntry[]): Promise<PanoramaItem[]> => {
   const query = [
     'fltt=2',
     `fields=${QUOTE_FIELDS}`,
-    `secids=${secids.join(',')}`,
+    `secids=${entries.map((entry) => entry.secid).join(',')}`,
   ].join('&');
   const response = await push2Fetch(`${ULIST_URL_BASE}?${query}`);
   if (!response.ok) {
     throw new Error(`ulist 请求失败：HTTP ${response.status}`);
   }
   const body = (await response.json()) as EastmoneyListResponse;
-  return (body.data?.diff ?? []).map(toPanoramaItem);
+  // 上游按请求顺序返回但缺行会错位，以「市场码.代码」拼回完整 secid 建映射
+  const rowBySecid = new Map(
+    (body.data?.diff ?? []).map((row) => [`${row.f13}.${row.f12}`, row]),
+  );
+  return entries.map((entry) => {
+    const row = rowBySecid.get(entry.secid);
+    return {
+      name: entry.name,
+      changePercent: row && typeof row.f3 === 'number' ? row.f3 : null,
+    };
+  });
 };
 
 /**
  * 拉取美股全景（SPDR 行业 ETF 系列，ulist 接口按 secids 精确查询）
- * @returns 美股行业 ETF 列表（名称 + 涨跌幅，按涨跌幅降序）
+ * @returns 美股行业 ETF 列表（名称 + 涨跌幅，按涨跌幅降序；缺行条目排末尾、数值 `--`）
  */
 export const fetchUsSectorPanorama = async (): Promise<PanoramaItem[]> => {
   const items = await fetchUlistPanorama(PANORAMA_US_SECIDS);
-  // ulist 按传入 secids 顺序返回，按涨跌幅降序对齐全景展示口径
-  return items.sort((a, b) => (b.changePercent ?? 0) - (a.changePercent ?? 0));
+  // ulist 与配置顺序一致，按涨跌幅降序对齐全景展示口径（null 缺行排末尾）
+  return items.sort(
+    (a, b) => (b.changePercent ?? Number.NEGATIVE_INFINITY) - (a.changePercent ?? Number.NEGATIVE_INFINITY),
+  );
 };
 
 /**
- * 拉取美股科技巨头全景（2026-11-02 王总指定新增模块，ulist 按 secids 精确查询）
- * @returns 科技巨头列表（名称 + 涨跌幅；顺序 = 配置清单顺序，不做涨跌幅重排，
- *          上游缺行的标的自动缺省）
+ * 拉取国外科技巨头全景（2026-11-02 新增美股巨头、2026-11-03 王总指定扩为美/日/韩三市场
+ * 并按市场分组，ulist 按 secids 精确查询；secid 市场码 105/106 美股、176 日股、177 韩股）
+ * @returns 分组后的巨头列表（组顺序 = 美国 → 日本 → 韩国，组内顺序 = 配置顺序
+ *          不重排；缺行条目名称仍显示、changePercent = null）
  */
-export const fetchUsTechGiantsPanorama = async (): Promise<PanoramaItem[]> =>
-  fetchUlistPanorama(PANORAMA_US_TECH_SECIDS);
+export const fetchGlobalTechPanorama = async (): Promise<PanoramaMacroGroup[]> => {
+  const entries = PANORAMA_GLOBAL_TECH_GROUPS.flatMap((group) => group.entries);
+  const items = await fetchUlistPanorama(entries);
+  // 展平拉取后按组切片回填（组内顺序保持配置顺序）
+  const groups: PanoramaMacroGroup[] = [];
+  let offset = 0;
+  for (const group of PANORAMA_GLOBAL_TECH_GROUPS) {
+    groups.push({ label: group.label, items: items.slice(offset, offset + group.entries.length) });
+    offset += group.entries.length;
+  }
+  return groups;
+};
 
 /**
  * 拉取全球指数全景（东财源）

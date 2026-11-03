@@ -445,6 +445,8 @@ export const BOARD_CALENDAR_RANGE_OPTIONS = [
  *
  * 2026-10-21 王总指定：页面改名「题材轮动」，四个 Tab 改名重排
  * （列表 → 板块日历、气泡图 → 赚钱效应、板块分析 → 板块Top、题材轮动置于首位）。
+ * 2026-11-03 王总指定：风格跷跷板并入题材轮动视图（与板块Top 并列子模块），
+ * SEESAW key 保留（类型与持久化兼容）。
  * key 不改名，只动 label 与顺序，路由与落库零影响。
  */
 export const BOARD_CALENDAR_VIEW = {
@@ -464,11 +466,12 @@ export const BOARD_CALENDAR_VIEW_DEFAULT = BOARD_CALENDAR_VIEW.ROTATION;
  * 2026-10-22 王总指定：板块Top 不再作为独立 Tab，移入题材轮动 Tab 下方作子模块；
  * 2026-10-31 王总指定：赚钱效应 Tab 删除，气泡图迁入右侧停靠面板（扩展行
  * 「赚钱效应」按钮打开），选项随之移除；MAINLINE key 保留（类型与持久化兼容）。
+ * 2026-11-03 王总指定：风格跷跷板 Tab 删除，面板并入题材轮动视图下方作子模块
+ * （与板块Top 并列，范围档与题材轮动同步），选项随之移除；SEESAW key 保留。
  */
 export const BOARD_CALENDAR_VIEW_OPTIONS = [
   { label: '题材轮动', value: BOARD_CALENDAR_VIEW.ROTATION },
   { label: '板块日历', value: BOARD_CALENDAR_VIEW.LIST },
-  { label: '风格跷跷板', value: BOARD_CALENDAR_VIEW.SEESAW },
 ] as const;
 
 /**

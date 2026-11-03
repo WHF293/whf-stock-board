@@ -5,6 +5,7 @@ import BaseEmpty from "../ui/BaseEmpty.vue";
 import { fetchCalendarBoardPanorama } from "../../../common/api/board-calendar.api.ts";
 import { usePolling } from "../../../common/composables/use-polling";
 import { POLLING_INTERVAL } from "../../../common/constants/polling.constants.ts";
+import { CALENDAR_BOARDS } from "../../../common/constants/board-calendar.constants.ts";
 import type { PanoramaItem } from "../../../common/types/panorama.types.ts";
 import { getTrendByChangePercent } from "../../../common/constants/trend.constants.ts";
 import { TREND_TEXT_CLASS } from "../../../common/constants/stock-colors.constants.ts";
@@ -19,11 +20,25 @@ import { DATA_CACHE_KEY } from "../../../common/constants/data-cache.constants.t
  * 展示形式对齐美股全景：只保留「板块名 + 涨跌幅」平铺网格，无行业/概念切换、
  * 无筛选排序、无成分股下钻（原 496 行业/概念列表视图已随本改动移除）。
  * 单请求轻接口参与轮询；快照先行秒出，接口返回静默覆盖。
+ * 2026-11-03 起按板块池对齐展示：上游缺行的板块名称仍显示、涨跌幅 `--`；
+ * 卡片支持展开收起（折叠态由宿主持久化）。
  */
+
+defineProps<{
+  /** 是否支持展开收起（透传 BaseCard） */
+  collapsible?: boolean;
+  /** 是否收起（v-model:collapsed，持久化由宿主负责） */
+  collapsed?: boolean;
+}>();
+
+const emit = defineEmits<{
+  /** 切换折叠态（透传 BaseCard） */
+  'update:collapsed': [collapsed: boolean];
+}>();
 
 const dataCache = useDataCacheStore();
 
-/** 36 板块全景（涨跌幅降序） */
+/** 36 板块全景（涨跌幅降序，缺行板块排末尾数值 `--`） */
 const boards = ref<PanoramaItem[]>(
   dataCache.get<PanoramaItem[]>(DATA_CACHE_KEY.CALENDAR_BOARD_PANORAMA) ?? [],
 );
@@ -37,7 +52,17 @@ const fetchPanorama = async (): Promise<void> => {
     panoramaTask = (async () => {
       isError.value = false;
       try {
-        boards.value = await fetchCalendarBoardPanorama();
+        const rows = await fetchCalendarBoardPanorama();
+        // 按板块池对齐：上游缺行的板块名称仍显示、涨跌幅 null（渲染 `--`，2026-11-03）
+        const rowByCode = new Map(rows.map((row) => [row.code, row]));
+        boards.value = CALENDAR_BOARDS.map((board) => {
+          const row = rowByCode.get(board.code);
+          return { name: board.name, changePercent: row ? row.changePercent : null };
+        }).sort(
+          (a, b) =>
+            (b.changePercent ?? Number.NEGATIVE_INFINITY) -
+            (a.changePercent ?? Number.NEGATIVE_INFINITY),
+        );
         dataCache.set(DATA_CACHE_KEY.CALENDAR_BOARD_PANORAMA, boards.value);
       } catch (error) {
         isError.value = boards.value.length === 0;
@@ -66,7 +91,13 @@ const isEmpty = computed(() => !isLoading.value && boards.value.length === 0);
 </script>
 
 <template>
-  <BaseCard title="A股板块（36 板块统一口径）" class="flex flex-col">
+  <BaseCard
+    title="A股板块（36 板块统一口径）"
+    class="flex flex-col"
+    :collapsible="collapsible"
+    :collapsed="collapsed"
+    @update:collapsed="emit('update:collapsed', $event)"
+  >
     <!-- 加载骨架（无快照时） -->
     <div
       v-if="isLoading"

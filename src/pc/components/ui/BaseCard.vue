@@ -39,11 +39,20 @@ defineProps<{
    * 替代正文底部的说明行（2026-11-02 王总指定：筹码分布说明改为标题旁问号）
    */
   tip?: string;
+  /**
+   * 是否支持展开收起（2026-11-03 王总指定：行情全景四组卡）：
+   * 头部右侧渲染折叠箭头按钮，收起时正文卸载（v-if 不渲染，省渲染开销）
+   */
+  collapsible?: boolean;
+  /** 是否收起（collapsible 时生效；v-model:collapsed 双向绑定，持久化由调用方负责） */
+  collapsed?: boolean;
 }>();
 
 const emit = defineEmits<{
   /** 点击可点击标题（clickableTitle 时生效，跳转目标由调用方决定） */
   'title-click': [];
+  /** 切换折叠态（collapsible 时点击箭头按钮触发） */
+  'update:collapsed': [collapsed: boolean];
 }>();
 </script>
 
@@ -54,8 +63,8 @@ const emit = defineEmits<{
   >
     <header
       v-if="title || $slots.extra"
-      class="mb-3 flex min-h-8 items-center justify-between gap-2"
-      :class="fill ? 'shrink-0' : ''"
+      class="flex min-h-8 items-center justify-between gap-2"
+      :class="[fill ? 'shrink-0' : '', collapsible && collapsed ? 'mb-0' : 'mb-3']"
     >
       <!-- 标题 + 可选问号说明：包一层左组（问号紧贴标题），不传 tip 时零影响 -->
       <div class="flex min-w-0 items-center gap-1">
@@ -83,8 +92,25 @@ const emit = defineEmits<{
           <BaseTooltip :text="tip" placement="bottom" :wrap-width="280" />
         </span>
       </div>
-      <slot name="extra" />
+      <!-- 右组：调用方 extra 插槽 + 折叠按钮（collapsible 时渲染，箭头随折叠态旋转） -->
+      <div class="flex shrink-0 items-center gap-1">
+        <slot name="extra" />
+        <button
+          v-if="collapsible"
+          type="button"
+          class="pressable rounded p-1 text-text-tertiary transition-colors hover:text-text"
+          :aria-label="collapsed ? '展开' : '收起'"
+          @click="emit('update:collapsed', !collapsed)"
+        >
+          <MenuIcon
+            name="chevronDown"
+            :size="14"
+            class="transition-transform"
+            :class="collapsed ? '-rotate-90' : ''"
+          />
+        </button>
+      </div>
     </header>
-    <slot />
+    <slot v-if="!collapsible || !collapsed" />
   </section>
 </template>
