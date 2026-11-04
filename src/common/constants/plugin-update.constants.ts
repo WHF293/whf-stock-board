@@ -9,7 +9,7 @@
  */
 
 /** 官方插件仓库（`owner/repo`；拼直链、拼发布页都用它） */
-export const PLUGIN_UPDATE_REPO = 'jx62257070/tauri-plugin';
+export const PLUGIN_UPDATE_REPO = 'jx62257070/stock-board-plugin';
 
 /**
  * 更新清单地址（固定 URL，一次请求拿到全部插件的最新版本与直链）

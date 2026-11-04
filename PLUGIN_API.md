@@ -899,7 +899,7 @@ export const examplePlugin: PluginDefinition = {
 ```
 
 登记到 `src/plugins/index.ts` 的 `BUILTIN_PLUGINS`（改前先按 AGENTS.md「源码级安装/卸载的备份与恢复」备份），然后跑：
-（本仓库当前 `src/plugins/` 是空的 —— 四个官方插件的源码都已迁到独立仓库 `whf-stock-board-plugin`（位置不由本仓库假定），在那边改源码、出 zip 包。）
+（本仓库当前 `src/plugins/` 是空的 —— 四个官方插件的源码都已迁到独立仓库 `stock-board-plugin`（jx62257070，位置不由本仓库假定），在那边改源码、出 zip 包。）
 
 ```bash
 pnpm lint && pnpm build
@@ -989,7 +989,7 @@ export default {
 | --- | --- |
 | `AppServiceMap` / `AppEventMap` / 贡献点类型 | 本文档 + `AGENTS.md`「插件体系」+ `README.md`「插件体系」+ `PLUGIN_WIKI.md`（第三方那份） |
 | `devices` 字段 / 移动端装配行为（`PLUGIN_DEVICES` 白名单、金刚区混入、服务子集） | 本文档 §1.1 + §3.2 + `AGENTS.md`「插件体系」与「移动端」两节 + `PLUGIN_WIKI.md`（含移动适配验收口径） |
-| 插件会用到的宿主 `types/` / `constants/` | 独立仓库 `whf-stock-board-plugin`（位置不由本仓库假定）：跑一次 `node scripts/sync-host-contract.mjs` 重出 `host/` 契约快照（那边类型层会直接报错） |
+| 插件会用到的宿主 `types/` / `constants/` | 独立仓库 `stock-board-plugin`（jx62257070，位置不由本仓库假定）：跑一次 `node scripts/sync-host-contract.mjs` 重出 `host/` 契约快照（那边类型层会直接报错） |
 | `ctx.db` 的表 / 列 | Agent MCP 工具描述（`src/agent/mcp/app-tools.ts` 的 `db_query` / `db_execute`） |
 | 新增 / 删除的 API | `SERVER_API.md`（若是网络接口） |
 | 预检规则（允许 / 禁止哪些写法） | 本文档 §0 + §13，以及安装弹窗的说明文案（两者是同一套认知） |

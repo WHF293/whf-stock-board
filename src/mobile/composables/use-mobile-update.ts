@@ -55,7 +55,7 @@ export const useMobileUpdate = (
     updateState.value = 'checking';
     try {
       const response = await fetch(
-        'https://api.github.com/repos/WHF293/whf-stock-board/releases/latest',
+        'https://api.github.com/repos/WHF293/stock-board/releases/latest',
         { headers: { Accept: 'application/vnd.github+json' } },
       );
       if (!response.ok) throw new Error(String(response.status));
@@ -120,7 +120,7 @@ export const useMobileUpdate = (
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), UPDATE_CHECK_TIMEOUT_MS);
       const response = await fetch(
-        'https://api.github.com/repos/WHF293/whf-stock-board/releases/latest',
+        'https://api.github.com/repos/WHF293/stock-board/releases/latest',
         { headers: { Accept: 'application/vnd.github+json' }, signal: controller.signal },
       );
       clearTimeout(timer);

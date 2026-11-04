@@ -1,7 +1,7 @@
 /**
  * 官网路由
  *
- * 用 hash 模式：GitHub Pages 项目子路径（/whf-stock-board/）没有 404 兜底配置，
+ * 用 hash 模式：GitHub Pages 项目子路径（/stock-board/）没有 404 兜底配置，
  * history 模式下刷新 / 直链 /docs 会 404；hash 模式天然无此问题。
  */
 import { createRouter, createWebHashHistory, type RouteRecordRaw } from 'vue-router';

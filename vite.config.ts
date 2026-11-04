@@ -13,7 +13,7 @@ export default defineConfig(({ mode }) => {
 
   return {
   // 根路径：Tauri 客户端与常规托管均部署在域名根下
-  // （GitHub Pages 子路径托管已关闭；如重启用请改回 '/whf-stock-board/'）
+  // （GitHub Pages 子路径托管已关闭；如重启用请改回 '/stock-board/'）
   base: '/',
   plugins: [
     tailwindcss(),

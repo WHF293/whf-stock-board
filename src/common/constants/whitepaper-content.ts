@@ -1154,7 +1154,7 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
           ],
           [
             '待发版（开发线）',
-            '官方插件源码迁出主应用：四个官方插件的源码、清单与 zip 产物包统一放进独立仓库 whf-stock-board-plugin（`plugins/<id>/` + `scripts/build-plugins.mjs`），主应用仓库只留插件内核、样式白名单与开发文档。插件侧用一份从主应用同步的宿主契约快照（`host/`，跑 sync-host-contract 刷新）替代对主应用源码的 import，因此主应用改了插件用到的类型或常量，插件仓库会在类型层立刻报错；出包时打包流水线仍会把产物用到的 Tailwind 类回写进主应用的样式白名单，保证插件界面对着宿主产物 CSS 零缺样式。',
+            '官方插件源码迁出主应用：四个官方插件的源码、清单与 zip 产物包统一放进独立仓库 stock-board-plugin（`plugins/<id>/` + `scripts/build-plugins.mjs`），主应用仓库只留插件内核、样式白名单与开发文档。插件侧用一份从主应用同步的宿主契约快照（`host/`，跑 sync-host-contract 刷新）替代对主应用源码的 import，因此主应用改了插件用到的类型或常量，插件仓库会在类型层立刻报错；出包时打包流水线仍会把产物用到的 Tailwind 类回写进主应用的样式白名单，保证插件界面对着宿主产物 CSS 零缺样式。',
           ],
           [
             '待发版（开发线）',

@@ -45,7 +45,7 @@ A 股看板 SPA（个人学习用）：市场总览 / 题材轮动 / 市场宽�
 
 ![主应用整体架构](./src/docs/assets/app-architecture.svg)
 
-**插件体系架构**：插件内核只做加载 / 卸载 / 依赖收敛，九个贡献点 + 二十二个宿主服务开放给插件，卸载即全量撤销；官网[开发者指南](https://whf293.github.io/whf-stock-board/#/docs?tab=dev)有逐节展开的插件开发文档（接入规范 / API 手册 / 数据持久化 / 插件市场接入）。
+**插件体系架构**：插件内核只做加载 / 卸载 / 依赖收敛，九个贡献点 + 二十二个宿主服务开放给插件，卸载即全量撤销；官网[开发者指南](https://whf293.github.io/stock-board/#/docs?tab=dev)有逐节展开的插件开发文档（接入规范 / API 手册 / 数据持久化 / 插件市场接入）。
 
 ![插件体系架构](./src/docs/assets/plugin-architecture.svg)
 
@@ -71,7 +71,7 @@ pnpm vue-tsc -b   # 类型检查
 
 ## 官网
 
-项目官网（GitHub Pages）：<https://whf293.github.io/whf-stock-board/>——**软件文档**（白皮书整站迁移：使用说明 / 开发者指南，目录 + 搜索）、**下载中心**（v3.0.0 起全部版本按版本分组分页展示，运行时直连 GitHub Releases API）、**插件生态**（官方插件清单实时取自[插件仓库](https://github.com/jx62257070/stock-board-plugin)最新 Release 产物，只提供最新版下载，历史版本导流插件仓库）。
+项目官网（GitHub Pages）：<https://whf293.github.io/stock-board/>——**软件文档**（白皮书整站迁移：使用说明 / 开发者指南，目录 + 搜索）、**下载中心**（v3.0.0 起全部版本按版本分组分页展示，运行时直连 GitHub Releases API）、**插件生态**（官方插件清单实时取自[插件仓库](https://github.com/jx62257070/stock-board-plugin)最新 Release 产物，只提供最新版下载，历史版本导流插件仓库）。
 
 源码在 `src/docs/`（入口 `src/docs/index.html`），独立构建配置 `vite.config.site.ts`，与桌面 / 移动端完全隔离：
 
@@ -127,9 +127,9 @@ git push origin main v0.2.0
 
 CI 会同时构建桌面（Windows：msi + nsis）与安卓（APK，签好名），创建同名 GitHub Release（`v0.2.0`）并上传全部安装包：
 
-- Release 页面：https://github.com/WHF293/whf-stock-board/releases
-- 最新版固定链接：https://github.com/WHF293/whf-stock-board/releases/latest
-- 官网下载中心（按版本分组分页）：https://whf293.github.io/whf-stock-board/#/download
+- Release 页面：https://github.com/WHF293/stock-board/releases
+- 最新版固定链接：https://github.com/WHF293/stock-board/releases/latest
+- 官网下载中心（按版本分组分页）：https://whf293.github.io/stock-board/#/download
 
 **只改了一端时的省时发布**：在 Actions → Release App → Run workflow 手动触发，`target` 选 `desktop`（仅桌面）或 `android`（仅安卓），不必全量重打；`ref` 可选 main 或已有 tag（补传产物场景）。只改官网则无需发版——推 main 自动部署（见「官网」一节）。
 
@@ -147,7 +147,7 @@ CI 会同时构建桌面（Windows：msi + nsis）与安卓（APK，签好名）
 
 - **启停入口**：设置页 → 「插件」卡片，可逐个启用/禁用（禁用状态记在本地，插件卸载后其贡献点全部消失）
 - **官方插件走「应用内安装」**（`dsh-mainline` 股票主线 / `dsh-dividend-screen` 股息筛选 / `dsh-quick-note` 速记 / `dsh-sidebar-watch` 自选盯盘）：
-  源码、清单与 zip 产物包都在**独立仓库 [jx62257070/stock-board-plugin](https://github.com/jx62257070/stock-board-plugin)**（`whf-stock-board-plugin`），本仓库 `src/plugins/` 下**没有任何插件源码**
+  源码、清单与 zip 产物包都在**独立仓库 [jx62257070/stock-board-plugin](https://github.com/jx62257070/stock-board-plugin)**（曾用名 tauri-plugin 已更名），本仓库 `src/plugins/` 下**没有任何插件源码**
   （`BUILTIN_PLUGINS` 是空数组）—— 因此它们在应用里能正常安装 / 卸载，升级也只是再装一次新版本的包
 - **插件工坊**（左侧导航最后一项）是**应用自带页面而不是插件**：可视察当前插件清单、贡献点、服务与事件流，并直接启停 / 安装 / 卸载插件；正因它不可停用，插件页面被停用撤销时有稳定的退回落点
 - **开放给插件的 API**（九个贡献点、`ctx.storage` / `ctx.db` / `ctx.settings`、十六个宿主服务与六个内置事件、配额与红线）见 **[PLUGIN_API.md](./PLUGIN_API.md)**；

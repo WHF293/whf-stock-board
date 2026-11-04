@@ -7,8 +7,8 @@ import type { ReleasePackageKind, ReleasePlatform } from '../types/release.types
 /** 仓库归属（Releases API 与外链都从这里拼） */
 export const SITE_REPO_OWNER = 'WHF293';
 
-/** 仓库名（同时是 GitHub Pages 项目站子路径） */
-export const SITE_REPO_NAME = 'whf-stock-board';
+/** 仓库名（同时是 GitHub Pages 项目站子路径；仓库已由 whf-stock-board 更名 stock-board） */
+export const SITE_REPO_NAME = 'stock-board';
 
 /** GitHub 仓库主页 */
 export const SITE_REPO_URL = `https://github.com/${SITE_REPO_OWNER}/${SITE_REPO_NAME}`;
