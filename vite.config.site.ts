@@ -7,14 +7,14 @@ import { defineConfig } from 'vite'
  * 官网独立构建配置（入口 site.html，源码 src/docs/）
  *
  * 与主应用（vite.config.ts）完全隔离：产物输出 dist-site/，部署到 GitHub Pages
- * 项目子路径 /whf-stock-board/。主应用 pnpm build 只走 index.html 入口，
+ * 项目子路径 /stock-board/。主应用 pnpm build 只走 index.html 入口，
  * 不会包含官网任何产物；官网代码仍受同一套 vue-tsc / ESLint 检查。
  */
 export default defineConfig({
   // 官网构建根 = src/docs（入口 index.html 就在这里，产物根才是 Pages 子路径的 /）
   root: fileURLToPath(new URL('./src/docs', import.meta.url)),
-  // GitHub Pages 项目站固定子路径（https://whf293.github.io/whf-stock-board/）
-  base: '/whf-stock-board/',
+  // GitHub Pages 项目站固定子路径（https://whf293.github.io/stock-board/；仓库已由 whf-stock-board 更名 stock-board）
+  base: '/stock-board/',
   plugins: [tailwindcss(), vue()],
   // 官网不共享主应用 public/（图标集、榜单 logo 等都是客户端专属），favicon 由 src/docs 提供
   publicDir: false,

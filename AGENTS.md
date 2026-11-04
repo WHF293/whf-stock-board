@@ -331,7 +331,7 @@ zip 包模式支持**多选 / 拖拽批量上传**，选中即自动解析，无
 
 **本仓库当前状态**：五个官方插件（主线 / 股息筛选 / 速记 / 自选盯盘 / 选股器）已全部走「应用内安装」形态 ——
 `src/plugins/` 下**没有任何插件源码**，`BUILTIN_PLUGINS` 是空数组。它们的源码、清单与产物包都在
-**独立仓库 `whf-stock-board-plugin`**：改插件 UI / 逻辑、升版本、出包都在那边做
+**独立仓库 `stock-board-plugin`（jx62257070，曾用名 tauri-plugin）**：改插件 UI / 逻辑、升版本、出包都在那边做
 （`node scripts/build-plugins.mjs`），产物 `plugins-dist/<id>-<version>.zip` 也在那边入库。
 （选股器是 v3.3.0 从宿主内置页 `ScreenerView` + `components/screener/` + `api/screener.api.ts` /
 `api/analysis.api.ts` 迁出去的：Agent 的 `run_backtest` 工具随之移入插件贡献的 MCP 服务器，
@@ -543,14 +543,16 @@ tauri fetch 绕 webview CORS）。
    推 main 自动部署 Pages（见下）
 6. **官网发布（GitHub Pages）**：`.github/workflows/site-release.yml`，推 main 且改动命中
    `src/docs/**` / 官网配置 / 白皮书单源文件等路径时自动部署到
-   <https://whf293.github.io/whf-stock-board/>（首次需在仓库 Settings → Pages 把 Source 设为
+   <https://whf293.github.io/stock-board/>（首次需在仓库 Settings → Pages 把 Source 设为
    「GitHub Actions」）；官网不发版、不打 tag，下载中心运行时直连 GitHub Releases API
-7. **发版成功后清理本地构建缓存（硬性，王总 2026-10-27 指定）**：确认 GitHub Release 构建
-   完成、产物上传成功后，清理 `src-tauri/target/` 构建缓存——`cd src-tauri && cargo clean`
-   （或直接删除 `target/` 下 debug / release 及 aarch64 / armv7 / i686 / x86_64-linux-android
-   等交叉编译目标目录）。`target/` 是 Cargo 构建产物缓存（debug 含完整符号 `.pdb` +
+7. **发版后不要自动清理本地构建缓存（王总 2026-11-03 更新，替代 2026-10-27 的旧规）**：
+   发版完成（代码 push + tag + Release 构建成功）后，**一律不动 `src-tauri/target/`**，
+   清理由王总自己手动进行——此前自动清理把回收站塞满了。
+   背景知识（仅供王总自己清理时参考）：`target/` 是 Cargo 构建产物缓存（debug 含完整符号 `.pdb` +
    增量编译缓存 + 依赖升级残留），只增不减，曾积累 20GB+；删除仅导致下次编译全量重来
-   （首次 5–15 分钟），不影响任何源码与用户数据。CI 产物在 GitHub Release 远端，本地无需保留
+   （首次 5–15 分钟），不影响任何源码与用户数据。**若被明确要求清理，用 `cd src-tauri && cargo clean`
+   （或命令行 `rm -rf`），不要走资源管理器/回收站式删除**——命令行删除不进回收站，
+   大目录走回收站会瞬间占满。CI 产物在 GitHub Release 远端，本地无需保留
 
 注意：tag 必须打在**已推送的最新 commit** 上（先 push 后打 tag）；若 push 后有他人新提交，先用 `git pull --rebase` 再走流程。`pnpm lint` 与 `pnpm build` 必须在 commit 前全绿（改了官网再跑 `pnpm build:site`）。
 
