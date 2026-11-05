@@ -3,7 +3,11 @@ import { computed, ref, watch } from 'vue';
 import BaseEmpty from '../ui/BaseEmpty.vue';
 import BaseSkeleton from '../ui/BaseSkeleton.vue';
 import { fetchChipDistribution } from '../../../common/api/chip-distribution.api.ts';
-import { isChipApplicable } from '../../../common/constants/chip-distribution.constants.ts';
+import {
+  isChipApplicable,
+  isEtfChip,
+  ETF_CHIP_NOTICE,
+} from '../../../common/constants/chip-distribution.constants.ts';
 import { FLAT_COLOR, DOWN_COLOR, UP_COLOR } from '../../../common/constants/stock-colors.constants.ts';
 import { NUMBER_PLACEHOLDER } from '../../../common/constants/format.constants.ts';
 import { formatPrice } from '../../../common/utils/format-price';
@@ -20,6 +24,10 @@ import type { ChipDistributionItem } from '../../../common/api/chip-distribution
  * 统计行取序列末行（获利比例 / 平均成本 / 90%·70% 成本区间与集中度），
  * 筹码峰直方图为最新一日 150 档占比分布——现价之下的筹码（获利盘）红色、
  * 之上（套牢盘）绿色，与东财 App 口径一致。重接口不轮询，符号变化即重拉。
+ *
+ * ETF（2026-11-06 王总指定放行）：换手率分母 = 基金份额（行情源流通市值 ÷ 现价
+ * 推演的最新披露值，固定分母近似，见 api 层注释），正常渲染分布并在顶部加
+ * 失真警示条（一级申赎不参与模型，份额大幅变动期误差大）；指数仍判不适用。
  */
 const props = defineProps<{
   /** 完整符号（sh600519 / hk00700 形态） */
@@ -32,10 +40,12 @@ const props = defineProps<{
 const rows = ref<ChipDistributionItem[]>([]);
 /** 加载中 */
 const isLoading = ref(false);
-/** 是否不适用（指数 / ETF：无换手率概念） */
+/** 是否不适用（指数：无换手率概念） */
 const notApplicable = ref(false);
 /** 拉取失败 */
 const isError = ref(false);
+/** 是否 ETF 筹码口径（顶部渲染失真警示条） */
+const isEtf = computed(() => isEtfChip(props.symbol));
 
 /** 最新一日统计行 */
 const latest = computed<ChipDistributionItem | null>(() => rows.value.at(-1) ?? null);
@@ -100,7 +110,7 @@ const summaryItems = computed<Array<{ label: string; value: string }>>(() => {
 });
 
 /**
- * 加载筹码分布（指数 / ETF 直接置不适用；失败空态兜底不抛出）
+ * 加载筹码分布（指数直接置不适用；ETF 与个股同链路推演；失败空态兜底不抛出）
  */
 const load = async (): Promise<void> => {
   rows.value = [];
@@ -125,12 +135,17 @@ watch(() => props.symbol, () => void load(), { immediate: true });
   <BaseSkeleton v-if="isLoading" class="h-40" />
   <BaseEmpty
     v-else-if="notApplicable"
-    text="指数 / 基金无换手率概念，不适用筹码分布"
+    text="指数无换手率概念，不适用筹码分布"
   />
   <BaseEmpty v-else-if="isError || rows.length === 0" text="筹码分布暂无数据（上游可能限频，稍后重开面板重试）" />
   <!-- 根节点 flex-1：配合外层 BaseCard fill 撑满右栏剩余高度（2026-11-02 王总指定加高）；
        overflow-y-auto：窗口高度不足时本卡内部滚动，内容不再溢出压到「五档盘口」卡上 -->
   <div v-else class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
+    <!-- ETF 失真警示条（2026-11-06 王总指定）：份额取最新披露近似，未含一级申赎；
+         样式随全站「注意类提示」范式（text-text-tertiary + role="note"，主题无警示色 token） -->
+    <p v-if="isEtf" class="shrink-0 text-[10px] leading-snug text-text-tertiary" role="note">
+      {{ ETF_CHIP_NOTICE }}
+    </p>
     <dl class="grid shrink-0 grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
       <div v-for="item in summaryItems" :key="item.label" class="flex items-baseline justify-between gap-2">
         <dt class="shrink-0 text-text-tertiary">{{ item.label }}</dt>

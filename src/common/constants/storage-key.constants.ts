@@ -125,3 +125,9 @@ export const STORAGE_NS_MARKET_BREADTH_DAYS = 'marketBreadth.days';
 
 /** 市场宽度 · 日 bar（收盘定稿聚合，滚存 250 日；值 = BreadthDayBar[]，日期升序） */
 export const STORAGE_NS_MARKET_BREADTH_BARS = 'marketBreadth.bars';
+
+/** 资金动向 · 每日汇金持仓变化（估算）份额历史独立存储 key（历史随使用增长，避免整包写放大） */
+export const STORAGE_KEY_HUIJIN_ETF_SHARE_HISTORY = 'whf:huijin-etf-share-history';
+
+/** 资金动向 · 汇金占比基准缓存命名空间（f10 持有人结构，按 ETF 代码整包存取） */
+export const STORAGE_NS_HUIJIN_BASELINE = 'huijin.baseline';

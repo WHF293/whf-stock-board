@@ -115,9 +115,10 @@ const goPanorama = (): void => {
   void router.push(ROUTE_PATH.PANORAMA);
 };
 
-/** 跳行情全景-融资融券 tab（融资融券卡片标题入口，2026-11-02 王总指定；?tab= 深链直开页签） */
-const goPanoramaMargin = (): void => {
-  void router.push(`${ROUTE_PATH.PANORAMA}?tab=margin`);
+/** 跳资金流向页-融资融券区块（融资融券卡片标题入口；2026-11-02 指定时落行情全景 tab，
+ * 2026-11-06 王总指定迁入资金流向页，?focus= 深链滚动定位到两融区块） */
+const goMarginFlow = (): void => {
+  void router.push(`${ROUTE_PATH.BOARD_FLOW}?focus=margin`);
 };
 
 /** 跳宽基ETF页（页头按钮入口，国家队/汇金系宽基监控） */
@@ -620,14 +621,14 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
           </template>
         </div>
 
-        <!-- 下段：两融指标（小标题点击跳行情全景-融资融券 tab） -->
+        <!-- 下段：两融指标（小标题点击跳资金流向页-融资融券区块） -->
         <div class="mt-4 border-t border-flat-weak pt-3">
           <div class="mb-2 flex items-center justify-between gap-2">
             <button
               type="button"
               class="pressable text-sm font-semibold text-text hover:text-primary"
               title="查看两融标的明细"
-              @click="goPanoramaMargin"
+              @click="goMarginFlow"
             >
               融资融券
               <span class="ml-1 text-xs text-text-tertiary">›</span>

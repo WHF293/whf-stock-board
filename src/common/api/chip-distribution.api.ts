@@ -8,6 +8,7 @@ import {
   CHIP_DISTRIBUTION_HISTOGRAM,
   CHIP_DISTRIBUTION_BAR_LIMIT,
   CHIP_DISTRIBUTION_MIN_BARS,
+  isEtfChip,
 } from '../constants/chip-distribution.constants.ts';
 import type { FullQuote } from '../types/stock-quote.types.ts';
 
@@ -31,16 +32,27 @@ export type { ChipDistributionItem };
  * - 日 K 为前复权（腾讯源，2026-11-02 起与全站 K 线口径一致；除权日台阶消失，东财前复权
  *   口径下同样存在，仅为形状差异）；
  * - 美股仍走 SDK `chips.us`（东财源，本机不可达时随上游恢复，无替代源）。
+ *
+ * ETF 口径（2026-11-06 王总指定放行，V1 对齐同花顺）：场内基金无「流通股本」概念，
+ * 换手率分母用**基金总份额（份）**。公开行情源不提供每日份额历史（腾讯 ifzq /
+ * 东财 push2his K 线只有 OHLCV；SDK 的 FundProfile.buySedemption 仅季度披露点），
+ * 故与同花顺一致取**最新披露份额作整个回看窗口的固定分母**：行情源对场内基金的
+ * 「流通市值」= 份额 × 现价，`estimateFloatShares` 的推演公式数学上直接还原份额，
+ * 与个股共用同一条链（语义按标的类型自然切换），仅份额两级兜底为 ETF 专属。
+ * 已知失真（前端警示条同步提示）：一级申赎的筹码注入 / 销毁不参与模型；份额
+ * 大幅变动期（大额套利、QDII、题材 ETF）误差明显。
  * 重接口（90+ 根日 K），仅在打开详情时拉取一次，不参与轮询。
  */
 
 /**
- * 由实时报价推演流通股本（股）
+ * 由实时报价推演流通股本 / 基金份额（股 / 份）
  *
- * 首选「流通市值 ÷ 现价」（东财换手率分母同口径）；缺失时退化用
- * 「成交量 ÷ 换手率」（当日累计成交量与换手率同源同刻，量纲自洽）。
+ * 首选「流通市值 ÷ 现价」（东财换手率分母同口径；对 ETF 该值 = 份额 × 现价，
+ * 除以现价即还原份额）；缺失时退化用「成交量 ÷ 换手率」（当日累计成交量与
+ * 换手率同源同刻，量纲自洽）；再缺失时用报价直出的流通股本字段（腾讯快照
+ * 直出，ETF 场景部分源填基金份额）。
  * @param quote 完整报价（A 股 / 港股映射口径，volume 为手）
- * @returns 流通股本（股）；无法推演时为 null
+ * @returns 流通股本（股）或基金份额（份）；无法推演时为 null
  */
 const estimateFloatShares = (quote: FullQuote | undefined): number | null => {
   if (!quote) return null;
@@ -50,7 +62,32 @@ const estimateFloatShares = (quote: FullQuote | undefined): number | null => {
   if (quote.volume > 0 && quote.turnoverRate !== null && quote.turnoverRate > 0) {
     return (quote.volume * 100) / (quote.turnoverRate / 100);
   }
+  if (quote.circulatingShares !== null && quote.circulatingShares > 0) {
+    return quote.circulatingShares;
+  }
   return null;
+};
+
+/**
+ * ETF 份额最终兜底：东财基金档案的季度申赎披露（pingzhongdata，浏览器端 script
+ * 注入可过 WAF）
+ *
+ * 仅在报价推演失败时调用——该源是整包大文件请求，且季度「期末总份额」粒度粗，
+ * 只保证「份额稳定品种能出分布」的底线，不追求精度。
+ * @param symbol 完整符号（sh510300 / sz159915 形态）
+ * @returns 基金总份额（份）；披露缺失或请求失败时为 null
+ */
+const estimateEtfSharesFromProfile = async (symbol: string): Promise<number | null> => {
+  try {
+    const profile = await sdk.fund.profile(symbol.replace(/^(sh|sz)/, ''));
+    const latestQuarter = profile.buySedemption.at(-1);
+    if (latestQuarter && latestQuarter.total > 0) {
+      return latestQuarter.total * 1e8; // 亿份 → 份
+    }
+    return null;
+  } catch {
+    return null;
+  }
 };
 
 /**
@@ -74,7 +111,17 @@ export const fetchChipDistribution = async (symbol: string): Promise<ChipDistrib
     fetchKlineCached(normalized, 'daily', { barLimit: CHIP_DISTRIBUTION_BAR_LIMIT }),
     fetchFullQuotes([normalized]),
   ]);
-  const floatShares = estimateFloatShares(quotes[0]);
+  // 分母：个股 = 流通股本，ETF = 基金份额（同一推演公式，见顶部 ETF 口径注释）；
+  // ETF 推演失败再走季度披露兜底，仍失败才空态
+  let floatShares = estimateFloatShares(quotes[0]);
+  if ((floatShares === null || floatShares <= 0) && isEtfChip(normalized)) {
+    floatShares = await estimateEtfSharesFromProfile(normalized);
+    if (floatShares !== null) {
+      console.warn(
+        `[chip-distribution] ${normalized} 报价推演份额失败，退用东财季度披露期末总份额（粒度粗）`,
+      );
+    }
+  }
   // 股本推演失败（如港股快照缺市值）或历史过短（次新股不足最小窗口）不出分布
   if (floatShares === null || floatShares <= 0 || bars.length < CHIP_DISTRIBUTION_MIN_BARS) {
     return [];
