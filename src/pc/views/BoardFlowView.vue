@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
+import { useRoute } from 'vue-router';
+import HuijinEtfFlowBoard from '../components/business/HuijinEtfFlowBoard.vue';
+import PanoramaMarginBoard from '../components/business/PanoramaMarginBoard.vue';
 import PanoramaSectorFlowBoard from '../components/business/PanoramaSectorFlowBoard.vue';
 import RealtimeTurnoverCard from '../components/business/RealtimeTurnoverCard.vue';
 import MarketFundFlowTrendChart from '../components/charts/MarketFundFlowTrendChart.vue';
@@ -54,6 +57,12 @@ import type { TurnoverDayItem } from '../../common/types/turnover.types.ts';
  * 展开显示行 2~5（历史/相对成交量、南向汇总+主力净流入、资金历史、持股排行），
  * 板块分时净流入模块固定底部不参与折叠。
  * 成交额历史为日频数据，进页拉一次 + dataCache 播种（与市场总览成交额模块同 key 共享快照）。
+ * 2026-11-06 王总指定：板块资金流入模块下方新增「每日汇金持仓变化（估算）」——宽基 ETF
+ * 总份额变动 × 季报机构持有比例的推算看板（自管数据，进页触发不轮询），估算口径
+ * 与局限声明见 HuijinEtfFlowBoard 内的 NoticeBar / 标题问号（常量单源）。
+ * 同日王总指定：原行情全景「融资融券」tab 迁入本页（两融本质属资金域），以区块
+ * 形式置于顶部图表区之后（PanoramaMarginBoard 原样复用，数据自管不轮询）；
+ * 市场总览两融卡标题深链 `/board-flow?focus=margin` 滚动定位到该区块。
  */
 
 /** 主力净流入图表窗口（交易日数）：与市场总览「主力净流入（近10日）」同口径 */
@@ -195,9 +204,36 @@ const openIndividualDrawer = (row: NorthboundRankRow): void => {
   isIndividualDrawerOpen.value = true;
 };
 
+const route = useRoute();
+
+/**
+ * 深链定位：市场总览两融卡标题 → `/board-flow?focus=margin` 滚动到两融区块。
+ * 进页各模块数据陆续到达、页面内容高度逐段撑开（row-clamp 图表区的骨架→图表
+ * 收紧与下方内容撑高还会分帧交错），单次定位必然被后续布局变化推偏——
+ * 故用「三次延迟兜底 × 每次逐帧对齐约 0.3s」：对齐幂等，布局稳定后重复滚动
+ * 无害，任何数据时序下最终都停准。用 auto 瞬时定位：webview 实测
+ * scrollIntoView 的 smooth 模式可能静默不滚（2026-11-06），直达场景瞬时跳位亦可接受
+ */
+const alignMarginBoard = (): void => {
+  const el = document.getElementById('margin-board');
+  if (!el?.isConnected) return;
+  /** 逐帧对齐（rAF 循环）：帧序号递减到 0 即停 */
+  const alignFrame = (frames: number): void => {
+    if (frames <= 0 || !el.isConnected) return;
+    el.scrollIntoView({ behavior: 'auto', block: 'start' });
+    requestAnimationFrame(() => alignFrame(frames - 1));
+  };
+  alignFrame(20);
+};
+
 onMounted(() => {
   void loadMarketFlow();
   void loadTurnover();
+  if (route.query.focus === 'margin') {
+    window.setTimeout(() => alignMarginBoard(), 600);
+    window.setTimeout(() => alignMarginBoard(), 2000);
+    window.setTimeout(() => alignMarginBoard(), 4000);
+  }
 });
 </script>
 
@@ -306,7 +342,16 @@ onMounted(() => {
       :name="individualName"
     />
 
+    <!-- 融资融券区块（2026-11-06 王总指定自行情全景 tab 迁入：明细表 + 余额走势，
+         数据自管不轮询；?focus=margin 深链滚动定位，入口 = 市场总览两融卡标题） -->
+    <div id="margin-board" class="shrink-0">
+      <PanoramaMarginBoard />
+    </div>
+
     <!-- 板块资金流入模块（页面主体，自管数据 + 轮询；固定底部不参与上方折叠；上方各行挤占时保底 480px 高） -->
     <PanoramaSectorFlowBoard class="min-h-[480px] flex-1" />
+
+    <!-- 每日汇金持仓变化（估算）：宽基 ETF 份额变动 × 季报机构占比推算看板（2026-11-06 王总指定） -->
+    <HuijinEtfFlowBoard class="shrink-0" />
   </div>
 </template>

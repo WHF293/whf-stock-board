@@ -1,5 +1,8 @@
 import { AGENT_DB_URL } from './agent.constants.ts';
-import { STORAGE_KEY_SECTOR_FLOW_HISTORY } from './storage-key.constants.ts';
+import {
+  STORAGE_KEY_HUIJIN_ETF_SHARE_HISTORY,
+  STORAGE_KEY_SECTOR_FLOW_HISTORY,
+} from './storage-key.constants.ts';
 import type { DataPortCategory } from '../types/data-port.types.ts';
 
 /**
@@ -32,6 +35,7 @@ export const DATA_PORT_AGENT_DB_URL = AGENT_DB_URL;
 
 /** 本地行情快照类别的独立 key（whf:app 整包之外） */
 const NS_SECTOR_FLOW_HISTORY = STORAGE_KEY_SECTOR_FLOW_HISTORY;
+const NS_HUIJIN_SHARE_HISTORY = STORAGE_KEY_HUIJIN_ETF_SHARE_HISTORY;
 
 export const DATA_PORT_MANIFEST: readonly DataPortCategory[] = [
   // ---------- localStorage（whf:app 命名空间白名单 + 独立 key） ----------
@@ -77,18 +81,18 @@ export const DATA_PORT_MANIFEST: readonly DataPortCategory[] = [
     // 历史牛市复盘的月 K 快照（panorama.review）自 2026-10-30 起随插件（dsh-history-review）
     // 落插件 storage，随「插件与用户插件」类别迁移，不再在此登记
     nsKeys: [],
-    independentKeys: [NS_SECTOR_FLOW_HISTORY],
+    independentKeys: [NS_SECTOR_FLOW_HISTORY, NS_HUIJIN_SHARE_HISTORY],
     defaultEnabled: true,
-    tip: '板块历史净流入数据',
+    tip: '板块历史净流入数据 + 每日汇金持仓变化的份额历史（逐日本地累积，丢失需重建）',
   },
   {
     id: 'etf-holdings',
     label: 'ETF 持仓股缓存',
     db: 'stock-board',
     storage: 'local-storage',
-    nsKeys: ['etf.holdings', 'etf.profile'],
+    nsKeys: ['etf.holdings', 'etf.profile', 'huijin.baseline'],
     defaultEnabled: false,
-    tip: '详情页 ETF 持仓 Tab 的季度持仓快照 + 基金概况 Tab 的概况快照（含抓取时间），可重新抓取，不导出也能用',
+    tip: '详情页 ETF 持仓 Tab 的季度持仓快照 + 基金概况 Tab 的概况快照 + 汇金估算的占比基准（含抓取时间），可重新抓取，不导出也能用',
   },
 
   // ---------- stock-board.db ----------

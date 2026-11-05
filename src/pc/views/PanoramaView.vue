@@ -10,7 +10,6 @@ import TabConfigButton from '../components/ui/TabConfigButton.vue';
 import { useTabConfig } from '../../common/composables/use-tab-config';
 import PanoramaCnBoard from '../components/business/PanoramaCnBoard.vue';
 import PanoramaLeadersBoard from '../components/business/PanoramaLeadersBoard.vue';
-import PanoramaMarginBoard from '../components/business/PanoramaMarginBoard.vue';
 import StockMarketView from './StockMarketView.vue';
 import HongKongMarketView from './HongKongMarketView.vue';
 import {
@@ -40,7 +39,10 @@ import { PAGE_HEADER_ACTIONS_TARGET, usePageHeaderSlot } from '../../common/comp
  * 大A个股（原侧栏「个股行情」页并入，2026-10-22 王总指定；2026-10-30 更名）/
  * 港股个股（2026-10-30 王总指定新增，同花顺港股板块）
  *
- * 注：原「最新板块资金」模块已于 2026-10-13 独立成页（/board-flow 资金流向）；
+ * 注：原「融资融券」tab 已于 2026-11-06 王总指定迁入资金流向页（两融本质属资金域，
+ * 组件 PanoramaMarginBoard 原样复用，深链 `/panorama?tab=margin` 由 MODULE_TABS
+ * 校验自然失效）；
+ * 原「最新板块资金」模块已于 2026-10-13 独立成页（/board-flow 资金流向）；
  * 原「大盘云图」tab 已于 2026-10-13 独立成页（/heatmap 大盘云图，侧栏入口 2026-10-22 移除，
  * 改由市场总览页头按钮进入）；
  * 原「新股次新股」tab 已于 2026-10-29 并入盘面雷达页签平铺看板（新股次新列）；
@@ -51,13 +53,12 @@ import { PAGE_HEADER_ACTIONS_TARGET, usePageHeaderSlot } from '../../common/comp
  * A股全景 / 全部个股由各自组件自管数据
  */
 
-/** 模块 tab 选项（margin = 融资融券，2026-11-02 王总指定新增，入口 = 市场总览两融卡标题） */
+/** 模块 tab 选项（原 margin 融资融券项已于 2026-11-06 迁入资金流向页） */
 const MODULE_TABS = [
   { label: '全景', value: 'overview' },
   { label: '行业龙头', value: 'leaders' },
   { label: '大A个股', value: 'stocks' },
   { label: '港股个股', value: 'hkStocks' },
-  { label: '融资融券', value: 'margin' },
 ] as const;
 
 /** 各接口请求间隔（毫秒）：对同一上游串行错峰 */
@@ -78,13 +79,12 @@ const route = useRoute();
   }
 }
 
-/** 是否处于组件自管数据的模块（行业龙头 / 大A个股 / 港股个股 / 融资融券：宿主不拉数据） */
+/** 是否处于组件自管数据的模块（行业龙头 / 大A个股 / 港股个股：宿主不拉数据） */
 const isSelfManagedModule = computed(
   () =>
     activeModule.value === 'leaders' ||
     activeModule.value === 'stocks' ||
-    activeModule.value === 'hkStocks' ||
-    activeModule.value === 'margin',
+    activeModule.value === 'hkStocks',
 );
 
 const dataCache = useDataCacheStore();
@@ -284,15 +284,12 @@ const leadersRef = ref<InstanceType<typeof PanoramaLeadersBoard> | null>(null);
 const stocksRef = ref<InstanceType<typeof StockMarketView> | null>(null);
 /** 港股个股面板实例 */
 const hkStocksRef = ref<InstanceType<typeof HongKongMarketView> | null>(null);
-/** 融资融券面板实例 */
-const marginRef = ref<InstanceType<typeof PanoramaMarginBoard> | null>(null);
 
 /** 自管 tab 当前的拉取中状态（无实例时 false，按钮旋转动画用） */
 const selfManagedLoading = computed(() => {
   if (activeModule.value === 'leaders') return leadersRef.value?.loading ?? false;
   if (activeModule.value === 'stocks') return stocksRef.value?.loading ?? false;
   if (activeModule.value === 'hkStocks') return hkStocksRef.value?.loading ?? false;
-  if (activeModule.value === 'margin') return marginRef.value?.loading ?? false;
   return false;
 });
 
@@ -313,7 +310,6 @@ const onManualRefresh = (): void => {
   if (activeModule.value === 'leaders') leadersRef.value?.refresh();
   else if (activeModule.value === 'stocks') stocksRef.value?.refresh();
   else if (activeModule.value === 'hkStocks') hkStocksRef.value?.refresh();
-  else if (activeModule.value === 'margin') void marginRef.value?.refresh();
 };
 
 /** 页头挂载守卫（KeepAlive 缓存页：激活才投射，防按钮残留）——刷新按钮上移页头用 */
@@ -364,11 +360,6 @@ const { active: headerSlotActive } = usePageHeaderSlot();
       <!-- 港股个股：同花顺港股板块分页表（数据 / 轮询 / 翻页自管，挂载结构与大A个股同款） -->
       <div v-else-if="activeModule === 'hkStocks'" class="flex min-h-0 flex-1 flex-col">
         <HongKongMarketView ref="hkStocksRef" />
-      </div>
-
-      <!-- 融资融券：两融标的明细表（数据自管，日期切换；2026-11-02 王总指定新增 tab） -->
-      <div v-else-if="activeModule === 'margin'" class="min-h-0 flex-1 overflow-y-auto">
-        <PanoramaMarginBoard ref="marginRef" />
       </div>
 
       <!-- 加载骨架（全景：美股 / 宏观首载） -->

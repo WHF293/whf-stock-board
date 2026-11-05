@@ -33,7 +33,9 @@ import { formatVolume } from '../../../common/utils/format-volume';
 import { handleSdkError } from '../../../common/utils/handle-sdk-error';
 
 /**
- * 融资融券（行情全景新增 tab，2026-11-02 王总指定；数据源 stock-sdk `margin`）
+ * 融资融券（2026-11-02 王总指定新增，原挂行情全景「融资融券」tab；
+ * 2026-11-06 王总指定迁入资金流向页 /board-flow——两融本质属资金域，
+ * 组件原样复用，文件名保留 Panorama 前缀仅为最小 diff；数据源 stock-sdk `margin`）
  *
  * - 日期切换：日期选项来自账户统计（accountInfo 按日倒序，取近 60 个交易日），
  *   默认最新一期；切换即拉该日两融标明细（targetList(date)），快照按日期缓存

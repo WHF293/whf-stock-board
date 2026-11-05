@@ -34,6 +34,8 @@ export const STOCK_PROXY_ALLOWED_HOSTS = [
   'xueqiu.com',
   // 中金所（期货·机构行为：CCPM 成交持仓排名每日披露 CSV，仅 HTTP 无 HTTPS）
   'cffex.com.cn',
+  // 上交所（资金动向·每日汇金持仓变化：ETF 规模官方逐日披露 query.sse.com.cn，需站内 Referer）
+  'sse.com.cn',
   // stock-sdk 静态资源（代码表等参考数据）
   'linkdiary.cn',
 ] as const;
