@@ -38,10 +38,14 @@ import type { TableColumn } from '../../../common/types/table.types.ts';
  * 自管数据组件：进页触发一次（当日东财份额快照 + 首次 SSE 昨日基准 + cyrjg 占比基准），
  * 不轮询。估算口径与局限见 NoticeBar / 标题问号 tooltip（huijin-etf-flow.constants.ts 单源）。
  * 「刷新」按钮 force 重拉当日快照与基准（无视 5 分钟节流与基准缓存 TTL）。
+ * 当日明细表默认收起（2026-11-06 王总指定），展开开关在周期切换按钮左边。
  */
 
 /** 图表高度（px，与同页资金图表行一致） */
 const CHART_HEIGHT_PX = 200;
+
+/** 当日明细表是否展开（2026-11-06 王总指定：默认收起，开关在周期切换按钮左边） */
+const isDetailExpanded = ref(false);
 
 /** 占比基准来源展示文案 */
 const BASELINE_SOURCE_LABELS: Record<HuijinBaselineSource, string> = {
@@ -214,15 +218,32 @@ onMounted(() => {
 
         <!-- 历史柱状图 + 周期切换 -->
         <div class="flex flex-col gap-2">
-          <div class="flex items-center justify-end">
+          <div class="flex items-center justify-end gap-2">
+            <!-- 当日明细展开/收起（默认收起，2026-11-06 王总指定） -->
+            <button
+              type="button"
+              class="pressable flex items-center rounded px-1.5 py-0.5 text-xs text-text-tertiary hover:bg-flat-weak hover:text-text"
+              :aria-expanded="isDetailExpanded"
+              aria-label="当日明细"
+              @click="isDetailExpanded = !isDetailExpanded"
+            >
+              <MenuIcon
+                name="chevronDown"
+                :size="13"
+                class="mr-0.5 transition-transform"
+                :class="isDetailExpanded ? 'rotate-180' : ''"
+              />
+              当日明细
+            </button>
             <BaseTabs v-model="range" :options="HUIJIN_FLOW_RANGE_OPTIONS" size="sm" />
           </div>
           <BaseEmpty v-if="!hasChart" text="历史曲线自首次使用起累积，暂无足够数据" />
           <HuijinFlowBarChart v-else :days="seriesDays" :height="CHART_HEIGHT_PX" />
         </div>
 
-        <!-- 当日明细 -->
+        <!-- 当日明细：默认收起，展开开关在周期切换按钮左边（2026-11-06 王总指定） -->
         <BaseTable
+          v-if="isDetailExpanded"
           :columns="columns"
           :rows="rows"
           :row-key="(row) => row.code"

@@ -63,6 +63,8 @@ import type { TurnoverDayItem } from '../../common/types/turnover.types.ts';
  * 同日王总指定：原行情全景「融资融券」tab 迁入本页（两融本质属资金域），以区块
  * 形式置于顶部图表区之后（PanoramaMarginBoard 原样复用，数据自管不轮询）；
  * 市场总览两融卡标题深链 `/board-flow?focus=margin` 滚动定位到该区块。
+ * 同日再指定：两融「个股明细」、汇金「当日明细」与南向资金历史「每日明细」三张表
+ * 默认收起，展开开关分别放在各自模块的日期/周期范围按钮左边（实现见各组件内注释）。
  */
 
 /** 主力净流入图表窗口（交易日数）：与市场总览「主力净流入（近10日）」同口径 */
@@ -217,7 +219,10 @@ const route = useRoute();
 const alignMarginBoard = (): void => {
   const el = document.getElementById('margin-board');
   if (!el?.isConnected) return;
-  /** 逐帧对齐（rAF 循环）：帧序号递减到 0 即停 */
+  /**
+   * 逐帧对齐（rAF 循环）
+   * @param frames 剩余帧数，递减到 0 即停
+   */
   const alignFrame = (frames: number): void => {
     if (frames <= 0 || !el.isConnected) return;
     el.scrollIntoView({ behavior: 'auto', block: 'start' });

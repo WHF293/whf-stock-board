@@ -285,6 +285,7 @@ plugins/dsh-futures-institutional/compute.ts
 plugins/dsh-futures-institutional/concurrency.ts
 plugins/dsh-futures-institutional/constants.ts
 plugins/dsh-futures-institutional/data.ts
+plugins/dsh-futures-institutional/index-kline.ts
 plugins/dsh-futures-institutional/parse.ts
 plugins/dsh-futures-institutional/plugin.ts
 plugins/dsh-futures-institutional/prompt.ts
@@ -325,6 +326,7 @@ plugins/dsh-quick-note/service.ts
 plugins/dsh-sentiment-index/constants.ts
 plugins/dsh-sentiment-index/em-bridge.ts
 plugins/dsh-sentiment-index/em-data.ts
+plugins/dsh-sentiment-index/em-diag.ts
 plugins/dsh-sentiment-index/judge.ts
 plugins/dsh-sentiment-index/plugin.ts
 plugins/dsh-sentiment-index/scan.ts
@@ -424,6 +426,7 @@ stroke-up
 table-scroll
 tabular-nums
 text-2xl
+text-3xl
 text-[10.5px]
 text-[10px]
 text-[11.5px]
@@ -453,6 +456,7 @@ top-0
 top-2
 top-4
 touch-none
+tracking-tight
 transition
 transition-all
 transition-colors
