@@ -9,7 +9,7 @@ import DistributionChart from '../components/charts/DistributionChart.vue';
 import HeatmapChart from '../components/charts/HeatmapChart.vue';
 import HeatmapBoardList from '../components/business/HeatmapBoardList.vue';
 import RealtimeTurnoverCard from '../components/business/RealtimeTurnoverCard.vue';
-import MarketBreadthCard from '../components/business/MarketBreadthCard.vue';
+import GoldPriceCard from '../components/business/GoldPriceCard.vue';
 import MarketRatingCard from '../components/business/MarketRatingCard.vue';
 import BaseTabs from '../components/ui/BaseTabs.vue';
 import MenuIcon from '../components/ui/MenuIcon.vue';
@@ -45,8 +45,6 @@ import type { CalendarBoardPanoramaItem } from '../../common/types/board-calenda
 import type { MarketFundFlow } from '../../common/types/flow.types.ts';
 import type { ZTPoolItem } from '../../common/types/event.types.ts';
 import type { MarketSentiment } from '../../common/types/market-sentiment.types.ts';
-import type { MarketBreadth } from '../../common/types/market-breadth.types.ts';
-import { ingestBreadthSnapshot } from '../../common/api/market-breadth-db.api.ts';
 import type { TableColumn } from '../../common/types/table.types.ts';
 import type { FullQuote } from '../../common/types/stock-quote.types.ts';
 import { formatPercent, formatPercentUnsigned } from '../../common/utils/format-percent';
@@ -83,14 +81,16 @@ const distributionViewMode = ref<typeof VIEW_MODE[keyof typeof VIEW_MODE]>(VIEW_
 
 /**
  * 市场总览：指数卡片（轮询，点击跳 K 线详情）+ 全部指数一次渲染、收起只看首行（见 useRowClamp）+
- * 涨跌分布 / 资金速览 + 市场情绪（涨停 / 跌停 / 炸板 / 连板梯队 / 打板溢价）+ 市场宽度 · ARMS +
+ * 涨跌分布 / 资金速览 + 市场情绪（涨停 / 跌停 / 炸板 / 连板梯队 / 打板溢价）+ 当日金价 +
  * 板块热力（轮询，支持热力图 / 列表两种展示形式，
  * 下钻状态两视图共享；点击下钻成分股 → 点击个股跳详情）
  *
- * 数据先取内存快照秒出 UI，接口成功后写回快照并刷新显示
- *
- * 注：北向净买额已从资金速览移除——上游实时与历史口径均已停止披露（NET_DEAL_AMT 恒 null）；
+ * 注：原「市场宽度 · ARMS」速览卡已于 2026-11-07 撤除（市场宽度由 dsh-market-breadth
+ * 插件独立承载，总览不再维护入口），原位换「当日金价」卡（组件自管数据与轮询）；
+ * 北向净买额已从资金速览移除——上游实时与历史口径均已停止披露（NET_DEAL_AMT 恒 null）；
  * 板块名称不再点击打开右侧停靠面板（看成分股统一走行展开）
+ *
+ * 数据先取内存快照秒出 UI，接口成功后写回快照并刷新显示
  */
 const { openSidebar, openPage, toContextList } = useStockOpen();
 const settingsStore = useSettingsStore();
@@ -110,9 +110,19 @@ const goBoardFlow = (): void => {
   void router.push(ROUTE_PATH.BOARD_FLOW);
 };
 
-/** 跳行情全景（涨跌分布 / 板块热力卡片标题入口；默认即 A 股全景模块） */
+/** 跳全景页（页头按钮入口，2026-11-06 行情全景拆分；涨跌分布卡片标题入口同落点） */
 const goPanorama = (): void => {
   void router.push(ROUTE_PATH.PANORAMA);
+};
+
+/** 跳龙头页（页头按钮入口，2026-11-06 行情全景拆分） */
+const goLeaders = (): void => {
+  void router.push(ROUTE_PATH.LEADERS);
+};
+
+/** 跳期货总览页（页头按钮入口，2026-11-06 王总指定：侧栏入口移除改页头按钮） */
+const goFutures = (): void => {
+  void router.push(ROUTE_PATH.FUTURES_OVERVIEW);
 };
 
 /** 跳资金流向页-融资融券区块（融资融券卡片标题入口；2026-11-02 指定时落行情全景 tab，
@@ -159,10 +169,7 @@ const marketFundFlow = ref<MarketFundFlow | null>(null);
 /** 两市成交额合计（万） */
 const totalAmountWan = ref<number | null>(null);
 
-/** 市场宽度 · ARMS 统计（随 fetchMarketBreadth 同源快照写入，供 MarketBreadthCard 消费） */
-const marketBreadth = ref<MarketBreadth | null>(null);
-
-/** 市场宽度快照结构 */
+/** 市场总览聚合快照结构（原「市场宽度」快照，2026-11-07 起 ARMS 卡撤除、聚合数据仍供涨跌分布 / 成交额 / 热力卡） */
 interface BreadthSnapshot {
   distribution: DistributionCount[];
   totalAmountWan: number;
@@ -246,8 +253,6 @@ const fetchMarketBreadth = async (): Promise<void> => {
     const flows = await fetchMarketFundFlow();
     distribution.value = countDistribution(quotes.map((quote) => quote.changePercent));
     totalAmountWan.value = quotes.reduce((acc, quote) => acc + (quote.amount ?? 0), 0);
-    // 市场宽度 · ARMS：与涨跌分布同源快照，ingest 落分钟点 / 收盘定稿日 bar（零新增请求）
-    marketBreadth.value = ingestBreadthSnapshot(quotes);
     marketFundFlow.value = flows.at(-1) ?? null;
 
     const snapshot: BreadthSnapshot = {
@@ -469,13 +474,29 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
 
 <template>
   <div class="space-y-6">
-    <!-- 页头快捷入口：宽基ETF（大盘云图按钮 2026-10-31 移除，入口迁侧栏「插件」分组
+    <!-- 页头快捷入口：期货（2026-11-06 侧栏入口移除改页头按钮）+ 龙头 / 全景
+        （2026-11-06 行情全景拆分，原行业龙头 / 全景页签独立成页）+ 宽基ETF
+        （大盘云图按钮 2026-10-31 移除，入口迁侧栏「插件」分组
         dsh-dapanyuntu；「板块热力」卡标题入口保留。Teleport 投射，本页激活时才挂载） -->
     <Teleport v-if="headerSlotActive" :to="PAGE_HEADER_ACTIONS_TARGET">
-      <BaseButton variant="ghost" data-track="DASHBOARD_OPEN_WIDE_BASE_ETF" @click="goWideBaseEtf">
-        <MenuIcon name="chartBars" :size="14" />
-        宽基ETF
-      </BaseButton>
+      <div class="flex items-center gap-2">
+        <BaseButton variant="ghost" data-track="DASHBOARD_OPEN_FUTURES" @click="goFutures">
+          <MenuIcon name="futures" :size="14" />
+          期货
+        </BaseButton>
+        <BaseButton variant="ghost" data-track="DASHBOARD_OPEN_LEADERS" @click="goLeaders">
+          <MenuIcon name="trophy" :size="14" />
+          龙头
+        </BaseButton>
+        <BaseButton variant="ghost" data-track="DASHBOARD_OPEN_PANORAMA" @click="goPanorama">
+          <MenuIcon name="globe" :size="14" />
+          全景
+        </BaseButton>
+        <BaseButton variant="ghost" data-track="DASHBOARD_OPEN_WIDE_BASE_ETF" @click="goWideBaseEtf">
+          <MenuIcon name="chartBars" :size="14" />
+          宽基ETF
+        </BaseButton>
+      </div>
     </Teleport>
     <!--
       顶部指数卡片：主指数 + 全球指数共处**同一个栅格**，且一次性全部渲染（DOM 始终完整），
@@ -737,9 +758,9 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
       <RealtimeTurnoverCard />
     </BaseCard>
 
-    <!-- 涨跌分布 + 市场宽度：等宽 flex 左右分布（gap 20px，与上方新行同口径），窄窗 320px 以下换行。
-         市场宽度 2026-10-24 起由独占整行改入本行右位、宽度减半（王总指定），
-         原右位「主力净流入（近10日）」卡同日删除（大盘资金流下钻走资金流向页） -->
+    <!-- 涨跌分布 + 当日金价：等宽 flex 左右分布（gap 20px，与上方新行同口径），窄窗 320px 以下换行。
+         原右位「市场宽度 · ARMS」卡已于 2026-11-07 撤除（市场宽度由插件独立承载，王总指定），
+         改放「当日金价」卡（数据自管，金投网品牌金店挂牌价） -->
     <div class="flex flex-wrap gap-5">
       <BaseCard
         title="涨跌分布"
@@ -778,12 +799,9 @@ const isDistributionReady = computed(() => distribution.value.length > 0);
         </BaseTable>
       </BaseCard>
 
-      <!-- 市场宽度 · ARMS（当日分时；近 30/60 日等长历史在右上角「市场宽度详情」入口页；数据随行情快照本地积累） -->
-      <MarketBreadthCard
-        :breadth="marketBreadth"
-        :sentiment="sentiment"
-        class="min-w-[320px] flex-1"
-      />
+      <!-- 当日金价（2026-11-07 王总指定替换 ARMS 卡：金店品牌足金饰品 / 投资金条挂牌价对比，
+           数据与轮询由卡片自管，金投网行情中心 5 分钟低频轮询） -->
+      <GoldPriceCard class="min-w-[320px] flex-1" />
     </div>
 
     <!-- 板块热力（标题跳大盘云图，2026-10-24 王总指定） -->

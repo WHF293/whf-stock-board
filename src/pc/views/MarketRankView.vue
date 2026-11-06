@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 import BaseButton from '../components/ui/BaseButton.vue';
 import MenuIcon from '../components/ui/MenuIcon.vue';
 import MarketRankTiledBoard from '../components/business/MarketRankTiledBoard.vue';
@@ -11,9 +12,9 @@ import { useNotificationsStore } from '../../common/stores/notifications';
 import { usePageHeaderSlot, PAGE_HEADER_ACTIONS_TARGET } from '../../common/composables/use-page-header-slot';
 import { requestAgentAnalysis } from '../agent/agent-bridge';
 import { buildRankAnalysisPrompt } from '../../common/utils/build-rank-analysis-prompt';
-import { exportSheetsToExcel } from '../../common/utils/export-excel';
 import { DATA_CACHE_KEY } from '../../common/constants/data-cache.constants.ts';
 import { HOST_HEADER_ITEM } from '../../common/constants/header.constants.ts';
+import { ROUTE_PATH } from '../../common/constants/router-meta.constants.ts';
 import { NOTIFY_TONE } from '../../common/constants/notify.constants.ts';
 import { POLLING_INTERVAL } from '../../common/constants/polling.constants.ts';
 import { STORAGE_NS_MARKET_RANK_TABS } from '../../common/constants/storage-key.constants.ts';
@@ -27,7 +28,7 @@ import { sdk } from '../../common/api/sdk';
  * 2026-10-27 王总指定 —— Tab 模式已删除，页面主体 = 页签平铺看板（只读）：
  * 一个可见页签一列（375px 卡片流，参考热点新闻页样式），
  * 列顺序与显隐经「页签设置」弹窗调整（热点新闻源设置同款交互），持久化；
- * 页头保留 AI 分析 / 导出 Excel（作用于全部可见页签，多数据段 = 多工作表）。
+ * 页头保留 AI 分析（作用于全部可见页签）。
  *
  * 报价排序榜数据源 stock-sdk `getAllAShareQuotes`（上游东方财富 push2，代理通道）：
  * 一次拉取全市场报价（约 5k+ 只），默认轮询 30 秒（与市场宽度一致）；
@@ -169,7 +170,22 @@ const onTabSettingsConfirm = (items: { value: string; enabled: boolean }[]): voi
   };
 };
 
-// ---------- 榜单工具条：AI 分析 + 导出 Excel（页头 Teleport；作用于全部可见页签） ----------
+// ---------- 页头快捷入口：大A个股 / 港股个股（2026-11-06 王总指定：行情全景拆分，
+// 原两页签独立成页，从盘面雷达页头进入） ----------
+
+const router = useRouter();
+
+/** 跳大A个股页（页头按钮入口） */
+const goAStock = (): void => {
+  void router.push(ROUTE_PATH.STOCK_MARKET);
+};
+
+/** 跳港股个股页（页头按钮入口） */
+const goHkStock = (): void => {
+  void router.push(ROUTE_PATH.HK_STOCK);
+};
+
+// ---------- 榜单工具条：AI 分析（页头 Teleport；作用于全部可见页签） ----------
 
 const settingsStore = useSettingsStore();
 const notifications = useNotificationsStore();
@@ -186,20 +202,7 @@ const agentEntryVisible = computed(
 );
 
 /**
- * 导出文件名时间戳
- * @returns YYYYMMDD-HHmm 格式时间戳
- */
-const exportStamp = (): string => {
-  const now = new Date();
-  const pad = (value: number): string => String(value).padStart(2, '0');
-  return (
-    `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}` +
-    `-${pad(now.getHours())}${pad(now.getMinutes())}`
-  );
-};
-
-/**
- * 汇总全部可见页签的榜单数据段（AI 分析与导出 Excel 共用的数据出口）
+ * 汇总全部可见页签的榜单数据段（AI 分析的数据出口）
  * @returns 数据段列表；看板未挂载 / 数据未加载时为空数组
  */
 const collectRankDatasets = (): RankDataset[] => boardRef.value?.getRankDatasets() ?? [];
@@ -218,42 +221,22 @@ const onRankAiAnalysis = (): void => {
   void requestAgentAnalysis(prompt);
 };
 
-/** 「导出 Excel」：把全部可见页签的榜单数据导出为 .xlsx（多数据段 = 多工作表） */
-const onRankExport = async (): Promise<void> => {
-  const datasets = collectRankDatasets();
-  if (datasets.every((dataset) => dataset.rows.length === 0)) {
-    notifications.push({
-      title: '暂无可导出的榜单数据',
-      body: '请等待榜单数据加载完成后再导出',
-      tone: NOTIFY_TONE.FLAT,
-    });
-    return;
-  }
-  try {
-    await exportSheetsToExcel(
-      datasets.map((dataset) => ({
-        name: dataset.title,
-        rows: dataset.rows,
-        columns: dataset.columns,
-      })),
-      `盘面雷达-${exportStamp()}`,
-    );
-  } catch (error) {
-    console.error('[market-rank] export', error);
-    notifications.push({
-      title: '导出失败',
-      body: '榜单数据导出 Excel 失败，请稍后重试',
-      tone: NOTIFY_TONE.FLAT,
-    });
-  }
-};
 </script>
 
 <template>
   <div class="flex h-full min-h-0 flex-col gap-4">
-    <!-- 榜单工具条上移页头：页签设置 + AI 分析 + 导出 Excel（Teleport 投射，本页激活时才挂载） -->
+    <!-- 页头快捷入口（大A个股 / 港股个股，2026-11-06 行情全景拆分）+ 榜单工具条上移页头：
+         页签设置 + AI 分析（Teleport 投射，本页激活时才挂载） -->
     <Teleport v-if="headerSlotActive" :to="PAGE_HEADER_ACTIONS_TARGET">
       <div class="flex items-center gap-2">
+        <BaseButton variant="ghost" data-track="MARKET_RANK_OPEN_A_STOCK" @click="goAStock">
+          <MenuIcon name="boards" :size="14" />
+          大A个股
+        </BaseButton>
+        <BaseButton variant="ghost" data-track="MARKET_RANK_OPEN_HK_STOCK" @click="goHkStock">
+          <MenuIcon name="chartBars" :size="14" />
+          港股个股
+        </BaseButton>
         <BaseButton variant="ghost" data-track="MARKET_RANK_TAB_SETTINGS" @click="tabSettingsOpen = true">
           <MenuIcon name="settings" :size="14" />
           页签设置
@@ -261,10 +244,6 @@ const onRankExport = async (): Promise<void> => {
         <BaseButton v-if="agentEntryVisible" variant="ghost" @click="onRankAiAnalysis">
           <MenuIcon name="agent" :size="14" />
           AI 分析
-        </BaseButton>
-        <BaseButton variant="ghost" @click="onRankExport">
-          <MenuIcon name="export" :size="14" />
-          导出 Excel
         </BaseButton>
       </div>
     </Teleport>

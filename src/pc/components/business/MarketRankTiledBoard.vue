@@ -606,9 +606,9 @@ const onIpoDblclick = (item: IpoBoardItem): void => {
   openPageWithList(item.code, ipoRows.value, (row) => row.code);
 };
 
-// ---------- 榜单数据出口（父级页面 AI 分析 / 导出 Excel 经 defineExpose 消费） ----------
+// ---------- 榜单数据出口（父级页面 AI 分析经 defineExpose 消费） ----------
 
-/** 报价排序榜导出列（与原页签模式同列，含代码） */
+/** 报价排序榜数据列（与原页签模式同列，含代码） */
 const quoteExportColumns: { label: string; key: string }[] = [
   { key: 'name', label: '个股' },
   { key: 'code', label: '代码' },
@@ -622,7 +622,7 @@ const quoteExportColumns: { label: string; key: string }[] = [
   { key: 'pe', label: '市盈率' },
 ];
 
-/** 股池导出列（含代码 / 连板数 / 封单原始元值） */
+/** 股池数据列（含代码 / 连板数 / 封单原始元值） */
 const poolExportColumns: { label: string; key: string }[] = [
   { key: 'name', label: '名称' },
   { key: 'code', label: '代码' },
@@ -635,7 +635,7 @@ const poolExportColumns: { label: string; key: string }[] = [
   { key: 'industry', label: '行业' },
 ];
 
-/** 盘口异动导出列（时间轴条目，类型文案缺省回退类型键） */
+/** 盘口异动数据列（时间轴条目，类型文案缺省回退类型键） */
 const stockChangeExportColumns: { label: string; key: string }[] = [
   { key: 'time', label: '时间' },
   { key: 'name', label: '名称' },
@@ -644,7 +644,7 @@ const stockChangeExportColumns: { label: string; key: string }[] = [
   { key: 'info', label: '说明' },
 ];
 
-/** 板块异动导出列 */
+/** 板块异动数据列 */
 const boardChangeExportColumns: { label: string; key: string }[] = [
   { key: 'name', label: '板块' },
   { key: 'changePercent', label: '涨跌幅(%)' },
@@ -653,7 +653,7 @@ const boardChangeExportColumns: { label: string; key: string }[] = [
   { key: 'topStockName', label: '最频繁个股' },
 ];
 
-/** 龙虎榜导出列（金额为原始元值） */
+/** 龙虎榜数据列（金额为原始元值） */
 const dragonExportColumns: { label: string; key: string }[] = [
   { key: 'name', label: '个股' },
   { key: 'code', label: '代码' },
@@ -666,7 +666,7 @@ const dragonExportColumns: { label: string; key: string }[] = [
   { key: 'afterChange5d', label: '上榜后5日(%)' },
 ];
 
-/** 大宗交易导出列（成交量为原始股值） */
+/** 大宗交易数据列（成交量为原始股值） */
 const blockExportColumns: { label: string; key: string }[] = [
   { key: 'name', label: '个股' },
   { key: 'code', label: '代码' },
@@ -679,7 +679,7 @@ const blockExportColumns: { label: string; key: string }[] = [
   { key: 'sellBranch', label: '卖方营业部' },
 ];
 
-/** 新股次新导出列（收益为原始元值） */
+/** 新股次新数据列（收益为原始元值） */
 const ipoExportColumns: { label: string; key: string }[] = [
   { key: 'name', label: '股票' },
   { key: 'code', label: '代码' },
@@ -695,7 +695,7 @@ const ipoExportColumns: { label: string; key: string }[] = [
 ];
 
 /**
- * 汇总全部**可见页签**的榜单数据段（每页签一段，导出即多工作表）
+ * 汇总全部**可见页签**的榜单数据段（每页签一段）
  * @returns 数据段列表；数据未加载完成时对应段为空行
  */
 const getRankDatasets = (): RankDataset[] => {

@@ -43,6 +43,9 @@ export const NORTHBOUND_MINUTE_EMPTY_NOTICE = '暂无分时净流入数据';
 /** 北向持股季度披露提示文案（排行卡 / 持仓抽屉共用） */
 export const NORTHBOUND_RANK_QUARTERLY_NOTICE = '北向持股明细已改为季度披露，此处展示最新一期快照';
 
+/** 东财 datacenter 连续请求错峰间隔（毫秒；上游红线 500ms，历史 / 排行共用） */
+export const NORTHBOUND_REQUEST_GAP_MS = 500;
+
 /** 历史卡时间范围选项 */
 export const NORTHBOUND_HISTORY_RANGE_OPTIONS = [
   { label: '近30日', value: '30d' },

@@ -64,3 +64,9 @@ export const CHART_LINE_RED = '#ef4444';
 
 /** 固定曲线色：青绿（主题色系，不随主题色变化；市场宽度 ARMS 曲线） */
 export const CHART_LINE_TEAL = '#0e9488';
+
+/** 金价柱色 · 金（足金饰品价柱，当日金价卡） */
+export const CHART_GOLD = '#d4a72c';
+
+/** 金价柱色 · 银灰（投资金条价柱，当日金价卡） */
+export const CHART_SILVER = '#8b95a5';

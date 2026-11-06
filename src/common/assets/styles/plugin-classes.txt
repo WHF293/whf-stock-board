@@ -125,6 +125,7 @@ gap-2
 gap-2.5
 gap-3
 gap-4
+gap-6
 gap-x-2
 gap-x-3
 gap-x-4

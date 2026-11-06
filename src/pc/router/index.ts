@@ -3,7 +3,10 @@ import MainLayout from '../layouts/MainLayout.vue';
 import { LAYOUT_ROUTE_NAME, NOT_FOUND_ROUTE_NAME, ROUTE_PATH, MENU_ITEMS } from '../../common/constants/router-meta.constants.ts';
 import DashboardView from '../views/DashboardView.vue';
 import WatchlistView from '../views/WatchlistView.vue';
-import PanoramaView from '../views/PanoramaView.vue';
+import PanoramaOverviewView from '../views/PanoramaOverviewView.vue';
+import LeadersView from '../views/LeadersView.vue';
+import StockMarketView from '../views/StockMarketView.vue';
+import HongKongMarketView from '../views/HongKongMarketView.vue';
 import BoardFlowView from '../views/BoardFlowView.vue';
 import BoardCalendarView from '../views/BoardCalendarView.vue';
 import BoardCalendarDetailView from '../views/BoardCalendarDetailView.vue';
@@ -52,10 +55,30 @@ const routes = [
         component: WatchlistView,
         meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.WATCHLIST] },
       },
+      // 行情全景已于 2026-11-06 拆分为四个不入菜单的独立页（入口同宽基ETF先例，走宿主页头按钮）；
+      // /panorama 路径由「全景」页沿用，外部旧链接不断
       {
         path: ROUTE_PATH.PANORAMA,
-        component: PanoramaView,
-        meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.PANORAMA] },
+        component: PanoramaOverviewView,
+        meta: { title: '全景' },
+      },
+      // 龙头（原行业龙头页签）：市场总览页头按钮进入
+      {
+        path: ROUTE_PATH.LEADERS,
+        component: LeadersView,
+        meta: { title: '龙头' },
+      },
+      // 大A个股（原「全部个股」页签，2026-10-22 曾并入行情全景，随拆分恢复独立页）：盘面雷达页头按钮进入
+      {
+        path: ROUTE_PATH.STOCK_MARKET,
+        component: StockMarketView,
+        meta: { title: '大A个股' },
+      },
+      // 港股个股（原港股个股页签）：盘面雷达页头按钮进入
+      {
+        path: ROUTE_PATH.HK_STOCK,
+        component: HongKongMarketView,
+        meta: { title: '港股个股' },
       },
       // 大盘云图已改为插件分发（dsh-dapanyuntu，路径 /heatmap 由插件注册，2026-10-29）；
       // 未安装插件时总览页头「大盘云图」按钮指向的旧路径由 404 兜底页承接（同 screener 先例）
@@ -84,8 +107,6 @@ const routes = [
         component: MarketRankView,
         meta: { title: ROUTE_TITLE_BY_PATH[ROUTE_PATH.MARKET_RANK] },
       },
-      // 个股行情已并入行情全景「全部个股」子 tab（2026-10-22 王总指定），
-      // /stock-market 旧路径由 404 兜底页承接（同 market-mood 等历史合并先例）
       // 选股器已改为插件分发（dsh-stock-screener，路径 /screener 由插件注册）；
       // 未安装插件时旧路径由 404 兜底页承接
       {

@@ -120,6 +120,15 @@
           "url": "https://*.sse.com.cn/*"
         },
         {
+          "url": "https://*.hkexnews.hk/*"
+        },
+        {
+          "url": "https://*.jijinhao.com/*"
+        },
+        {
+          "url": "https://jijinhao.com/*"
+        },
+        {
           "url": "https://*.linkdiary.cn/*"
         }
       ]

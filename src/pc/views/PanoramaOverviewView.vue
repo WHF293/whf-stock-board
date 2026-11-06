@@ -1,17 +1,10 @@
 <script setup lang="ts">
 import { computed, onActivated, ref } from 'vue';
-import { useRoute } from 'vue-router';
 import BaseButton from '../components/ui/BaseButton.vue';
 import BaseCard from '../components/ui/BaseCard.vue';
 import BaseEmpty from '../components/ui/BaseEmpty.vue';
-import BaseTabs from '../components/ui/BaseTabs.vue';
 import MenuIcon from '../components/ui/MenuIcon.vue';
-import TabConfigButton from '../components/ui/TabConfigButton.vue';
-import { useTabConfig } from '../../common/composables/use-tab-config';
 import PanoramaCnBoard from '../components/business/PanoramaCnBoard.vue';
-import PanoramaLeadersBoard from '../components/business/PanoramaLeadersBoard.vue';
-import StockMarketView from './StockMarketView.vue';
-import HongKongMarketView from './HongKongMarketView.vue';
 import {
   fetchGlobalFuturesPanorama,
   fetchGlobalIndexPanorama,
@@ -32,60 +25,20 @@ import { POLLING_INTERVAL } from '../../common/constants/polling.constants.ts';
 import { PAGE_HEADER_ACTIONS_TARGET, usePageHeaderSlot } from '../../common/composables/use-page-header-slot';
 
 /**
- * 行情全景（2026-10-29 王总指定整合）：全景（A股 36 板块平铺 + 国外科技巨头
- * （2026-11-02 新增美股巨头，2026-11-03 扩为美/日/韩三市场，置于行业 ETF 卡上方）+
- * 美股行业 ETF + 全球宏观 四组卡片竖向分布，原三个独立 tab 合并）/
- * 行业龙头（板块 / 细分赛道静态清单卡片流）/
- * 大A个股（原侧栏「个股行情」页并入，2026-10-22 王总指定；2026-10-30 更名）/
- * 港股个股（2026-10-30 王总指定新增，同花顺港股板块）
- *
- * 注：原「融资融券」tab 已于 2026-11-06 王总指定迁入资金流向页（两融本质属资金域，
- * 组件 PanoramaMarginBoard 原样复用，深链 `/panorama?tab=margin` 由 MODULE_TABS
- * 校验自然失效）；
- * 原「最新板块资金」模块已于 2026-10-13 独立成页（/board-flow 资金流向）；
- * 原「大盘云图」tab 已于 2026-10-13 独立成页（/heatmap 大盘云图，侧栏入口 2026-10-22 移除，
- * 改由市场总览页头按钮进入）；
- * 原「新股次新股」tab 已于 2026-10-29 并入盘面雷达页签平铺看板（新股次新列）；
- * 原「历史牛熊复盘」tab 已于 2026-10-30 转插件分发（dsh-history-review，侧栏「插件」组进入）
+ * 全景（原「行情全景」页 overview 页签独立成页，2026-11-06 王总指定拆分）：
+ * A股 36 板块平铺 + 国外科技巨头（2026-11-02 新增美股巨头，2026-11-03 扩为美/日/韩
+ * 三市场，置于行业 ETF 卡上方）+ 美股行业 ETF + 全球宏观 四组卡片竖向分布
+ * （原「行情全景」页的行业龙头 / 大A个股 / 港股个股页签同日分别拆为
+ * /leaders 龙头、/stock-market 大A个股、/hk-stock 港股个股三个独立页；
+ * 页面入口在市场总览页头「全景」按钮与「涨跌分布」卡标题）
  *
  * 美股与全球宏观只展示名称 + 涨跌幅（网格卡片）；进入页面串行错峰拉取一次
  * （不参与轮询）；数据先取内存快照秒出 UI，接口成功后写回快照并刷新；
- * A股全景 / 全部个股由各自组件自管数据
+ * A股全景由 PanoramaCnBoard 自管数据
  */
-
-/** 模块 tab 选项（原 margin 融资融券项已于 2026-11-06 迁入资金流向页） */
-const MODULE_TABS = [
-  { label: '全景', value: 'overview' },
-  { label: '行业龙头', value: 'leaders' },
-  { label: '大A个股', value: 'stocks' },
-  { label: '港股个股', value: 'hkStocks' },
-] as const;
 
 /** 各接口请求间隔（毫秒）：对同一上游串行错峰 */
 const REQUEST_GAP_MS = 500;
-
-// 页签显隐 + 顺序可配置（持久化，右上角「配置页签」按钮）；激活值被隐藏时自动回退首个可见 tab
-const { visibleOptions: moduleTabOptions, activeValue: activeModule } = useTabConfig(
-  'panorama',
-  MODULE_TABS,
-);
-
-// 深链支持（2026-11-02）：`/panorama?tab=margin` 直开指定 tab（市场总览融资融券卡标题跳入）
-const route = useRoute();
-{
-  const queryTab = typeof route.query.tab === 'string' ? route.query.tab : '';
-  if ((MODULE_TABS as readonly { value: string }[]).some((tab) => tab.value === queryTab)) {
-    activeModule.value = queryTab as typeof activeModule.value;
-  }
-}
-
-/** 是否处于组件自管数据的模块（行业龙头 / 大A个股 / 港股个股：宿主不拉数据） */
-const isSelfManagedModule = computed(
-  () =>
-    activeModule.value === 'leaders' ||
-    activeModule.value === 'stocks' ||
-    activeModule.value === 'hkStocks',
-);
 
 const dataCache = useDataCacheStore();
 
@@ -100,11 +53,9 @@ const usBoards = ref<PanoramaItem[]>(cachedUs ?? []);
 const globalTech = ref<PanoramaMacroGroup[]>(cachedGlobalTech ?? []);
 /** 全球宏观分组 */
 const macroGroups = ref<PanoramaMacroGroup[]>(cachedMacro ?? []);
-/** 当前模块是否拉取中（有快照则不进骨架） */
-const isLoading = ref(
-  activeModule.value === 'overview' && usBoards.value.length === 0 && macroGroups.value.length === 0,
-);
-/** 当前模块拉取是否失败（且无快照） */
+/** 是否拉取中（有快照则不进骨架） */
+const isLoading = ref(usBoards.value.length === 0 && macroGroups.value.length === 0);
+/** 拉取是否失败（且无快照） */
 const isError = ref(false);
 
 /**
@@ -138,7 +89,7 @@ const fetchMacro = async (): Promise<PanoramaMacroGroup[]> => {
   });
 };
 
-/** 拉取美股全景（成功后写快照；供轮询与模块切换复用） */
+/** 拉取美股全景（成功后写快照；供轮询与手动刷新复用） */
 const fetchUsBoards = async (): Promise<void> => {
   usBoards.value = await fetchUsSectorPanorama();
   dataCache.set(DATA_CACHE_KEY.PANORAMA_US_BOARDS, usBoards.value);
@@ -150,29 +101,25 @@ const fetchGlobalTech = async (): Promise<void> => {
   dataCache.set(DATA_CACHE_KEY.PANORAMA_GLOBAL_TECH, globalTech.value);
 };
 
-/** 拉取当前模块数据（成功后写快照；全景 tab = 美股 + 科技巨头 + 宏观串行错峰，其余由组件自管） */
-const loadActiveModule = async (): Promise<void> => {
-  if (isSelfManagedModule.value) return;
+/** 拉取全部宿主自管模块（成功后写快照；美股 → 科技巨头 → 宏观串行错峰，任一失败不清空已有快照） */
+const loadAll = async (): Promise<void> => {
   isLoading.value = true;
   isError.value = false;
   try {
-    if (activeModule.value === 'overview') {
-      // 美股 → 科技巨头 → 宏观串行错峰（同一 push2delay 上游），任一失败不清空已有快照
-      try {
-        await fetchUsBoards();
-      } catch (error) {
-        console.error('[panorama] us', error);
-      }
-      await delay(REQUEST_GAP_MS);
-      try {
-        await fetchGlobalTech();
-      } catch (error) {
-        console.error('[panorama] global tech', error);
-      }
-      await delay(REQUEST_GAP_MS);
-      macroGroups.value = await fetchMacro();
-      dataCache.set(DATA_CACHE_KEY.PANORAMA_MACRO, macroGroups.value);
+    try {
+      await fetchUsBoards();
+    } catch (error) {
+      console.error('[panorama] us', error);
     }
+    await delay(REQUEST_GAP_MS);
+    try {
+      await fetchGlobalTech();
+    } catch (error) {
+      console.error('[panorama] global tech', error);
+    }
+    await delay(REQUEST_GAP_MS);
+    macroGroups.value = await fetchMacro();
+    dataCache.set(DATA_CACHE_KEY.PANORAMA_MACRO, macroGroups.value);
   } catch (error) {
     console.error('[panorama]', error);
     isError.value = true;
@@ -181,33 +128,29 @@ const loadActiveModule = async (): Promise<void> => {
   }
 };
 
-// 首次进入全景 tab 时拉取一次（重接口不轮询，避免触发上游反爬；其余 tab 组件自管）
-if (activeModule.value === 'overview') {
-  void loadActiveModule();
-}
+// 首次进入拉取一次（美股 / 宏观重接口不轮询兜底之外的部分，避免触发上游反爬）
+void loadAll();
 
-// KeepAlive 缓存页面：切走再切回不重新挂载，重拉当前非自管模块（快照秒出后静默覆盖；
+// KeepAlive 缓存页面：切走再切回不重新挂载，重拉全部模块（快照秒出后静默覆盖；
 // 首次 onActivated 紧跟首屏触发，跳过避免重复请求；宏观无轮询兜底，这里是它唯一的自动刷新点）
-let panoramaActivatedOnce = false;
+let overviewActivatedOnce = false;
 onActivated(() => {
-  if (!panoramaActivatedOnce) {
-    panoramaActivatedOnce = true;
+  if (!overviewActivatedOnce) {
+    overviewActivatedOnce = true;
     return;
   }
-  if (!isSelfManagedModule.value && !isLoading.value) {
-    void loadActiveModule();
+  if (!isLoading.value) {
+    void loadAll();
   }
 });
 
 // 美股全景轮询：仅在美股轮询窗口（21:30-24:00 与 00:00-04:00）内按间隔刷新，
-// 窗口外与非全景 tab 自动跳过；科技巨头与行业 ETF 同窗口错峰刷新
+// 窗口外自动跳过；科技巨头与行业 ETF 同窗口错峰刷新
 usePolling({
   task: async () => {
-    if (activeModule.value === 'overview') {
-      await fetchUsBoards();
-      await delay(REQUEST_GAP_MS);
-      await fetchGlobalTech();
-    }
+    await fetchUsBoards();
+    await delay(REQUEST_GAP_MS);
+    await fetchGlobalTech();
   },
   intervalMs: POLLING_INTERVAL.US_BOARDS,
   tradingAware: true,
@@ -220,9 +163,7 @@ usePolling({
 // 盖不住；与美股窗口（21:30-04:00）不重叠，两个轮询器不会并发打同一上游
 usePolling({
   task: async () => {
-    if (activeModule.value === 'overview') {
-      await fetchGlobalTech();
-    }
+    await fetchGlobalTech();
   },
   intervalMs: POLLING_INTERVAL.US_BOARDS,
   tradingAware: true,
@@ -230,23 +171,7 @@ usePolling({
   immediate: false,
 });
 
-/**
- * 切换模块：自管组件面板直接展示；全景 tab 有快照直接展示，无快照则拉取
- */
-const onSelectModule = (): void => {
-  isError.value = false;
-  if (isSelfManagedModule.value) {
-    isLoading.value = false;
-    return;
-  }
-  if (usBoards.value.length > 0 || globalTech.value.length > 0 || macroGroups.value.length > 0) {
-    isLoading.value = false;
-    return;
-  }
-  void loadActiveModule();
-};
-
-/** 全景 tab 是否无数据（失败 / 空集且无快照） */
+/** 是否无数据（失败 / 空集且无快照） */
 const isEmpty = computed(
   () =>
     !isLoading.value &&
@@ -276,40 +201,11 @@ const toggleCard = (cardId: string): void => {
   settingsStore.togglePanoramaCardCollapsed(cardId);
 };
 
-// ---------- 手动刷新（2026-11-02 王总指定：各 tab 补刷新按钮） ----------
+// ---------- 手动刷新（沿用原行情全景页头刷新按钮，2026-11-02 王总指定） ----------
 
-/** 行业龙头面板实例（调用其暴露的 refresh / loading） */
-const leadersRef = ref<InstanceType<typeof PanoramaLeadersBoard> | null>(null);
-/** 大A个股面板实例 */
-const stocksRef = ref<InstanceType<typeof StockMarketView> | null>(null);
-/** 港股个股面板实例 */
-const hkStocksRef = ref<InstanceType<typeof HongKongMarketView> | null>(null);
-
-/** 自管 tab 当前的拉取中状态（无实例时 false，按钮旋转动画用） */
-const selfManagedLoading = computed(() => {
-  if (activeModule.value === 'leaders') return leadersRef.value?.loading ?? false;
-  if (activeModule.value === 'stocks') return stocksRef.value?.loading ?? false;
-  if (activeModule.value === 'hkStocks') return hkStocksRef.value?.loading ?? false;
-  return false;
-});
-
-/** 刷新按钮是否旋转中（全景 tab 复用 isLoading；自管 tab 读组件暴露的 loading） */
-const isRefreshing = computed(() =>
-  activeModule.value === 'overview' ? isLoading.value : selfManagedLoading.value,
-);
-
-/**
- * 点刷新按钮：重拉当前 tab 全部模块数据
- * （全景 = A股板块 + 美股 ETF + 科技巨头 + 全球宏观；其余 tab 调组件暴露的 refresh）
- */
+/** 点刷新按钮：重拉美股 + 科技巨头 + 全球宏观（A股板块由 PanoramaCnBoard 自管轮询） */
 const onManualRefresh = (): void => {
-  if (activeModule.value === 'overview') {
-    void loadActiveModule();
-    return;
-  }
-  if (activeModule.value === 'leaders') leadersRef.value?.refresh();
-  else if (activeModule.value === 'stocks') stocksRef.value?.refresh();
-  else if (activeModule.value === 'hkStocks') hkStocksRef.value?.refresh();
+  void loadAll();
 };
 
 /** 页头挂载守卫（KeepAlive 缓存页：激活才投射，防按钮残留）——刷新按钮上移页头用 */
@@ -318,65 +214,41 @@ const { active: headerSlotActive } = usePageHeaderSlot();
 
 <template>
   <div class="flex h-full min-h-0 flex-col gap-4">
-    <div class="flex shrink-0 items-center justify-between gap-2">
-      <div class="flex items-center gap-1">
-        <BaseTabs
-          v-model="activeModule"
-          :options="moduleTabOptions"
-          variant="underline"
-          @update:model-value="onSelectModule"
-        />
-        <TabConfigButton page-id="panorama" :options="MODULE_TABS" />
-      </div>
-      <!-- 提示为辅助信息：容器过窄（抽屉打开挤主区）时整体隐藏，避免被挤成一字一行竖排 -->
+    <!-- 提示为辅助信息：容器过窄（抽屉打开挤主区）时整体隐藏，避免被挤成一字一行竖排 -->
+    <div class="flex shrink-0 items-center justify-end">
       <span class="hidden shrink-0 text-xs text-text-tertiary @4xl:block">未开盘时展示最近交易日收盘数据</span>
     </div>
 
-    <!-- 手动刷新上移 MainLayout 页头（2026-11-02 王总指定，「插件设置」左侧）：
-         重拉当前 tab 全部模块数据，拉取中图标旋转 -->
+    <!-- 手动刷新上移 MainLayout 页头（原行情全景 2026-11-02 王总指定，「插件设置」左侧）：
+         重拉美股 + 科技巨头 + 全球宏观，拉取中图标旋转 -->
     <Teleport v-if="headerSlotActive" :to="PAGE_HEADER_ACTIONS_TARGET">
       <BaseButton
         variant="ghost"
-        :disabled="isRefreshing"
+        :disabled="isLoading"
         @click="onManualRefresh"
       >
-        <MenuIcon name="refresh" :size="14" :class="{ 'animate-spin': isRefreshing }" />
-        {{ isRefreshing ? '刷新中…' : '刷新' }}
+        <MenuIcon name="refresh" :size="14" :class="{ 'animate-spin': isLoading }" />
+        {{ isLoading ? '刷新中…' : '刷新' }}
       </BaseButton>
     </Teleport>
 
-    <!-- 模块内容统一滚动容器：页签行固定不动（2026-10-26 王总指定），
-         全景三卡等多内容模块在此滚动，不再把整页撑出去带动页签滚走 -->
+    <!-- 模块内容统一滚动容器：四组卡片在此滚动 -->
     <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
-      <!-- 行业龙头：板块 / 细分赛道静态清单卡片流（数据自管，ref 供刷新按钮调用） -->
-      <PanoramaLeadersBoard ref="leadersRef" v-if="activeModule === 'leaders'" class="min-h-0 flex-1" />
-
-      <!-- 大A个股：原侧栏「个股行情」页整卡并入（数据 / 轮询 / 翻页自管，v-if 挂载即启停轮询）；
-           卡片吃满高度、仅表格内滚（.table-scroll-fill，2026-11-03 王总指定去外层滚动条） -->
-      <div v-else-if="activeModule === 'stocks'" class="flex min-h-0 flex-1 flex-col">
-        <StockMarketView ref="stocksRef" />
-      </div>
-
-      <!-- 港股个股：同花顺港股板块分页表（数据 / 轮询 / 翻页自管，挂载结构与大A个股同款） -->
-      <div v-else-if="activeModule === 'hkStocks'" class="flex min-h-0 flex-1 flex-col">
-        <HongKongMarketView ref="hkStocksRef" />
-      </div>
-
-      <!-- 加载骨架（全景：美股 / 宏观首载） -->
-      <BaseCard v-else-if="isLoading">
+      <!-- 加载骨架（美股 / 宏观首载） -->
+      <BaseCard v-if="isLoading">
         <div class="grid grid-cols-4 gap-2" aria-hidden="true">
           <div v-for="i in 12" :key="i" class="h-11 animate-pulse rounded-lg bg-flat-weak" />
         </div>
       </BaseCard>
 
-      <!-- 失败 / 空态（全景） -->
+      <!-- 失败 / 空态 -->
       <BaseCard v-else-if="isEmpty">
         <BaseEmpty text="数据加载失败或暂无数据，请稍后重试（上游可能限频）" />
       </BaseCard>
 
-      <!-- 全景：四组卡片竖向分布（A股 36 板块平铺 / 国外科技巨头 / 美股行业 ETF / 全球宏观），
+      <!-- 四组卡片竖向分布（A股 36 板块平铺 / 国外科技巨头 / 美股行业 ETF / 全球宏观），
            均支持展开收起（默认展开，折叠态持久化） -->
-      <template v-else-if="activeModule === 'overview'">
+      <template v-else>
         <PanoramaCnBoard
           class="shrink-0"
           collapsible

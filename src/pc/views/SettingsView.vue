@@ -498,6 +498,7 @@ const pollingDetailModalOpen = ref(false);
 const QUOTES_SEC = POLLING_INTERVAL.QUOTES_INTRADAY / 1000;
 const BREADTH_SEC = POLLING_INTERVAL.MARKET_BREADTH / 1000;
 const US_SEC = POLLING_INTERVAL.US_BOARDS / 1000;
+const GOLD_PRICE_SEC = POLLING_INTERVAL.GOLD_PRICE / 1000;
 
 /** 轮询明细行（弹窗表格展示用） */
 interface PollingDetailRow {
@@ -517,10 +518,15 @@ interface PollingDetailRow {
 const POLLING_DETAIL_ROWS: PollingDetailRow[] = [
   { page: "市场总览", target: "全球指数报价", interval: `${QUOTES_SEC} 秒`, window: "不限（全天）" },
   { page: "市场总览", target: "指数卡片行情", interval: `${QUOTES_SEC} 秒`, window: "A 股交易时段" },
+  { page: "市场总览", target: "当日金价（金店品牌挂牌价 / 伦敦金 / 汇率）", interval: `${GOLD_PRICE_SEC} 秒`, window: "不限（全天）" },
   { page: "市场总览", target: "市场宽度（全市场快照 / 行业板块 / 资金流）", interval: `${BREADTH_SEC} 秒`, window: "A 股交易时段" },
   { page: "自选股", target: "当前分组自选行情", interval: `${QUOTES_SEC} 秒`, window: "A 股交易时段" },
-  { page: "行情全景 · A 股", target: "行业 / 概念板块排行", interval: `${BREADTH_SEC} 秒`, window: "A 股交易时段" },
-  { page: "行情全景 · 美股", target: "美股板块行情", interval: `${US_SEC} 秒`, window: "美股交易时段" },
+  { page: "全景 · A股板块平铺", target: "36 板块快照", interval: `${BREADTH_SEC} 秒`, window: "A 股交易时段" },
+  { page: "全景 · 美股 / 科技巨头", target: "美股行业 ETF / 国外科技巨头", interval: `${US_SEC} 秒`, window: "美股交易时段" },
+  { page: "全景 · 科技巨头（亚太）", target: "日韩科技巨头清单", interval: `${US_SEC} 秒`, window: "亚太交易时段（周一~五 08:00-14:30）" },
+  { page: "大A个股", target: "同花顺行情中心当前页", interval: "30 秒", window: "A 股交易时段" },
+  { page: "港股个股", target: "同花顺港股行情中心当前页", interval: "30 秒", window: "港股交易时段" },
+  { page: "龙头", target: "龙头清单报价", interval: `${QUOTES_SEC} 秒`, window: "A 股交易时段" },
   { page: "资金动向", target: "全市场榜单（涨幅 / 成交额 / 换手率）", interval: `${BREADTH_SEC} 秒`, window: "A 股交易时段" },
   { page: "盘面雷达 · 异动", target: "盘口 / 板块异动（含涨停股池）", interval: "跟随设置的刷新间隔", window: "A 股交易时段" },
   { page: "板块日历", target: "当日数据采集 + 重读", interval: `${BREADTH_SEC} 秒`, window: "A 股交易时段" },

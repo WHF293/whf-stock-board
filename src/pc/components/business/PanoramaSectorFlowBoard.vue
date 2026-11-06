@@ -14,7 +14,6 @@ import { useSettingsStore } from '../../../common/stores/settings';
 import { useNotificationsStore } from '../../../common/stores/notifications';
 import { requestAgentAnalysis } from '../../agent/agent-bridge';
 import { buildRankAnalysisPrompt } from '../../../common/utils/build-rank-analysis-prompt';
-import { exportSheetsToExcel } from '../../../common/utils/export-excel';
 import { DATA_CACHE_KEY } from '../../../common/constants/data-cache.constants.ts';
 import { HOST_HEADER_ITEM } from '../../../common/constants/header.constants.ts';
 import { NOTIFY_TONE } from '../../../common/constants/notify.constants.ts';
@@ -44,7 +43,7 @@ import { usePageHeaderSlot, PAGE_HEADER_ACTIONS_TARGET } from '../../../common/c
  *   曲线本体进 dataCache 内存快照，已选板块经 appStorage 跨会话持久化；
  *   「选择板块」弹窗的候选 = 写死的 36 板块清单（不依赖榜单请求）；
  * - 「查看历史净流入」跳独立子页（逐日历史渐进累积落本地，见 sector-flow-history.api）；
- * - 页级动作（AI 分析 / 导出 Excel，榜单数据自包含）上移所在页面的页头，经 Teleport 投射
+ * - 页级动作（AI 分析，榜单数据自包含）上移所在页面的页头，经 Teleport 投射
  */
 
 const router = useRouter();
@@ -392,7 +391,7 @@ const goSectorFlowHistory = (): void => {
   );
 };
 
-// ---------- 工具条：AI 分析 + 导出 Excel（榜单数据自包含；按钮上移页面页头） ----------
+// ---------- 工具条：AI 分析（榜单数据自包含；按钮上移页面页头） ----------
 
 const settingsStore = useSettingsStore();
 const notifications = useNotificationsStore();
@@ -405,10 +404,10 @@ const agentEntryVisible = computed(
 /** 页头动作挂载守卫：宿主页激活时按钮才出现在页头（KeepAlive 的 activated 下发到子组件） */
 const { active: headerSlotActive } = usePageHeaderSlot();
 
-/** 榜单类型名（AI 分析提示词与导出文件名共用） */
+/** 榜单类型名（AI 分析提示词用） */
 const RANK_LABEL = '板块净流入';
 
-/** 榜单导出列（表格列 + 代码 / 领涨股） */
+/** 榜单数据列（AI 分析提示词用；表格列 + 代码 / 领涨股） */
 const sectorExportColumns: { label: string; key: string }[] = [
   { key: 'name', label: '板块' },
   { key: 'code', label: '代码' },
@@ -416,19 +415,6 @@ const sectorExportColumns: { label: string; key: string }[] = [
   { key: 'mainNetInflow', label: '主力净流入(元)' },
   { key: 'topStockName', label: '领涨股' },
 ];
-
-/**
- * 导出文件名时间戳
- * @returns YYYYMMDD-HHmm 格式时间戳
- */
-const exportStamp = (): string => {
-  const now = new Date();
-  const pad = (value: number): string => String(value).padStart(2, '0');
-  return (
-    `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}` +
-    `-${pad(now.getHours())}${pad(now.getMinutes())}`
-  );
-};
 
 /** 「AI 分析」：把板块净流入榜单数据 + 榜单类型交给 Agent 分析 */
 const onRankAiAnalysis = (): void => {
@@ -450,50 +436,16 @@ const onRankAiAnalysis = (): void => {
   void requestAgentAnalysis(prompt);
 };
 
-/** 「导出 Excel」：把板块净流入榜单导出为 .xlsx */
-const onRankExport = async (): Promise<void> => {
-  if (sectorRank.value.length === 0) {
-    notifications.push({
-      title: '暂无可导出的榜单数据',
-      body: '请等待板块净流入榜单加载完成后再导出',
-      tone: NOTIFY_TONE.FLAT,
-    });
-    return;
-  }
-  try {
-    await exportSheetsToExcel(
-      [
-        {
-          name: RANK_LABEL,
-          rows: sectorRank.value as unknown as Record<string, unknown>[],
-          columns: sectorExportColumns,
-        },
-      ],
-      `行情全景-${RANK_LABEL}-${exportStamp()}`,
-    );
-  } catch (error) {
-    console.error('[panorama-sector-flow] export', error);
-    notifications.push({
-      title: '导出失败',
-      body: '榜单数据导出 Excel 失败，请稍后重试',
-      tone: NOTIFY_TONE.FLAT,
-    });
-  }
-};
 </script>
 
 <template>
   <BaseCard fill class="min-h-0 flex-1">
-    <!-- 页级动作上移页面页头：AI 分析 / 导出 Excel（Teleport 投射，宿主页激活时才挂载） -->
+    <!-- 页级动作上移页面页头：AI 分析（Teleport 投射，宿主页激活时才挂载） -->
     <Teleport v-if="headerSlotActive" :to="PAGE_HEADER_ACTIONS_TARGET">
       <div class="flex items-center gap-2">
         <BaseButton v-if="agentEntryVisible" variant="ghost" @click="onRankAiAnalysis">
           <MenuIcon name="agent" :size="14" />
           AI 分析
-        </BaseButton>
-        <BaseButton variant="ghost" @click="onRankExport">
-          <MenuIcon name="export" :size="14" />
-          导出 Excel
         </BaseButton>
       </div>
     </Teleport>
