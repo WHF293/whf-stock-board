@@ -11,6 +11,10 @@
  * `usePlugins()` 会直接调 `pluginKernel.setEnabled()`，内核即时卸载 / 重挂。
  */
 import * as vueRuntime from 'vue';
+import * as echartsCore from 'echarts/core';
+// ECharts 按需注册副作用：插件从运行时桥拿到的 echarts/core 与宿主同模块，
+// 这里提前 use() 保证插件 init 之前图表 / 组件已注册（宿主图表组件也是同一份注册表）
+import '../components/charts/echarts-setup';
 import {
   flattenSidebarMenuGroups,
   groupSidebarMenu,
@@ -219,7 +223,7 @@ export const installPlugins = (pinia?: Pinia): void => {
   // 0. 运行时桥必须在**任何插件模块求值之前**挂好：第三方产物里的 `.vue` 编译结果
   //    会在模块顶层建 vnode，那时 apply 还没跑，拿不到 ctx.vue
   (globalThis as unknown as Record<string, unknown>)[PLUGIN_RUNTIME_BRIDGE_KEY] =
-    Object.freeze({ vue: vueRuntime });
+    Object.freeze({ vue: vueRuntime, echarts: echartsCore });
 
   const pluginStore = pinia ? usePluginStore(pinia) : usePluginStore();
   const userPluginsStore = pinia

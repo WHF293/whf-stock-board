@@ -13,6 +13,9 @@
 import * as vueRuntime from 'vue';
 import { computed } from 'vue';
 import { closeNotify, showConfirmDialog, showNotify, showToast } from 'vant';
+import * as echartsCore from 'echarts/core';
+// ECharts 按需注册副作用（与 PC 同约定）：插件从运行时桥拿同一份 echarts/core
+import '../components/echarts-setup';
 import { APP_VERSION } from '../../common/constants/app-info.constants.ts';
 import {
   NOTIFY_TONE,
@@ -174,7 +177,7 @@ export const installMobilePlugins = (pinia?: Pinia): void => {
 
   // 0. 运行时桥必须在**任何插件模块求值之前**挂好（与 PC 同一条约定）
   (globalThis as unknown as Record<string, unknown>)[PLUGIN_RUNTIME_BRIDGE_KEY] =
-    Object.freeze({ vue: vueRuntime });
+    Object.freeze({ vue: vueRuntime, echarts: echartsCore });
 
   const pluginStore = pinia ? usePluginStore(pinia) : usePluginStore();
   const userPluginsStore = pinia ? useUserPluginsStore(pinia) : useUserPluginsStore();
