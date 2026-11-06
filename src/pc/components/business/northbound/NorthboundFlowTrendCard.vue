@@ -25,6 +25,7 @@ import BaseCard from '../../ui/BaseCard.vue';
 import BaseEmpty from '../../ui/BaseEmpty.vue';
 import BaseSkeleton from '../../ui/BaseSkeleton.vue';
 import BaseChart from '../../charts/BaseChart.vue';
+import MenuIcon from '../../ui/MenuIcon.vue';
 
 /**
  * 南向资金历史卡（资金流向页行 4）
@@ -34,10 +35,15 @@ import BaseChart from '../../charts/BaseChart.vue';
  * 方向固定南向——北向每日净买额停披露且无公开替代来源（2026-10-30 王总指定删除
  * 北向展示），API 层仍保留北向历史查询能力（2024-08-19 前为真实数据）供 MCP 使用；
  * 明细表的成交额列照常有值。数据层放 common，本组件为 PC 视图
+ *
+ * 明细表折叠：2026-11-06 王总指定，展开开关放在范围切换按钮左边，默认收起不显示
  */
 
 /** 明细表展示行数（最近 N 个交易日） */
 const DETAIL_ROW_COUNT = 6;
+
+/** 明细表是否展开（默认收起，开关在范围切换按钮左边，2026-11-06 王总指定） */
+const isDetailExpanded = ref(false);
 
 /** 历史卡图表高度（像素） */
 const CHART_HEIGHT_PX = 200;
@@ -242,7 +248,25 @@ const openLeadStockPage = (code: string | null): void => {
 <template>
   <BaseCard title="南向资金历史">
     <template #extra>
-      <BaseTabs v-model="range" :options="NORTHBOUND_HISTORY_RANGE_OPTIONS" />
+      <div class="flex items-center gap-2">
+        <!-- 明细表展开/收起（默认收起，2026-11-06 王总指定） -->
+        <button
+          type="button"
+          class="pressable flex items-center rounded px-1.5 py-0.5 text-xs text-text-tertiary hover:bg-flat-weak hover:text-text"
+          :aria-expanded="isDetailExpanded"
+          aria-label="每日明细"
+          @click="isDetailExpanded = !isDetailExpanded"
+        >
+          <MenuIcon
+            name="chevronDown"
+            :size="13"
+            class="mr-0.5 transition-transform"
+            :class="isDetailExpanded ? 'rotate-180' : ''"
+          />
+          每日明细
+        </button>
+        <BaseTabs v-model="range" :options="NORTHBOUND_HISTORY_RANGE_OPTIONS" />
+      </div>
     </template>
 
     <BaseSkeleton v-if="isLoading" class="h-[300px]" />
@@ -250,7 +274,8 @@ const openLeadStockPage = (code: string | null): void => {
     <template v-else>
       <BaseChart :options="option" :style="{ height: `${CHART_HEIGHT_PX}px` }" />
 
-      <div class="mt-3 overflow-x-auto">
+      <!-- 每日明细表：默认收起，展开开关在范围切换按钮左边（2026-11-06 王总指定） -->
+      <div v-if="isDetailExpanded" class="mt-3 overflow-x-auto">
         <table class="w-full min-w-[620px] whitespace-nowrap text-xs">
           <thead>
             <tr class="border-b border-flat-weak text-left text-text-tertiary">

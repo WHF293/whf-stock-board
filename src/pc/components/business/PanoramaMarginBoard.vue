@@ -7,6 +7,7 @@ import BaseEmpty from '../ui/BaseEmpty.vue';
 import BaseSkeleton from '../ui/BaseSkeleton.vue';
 import BaseTabs from '../ui/BaseTabs.vue';
 import BaseTable from '../ui/BaseTable.vue';
+import MenuIcon from '../ui/MenuIcon.vue';
 import {
   CHART_AXIS_LINE_COLOR,
   CHART_LINE_BLUE,
@@ -43,6 +44,8 @@ import { handleSdkError } from '../../../common/utils/handle-sdk-error';
  *   担保比例 / 参与投资者数），与市场总览「融资融券」卡同源
  * - 标的表：默认按融资余额降序，列头可排序；行单击 → 右侧个股侧栏，
  *   双击 → 个股详情整页（全站统一交互，双击携带来源列表）
+ * - 明细表折叠：2026-11-06 王总指定，展开开关放在曲线「日期范围」按钮左边，
+ *   默认收起不渲染表格（数千行明细按需挂载，进页更轻）
  *
  * 数据时效：交易所次一交易日公布两融数据，最新一期通常是上一交易日（正常时效）
  */
@@ -256,6 +259,9 @@ const BALANCE_RANGE_OPTIONS = [
 
 /** 曲线当前范围（天） */
 const balanceRange = ref<string>('30');
+
+/** 个股明细表是否展开（2026-11-06 王总指定：默认收起，开关在曲线范围按钮左边） */
+const isTargetsExpanded = ref(false);
 
 /** 叠加对比的指数（腾讯形态符号 + 展示名 + 曲线色；涨跌幅走右轴） */
 const INDEX_OVERLAYS = [
@@ -472,12 +478,33 @@ const onRowDblclick = (row: MarginTargetItem): void => {
       <div class="mb-4">
         <div class="mb-1 flex items-center justify-between gap-2">
           <p class="text-sm font-semibold text-text">融资余额走势</p>
-          <BaseTabs v-model="balanceRange" :options="BALANCE_RANGE_OPTIONS" aria-label="曲线范围" />
+          <div class="flex items-center gap-2">
+            <!-- 个股明细展开/收起（默认收起，2026-11-06 王总指定） -->
+            <button
+              type="button"
+              class="pressable flex items-center rounded px-1.5 py-0.5 text-xs text-text-tertiary hover:bg-flat-weak hover:text-text"
+              :aria-expanded="isTargetsExpanded"
+              aria-label="个股明细"
+              @click="isTargetsExpanded = !isTargetsExpanded"
+            >
+              <MenuIcon
+                name="chevronDown"
+                :size="13"
+                class="mr-0.5 transition-transform"
+                :class="isTargetsExpanded ? 'rotate-180' : ''"
+              />
+              个股明细
+            </button>
+            <BaseTabs v-model="balanceRange" :options="BALANCE_RANGE_OPTIONS" aria-label="曲线范围" />
+          </div>
         </div>
         <BaseChart :options="balanceChartOption" :style="{ height: '220px' }" />
       </div>
 
+      <!-- 个股明细表：默认收起，开关在曲线范围按钮左边（2026-11-06 王总指定）；
+           v-if 按需挂载，数千行明细收起时不进 DOM -->
       <BaseTable
+        v-if="isTargetsExpanded"
         :columns="columns"
         :rows="sortedRows"
         :row-key="rowKey"
