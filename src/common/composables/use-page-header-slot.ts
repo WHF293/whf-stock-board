@@ -9,7 +9,7 @@ export const PAGE_HEADER_ACTIONS_TARGET = `#${PAGE_HEADER_ACTIONS_ID}`;
 /**
  * 页级动作挂载守卫
  *
- * 背景：页级动作按钮（AI 分析 / 导出 Excel / 新闻源设置等）从页面内工具条
+ * 背景：页级动作按钮（AI 分析 / 新闻源设置等）从页面内工具条
  * 上移到 MainLayout 页头右侧，视图经 `<Teleport :to="PAGE_HEADER_ACTIONS_TARGET">`
  * 投射过去。被路由 KeepAlive 缓存的页面在离开时组件并不卸载，Teleport
  * 内容也不会自动撤离挂载点——不守卫的话，上一页的按钮会一直留在页头，

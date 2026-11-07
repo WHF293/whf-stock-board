@@ -37,7 +37,7 @@ import { WEBLOG_ENABLED_DEFAULT } from '../constants/weblog.constants.ts';
 import { MENU_DEFAULT_ORDER } from '../constants/router-meta.constants.ts';
 import { SIDEBAR_MENU_GROUP_DEFAULT_ORDER } from '../constants/sidebar-group.constants.ts';
 import { HEADER_DEFAULT_ORDER } from '../constants/header.constants.ts';
-import { PANORAMA_CN_VIEW_MODE_DEFAULT } from '../constants/panorama.constants.ts';
+import { PANORAMA_CARD_DEFAULT_ORDER, PANORAMA_CN_VIEW_MODE_DEFAULT } from '../constants/panorama.constants.ts';
 import {
   CHART_MAIN_INDICATORS_DEFAULT,
   CHART_SUB_INDICATORS_DEFAULT,
@@ -86,6 +86,8 @@ interface SettingsState {
   panoramaCnViewMode: PanoramaCnViewMode;
   /** 行情全景 · 被收起的卡片 id（全景 tab 四组卡展开收起，2026-11-03 王总指定；空 = 全部展开） */
   panoramaCollapsedCards: string[];
+  /** 全景页 · 四组卡片顺序（存卡片 id 数组，2026-11-07 王总指定模块排序；缺省按 PANORAMA_CARD_DEFAULT_ORDER） */
+  panoramaModuleOrder: string[];
   /** 左侧导航栏是否收起 */
   sidebarCollapsed: boolean;
   /** 左侧导航顺序（存路由 path 数组；默认按 MENU_ITEMS 声明顺序，插件菜单追加末尾） */
@@ -165,6 +167,7 @@ export const useSettingsStore = defineStore('settings', {
     heatmapViewMode: HEATMAP_VIEW_MODE_DEFAULT,
     panoramaCnViewMode: PANORAMA_CN_VIEW_MODE_DEFAULT,
     panoramaCollapsedCards: [],
+    panoramaModuleOrder: [...PANORAMA_CARD_DEFAULT_ORDER],
     sidebarCollapsed: SIDEBAR_COLLAPSED_DEFAULT,
     menuOrder: [...MENU_DEFAULT_ORDER],
     menuGroupOrder: [...SIDEBAR_MENU_GROUP_DEFAULT_ORDER],
@@ -252,6 +255,14 @@ export const useSettingsStore = defineStore('settings', {
     } else {
       this.panoramaCollapsedCards.push(cardId);
     }
+  },
+
+  /**
+   * 设置全景页四组卡片顺序（模块排序弹窗确认，2026-11-07 王总指定）
+   * @param order 卡片 id 数组（完整排列；未知 id 由消费方归一化剔除）
+   */
+  setPanoramaModuleOrder(order: string[]): void {
+    this.panoramaModuleOrder = [...order];
   },
 
     /**

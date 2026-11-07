@@ -118,10 +118,12 @@ const option = computed<EChartsCoreOption>(() => {
     tooltip: {
       trigger: 'axis',
       formatter: (params: unknown) => {
+        // ECharts 对 data 里的 null 在 tooltip params 中给的是字符串 '-'（非 null），
+        // 必须按「有限数值」过滤，否则 '-' × 单位换算会渲染成 NaN 万（2026-11-06 实测）
         const list = params as { axisValue: string; value: number | null; marker: string; seriesName: string }[];
         const date = list[0]?.axisValue ?? '';
         const lines = list
-          .filter((item) => item.value !== null)
+          .filter((item) => typeof item.value === 'number' && Number.isFinite(item.value))
           .map(
             (item) =>
               `${item.marker}${item.seriesName}：${formatNorthboundAmount({ value: item.value, source: 'yuan' })}`,

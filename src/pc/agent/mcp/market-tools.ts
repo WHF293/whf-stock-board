@@ -3,7 +3,7 @@
  *
  * 把 src/api 下已有但**从未暴露给 Agent** 的数据能力封装成 MCP 工具：
  * 大盘概览、资金流向（大盘/板块/个股/北向）、板块涨跌、涨停池、盘口异动、
- * 龙虎榜、大宗交易、全球指数、美股板块、多源热点新闻与热词。
+ * 龙虎榜、大宗交易、全球指数、美股基金主题、多源热点新闻与热词。
  *
  * 设计约束（延续既有约定）：
  * - 全部为**只读**工具（不落库、不改状态）；
@@ -173,7 +173,7 @@ export const MARKET_DATA_MCP_SERVER: BuiltinMcpServer = {
   key: 'market-data',
   name: '市场数据（内置）',
   description:
-    '大盘概览、资金流向（大盘/板块/个股/北向、板块分时资金曲线、板块逐日资金历史）、板块涨跌、涨停池、盘口异动、龙虎榜、大宗交易、全球指数、美股板块、多源热点新闻与热词',
+    '大盘概览、资金流向（大盘/板块/个股/北向、板块分时资金曲线、板块逐日资金历史）、板块涨跌、涨停池、盘口异动、龙虎榜、大宗交易、全球指数、美股基金主题、多源热点新闻与热词',
   tools: [
     entry({
       name: 'get_market_overview',
@@ -734,7 +734,7 @@ export const MARKET_DATA_MCP_SERVER: BuiltinMcpServer = {
     }),
     entry({
       name: 'get_us_sector',
-      description: '获取美股板块行情（板块名称与涨跌幅），用于观察外围行业层面的风险偏好',
+      description: '获取美股基金主题行情（2026-11-07 起：AI 算力 / 半导体 / 核电等 26 个产业主题，数值为主题成分标的的平均涨跌幅；美股盘前时段为盘前口径），用于观察外围行业层面的风险偏好与推算大A次日情绪',
       schema: z.object({
         limit: z.number().int().min(1).max(50).default(DEFAULT_ROWS).describe('返回条数（默认 20）'),
       }),

@@ -38,7 +38,12 @@ export const WEBLOG_ACTIONS = {
   // ---------- 页面显示（每个路由一个；路由清单见 constants/router-meta.constants.ts） ----------
   PAGE_DASHBOARD: { category: 'page', label: '进入市场总览' },
   PAGE_MARKET_RANK: { category: 'page', label: '进入市场榜单' },
-  PAGE_PANORAMA: { category: 'page', label: '进入行情全景' },
+  // 行情全景页 2026-11-06 拆分为 全景 / 龙头 / 大A个股 / 港股个股 四页：
+  // PAGE_PANORAMA 键沿用（/panorama 路径由「全景」页承接，历史日志文案不改名）
+  PAGE_PANORAMA: { category: 'page', label: '进入全景' },
+  PAGE_A_STOCK: { category: 'page', label: '进入大A个股' },
+  PAGE_HK_STOCK: { category: 'page', label: '进入港股个股' },
+  PAGE_LEADERS: { category: 'page', label: '进入龙头' },
   PAGE_BOARD_CALENDAR: { category: 'page', label: '进入板块日历' },
   PAGE_MARKET_MOOD: { category: 'page', label: '进入市场异动' },
   PAGE_WATCHLIST: { category: 'page', label: '进入自选股' },
@@ -63,6 +68,15 @@ export const WEBLOG_ACTIONS = {
   NAV_SETTINGS_OPEN: { category: 'navbar', label: '打开设置抽屉' },
   NAV_SYSTEM_LOG_OPEN: { category: 'navbar', label: '打开系统日志页' },
   NAV_SHORTCUT: { category: 'navbar', label: '使用全局快捷键' },
+
+  // ---------- 页头快捷入口（不入菜单页面从宿主页头按钮进入；2026-11-06 行情全景拆分起登记，
+  // 此前的 DASHBOARD_OPEN_WIDE_BASE_ETF / MARKET_RANK_TAB_SETTINGS 未登记，落 CLICK_ELEMENT 兜底） ----------
+  PANORAMA_MODULE_ORDER: { category: 'navbar', label: '打开全景模块排序弹窗' },
+  DASHBOARD_OPEN_LEADERS: { category: 'navbar', label: '打开龙头页（市场总览页头）' },
+  DASHBOARD_OPEN_PANORAMA: { category: 'navbar', label: '打开全景页（市场总览页头）' },
+  DASHBOARD_OPEN_FUTURES: { category: 'navbar', label: '打开期货总览页（市场总览页头）' },
+  MARKET_RANK_OPEN_A_STOCK: { category: 'navbar', label: '打开大A个股页（盘面雷达页头）' },
+  MARKET_RANK_OPEN_HK_STOCK: { category: 'navbar', label: '打开港股个股页（盘面雷达页头）' },
 
   // ---------- 接口请求 ----------
   API_REQUEST: { category: 'api', label: '接口请求' },
@@ -153,6 +167,10 @@ export const WEBLOG_PAGE_ACTION_BY_PATH: Record<string, WeblogActionKey> = {
   [ROUTE_PATH.DASHBOARD]: 'PAGE_DASHBOARD',
   [ROUTE_PATH.MARKET_RANK]: 'PAGE_MARKET_RANK',
   [ROUTE_PATH.PANORAMA]: 'PAGE_PANORAMA',
+  // 行情全景 2026-11-06 拆分的三个新页（全景沿用 /panorama 原映射）
+  [ROUTE_PATH.LEADERS]: 'PAGE_LEADERS',
+  [ROUTE_PATH.STOCK_MARKET]: 'PAGE_A_STOCK',
+  [ROUTE_PATH.HK_STOCK]: 'PAGE_HK_STOCK',
   [ROUTE_PATH.BOARD_CALENDAR]: 'PAGE_BOARD_CALENDAR',
   [ROUTE_PATH.MARKET_MOOD]: 'PAGE_MARKET_MOOD',
   [ROUTE_PATH.WATCHLIST]: 'PAGE_WATCHLIST',

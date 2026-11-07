@@ -5,6 +5,7 @@ import {
   NORTHBOUND_HISTORY_RANGE_DAYS,
   NORTHBOUND_MILLION_TO_YUAN,
   NORTHBOUND_RANK_MAX_PAGES,
+  NORTHBOUND_REQUEST_GAP_MS,
 } from '../constants/northbound.constants.ts';
 import type {
   NorthboundDirection,
@@ -20,12 +21,14 @@ import type {
 /**
  * 沪深港通（北向/南向）资金数据接口层
  *
- * 数据源（2026-10-30 实测定型）：
+ * 数据源（2026-10-30 / 11-06 实测定型）：
  * - summary / minute / individual 走 stock-sdk（上游正常）；
  * - 资金历史：stock-sdk 的 history 方法因上游 `BOARD_TYPE` 列被移除而失效，
  *   改为自行调 datacenter `RPT_MUTUAL_DEAL_HISTORY`（金额单位百万元）；
  * - 北向持股排行：原 `RPT_MUTUAL_STOCK_NORTHSTA` 已废弃（恒「服务器繁忙」），
  *   改用季度披露表 `RPT_MUTUAL_HOLDSTOCKNORTH_STA` 最新一期快照；
+ * - 北向季度估算：已改道港交所披露易 CCASS 沪深股通持股纪录（东财全链路无
+ *   日度/季度历史持股来源，2026-11-06 实测），实现独立在 hkex-ccass.api.ts；
  * - 上游金额单位：summary / minute 为万元，历史表为百万元，本层统一换算为**元**
  */
 
@@ -249,7 +252,7 @@ export const fetchNorthboundHistory = async (
   for (let i = 0; i < types.length; i += 1) {
     // 同一上游连续请求错峰（东财红线：delay 500ms）
     if (i > 0) {
-      await delay(500);
+      await delay(NORTHBOUND_REQUEST_GAP_MS);
     }
     const { rows } = await dcFetchPage<DealHistoryRawRow>({
       reportName: 'RPT_MUTUAL_DEAL_HISTORY',
@@ -292,7 +295,7 @@ export const fetchNorthboundHoldingRank = async (
   const latestDate = toDate(first.rows[0].TRADE_DATE);
   const allRows: HoldingRawRow[] = [...first.rows];
   for (let page = 2; page <= Math.min(first.pages, NORTHBOUND_RANK_MAX_PAGES); page += 1) {
-    await delay(500);
+    await delay(NORTHBOUND_REQUEST_GAP_MS);
     const next = await dcFetchPage<HoldingRawRow>({
       reportName: 'RPT_MUTUAL_HOLDSTOCKNORTH_STA',
       columns: 'ALL',
@@ -343,3 +346,4 @@ export const fetchNorthboundIndividual = async (
   const startDate = rangeToStartDate(range, today);
   return sdk.northbound.individual(symbol, { startDate, endDate: today });
 };
+

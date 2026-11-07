@@ -7,7 +7,7 @@
  * 新股次新股 v4.5.2 拆为独立页 /ipo，入口在首页金刚区；
  * - A股：36 板块统一口径涨跌列表（板块日历池，2026-10-29 王总指定；原行业/概念
  *   手风琴与涨跌统计卡随统一口径移除，样式对齐美球行）
- * - 美球：美股行业 ETF / 全球指数 / 外盘商品 三组涨跌列表
+ * - 美球：美股基金产业主题 / 全球指数 / 外盘商品 三组涨跌列表
  * 数据层全部复用 PC common api；分区独立加载与降级（DESIGN-MOBILE.md §6）
  */
 import { computed, ref } from 'vue';
@@ -235,7 +235,7 @@ const fmtPct = (v: number | null): string => (v === null ? '--' : `${v > 0 ? '+'
             <span class="retry" @click="loadModule('global', true)">重试</span>
           </div>
           <template v-else>
-            <div class="m-sec"><span class="m-sec__t">美股行业 ETF</span></div>
+            <div class="m-sec"><span class="m-sec__t">美股基金</span></div>
             <div class="m-card">
               <div v-for="it in usSectors" :key="it.name" class="m-row">
                 <span class="m-row__nm">{{ it.name }}</span>

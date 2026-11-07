@@ -10,7 +10,7 @@ import type { PollingOptions, UsePollingReturn } from '../types/polling.types.ts
  * 插件等非组件上下文请直接用 `createPollingScheduler`。
  *
  * - 交易窗口感知（tradingAware）：仅在所属市场的轮询窗口内轮询
- *   （A 股：交易日 09:15-15:00；美股：21:30-24:00 与 00:00-04:00），
+ *   （A 股：交易日 09:15-15:00；美股：盘前+盘中 周一~五 16:00-24:00 与 周二~六 00:00-04:00），
  *   窗口外自动暂停——挂载时仍会执行一次请求（「非交易时段只请求一次」）
  * - 失败退避：连续失败按 BACKOFF_BASE * 2^n 指数退避（封顶 BACKOFF_MAX），成功归零
  * - 可见性感知：页面隐藏暂停，恢复可见立即补刷一次

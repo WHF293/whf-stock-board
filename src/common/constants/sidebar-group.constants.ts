@@ -1,17 +1,18 @@
 /**
- * 侧栏菜单分组（2026-10-17 起：页面多了以后侧栏按组折叠展示）
+ * 侧栏菜单分组（2026-10-17 起：页面多了以后侧栏按组折叠展示；
+ * 2026-11-06 王总指定精简为「市场行情 / 插件系统」两大组，原 热点资讯 /
+ * 自选与账户 组整组并入市场行情）
  *
  * 分组归属由「声明」决定：宿主页在 `MENU_ITEMS` 里写 `group`，插件菜单经
- * `ctx.menu.add({ group })` 声明；不声明 `group` 的一律归「插件」组。
+ * `ctx.menu.add({ group })` 声明；不声明 `group` 的一律归「插件系统」组。
  * 组顺序由用户编排（settings.menuGroupOrder），组内顺序沿用扁平的
  * settings.menuOrder——归组与排序正交，互不覆盖。
+ * 老用户存档里的失效组 id（news / account）在归桶时自然跳过，无需迁移。
  */
 
 /** 侧栏菜单分组 id（代替魔法字符串） */
 export const SIDEBAR_MENU_GROUP = {
   MARKET: 'market',
-  NEWS: 'news',
-  ACCOUNT: 'account',
   PLUGIN: 'plugin',
 } as const;
 
@@ -19,10 +20,10 @@ export const SIDEBAR_MENU_GROUP = {
 export type SidebarMenuGroupId = (typeof SIDEBAR_MENU_GROUP)[keyof typeof SIDEBAR_MENU_GROUP];
 
 /**
- * 菜单项未声明 group 时的默认归组（插件页不声明就收进「插件」组）
+ * 菜单项未声明 group 时的默认归组（插件页不声明就收进「插件系统」组）
  *
  * 用 string 而非 SidebarMenuGroupId：插件可声明任意自定义分组 id，
- * 归组逻辑按字符串处理，不把类型收窄到宿主内置的四个组。
+ * 归组逻辑按字符串处理，不把类型收窄到宿主内置的两个组。
  */
 export const SIDEBAR_MENU_GROUP_DEFAULT: string = SIDEBAR_MENU_GROUP.PLUGIN;
 
@@ -34,9 +35,7 @@ export const SIDEBAR_MENU_GROUP_DEFAULT: string = SIDEBAR_MENU_GROUP.PLUGIN;
  */
 export const SIDEBAR_MENU_GROUP_TITLES: Readonly<Record<string, string>> = {
   [SIDEBAR_MENU_GROUP.MARKET]: '市场行情',
-  [SIDEBAR_MENU_GROUP.NEWS]: '热点资讯',
-  [SIDEBAR_MENU_GROUP.ACCOUNT]: '自选与账户',
-  [SIDEBAR_MENU_GROUP.PLUGIN]: '插件',
+  [SIDEBAR_MENU_GROUP.PLUGIN]: '插件系统',
 };
 
 /**
@@ -46,7 +45,5 @@ export const SIDEBAR_MENU_GROUP_TITLES: Readonly<Record<string, string>> = {
  */
 export const SIDEBAR_MENU_GROUP_DEFAULT_ORDER: readonly string[] = [
   SIDEBAR_MENU_GROUP.MARKET,
-  SIDEBAR_MENU_GROUP.NEWS,
-  SIDEBAR_MENU_GROUP.ACCOUNT,
   SIDEBAR_MENU_GROUP.PLUGIN,
 ];

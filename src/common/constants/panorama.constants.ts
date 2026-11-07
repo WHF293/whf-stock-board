@@ -1,7 +1,31 @@
 import type {
-  PanoramaSecidEntry,
   PanoramaTechGroupConfig,
+  PanoramaThemeFundGroup,
 } from '../types/panorama.types.ts';
+
+/** 全景页四组卡片定义（id 兼作卡片折叠设置与模块排序的 key） */
+export interface PanoramaCardDef {
+  /** 卡片 id（`cn` / `globalTech` / `usBoards` / `macro`） */
+  id: string;
+  /** 展示名（模块排序弹窗条目） */
+  label: string;
+}
+
+/**
+ * 全景页四组卡片清单（2026-11-07 王总指定模块排序）：单一事实源——
+ * 卡片渲染顺序（settings.panoramaModuleOrder）与排序弹窗条目都从这里取
+ */
+export const PANORAMA_CARDS: readonly PanoramaCardDef[] = [
+  { id: 'cn', label: 'A股板块平铺' },
+  { id: 'globalTech', label: '国外科技巨头' },
+  { id: 'usBoards', label: '美股基金' },
+  { id: 'macro', label: '全球宏观' },
+];
+
+/** 四组卡片默认顺序（用户编排存 settings.panoramaModuleOrder） */
+export const PANORAMA_CARD_DEFAULT_ORDER: readonly string[] = PANORAMA_CARDS.map(
+  (card) => card.id,
+);
 
 /**
  * 行情全景页常量集中管理
@@ -76,22 +100,54 @@ export const PANORAMA_MACRO_GROUPS = [
 /** 宏观数据源类型（clist 全球指数与 SDK 全球期货） */
 export type PanoramaMacroSource = (typeof PANORAMA_MACRO_GROUPS)[number]['source'];
 
-/** 美股全景展示的行业 ETF 清单（secid 市场码 107 = NYSE Arca，SPDR 行业系列；名称为上游 f14 原文） */
-export const PANORAMA_US_SECIDS: readonly PanoramaSecidEntry[] = [
-  { secid: '107.XLK', name: '科技行业精选指数ETF-SPDR' },
-  { secid: '107.XLE', name: '能源指数ETF-SPDR' },
-  { secid: '107.XLF', name: '金融ETF-SPDR' },
-  { secid: '107.XLI', name: '工业ETF-SPDR' },
-  { secid: '107.XLY', name: '可选消费ETF-SPDR' },
-  { secid: '107.XLP', name: '日常消费ETF-SPDR' },
-  { secid: '107.XLU', name: '公用事业ETF-SPDR' },
-  { secid: '107.XLB', name: '基础材料ETF-SPDR' },
-  { secid: '107.XLRE', name: '房地产ETF-SPDR' },
-  { secid: '107.XLC', name: '通讯服务行业精选指数ETF-SPDR' },
-  { secid: '107.XLV', name: '医疗ETF-SPDR' },
-  { secid: '107.SPY', name: '标普500ETF-SPDR' },
-  { secid: '107.DIA', name: '道琼斯指数ETF-SPDR' },
-] as const satisfies readonly PanoramaSecidEntry[];
+/**
+ * 美股基金主题分组（2026-11-07 王总指定替换「美股行业 ETF」模块，分类对标美基星图
+ * 「全球产业数据」）：每主题一篮子代表性标的，主题涨跌幅 = 成分平均。
+ *
+ * 成分选型：有干净行业 ETF 的主题优先单挂 ETF（半导体 SMH / 机器人 BOTZ / 黄金矿业 GDX
+ * 等），无对应 ETF 的主题用 2~4 只龙头股篮子（CPO / 存储 / 数据中心 / 商业航天 / 卫星 /
+ * 核电 / 量子计算等）；成分股与 ETF 可跨主题复用（同一标的本就服务多条产业链）。
+ *
+ * secid 市场码：105 / 106 / 107 均经东财 ulist 实测 72/72 全部有返回（2026-11-07，
+ * 其中 SMH / BOTZ / WMT / STX 在东财归 105、UUUU 归 107，与真实交易所归属不同，
+ * 以东财 suggest 接口的 MktNum 为准）；主题顺序对标美基星图截图，不做涨跌幅重排。
+ */
+export const PANORAMA_US_THEME_FUNDS: readonly PanoramaThemeFundGroup[] = [
+  { label: 'AI 算力', secids: ['105.NVDA', '105.AMD', '105.AVGO', '105.MRVL'] },
+  { label: 'CPO', secids: ['106.COHR', '106.FN', '106.CIEN', '105.AVGO'] },
+  { label: '半导体', secids: ['105.SMH'] },
+  { label: '存储', secids: ['105.MU', '105.WDC', '105.STX'] },
+  { label: '数据中心', secids: ['106.VRT', '105.EQIX', '106.DLR'] },
+  { label: '云计算', secids: ['105.MSFT', '106.NOW', '106.CRM'] },
+  { label: '商业航天', secids: ['105.RKLB', '105.ASTS', '105.LUNR'] },
+  { label: '卫星', secids: ['105.IRDM', '105.VSAT', '105.GSAT'] },
+  { label: '机器人', secids: ['105.BOTZ', '105.TER'] },
+  { label: '自动驾驶', secids: ['105.TSLA', '105.GOOG', '106.UBER'] },
+  { label: '核电', secids: ['106.CCJ', '106.OKLO', '106.SMR'] },
+  { label: '电网', secids: ['106.ETN', '106.HUBB', '106.PWR'] },
+  { label: '军工', secids: ['106.LMT', '106.RTX', '106.NOC'] },
+  { label: '光伏', secids: ['105.ENPH', '105.FSLR', '105.RUN'] },
+  { label: '锂电池', secids: ['106.ALB', '106.SQM', '107.LIT'] },
+  { label: '油气', secids: ['106.XOM', '106.CVX', '107.XOP'] },
+  { label: '铜有色', secids: ['106.FCX', '106.SCCO'] },
+  { label: '黄金矿业', secids: ['107.GDX', '106.NEM', '106.GOLD'] },
+  { label: '银行金融', secids: ['106.JPM', '106.BAC', '106.GS'] },
+  { label: '生物医药', secids: ['106.LLY', '106.JNJ', '107.XBI'] },
+  { label: '消费', secids: ['105.WMT', '105.COST', '106.PG'] },
+  { label: '稀土', secids: ['106.MP', '107.UUUU'] },
+  { label: '通信设备', secids: ['106.ANET', '105.CSCO'] },
+  { label: '量子计算', secids: ['106.IONQ', '105.RGTI', '105.QBTS'] },
+  { label: '区块链', secids: ['105.COIN', '105.MSTR'] },
+  { label: 'AI 应用', secids: ['105.PLTR', '105.META', '105.APP'] },
+];
+
+/**
+ * 美股盘前涨跌幅字段（东财 push2 ulist；社区口径 f248 = 盘前价 / f249 = 盘前涨跌额 /
+ * f250 = 盘前涨跌幅）。2026-11-07（周六）实测四字段全为 `'-'`，语义待交易时段复验——
+ * **首个美股盘前时段（周一北京 16:00 后）须探活校正**，不符则调整本常量或置 null。
+ * 置 null 时盘前口径自动停用（盘前窗口内退化为显示最近收盘涨跌）。
+ */
+export const US_PREMARKET_PCT_FIELD: string | null = 'f250';
 
 /**
  * 国外科技巨头分组配置（2026-11-03 王总指定：由「美股科技巨头」扩为「国外科技巨头」，

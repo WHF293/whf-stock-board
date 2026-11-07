@@ -10,6 +10,8 @@ export const DATA_CACHE_KEY = {
   DASHBOARD_TURNOVER: 'dashboard.turnover',
   /** 总览：市场情绪速览（涨停 / 炸板 / 跌停 / 昨日涨停四池聚合） */
   DASHBOARD_SENTIMENT: 'dashboard.sentiment',
+  /** 总览：当日金价（金店品牌足金/金条挂牌价 + 伦敦金 + 国内基准） */
+  GOLD_PRICE_DASHBOARD: 'goldPrice.dashboard',
   /** 自选：报价映射 */
   WATCHLIST_QUOTES_MAP: 'watchlist.quotesMap',
   /** 板块排行（按 tab） */
@@ -29,7 +31,7 @@ export const DATA_CACHE_KEY = {
   /** 龙虎榜 / 大宗明细 */
   DRAGON_TIGER_ITEMS: 'dragonTiger.items',
   BLOCK_TRADE_ITEMS: 'blockTrade.items',
-  /** 行情全景：美股 / 全球宏观（A股板块排行复用 BOARDS_LIST 键） */
+  /** 全景页：美股基金主题（原美股行业 ETF，2026-11-07 替换）/ 全球宏观（A股板块排行复用 BOARDS_LIST 键） */
   PANORAMA_US_BOARDS: 'panorama.usBoards',
   /** 行情全景：国外科技巨头（2026-11-02 新增美股巨头，2026-11-03 扩为美/日/韩） */
   PANORAMA_GLOBAL_TECH: 'panorama.globalTech',
@@ -65,4 +67,6 @@ export const DATA_CACHE_KEY = {
   BOARD_CALENDAR_MATRIX: 'boardCalendar.matrix',
   /** 板块日历详情：成分股涨跌幅矩阵（前缀 + 板块代码 + 范围，切页回来秒出） */
   BOARD_DETAIL_MATRIX_PREFIX: 'boardDetail.matrix.',
+  /** 北向季度流向估算（持股差分，季度频；会话内复用避免重复拉十几页快照） */
+  NORTHBOUND_ESTIMATE: 'northbound.estimate',
 } as const;

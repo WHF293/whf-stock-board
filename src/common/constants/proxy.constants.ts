@@ -36,6 +36,10 @@ export const STOCK_PROXY_ALLOWED_HOSTS = [
   'cffex.com.cn',
   // 上交所（资金动向·每日汇金持仓变化：ETF 规模官方逐日披露 query.sse.com.cn，需站内 Referer）
   'sse.com.cn',
+  // 港交所披露易（资金动向·北向资金流向估算：CCASS 沪深股通持股纪录逐日披露，GET+POST）
+  'hkexnews.hk',
+  // 金投网行情中心（市场总览·当日金价：品牌金店挂牌价 api.jijinhao.com，需站内 Referer）
+  'jijinhao.com',
   // stock-sdk 静态资源（代码表等参考数据）
   'linkdiary.cn',
 ] as const;

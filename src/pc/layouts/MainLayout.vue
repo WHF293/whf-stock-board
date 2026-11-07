@@ -949,7 +949,7 @@ void marketStatusStore.refresh();
               @open-site-docs-in-browser="openSiteDocsInBrowser"
             />
             <!-- 页级动作挂载点：当前激活页面经 Teleport 投射自己的动作按钮
-                 （AI 分析 / 导出 Excel / 新闻源设置等，守卫见 use-page-header-slot） -->
+                 （AI 分析 / 新闻源设置等，守卫见 use-page-header-slot） -->
             <div :id="PAGE_HEADER_ACTIONS_ID" class="flex items-center gap-2" />
             <!-- 插件设置：与页级动作按钮同款 ghost 样式（原裸齿轮图标与按钮群不搭，用户指定） -->
             <BaseButton

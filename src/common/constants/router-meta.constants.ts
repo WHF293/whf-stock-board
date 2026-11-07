@@ -7,7 +7,7 @@ import { SIDEBAR_MENU_GROUP } from './sidebar-group.constants.ts';
 export const ROUTE_PATH = {
   DASHBOARD: "/dashboard",
   WATCHLIST: "/watchlist",
-  PANORAMA: "/panorama",
+  PANORAMA: "/panorama", // 全景（原「行情全景」页 2026-11-06 拆分独立成页：A股板块 + 美股 + 全球宏观，市场总览页头按钮进入，不入菜单）
   BOARD_CALENDAR: "/board-calendar",
   BOARD_DETAIL: "/board-detail", // 板块日历详情（+/:code，板块日历页点板块名称进入，不入菜单）
 
@@ -17,7 +17,9 @@ export const ROUTE_PATH = {
   HOT_NEWS: "/hot-news",
   WHAT_TO_TRADE: "/what-to-trade", // 今天炒什么（五平台热股榜 + 同花顺四 ETF 榜，页内模式切换）
   MARKET_RANK: "/market-rank",
-  STOCK_MARKET: "/stock-market", // 个股行情（已并入行情全景「全部个股」子 tab，2026-10-22；旧路径由 404 兜底页承接）
+  STOCK_MARKET: "/stock-market", // 大A个股（原个股行情页 2026-10-22 并入行情全景，2026-11-06 随行情全景拆分恢复独立页，盘面雷达页头按钮进入，不入菜单）
+  HK_STOCK: "/hk-stock", // 港股个股（原行情全景「港股个股」页签，2026-11-06 随拆分独立成页，盘面雷达页头按钮进入，不入菜单）
+  LEADERS: "/leaders", // 龙头（原行情全景「行业龙头」页签，2026-11-06 随拆分独立成页，市场总览页头按钮进入，不入菜单）
   BOARD_FLOW: "/board-flow", // 板块资金流向（原「行情全景-最新板块资金」独立成页，2026-10-13）
   HEATMAP: "/heatmap", // 大盘云图（2026-10-29 起转插件分发：dsh-dapanyuntu 注册本路径；总览「板块热力」卡标题入口仍指向这里）
   MARKET_BREADTH: "/market-breadth", // 市场宽度（2026-10-29 起转插件分发：dsh-market-breadth 注册本路径；总览宽度卡的深化页入口仍指向这里）
@@ -65,37 +67,44 @@ export const NOT_FOUND_ROUTE_NAME = 'not-found';
 /**
  * 左侧导航菜单配置（驱动 MainLayout 渲染，数组顺序即展示顺序）
  *
- * 板块行情已并入行情全景的 A 股全景模块；市场异动已并入盘面雷达（涨停 / 异动 /
- * 龙虎榜 / 大宗为其页签）；设置不入主导航（固定为侧栏底部入口）；
+ * 板块行情已并入行情全景的 A 股全景模块；行情全景页已于 2026-11-06 拆分为 全景 / 龙头 /
+ * 大A个股 / 港股个股 四个不入菜单的独立页（入口分别在市场总览与盘面雷达页头）；
+ * 期货总览侧栏入口同日移除（改市场总览页头「期货」按钮进入，路由保留）；
+ * 市场异动已并入盘面雷达（涨停 / 异动 / 龙虎榜 / 大宗为其页签）；
+ * 设置不入主导航（固定为侧栏底部入口）；
  * 插件贡献的菜单项由内核注册表提供，本数组只声明宿主自带的菜单。
  *
  * `group` 声明侧栏分组（归属由声明决定，用户只能调组序与组内序，见
- * `sidebar-group.constants.ts`）；插件菜单不声明 group 默认归「插件」组。
+ * `sidebar-group.constants.ts`）；2026-11-06 王总指定精简为「市场行情 / 插件系统」
+ * 两大组（原 热点资讯 / 自选与账户 组整组并入市场行情）；插件菜单不声明 group
+ * 默认归「插件系统」组。
  *
  * `fallbackLanding` 声明「插件页随插件撤销」时的兜底落点（必须是宿主自带页面，
  * 恒可用）：用户停在其他插件页面上关掉那个插件，宿主优先把他送到这里。
  */
 export const MENU_ITEMS: readonly SidebarMenuEntry[] = [
   { path: ROUTE_PATH.DASHBOARD, title: "市场总览", icon: MENU_ICON.DASHBOARD, group: SIDEBAR_MENU_GROUP.MARKET },
-  { path: ROUTE_PATH.PANORAMA, title: "行情全景", icon: MENU_ICON.PANORAMA, group: SIDEBAR_MENU_GROUP.MARKET },
+  // 行情全景侧栏入口已移除（2026-11-06 王总指定）：页面拆分为 全景 / 龙头 / 大A个股 / 港股个股
+  // 四个不入菜单的独立页，入口分别在市场总览页头（龙头 / 全景）与盘面雷达页头（大A个股 / 港股个股）
   // 盘面雷达 / 资金流向：原「榜单与资金」组撤销，并入市场行情组（2026-10-27 王总指定）
   { path: ROUTE_PATH.MARKET_RANK, title: "盘面雷达", icon: MENU_ICON.RANK, group: SIDEBAR_MENU_GROUP.MARKET },
   // 资金流向（原「板块资金流向」，2026-10-22 王总更名）：原「行情全景-最新板块资金」模块独立成页（2026-10-13）
   { path: ROUTE_PATH.BOARD_FLOW, title: "资金流向", icon: MENU_ICON.FUNDS, group: SIDEBAR_MENU_GROUP.MARKET },
   // 大盘云图侧栏入口已移除（2026-10-22 王总指定），改为市场总览页头「大盘云图」按钮进入（同宽基ETF入口位）；
   // 页面 2026-10-29 起转插件分发（dsh-dapanyuntu 注册 /heatmap，不入菜单）
-  // 板块日历紧跟行情全景：同为「板块维度的行情视角」
+  // 板块日历：同为「板块维度的行情视角」（原紧跟行情全景条目，2026-11-06 行情全景拆分后紧随资金流向）
   { path: ROUTE_PATH.BOARD_CALENDAR, title: "板块分析", icon: MENU_ICON.CALENDAR, group: SIDEBAR_MENU_GROUP.MARKET },
   // 市场广度指标：五大广度副图（ADL/ADR/OBOS/ARMS/MCO），市场总览宽度卡的深化页
   // 市场宽度（2026-10-29 起转插件分发：菜单与 /market-breadth 路由由 dsh-market-breadth 注册）
-  { path: ROUTE_PATH.FUTURES_OVERVIEW, title: "期货总览", icon: MENU_ICON.DASHBOARD, group: SIDEBAR_MENU_GROUP.MARKET },
-  // 期货·总览：原「期货」分组撤销后并入市场行情组（2026-10-29 王总指定）
-  { path: ROUTE_PATH.WATCHLIST, title: "自选股", icon: MENU_ICON.STAR, group: SIDEBAR_MENU_GROUP.ACCOUNT },
+  // 期货总览侧栏入口已移除（2026-11-06 王总指定）：/futures/overview 路由保留，
+  // 改由市场总览页头「期货」按钮进入
+  // 侧栏两大分组（2026-11-06 王总指定）：原「热点资讯 / 自选与账户」组撤销，以下页面全部并入市场行情组
+  { path: ROUTE_PATH.WATCHLIST, title: "自选股", icon: MENU_ICON.STAR, group: SIDEBAR_MENU_GROUP.MARKET },
   // 选股器已改为插件分发（dsh-stock-screener），由插件注册菜单与 /screener 路由
-  { path: ROUTE_PATH.HOT_NEWS, title: "热点新闻", icon: MENU_ICON.NEWS, group: SIDEBAR_MENU_GROUP.NEWS },
+  { path: ROUTE_PATH.HOT_NEWS, title: "热点新闻", icon: MENU_ICON.NEWS, group: SIDEBAR_MENU_GROUP.MARKET },
   // 今天炒什么紧跟热点新闻：同为「盘前 / 盘中扫一眼市场在炒什么」的日常视角
-  { path: ROUTE_PATH.WHAT_TO_TRADE, title: "今天炒什么", icon: MENU_ICON.FLAME, group: SIDEBAR_MENU_GROUP.NEWS },
-  { path: ROUTE_PATH.STOCK_ACCOUNT, title: "账户分析", icon: MENU_ICON.ACCOUNT, group: SIDEBAR_MENU_GROUP.ACCOUNT },
+  { path: ROUTE_PATH.WHAT_TO_TRADE, title: "今天炒什么", icon: MENU_ICON.FLAME, group: SIDEBAR_MENU_GROUP.MARKET },
+  { path: ROUTE_PATH.STOCK_ACCOUNT, title: "账户分析", icon: MENU_ICON.ACCOUNT, group: SIDEBAR_MENU_GROUP.MARKET },
   // 插件工坊侧栏入口已移除（2026-10-29 王总指定），改为顶栏 Agent 分析之后的插头图标进入；
   // /plugin-lab 路由与「插件页撤销兜底落点」语义保留（落点声明见 pc/plugin/setup.ts）
 ];

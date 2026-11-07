@@ -131,3 +131,9 @@ export const STORAGE_KEY_HUIJIN_ETF_SHARE_HISTORY = 'whf:huijin-etf-share-histor
 
 /** 资金动向 · 汇金占比基准缓存命名空间（f10 持有人结构，按 ETF 代码整包存取） */
 export const STORAGE_NS_HUIJIN_BASELINE = 'huijin.baseline';
+
+/** 资金流向 · 南北向资金侧边栏（open / 宽度持久化） */
+export const STORAGE_NS_MUTUAL_SIDEBAR = 'mutualSidebar';
+
+/** 资金流向 · 北向季度估算本地滚存库（基线 + 估算序列，独立 key 避免整包写放大） */
+export const STORAGE_KEY_NORTHBOUND_ESTIMATE = 'whf:northbound-estimate';
