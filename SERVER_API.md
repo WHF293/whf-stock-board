@@ -123,7 +123,7 @@
 - **自选股 `WatchlistView`**：`fetchFullQuotes`
 - **自选盯盘（侧栏插件 `dsh-sidebar-watch`）**：`fetchFullQuotes` —— 由**插件级盯盘引擎**（`plugins/sidebar-watch/monitor.ts`）轮询「候选池 ∩ 自选股」，与面板是否折叠无关。
   ⚠️ 已知重叠：在自选股页时，该引擎与 `WatchlistView` 会**各自轮询同一批符号**（各一次 `fetchFullQuotes`，间隔取用户设置与 `QUOTES_INTRADAY` 的较大值）。这是改动前就有的重叠（原先是面板组件自己轮询），若要收敛需引入宿主级报价总线，目前未做。
-- **全景 `PanoramaOverviewView`（2026-11-06 自行情全景拆分独立，`/panorama`）**：`fetchGlobalIndexPanorama` · `fetchUsSectorPanorama` · `fetchGlobalFuturesPanorama` · `fetchGlobalTechPanorama`（A股板块平铺由 `PanoramaCnBoard` 自管，见 `fetchCalendarBoardPanorama`）
+- **全景 `PanoramaOverviewView`（2026-11-06 自行情全景拆分独立，`/panorama`）**：`fetchGlobalIndexPanorama` · `fetchUsSectorPanorama`（2026-11-07 起为**美股基金主题**：26 个产业主题 × 成分标的篮子，主题涨跌幅 = 成分平均；72 个成分 secid 经东财 suggest + ulist 实测全部命中；**盘前口径**取 ulist 扩展字段 `f250`（社区口径 f248=盘前价/f249=盘前涨跌额/f250=盘前涨跌幅），2026-11-07 周末实测四字段全为 `'-'`、语义待首个美股盘前时段（周一北京 16:00 后）复验定稿，常量 `US_PREMARKET_PCT_FIELD` 置 null 即自动停用盘前口径）· `fetchGlobalFuturesPanorama` · `fetchGlobalTechPanorama`（A股板块平铺由 `PanoramaCnBoard` 自管，见 `fetchCalendarBoardPanorama`）。美股轮询窗口 2026-11-07 起扩展为周一~五 16:00-24:00 + 周二~六 00:00-04:00（含盘前，口径单源 `utils/us-session.ts`）
 - **龙头 `LeadersView`（同批拆分，`/leaders`）**：`fetchLeaderQuotes`（`api/industry-leaders.api.ts`）
 - **大A个股 `StockMarketView`（同批拆分恢复独立页，`/stock-market`）**：`fetchThsStockBoardPage`
 - **港股个股 `HongKongMarketView`（同批拆分，`/hk-stock`）**：`fetchThsHkBoardPage`

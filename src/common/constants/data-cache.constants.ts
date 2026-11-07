@@ -31,7 +31,7 @@ export const DATA_CACHE_KEY = {
   /** 龙虎榜 / 大宗明细 */
   DRAGON_TIGER_ITEMS: 'dragonTiger.items',
   BLOCK_TRADE_ITEMS: 'blockTrade.items',
-  /** 行情全景：美股 / 全球宏观（A股板块排行复用 BOARDS_LIST 键） */
+  /** 全景页：美股基金主题（原美股行业 ETF，2026-11-07 替换）/ 全球宏观（A股板块排行复用 BOARDS_LIST 键） */
   PANORAMA_US_BOARDS: 'panorama.usBoards',
   /** 行情全景：国外科技巨头（2026-11-02 新增美股巨头，2026-11-03 扩为美/日/韩） */
   PANORAMA_GLOBAL_TECH: 'panorama.globalTech',

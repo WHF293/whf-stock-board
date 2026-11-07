@@ -7,7 +7,8 @@ import {
   PANORAMA_GLOBAL_INDEX_FS,
   PANORAMA_GLOBAL_INDEX_SECIDS,
   PANORAMA_GLOBAL_TECH_GROUPS,
-  PANORAMA_US_SECIDS,
+  PANORAMA_US_THEME_FUNDS,
+  US_PREMARKET_PCT_FIELD,
 } from '../constants/panorama.constants.ts';
 import type {
   GlobalIndexQuote,
@@ -15,16 +16,17 @@ import type {
   PanoramaMacroGroup,
   PanoramaSecidEntry,
 } from '../types/panorama.types.ts';
+import { resolveUsSessionFlavor } from '../utils/us-session';
 import type { FullQuote } from '../types/stock-quote.types.ts';
 
 /**
  * 行情全景 api：东财 clist / ulist 直连（走同源代理）+ SDK 全球期货
  *
- * A 股板块复用 board.api 的概念板块接口；本文件只补美股行业 ETF / 全球指数 /
+ * A 股板块复用 board.api 的概念板块接口；本文件只补美股基金主题 / 全球指数 /
  * 外盘商品三类源，全部为进入页面时拉取一次（不参与轮询）
  *
  * 上游 host 实测说明：push2delay 域连通性最稳（同为 SDK 镜像域之一）；
- * 美股行业 ETF 走 ulist.np/get 精确 secid 查询（clist 无对应板块分类码）
+ * 美股标的（基金 / 个股）走 ulist.np/get 精确 secid 查询（clist 无对应板块分类码）
  */
 
 /** 东财 clist 请求地址 */
@@ -139,12 +141,73 @@ const fetchUlistPanorama = async (entries: readonly PanoramaSecidEntry[]): Promi
 };
 
 /**
- * 拉取美股全景（SPDR 行业 ETF 系列，ulist 接口按 secids 精确查询）
- * @returns 美股行业 ETF 列表（名称 + 涨跌幅，按涨跌幅降序；缺行条目排末尾、数值 `--`）
+ * 美股主题基金 ulist 响应行（额外带盘前字段，键位由 US_PREMARKET_PCT_FIELD 决定）
+ */
+interface EastmoneyThemeFundRow {
+  f12: string;
+  f13: number | string;
+  f14: string;
+  f3: number | string;
+  /** 动态盘前字段（f250 等；休市 / 未返回时为 '-' 或缺失） */
+  [premarketField: string]: number | string | undefined;
+}
+
+/** 美股主题基金 ulist 响应体 */
+interface EastmoneyThemeFundResponse {
+  data: {
+    diff: EastmoneyThemeFundRow[];
+  } | null;
+}
+
+/**
+ * 一组数值的算术平均（非数值成分剔除；全缺返回 null）
+ * @param values 成分涨跌幅原值（数字 / '-' / 缺失混排）
+ * @returns 平均涨跌幅（保留两位小数）或 null
+ */
+const meanChangePercent = (values: (number | string | undefined)[]): number | null => {
+  const nums = values.filter((value): value is number => typeof value === 'number');
+  if (nums.length === 0) return null;
+  return Math.round((nums.reduce((sum, value) => sum + value, 0) / nums.length) * 100) / 100;
+};
+
+/**
+ * 拉取美股基金主题行情（2026-11-07 王总指定替换 SPDR 行业 ETF 模块，分类对标
+ * 美基星图「全球产业数据」26 主题；主题涨跌幅 = 成分标的平均涨跌幅）
+ *
+ * 口径随美股时段自动切换（utils/us-session）：盘前窗口内优先取盘前字段均值
+ * （字段位 US_PREMARKET_PCT_FIELD，未确认 / 缺行时退化为最近收盘涨跌），盘中与
+ * 收盘取 f3 均值；卡头徽标由视图层消费 market-status 的 usQuoteFlavor。
+ * @returns 主题列表（名称 = 主题名，按涨跌幅降序；缺行主题排末尾、数值 `--`）
  */
 export const fetchUsSectorPanorama = async (): Promise<PanoramaItem[]> => {
-  const items = await fetchUlistPanorama(PANORAMA_US_SECIDS);
-  // ulist 与配置顺序一致，按涨跌幅降序对齐全景展示口径（null 缺行排末尾）
+  const secids = PANORAMA_US_THEME_FUNDS.flatMap((group) => group.secids);
+  const fields = ['f12', 'f13', 'f14', 'f3', ...(US_PREMARKET_PCT_FIELD ? [US_PREMARKET_PCT_FIELD] : [])];
+  const query = ['fltt=2', `fields=${fields.join(',')}`, `secids=${secids.join(',')}`].join('&');
+  const response = await push2Fetch(`${ULIST_URL_BASE}?${query}`);
+  if (!response.ok) {
+    throw new Error(`ulist 请求失败：HTTP ${response.status}`);
+  }
+  const body = (await response.json()) as EastmoneyThemeFundResponse;
+  // 上游缺行会错位，以「市场码.代码」拼回完整 secid 建映射
+  const rowBySecid = new Map(
+    (body.data?.diff ?? []).map(
+      (row): [string, EastmoneyThemeFundRow] => [`${row.f13}.${row.f12}`, row],
+    ),
+  );
+  const flavor = resolveUsSessionFlavor(new Date());
+  // 局部别名：导入绑定在此处无法被 TS 收窄，判空后作为索引使用需显式常量
+  const preField = US_PREMARKET_PCT_FIELD;
+  const items = PANORAMA_US_THEME_FUNDS.map((group) => {
+    const rows = group.secids.map((secid: string) => rowBySecid.get(secid));
+    let changePercent = meanChangePercent(rows.map((row) => row?.f3));
+    // 盘前窗口：盘前字段有均值时覆盖收盘口径（字段位未确认 / 全缺行时维持收盘口径）
+    if (flavor === 'pre' && preField) {
+      const pre = meanChangePercent(rows.map((row) => row?.[preField]));
+      if (pre !== null) changePercent = pre;
+    }
+    return { name: group.label, changePercent };
+  });
+  // 按涨跌幅降序对齐全景展示口径（null 缺行排末尾）
   return items.sort(
     (a, b) => (b.changePercent ?? Number.NEGATIVE_INFINITY) - (a.changePercent ?? Number.NEGATIVE_INFINITY),
   );

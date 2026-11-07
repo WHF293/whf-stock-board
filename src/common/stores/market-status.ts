@@ -6,6 +6,8 @@ import {
   MARKET_STATUS,
 } from '../constants/market-status.constants.ts';
 import { handleSdkError } from '../utils/handle-sdk-error';
+import { inUsPollingWindow, resolveUsSessionFlavor } from '../utils/us-session';
+import type { UsSessionFlavor } from '../utils/us-session';
 import type { MarketStatus } from '../types/market-status.types.ts';
 
 /** 市场状态 store 状态 */
@@ -23,11 +25,6 @@ interface MarketStatusState {
 /** A 股轮询窗口（本地时间分钟数）：09:15 - 15:00 */
 const A_SHARE_WINDOW_START = 9 * 60 + 15;
 const A_SHARE_WINDOW_END = 15 * 60;
-
-/** 美股轮询窗口（本地时间分钟数）：21:30 - 24:00 与 00:00 - 04:00 */
-const US_EVENING_START = 21 * 60 + 30;
-const US_EVENING_END = 24 * 60;
-const US_MORNING_END = 4 * 60;
 
 /** 港股轮询窗口（本地时间分钟数）：09:30 - 16:00 */
 const HK_WINDOW_START = 9 * 60 + 30;
@@ -118,25 +115,26 @@ export const useMarketStatusStore = defineStore('market-status', {
     },
 
     /**
-     * 美股行情轮询窗口（本地时间，SDK 日历不支持美股假日，按星期近似）：
-     * 周一~周五 21:30 - 24:00，以及周二~周六凌晨 00:00 - 04:00
+     * 美股行情轮询窗口（本地时间，SDK 日历不支持美股假日，按星期近似；口径单源 utils/us-session）：
+     * 盘前 + 盘中——周一~周五 16:00 - 24:00，以及周二~周六凌晨 00:00 - 04:00
+     * （2026-11-07 起窗口自 21:30 前移至 16:00 覆盖美东盘前，服务于「盘前推算大A次日走势」）
      * @param state store 状态
      * @returns true 表示处于美股轮询窗口
      */
     isUsPollingWindow: (state: MarketStatusState): boolean => {
+      // 依赖 clockTick 触发分钟级重算
       void state.clockTick;
-      const now = new Date();
-      const minutes = localMinutes(now);
-      const day = localDay(now);
-      if (minutes >= US_EVENING_START && minutes < US_EVENING_END) {
-        // 周一 ~ 周五晚间
-        return day >= 1 && day <= 5;
-      }
-      if (minutes <= US_MORNING_END) {
-        // 凌晨窗口（对应前一交易日），仅周二 ~ 周六有效
-        return day >= 2 && day <= 6;
-      }
-      return false;
+      return inUsPollingWindow(new Date());
+    },
+
+    /**
+     * 美股行情口径（全景页「美股基金」卡的盘前 / 盘中 / 收盘徽标，随 clockTick 每分钟重算）
+     * @param state store 状态
+     * @returns 当前口径
+     */
+    usQuoteFlavor: (state: MarketStatusState): UsSessionFlavor => {
+      void state.clockTick;
+      return resolveUsSessionFlavor(new Date());
     },
 
     /**

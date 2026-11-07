@@ -67,7 +67,7 @@ const router = useRouter();
 
 /** 轮询规则公告文案（与 use-polling 交易窗口治理逻辑一致） */
 const POLLING_RULE_NOTICE =
-  "行情自动刷新仅在交易时段内按所选间隔轮询：A 股为交易日 09:15–15:00，美股为 21:30–24:00 与 00:00–04:00；非交易日与其他时段仅在进入页面时请求一次，不重复轮询。";
+  "行情自动刷新仅在交易时段内按所选间隔轮询：A 股为交易日 09:15–15:00，美股为周一~五 16:00–24:00 与 周二~六 00:00–04:00（含盘前）；非交易日与其他时段仅在进入页面时请求一次，不重复轮询。";
 const settingsStore = useSettingsStore();
 
 /** 当前刷新间隔的展示标签（如 '5s' / '1min'） */
@@ -522,7 +522,7 @@ const POLLING_DETAIL_ROWS: PollingDetailRow[] = [
   { page: "市场总览", target: "市场宽度（全市场快照 / 行业板块 / 资金流）", interval: `${BREADTH_SEC} 秒`, window: "A 股交易时段" },
   { page: "自选股", target: "当前分组自选行情", interval: `${QUOTES_SEC} 秒`, window: "A 股交易时段" },
   { page: "全景 · A股板块平铺", target: "36 板块快照", interval: `${BREADTH_SEC} 秒`, window: "A 股交易时段" },
-  { page: "全景 · 美股 / 科技巨头", target: "美股行业 ETF / 国外科技巨头", interval: `${US_SEC} 秒`, window: "美股交易时段" },
+  { page: "全景 · 美股 / 科技巨头", target: "美股基金主题 / 国外科技巨头", interval: `${US_SEC} 秒`, window: "美股盘前+盘中时段（周一~五 16:00-次日04:00）" },
   { page: "全景 · 科技巨头（亚太）", target: "日韩科技巨头清单", interval: `${US_SEC} 秒`, window: "亚太交易时段（周一~五 08:00-14:30）" },
   { page: "大A个股", target: "同花顺行情中心当前页", interval: "30 秒", window: "A 股交易时段" },
   { page: "港股个股", target: "同花顺港股行情中心当前页", interval: "30 秒", window: "港股交易时段" },

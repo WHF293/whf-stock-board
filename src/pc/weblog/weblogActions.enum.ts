@@ -71,6 +71,7 @@ export const WEBLOG_ACTIONS = {
 
   // ---------- 页头快捷入口（不入菜单页面从宿主页头按钮进入；2026-11-06 行情全景拆分起登记，
   // 此前的 DASHBOARD_OPEN_WIDE_BASE_ETF / MARKET_RANK_TAB_SETTINGS 未登记，落 CLICK_ELEMENT 兜底） ----------
+  PANORAMA_MODULE_ORDER: { category: 'navbar', label: '打开全景模块排序弹窗' },
   DASHBOARD_OPEN_LEADERS: { category: 'navbar', label: '打开龙头页（市场总览页头）' },
   DASHBOARD_OPEN_PANORAMA: { category: 'navbar', label: '打开全景页（市场总览页头）' },
   DASHBOARD_OPEN_FUTURES: { category: 'navbar', label: '打开期货总览页（市场总览页头）' },

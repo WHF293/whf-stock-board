@@ -44,6 +44,16 @@ export interface PanoramaMacroGroup {
 }
 
 /**
+ * 美股基金主题分组（产业主题 + 成分标的篮子，主题涨跌幅 = 成分平均）
+ */
+export interface PanoramaThemeFundGroup {
+  /** 主题名（如「AI 算力」，展示顺序 = 配置顺序） */
+  label: string;
+  /** 成分标的 secid 序列（市场码.代码，如 `105.NVDA`） */
+  secids: readonly string[];
+}
+
+/**
  * 全球指数轻量报价（市场总览指数卡展开区用，名称 + 现价 + 涨跌幅）
  */
 export interface GlobalIndexQuote {

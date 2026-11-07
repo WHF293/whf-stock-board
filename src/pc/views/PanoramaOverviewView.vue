@@ -5,13 +5,14 @@ import BaseCard from '../components/ui/BaseCard.vue';
 import BaseEmpty from '../components/ui/BaseEmpty.vue';
 import MenuIcon from '../components/ui/MenuIcon.vue';
 import PanoramaCnBoard from '../components/business/PanoramaCnBoard.vue';
+import PanoramaModuleOrderModal from '../components/business/PanoramaModuleOrderModal.vue';
 import {
   fetchGlobalFuturesPanorama,
   fetchGlobalIndexPanorama,
   fetchGlobalTechPanorama,
   fetchUsSectorPanorama,
 } from '../../common/api/panorama.api.ts';
-import { PANORAMA_MACRO_GROUPS } from '../../common/constants/panorama.constants.ts';
+import { PANORAMA_CARDS, PANORAMA_MACRO_GROUPS } from '../../common/constants/panorama.constants.ts';
 import { DATA_CACHE_KEY } from '../../common/constants/data-cache.constants.ts';
 import type { PanoramaItem, PanoramaMacroGroup } from '../../common/types/panorama.types.ts';
 import { getTrendByChangePercent } from '../../common/constants/trend.constants.ts';
@@ -20,6 +21,7 @@ import { formatPercent } from '../../common/utils/format-percent';
 import { delay } from '../../common/utils/delay';
 import { useDataCacheStore } from '../../common/stores/data-cache';
 import { useSettingsStore } from '../../common/stores/settings';
+import { useMarketStatusStore } from '../../common/stores/market-status';
 import { usePolling } from '../../common/composables/use-polling';
 import { POLLING_INTERVAL } from '../../common/constants/polling.constants.ts';
 import { PAGE_HEADER_ACTIONS_TARGET, usePageHeaderSlot } from '../../common/composables/use-page-header-slot';
@@ -27,7 +29,8 @@ import { PAGE_HEADER_ACTIONS_TARGET, usePageHeaderSlot } from '../../common/comp
 /**
  * 全景（原「行情全景」页 overview 页签独立成页，2026-11-06 王总指定拆分）：
  * A股 36 板块平铺 + 国外科技巨头（2026-11-02 新增美股巨头，2026-11-03 扩为美/日/韩
- * 三市场，置于行业 ETF 卡上方）+ 美股行业 ETF + 全球宏观 四组卡片竖向分布
+ * 三市场，置于美股基金卡上方）+ 美股基金（2026-11-07 替换原「美股行业 ETF」，26 个
+ * 产业主题平铺、口径随美股时段自动切换）+ 全球宏观 四组卡片竖向分布
  * （原「行情全景」页的行业龙头 / 大A个股 / 港股个股页签同日分别拆为
  * /leaders 龙头、/stock-market 大A个股、/hk-stock 港股个股三个独立页；
  * 页面入口在市场总览页头「全景」按钮与「涨跌分布」卡标题）
@@ -41,13 +44,20 @@ import { PAGE_HEADER_ACTIONS_TARGET, usePageHeaderSlot } from '../../common/comp
 const REQUEST_GAP_MS = 500;
 
 const dataCache = useDataCacheStore();
+const marketStatusStore = useMarketStatusStore();
+
+/** 美股口径徽标文案（盘前 / 盘中 / 收盘，随 market-status 的分钟级 clockTick 重算） */
+const usFlavorLabel = computed(() => {
+  const flavor = marketStatusStore.usQuoteFlavor;
+  return flavor === 'pre' ? '盘前' : flavor === 'open' ? '盘中' : '收盘';
+});
 
 // 快照播种：切换回本页先展示上次数据
 const cachedUs = dataCache.get<PanoramaItem[]>(DATA_CACHE_KEY.PANORAMA_US_BOARDS);
 const cachedGlobalTech = dataCache.get<PanoramaMacroGroup[]>(DATA_CACHE_KEY.PANORAMA_GLOBAL_TECH);
 const cachedMacro = dataCache.get<PanoramaMacroGroup[]>(DATA_CACHE_KEY.PANORAMA_MACRO);
 
-/** 美股行业 ETF 全景 */
+/** 美股基金主题行情（26 个产业主题，2026-11-07 替换原「美股行业 ETF」） */
 const usBoards = ref<PanoramaItem[]>(cachedUs ?? []);
 /** 国外科技巨头（美/日/韩分组，2026-11-02 新增、2026-11-03 扩三市场并分组） */
 const globalTech = ref<PanoramaMacroGroup[]>(cachedGlobalTech ?? []);
@@ -95,7 +105,7 @@ const fetchUsBoards = async (): Promise<void> => {
   dataCache.set(DATA_CACHE_KEY.PANORAMA_US_BOARDS, usBoards.value);
 };
 
-/** 拉取国外科技巨头（成功后写快照；与行业 ETF 同一 ulist 通道） */
+/** 拉取国外科技巨头（成功后写快照；与美股基金主题同一 ulist 通道） */
 const fetchGlobalTech = async (): Promise<void> => {
   globalTech.value = await fetchGlobalTechPanorama();
   dataCache.set(DATA_CACHE_KEY.PANORAMA_GLOBAL_TECH, globalTech.value);
@@ -144,8 +154,8 @@ onActivated(() => {
   }
 });
 
-// 美股全景轮询：仅在美股轮询窗口（21:30-24:00 与 00:00-04:00）内按间隔刷新，
-// 窗口外自动跳过；科技巨头与行业 ETF 同窗口错峰刷新
+// 美股轮询：仅在美股轮询窗口（盘前+盘中：周一~五 16:00-24:00 与 周二~六 00:00-04:00）
+// 内按间隔刷新，窗口外自动跳过；美股基金主题与科技巨头同窗口错峰刷新
 usePolling({
   task: async () => {
     await fetchUsBoards();
@@ -160,7 +170,7 @@ usePolling({
 
 // 亚太轮询（2026-11-03 随「国外科技巨头」扩日韩引入）：仅亚太窗口（周一~五 08:00-14:30
 // 北京时间）内刷新科技巨头清单——日股 176 / 韩股 177 的交易时段在 A 股盘中，美股窗口
-// 盖不住；与美股窗口（21:30-04:00）不重叠，两个轮询器不会并发打同一上游
+// 盖不住；与美股窗口（16:00-04:00）不重叠，两个轮询器不会并发打同一上游
 usePolling({
   task: async () => {
     await fetchGlobalTech();
@@ -201,6 +211,42 @@ const toggleCard = (cardId: string): void => {
   settingsStore.togglePanoramaCardCollapsed(cardId);
 };
 
+// ---------- 模块排序（2026-11-07 王总指定：页头按钮开弹窗，拖拽调整四组卡顺序，持久化） ----------
+
+/** 模块排序弹窗显隐 */
+const moduleOrderOpen = ref(false);
+
+/**
+ * 归一化已保存的模块顺序：剔除未知 id（常量演进后的残留），新卡片按声明序补末尾
+ * @returns 完整卡片 id 排列（四项齐全）
+ */
+const normalizedModuleOrder = (): string[] => {
+  const saved = settingsStore.panoramaModuleOrder.filter((id) =>
+    PANORAMA_CARDS.some((card) => card.id === id),
+  );
+  const missing = PANORAMA_CARDS.filter((card) => !saved.includes(card.id)).map((card) => card.id);
+  return [...saved, ...missing];
+};
+
+/** 页面卡片渲染顺序（settings 变化即时跟随） */
+const orderedCardIds = computed(() => normalizedModuleOrder());
+
+/** 排序弹窗条目（顺序 = 已保存顺序） */
+const moduleOrderItems = computed(() =>
+  normalizedModuleOrder().map((id) => ({
+    id,
+    label: PANORAMA_CARDS.find((card) => card.id === id)?.label ?? id,
+  })),
+);
+
+/**
+ * 模块排序弹窗确认：写回 settings 持久化（卡片渲染顺序即时跟随）
+ * @param ids 弹窗回传的卡片 id 排列
+ */
+const onModuleOrderConfirm = (ids: string[]): void => {
+  settingsStore.setPanoramaModuleOrder(ids);
+};
+
 // ---------- 手动刷新（沿用原行情全景页头刷新按钮，2026-11-02 王总指定） ----------
 
 /** 点刷新按钮：重拉美股 + 科技巨头 + 全球宏观（A股板块由 PanoramaCnBoard 自管轮询） */
@@ -219,18 +265,32 @@ const { active: headerSlotActive } = usePageHeaderSlot();
       <span class="hidden shrink-0 text-xs text-text-tertiary @4xl:block">未开盘时展示最近交易日收盘数据</span>
     </div>
 
-    <!-- 手动刷新上移 MainLayout 页头（原行情全景 2026-11-02 王总指定，「插件设置」左侧）：
-         重拉美股 + 科技巨头 + 全球宏观，拉取中图标旋转 -->
+    <!-- 页头动作上移 MainLayout 页头（「插件设置」左侧）：模块排序（2026-11-07 王总指定）
+         + 手动刷新（原行情全景 2026-11-02 王总指定）——重拉美股 + 科技巨头 + 全球宏观，
+         拉取中图标旋转 -->
     <Teleport v-if="headerSlotActive" :to="PAGE_HEADER_ACTIONS_TARGET">
-      <BaseButton
-        variant="ghost"
-        :disabled="isLoading"
-        @click="onManualRefresh"
-      >
-        <MenuIcon name="refresh" :size="14" :class="{ 'animate-spin': isLoading }" />
-        {{ isLoading ? '刷新中…' : '刷新' }}
-      </BaseButton>
+      <div class="flex items-center gap-2">
+        <BaseButton variant="ghost" data-track="PANORAMA_MODULE_ORDER" @click="moduleOrderOpen = true">
+          <MenuIcon name="sortCustom" :size="14" />
+          模块排序
+        </BaseButton>
+        <BaseButton
+          variant="ghost"
+          :disabled="isLoading"
+          @click="onManualRefresh"
+        >
+          <MenuIcon name="refresh" :size="14" :class="{ 'animate-spin': isLoading }" />
+          {{ isLoading ? '刷新中…' : '刷新' }}
+        </BaseButton>
+      </div>
     </Teleport>
+
+    <!-- 模块排序弹窗（拖拽调整四组卡片顺序，草稿模式 + 恢复默认） -->
+    <PanoramaModuleOrderModal
+      v-model:open="moduleOrderOpen"
+      :items="moduleOrderItems"
+      @confirm="onModuleOrderConfirm"
+    />
 
     <!-- 模块内容统一滚动容器：四组卡片在此滚动 -->
     <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
@@ -246,107 +306,125 @@ const { active: headerSlotActive } = usePageHeaderSlot();
         <BaseEmpty text="数据加载失败或暂无数据，请稍后重试（上游可能限频）" />
       </BaseCard>
 
-      <!-- 四组卡片竖向分布（A股 36 板块平铺 / 国外科技巨头 / 美股行业 ETF / 全球宏观），
+      <!-- 四组卡片竖向分布（A股 36 板块平铺 / 国外科技巨头 / 美股基金 / 全球宏观），
+           渲染顺序 = settings.panoramaModuleOrder（页头「模块排序」弹窗编排，2026-11-07 王总指定），
            均支持展开收起（默认展开，折叠态持久化） -->
       <template v-else>
-        <PanoramaCnBoard
-          class="shrink-0"
-          collapsible
-          :collapsed="isCardCollapsed('cn')"
-          @update:collapsed="toggleCard('cn')"
-        />
+        <template v-for="cardId in orderedCardIds" :key="cardId">
+          <PanoramaCnBoard
+            v-if="cardId === 'cn'"
+            class="shrink-0"
+            collapsible
+            :collapsed="isCardCollapsed('cn')"
+            @update:collapsed="toggleCard('cn')"
+          />
 
-        <!-- 国外科技巨头（2026-11-02 新增美股巨头，2026-11-03 王总指定扩日韩、按市场分组并置顶）：
+          <!-- 国外科技巨头（2026-11-02 新增美股巨头，2026-11-03 王总指定扩日韩、按市场分组并置顶）：
              组顺序 = 美国 → 日本 → 韩国，组内 = 配置顺序不重排；缺行标的名称仍显示、数值 `--` -->
-        <BaseCard
-          title="国外科技巨头"
-          class="shrink-0"
-          collapsible
-          :collapsed="isCardCollapsed('globalTech')"
-          @update:collapsed="toggleCard('globalTech')"
-        >
-          <div class="flex flex-col gap-4">
-            <section v-for="group in globalTech" :key="group.label">
-              <p class="mb-1.5 flex items-baseline gap-2">
-                <span class="text-sm font-medium text-text">{{ group.label }}</span>
-                <span class="text-xs text-text-tertiary">{{ group.items.length }} 项</span>
-              </p>
-              <div class="grid grid-cols-4 gap-2">
-                <div
-                  v-for="item in group.items"
-                  :key="item.name"
-                  class="flex items-center justify-between gap-2 rounded-lg bg-flat-weak px-3 py-2.5"
-                >
-                  <span class="truncate text-sm text-text" :title="item.name">{{ item.name }}</span>
-                  <span
-                    class="shrink-0 text-sm font-semibold tabular-nums"
-                    :class="TREND_TEXT_CLASS[getTrendByChangePercent(item.changePercent ?? 0)]"
+          <BaseCard
+            v-else-if="cardId === 'globalTech'"
+            title="国外科技巨头"
+            class="shrink-0"
+            collapsible
+            :collapsed="isCardCollapsed('globalTech')"
+            @update:collapsed="toggleCard('globalTech')"
+          >
+            <div class="flex flex-col gap-4">
+              <section v-for="group in globalTech" :key="group.label">
+                <p class="mb-1.5 flex items-baseline gap-2">
+                  <span class="text-sm font-medium text-text">{{ group.label }}</span>
+                  <span class="text-xs text-text-tertiary">{{ group.items.length }} 项</span>
+                </p>
+                <div class="grid grid-cols-4 gap-2">
+                  <div
+                    v-for="item in group.items"
+                    :key="item.name"
+                    class="flex items-center justify-between gap-2 rounded-lg bg-flat-weak px-3 py-2.5"
                   >
-                    {{ formatPercent(item.changePercent) }}
-                  </span>
+                    <span class="truncate text-sm text-text" :title="item.name">{{ item.name }}</span>
+                    <span
+                      class="shrink-0 text-sm font-semibold tabular-nums"
+                      :class="TREND_TEXT_CLASS[getTrendByChangePercent(item.changePercent ?? 0)]"
+                    >
+                      {{ formatPercent(item.changePercent) }}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            </section>
-          </div>
-        </BaseCard>
-
-        <!-- 美股行业 ETF：扁平网格（缺行 ETF 名称仍显示、数值 `--`） -->
-        <BaseCard
-          title="美股行业 ETF"
-          class="shrink-0"
-          collapsible
-          :collapsed="isCardCollapsed('usBoards')"
-          @update:collapsed="toggleCard('usBoards')"
-        >
-          <div class="grid grid-cols-4 gap-2">
-            <div
-              v-for="item in usBoards"
-              :key="item.name"
-              class="flex items-center justify-between gap-2 rounded-lg bg-flat-weak px-3 py-2.5"
-            >
-              <span class="truncate text-sm text-text" :title="item.name">{{ item.name }}</span>
-              <span
-                class="shrink-0 text-sm font-semibold tabular-nums"
-                :class="TREND_TEXT_CLASS[getTrendByChangePercent(item.changePercent ?? 0)]"
-              >
-                {{ formatPercent(item.changePercent) }}
-              </span>
+              </section>
             </div>
-          </div>
-        </BaseCard>
+          </BaseCard>
 
-        <!-- 全球宏观：单卡内分组网格（缺行条目名称仍显示、数值 `--`） -->
-        <BaseCard
-          title="全球宏观"
-          class="shrink-0"
-          collapsible
-          :collapsed="isCardCollapsed('macro')"
-          @update:collapsed="toggleCard('macro')"
-        >
-          <div class="flex flex-col gap-4">
-            <section v-for="group in macroGroups" :key="group.label">
-              <p class="mb-1.5 flex items-baseline gap-2">
-                <span class="text-sm font-medium text-text">{{ group.label }}</span>
-                <span class="text-xs text-text-tertiary">{{ group.items.length }} 项</span>
-              </p>
-              <div class="grid grid-cols-4 gap-2">
-                <div
-                  v-for="item in group.items"
-                  :key="item.name"
-                  class="flex items-center justify-between gap-2 rounded-lg bg-flat-weak px-3 py-2.5"
+          <!-- 美股基金（2026-11-07 王总指定替换「美股行业 ETF」）：26 个产业主题平铺
+             （成分标的平均涨跌幅，分类对标美基星图「全球产业数据」），卡头徽标标注
+             当前口径（盘前 / 盘中 / 收盘）；缺行主题仍显示、数值 `--` -->
+          <BaseCard
+            v-else-if="cardId === 'usBoards'"
+            title="美股基金"
+            class="shrink-0"
+            collapsible
+            :collapsed="isCardCollapsed('usBoards')"
+            @update:collapsed="toggleCard('usBoards')"
+          >
+            <template #extra>
+              <span
+                class="shrink-0 rounded-full px-2.5 py-1 text-xs font-bold"
+                style="color: var(--color-primary); background: var(--color-primary-weak)"
+                title="盘前 / 盘中时段自动切换口径；数值为主题成分标的的平均涨跌幅"
+              >
+                {{ usFlavorLabel }}
+              </span>
+            </template>
+            <div class="grid grid-cols-4 gap-2">
+              <div
+                v-for="item in usBoards"
+                :key="item.name"
+                class="flex items-center justify-between gap-2 rounded-lg bg-flat-weak px-3 py-2.5"
+              >
+                <span class="truncate text-sm text-text" :title="item.name">{{ item.name }}</span>
+                <span
+                  class="shrink-0 text-sm font-semibold tabular-nums"
+                  :class="TREND_TEXT_CLASS[getTrendByChangePercent(item.changePercent ?? 0)]"
                 >
-                  <span class="truncate text-sm text-text">{{ item.name }}</span>
-                  <span
-                    class="shrink-0 text-sm font-semibold tabular-nums"
-                    :class="TREND_TEXT_CLASS[getTrendByChangePercent(item.changePercent ?? 0)]"
-                  >
-                    {{ formatPercent(item.changePercent) }}
-                  </span>
-                </div>
+                  {{ formatPercent(item.changePercent) }}
+                </span>
               </div>
-            </section>
-          </div>
-        </BaseCard>
+            </div>
+          </BaseCard>
+
+          <!-- 全球宏观：单卡内分组网格（缺行条目名称仍显示、数值 `--`） -->
+          <BaseCard
+            v-else
+            title="全球宏观"
+            class="shrink-0"
+            collapsible
+            :collapsed="isCardCollapsed('macro')"
+            @update:collapsed="toggleCard('macro')"
+          >
+            <div class="flex flex-col gap-4">
+              <section v-for="group in macroGroups" :key="group.label">
+                <p class="mb-1.5 flex items-baseline gap-2">
+                  <span class="text-sm font-medium text-text">{{ group.label }}</span>
+                  <span class="text-xs text-text-tertiary">{{ group.items.length }} 项</span>
+                </p>
+                <div class="grid grid-cols-4 gap-2">
+                  <div
+                    v-for="item in group.items"
+                    :key="item.name"
+                    class="flex items-center justify-between gap-2 rounded-lg bg-flat-weak px-3 py-2.5"
+                  >
+                    <span class="truncate text-sm text-text">{{ item.name }}</span>
+                    <span
+                      class="shrink-0 text-sm font-semibold tabular-nums"
+                      :class="TREND_TEXT_CLASS[getTrendByChangePercent(item.changePercent ?? 0)]"
+                    >
+                      {{ formatPercent(item.changePercent) }}
+                    </span>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </BaseCard>
+        </template>
       </template>
     </div>
   </div>
